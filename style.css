@@ -3,3 +3,13 @@
 .source{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:#f4f6f4;padding:12px}
 
 .org.active small{color:#e0eee7}
+
+/* Client profile structure and revision queue. */
+.workspace{grid-template-columns:310px minmax(0,1fr)}
+.account-directory{background:white;border:1px solid var(--line);border-radius:12px;padding:16px;align-self:start}
+.account-head h2{font-size:28px;margin:8px 0 20px}.profile-facts{display:grid;grid-template-columns:2fr 2fr 1fr;gap:18px;margin:16px 0}.profile-facts small,.profile-facts strong{display:block}
+.profile-sections{display:flex;gap:0;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:24px}.profile-sections>span{padding:12px 16px;color:#62746c}.profile-sections .current{color:var(--green);font-weight:700;border-bottom:3px solid var(--green)}.profile-sections small{display:block;font-size:10px}
+.incomplete,.org.incomplete,.org.incomplete:hover{background:#fff5c2;border-color:#d9b642;color:#493e16}.org.incomplete small,.org.incomplete.active small{color:#665726}.org.incomplete.active{box-shadow:inset 4px 0 #195d49;outline:2px solid #195d49;outline-offset:-2px}.revision-label{display:block;color:#685017;font-size:13px;font-weight:650;margin:8px 0}.phone-pair{display:grid;grid-template-columns:minmax(150px,1fr) 2fr;gap:16px}
+@media(max-width:800px){.workspace{grid-template-columns:1fr}.profile-facts{grid-template-columns:1fr}.phone-pair{grid-template-columns:1fr 1.4fr}.profile-sections>span{padding:10px}.account-head h2{font-size:24px}}
+
+.group-panel{padding:18px 22px;border:1px solid var(--line);border-radius:10px;margin-bottom:20px;background:white}.branch-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.branch-list small,.suggested-branch small{display:block}.suggested-branch{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:12px 0;border-bottom:1px solid var(--line)}.group-panel details{margin-top:15px}summary{cursor:pointer}
