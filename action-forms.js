@@ -43,9 +43,10 @@ function openOrganizationForm(o=null){
  return actionForm(o?'Edit account':'Add account',
   field('name','Account name',o?.name||'','text',true)+field('location','Location',o?.location||'','text',true)+field('type','Organisation type',o?.type||'','text',true),
   async values=>{
+   if(values.name!==titleCase(values.name)){showFieldErrors(actionEditorForm,{name:'Use Title Case, for example Shree Hindu Mandal.'});throw Error('Field invalid: account name must use Title Case.')}
    const r=await client.rpc('save_organization',{p_id:id,p_name:values.name,p_location:values.location,p_type:values.type});
    if(r.error)throw r.error;
-   const row=Array.isArray(r.data)?r.data[0]:r.data;const index=organizations.findIndex(x=>x.id===id);if(index<0)organizations.push(row);else organizations[index]=row;selected=id;scan();render();message('Account saved.');
+   const row=Array.isArray(r.data)?r.data[0]:r.data;const index=organizations.findIndex(x=>x.id===id);if(index<0)organizations.push(row);else organizations[index]=row;selected=id;invalidateLocalApproval(id);scan();if(!o)goProfile('client',id);else render();message('Account saved.');
   });
 }
 
