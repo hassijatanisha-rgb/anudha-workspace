@@ -45,8 +45,7 @@ function openOrganizationForm(o=null){
   async values=>{
    const r=await client.rpc('save_organization',{p_id:id,p_name:values.name,p_location:values.location,p_type:values.type});
    if(r.error)throw r.error;
-   selected=(Array.isArray(r.data)?r.data[0]:r.data)?.id||id;
-   await load();message('Account saved.');
+   const row=Array.isArray(r.data)?r.data[0]:r.data;const index=organizations.findIndex(x=>x.id===id);if(index<0)organizations.push(row);else organizations[index]=row;selected=id;scan();render();message('Account saved.');
   });
 }
 
@@ -57,7 +56,7 @@ function openProductForm(p=null){
   const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('import_records',{p_products:[{id,name:values.name,sku:values.sku,source:{origin:'manual'}}]});
   if(r.error)throw r.error;
   if(p){const row=Array.isArray(r.data)?r.data[0]:r.data;const index=products.findIndex(x=>x.id===id);if(index>=0)products[index]=row;render()}
-  else{search='';page=0;await load()}
+  else{const saved=await client.from('products').select('*').eq('id',id).single();if(saved.error)throw saved.error;products.push(saved.data);search='';page=0;render()}
   message('Product saved.');
  });
 }
@@ -82,7 +81,7 @@ function openMatchForm(p){
 function openBranchForm(parent,initialBranch=null){
  if(me?.role!=='owner')throw Error('Owner access is required to link branches.');
  if(!parent||parent.parent_id)throw Error('Choose a main account before linking a branch.');
- const eligible=organizations.filter(x=>x.id!==parent.id&&!x.parent_id&&!organizations.some(y=>y.parent_id===x.id));
+ const parents=new Set(organizations.map(x=>x.parent_id).filter(Boolean));const eligible=organizations.filter(x=>x.id!==parent.id&&!x.parent_id&&!parents.has(x.id));
  const form=actionForm('Link existing branch',`<p>Main account: <strong>${esc(parent.name)}</strong> · ${esc(parent.location||'Location missing')}</p><label><span>Find a branch</span><input name="branch_search" type="search" placeholder="Account name, location or type"></label><label><span>Existing branch account</span><select name="branch_id" required></select></label><p id="branchRelationship" class="warning" aria-live="polite"></p><p class="muted">Check ownership and location before saving. Contacts and source records stay separate.</p>`,async values=>{
   if(!eligible.some(x=>x.id===values.branch_id))throw Error('Choose an eligible branch.');
   await linkBranch(values.branch_id,parent.id);
