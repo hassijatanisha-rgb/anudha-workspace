@@ -13,3 +13,5 @@
 @media(max-width:800px){.workspace{grid-template-columns:1fr}.profile-facts{grid-template-columns:1fr}.phone-pair{grid-template-columns:1fr 1.4fr}.profile-sections>span{padding:10px}.account-head h2{font-size:24px}}
 
 .group-panel{padding:18px 22px;border:1px solid var(--line);border-radius:10px;margin-bottom:20px;background:white}.branch-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.branch-list small,.suggested-branch small{display:block}.suggested-branch{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:12px 0;border-bottom:1px solid var(--line)}.group-panel details{margin-top:15px}summary{cursor:pointer}
+
+.branch-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.branch-list button{text-align:left;min-height:80px}.branch-list button small{margin-top:6px}.contact-account{font-size:13px;color:#61736b;margin:0 0 8px}.group-panel h3{margin:0}#actionDialog label{margin:15px 0}#actionError{color:#aa2525}
