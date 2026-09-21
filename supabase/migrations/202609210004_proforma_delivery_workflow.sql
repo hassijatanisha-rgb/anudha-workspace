@@ -163,10 +163,13 @@ begin
    length(trim(coalesce(line->>'uom',''))) not between 1 and 40 or length(trim(coalesce(line->>'description',''))) not between 1 and 4000
  ) then raise exception 'Check every item, quantity, unit, price, discount and tax'; end if;
 
- select coalesce(sum((line->>'quantity')::bigint*(line->>'unitPriceMinor')::bigint),0),
-        coalesce(sum(round(((line->>'quantity')::numeric*(line->>'unitPriceMinor')::numeric*(line->>'discountBasisPoints')::numeric)/10000)),0),
-        coalesce(sum(round((((line->>'quantity')::numeric*(line->>'unitPriceMinor')::numeric)-round(((line->>'quantity')::numeric*(line->>'unitPriceMinor')::numeric*(line->>'discountBasisPoints')::numeric)/10000)))*(line->>'taxBasisPoints')::numeric/10000)),0)
- into v_subtotal,v_discount,v_tax from jsonb_array_elements(p_lines) line;
+ select coalesce(sum(gross),0),coalesce(sum(discount),0),coalesce(sum(round((gross-discount)*tax_basis_points/10000)),0)
+ into v_subtotal,v_discount,v_tax from (
+  select (line->>'quantity')::bigint*(line->>'unitPriceMinor')::bigint as gross,
+         round((line->>'quantity')::numeric*(line->>'unitPriceMinor')::numeric*(line->>'discountBasisPoints')::numeric/10000) as discount,
+         (line->>'taxBasisPoints')::numeric as tax_basis_points
+  from jsonb_array_elements(p_lines) line
+ ) totals;
  if v_subtotal>9000000000000000 or v_subtotal-v_discount+v_tax>9000000000000000 then raise exception 'Document total is too large'; end if;
 
  if p_expected_version=0 then
