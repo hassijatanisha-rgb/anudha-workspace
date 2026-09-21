@@ -20,9 +20,10 @@ function contactFieldErrors(c){
  if(c.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email))errors.email='Enter a valid email address or leave it blank.';
  return errors;
 }
-function contactReviewQueue(contactRows,organizationRows){
+function contactNeedsRevision(contact,issues=[],duplicateIssues=[]){return contact.status!=='incorrect'&&(contact.status!=='kept'||issues.length>0||duplicateIssues.length>0)}
+function contactReviewQueue(contactRows,organizationRows,duplicateRows=new Map()){
  const organizationsById=new Map(organizationRows.map(o=>[o.id,o]));
- return contactRows.filter(c=>c.status!=='incorrect').map(contact=>({contact,organization:organizationsById.get(contact.organization_id)||{id:'',name:'Account missing',location:''},reasons:Object.values(contactFieldErrors(contact))})).filter(row=>row.reasons.length).sort((a,b)=>a.organization.name.localeCompare(b.organization.name)||String(a.contact.first_name||'').localeCompare(String(b.contact.first_name||''))||a.contact.id.localeCompare(b.contact.id));
+ return contactRows.filter(c=>c.status!=='incorrect').map(contact=>{const reasons=Object.values(contactFieldErrors(contact));if(contact.status!=='kept'&&!reasons.length)reasons.push('Contact has not been marked complete');for(const duplicate of duplicateRows.get(contact.id)||[])reasons.push(`Possible duplicate: ${duplicate.reason}`);return {contact,organization:organizationsById.get(contact.organization_id)||{id:'',name:'Account missing',location:''},reasons}}).filter(row=>contactNeedsRevision(row.contact,row.reasons,duplicateRows.get(row.contact.id)||[])).sort((a,b)=>a.organization.name.localeCompare(b.organization.name)||String(a.contact.first_name||'').localeCompare(String(b.contact.first_name||''))||a.contact.id.localeCompare(b.contact.id));
 }
 function showFieldErrors(form,errors){
  form.querySelectorAll('.field-error').forEach(el=>el.remove());

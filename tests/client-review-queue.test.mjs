@@ -28,6 +28,11 @@ assert.match(rows[0].reasons.join(' '),/Last name is required/);
 assert.equal(rows[0].organization.name,'Alpha Hospital');
 assert.match(rows[1].reasons.join(' '),/digits|numbering plan/);
 assert.ok(!rows.some(row=>row.contact.id==='OK'),'Kept valid contacts must not remain in the queue.');
-assert.ok(!rows.some(row=>row.contact.id==='WRONG'),'Incorrect archived contacts belong in their separate review state.');
+assert.ok(!rows.some(row=>row.contact.id==='WRONG'),'Archived incorrect contacts stay outside the active contact views.');
+assert.equal(context.contactNeedsRevision(contacts[0],[],[]),false);
+assert.equal(context.contactNeedsRevision(contacts[1],['Last name'],[]),true);
+assert.equal(context.contactNeedsRevision({...contacts[0],status:'review'},[],[]),true,'Unreviewed contacts belong in the single revision view.');
+assert.equal(context.contactNeedsRevision(contacts[0],[],[{reason:'Same phone'}]),true,'Possible duplicates belong in the single revision view.');
+assert.equal(context.contactNeedsRevision(contacts[3],['Position'],[{reason:'Same phone'}]),false,'Incorrect records stay outside active contact filters.');
 
 console.log('PASS: shared review queue exposes actionable contact issues with client context.');
