@@ -1,11 +1,12 @@
 'use strict';
 
-let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[];
+let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[],inventoryClassifications=[];
 const inventoryTabs=[['stock','Stock by godown'],['transfers','Carton transfers'],['locations','Godowns'],['catalog','Product catalog']];
 function inventoryProduct(id){return products.find(row=>row.id===id)||{name:'Unknown product',sku:''}}
 function inventoryLocation(id){return inventoryLocations.find(row=>row.id===id)||{name:'Unknown godown',code:''}}
 function inventoryPack(id){return inventoryPacks.find(row=>row.id===id)||{base_unit:'unit',units_per_carton:0,version:0}}
 function inventoryLatestPack(productId){return inventoryPacks.filter(row=>row.product_id===productId).sort((a,b)=>b.version-a.version)[0]}
+function inventoryClassification(productId){return inventoryClassifications.filter(row=>row.product_id===productId).sort((a,b)=>b.version-a.version)[0]}
 function inventoryOption(value,label,selected=false){return `<option value="${esc(value)}" ${selected?'selected':''}>${esc(label)}</option>`}
 function inventoryDate(){return new Date().toISOString().slice(0,10)}
 async function loadInventoryOperations(){
@@ -15,11 +16,12 @@ async function loadInventoryOperations(){
   client.from('product_pack_definitions').select('*').order('created_at',{ascending:false}),
   client.from('inventory_lots').select('*').order('updated_at',{ascending:false}),
   client.from('inventory_transfers').select('*').order('created_at',{ascending:false}).limit(200),
-  client.from('inventory_issues').select('*').order('issued_on',{ascending:false}).limit(200)
+  client.from('inventory_issues').select('*').order('issued_on',{ascending:false}).limit(200),
+  client.from('product_inventory_classifications').select('*').order('created_at',{ascending:false})
  ]);
  const failed=requests.find(result=>result.error);
  if(failed){inventoryLoaded=false;inventoryLoadError=failed.error.message||'Inventory schema has not been installed.';return;}
- [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues]=requests.map(result=>result.data||[]);inventoryLoaded=true;
+ [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLoaded=true;
 }
 function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY CONTROL</small><h1>Inventory</h1><p class="muted">Godown cartons → Haadi receipt → opened pieces → individual client issues.</p></div><button id="inventoryRefresh" type="button">Refresh</button></div><div class="tabs inventory-tabs">${inventoryTabs.map(([id,label])=>`<button type="button" data-inventory-section="${id}" class="${inventorySection===id?'active':''}">${label}</button>`).join('')}</div>`}
 function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory database setup required</h2><p class="warning">The inventory schema has not been installed in Supabase yet. Client sorting stays available, and no fake stock balance will be shown.</p><p class="muted">${esc(inventoryLoadError)}</p><p>An owner must run <code>supabase/migrations/202609210001_inventory_foundation.sql</code> once in the project SQL editor, then refresh this page.</p></section>`}
@@ -51,7 +53,7 @@ function inventoryTransferCard(t){
 }
 function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='owner'?`<section class="card"><h2>Add godown or Haadi dispatch hub</h2><form data-inventory-action="location"><div class="grid"><label><span>Name</span><input name="name" required maxlength="120" placeholder="Haadi"></label><label><span>Short code</span><input name="code" required maxlength="30" placeholder="HAA"></label><label><span>Type</span><select name="locationType"><option value="godown">Godown · sealed-carton storage</option><option value="dispatch_hub">Dispatch hub · may open cartons</option></select></label></div><button type="submit">Save location</button></form></section>`:''}<section class="card"><h2>Storage locations</h2>${inventoryLocations.map(x=>`<article class="contact"><div class="heading"><div><h3>${esc(x.name)}</h3><p>${esc(x.code)} · ${x.is_dispatch_hub?'Dispatch hub; cartons can be opened here':'Godown; sealed-carton storage'}</p></div><span class="tag">${x.active?'Active':'Inactive'}</span></div></article>`).join('')||'<p class="empty">No godowns have been entered yet.</p>'}</section>`}
 async function inventoryWorkspace(force=false){
- if(inventorySection==='catalog'){catalogInventory();return;}
+ if(inventorySection==='catalog'){if(!inventoryLoaded)await loadInventoryOperations();catalogInventory();return;}
  $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
  if(force||!inventoryLoaded)await loadInventoryOperations();
  if(!inventoryLoaded){$('#content').innerHTML=inventoryUnavailable();bindInventoryWorkspace();return;}
@@ -72,6 +74,7 @@ async function submitInventoryForm(form){
  else if(action==='receive')result=await client.rpc('receive_inventory_transfer',{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_actual_units:Number(f.get('actualUnits')),p_inspection:f.get('inspection'),p_note:f.get('note')});
  else if(action==='open')result=await client.rpc('open_inventory_cartons',{p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_cartons:Number(f.get('cartons')),p_reason:f.get('reason')});
  else if(action==='issue')result=await client.rpc('issue_consumer_units',{p_id:crypto.randomUUID(),p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_organization_id:f.get('organizationId'),p_quantity:Number(f.get('quantity')),p_issued_on:f.get('issuedOn'),p_reference:f.get('reference'),p_reason:f.get('reason')});
+ else if(action==='classification')result=await client.rpc('save_product_inventory_classification',{p_id:crypto.randomUUID(),p_product_id:form.dataset.product,p_expected_version:Number(form.dataset.version),p_category:f.get('category'),p_reason:f.get('reason')});
  else throw Error('Unsupported inventory action.');
  if(result.error)throw result.error;await inventoryWorkspace(true);message('Inventory transaction saved.');
 }
