@@ -21,6 +21,8 @@ assert.match(source,/Completed/);
 assert.match(source,/advance_service_case/);
 assert.match(source,/complete_service_report/);
 assert.match(source,/create_service_case/);
+assert.match(source,/function serviceContactOptions\(organizationId/);
+assert.match(source,/asset\.organization_id===contact\.organization_id/);
 assert.match(source,/Serial number/);
 assert.match(source,/Training attendees/);
 assert.match(source,/QC training/);
