@@ -26,7 +26,7 @@ Every transition records the responsible employee and timestamp. Pro forma invoi
 5. The HOD assigns each service visit.
 6. The assigned employee completes the service visit and its report.
 
-Every transition records the responsible employee and timestamp. Installation reports, maintenance records and service reports are retained as PDFs, including signed documents where applicable.
+Every transition records the responsible employee and timestamp. Installation and service reports use immutable saved snapshots and can be printed to the official one-page PDF layouts. Signed-document references are retained; private evidence-file storage remains a server-week task.
 
 ## Explicitly out of current workflow scope
 

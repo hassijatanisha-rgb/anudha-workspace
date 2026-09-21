@@ -25,12 +25,12 @@ Status key: **Working**, **Partial**, **Not started**, **Server week**.
 | Products | Product directory, compatibility and packing rules; parts of inventory used static data | **Working:** 4,247 imported products, source review, categories and stock-code editing | Complete classification, verified carton sizes, machine compatibility and serial tracking |
 | Inventory and godowns | Stock lookup/history, packing, receipt and godown views; some screens were static | **Working foundation:** locations, physical counts, transfers, Haadi receipt, carton opening, client issue, quarantine and movement history | Opening counts, reservations, serials, cycle counts, expiry/damage resolution, reorder alerts |
 | Customer consumption history | Customer portfolio purchase/history views, some backed by fixed examples | **Working:** branch history queries real issued/delivered items and totals them by month, machine, reagent, consumable and spare | Server-side export and longer-history paging after the server move |
-| Service and installation | Service cases, engineer tasks, reports, signatures and maintenance; core service handler passed isolated tests | **Not started:** branch tab is present only | Delivery-created installation case, assignment, checklist, parts/labour, signatures, approved PDF and maintenance schedule |
+| Service and installation | Service cases, engineer tasks, reports, signatures and maintenance; core service handler passed isolated tests | **Working:** signed machine delivery creates one installation job per unit; jobs support assignment, scheduling, on-site work, immutable installation/service reports, serials, accessories, training, charges, sign-offs, one-page printing and recurring maintenance | Named employee profiles and department/HOD permissions; private evidence-file uploads during server week |
 | Purchasing and suppliers | Purchasing/escalation screens; some actions only saved activity summaries | **Not started** | Supplier master, purchase request, RFQ comparison, LPO, receipt/inspection, three-way invoice matching and history |
 | Returns | Return screens and printable output; stock movement was not fully connected in old UI | **Not started** | Linked return request, approval, quarantine/stock movement, replacement/credit outcome and PDF |
 | Finance and accounting | Balanced journals, invoice/payment primitives and reports; not a complete accounting package | **Partial:** Accounts/tax-invoice reference gates delivery | Decide Tally/Sangam/ERP source of truth, mappings, posting, reconciliation, ageing, credit limits and approved tax reporting |
 | Tasks and notifications | Company tasks, assignments, calendar and queued messages; several dashboard totals were static | **Not started** | Live role queues, due dates, escalation, record links, email/WhatsApp connectors and delivery status |
-| Documents and attachments | Pro forma, delivery, return and service PDFs plus evidence/photo screens | **Partial:** printable Pro forma and delivery records | Durable private file storage, approved templates, versioning, access rules and searchable attachments |
+| Documents and attachments | Pro forma, delivery, return and service PDFs plus evidence/photo screens | **Partial:** printable Pro forma, delivery, installation and service records; both approved blank service forms remain available | Durable private evidence storage, access rules and searchable attachments |
 | Dashboards and reports | Role dashboards and weekly/customer reports; some used samples | **Not started** | Sales, stock, service, purchasing and finance dashboards using live data only |
 | Audit, backup and server operations | Audit/security foundations and deployment documents | **Partial:** inventory and sales transition histories exist | Management audit viewer/export, full write audit, monitoring, encrypted backups, restore drill and 70-user load proof |
 
@@ -48,6 +48,7 @@ Both workflows must record the responsible employee and timestamp at every trans
 - **Working — Product master:** 4,247 imported product records, source review, duplicate review, category confirmation and stock-code editing.
 - **Working — Inventory foundation:** locations, carton definitions, physical opening counts, count corrections, transfers, Haadi receipt, carton opening, individual client issues, quarantine and immutable movement history.
 - **Working — Concurrent inventory writes:** stock-changing database functions lock rows and reject stale versions instead of silently overwriting another employee's work.
+- **Working — Service and installation:** signed delivery notes create machine assets and installation jobs automatically; assignment, scheduling, work stages, serials, signed report snapshots, one-page printing and recurring maintenance are connected.
 - **Partial — Permissions:** owner and staff exist, but department, job-role and godown-specific access do not.
 - **Partial — Audit:** inventory movements and changes are recorded; management audit screens and exports are incomplete.
 - **Partial — Recovery:** deleted clients and contacts can be restored; full database backup and disaster recovery are not yet proven.
@@ -111,13 +112,13 @@ Launch targets: p95 screen/API response under 2 seconds for normal work, less th
 
 ### 2. Service
 
-- [ ] Signed machine delivery creates an installation record.
-- [ ] HOD assignment records the assigned employee and timestamp.
-- [ ] Installation completion records the employee and timestamp and retains the installation PDF.
-- [ ] Installation completion creates the maintenance schedule.
-- [ ] HOD service assignment records the assigned employee and timestamp.
-- [ ] Service completion records the employee and timestamp and retains the service PDF.
-- [ ] Maintenance records are retained as PDFs.
+- [x] Signed machine delivery creates one installation record for every delivered machine unit.
+- [x] Assignment records the assigning employee, assigned employee and timestamp. Department/HOD-only enforcement is deferred with the staff-role build.
+- [x] Installation completion records the employee and timestamp and creates a printable official installation report snapshot.
+- [x] Installation completion creates the maintenance schedule from the actual work date.
+- [x] Service assignment records the assigned employee and timestamp.
+- [x] Service completion records the employee and timestamp and creates a printable official service report snapshot.
+- [x] Maintenance jobs retain their linked predecessor and completed report history.
 
 ### Out of current workflow scope
 
