@@ -1,7 +1,7 @@
 'use strict';
 
 let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[],inventoryClassifications=[];
-const inventoryTabs=[['stock','Stock by godown'],['transfers','Carton transfers'],['locations','Godowns'],['catalog','Product catalog']];
+const inventoryTabs=[['stock','Stock'],['transfers','Move cartons'],['locations','Locations'],['catalog','Products']];
 function inventoryProduct(id){return products.find(row=>row.id===id)||{name:'Unknown product',sku:''}}
 function inventoryLocation(id){return inventoryLocations.find(row=>row.id===id)||{name:'Unknown godown',code:''}}
 function inventoryPack(id){return inventoryPacks.find(row=>row.id===id)||{base_unit:'unit',units_per_carton:0,version:0}}
@@ -23,7 +23,7 @@ async function loadInventoryOperations(){
  if(failed){inventoryLoaded=false;inventoryLoadError=failed.error.message||'Inventory schema has not been installed.';return;}
  [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLoaded=true;
 }
-function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY CONTROL</small><h1>Inventory</h1><p class="muted">Godown cartons → Haadi receipt → opened pieces → individual client issues.</p></div><button id="inventoryRefresh" type="button">Refresh</button></div><div class="tabs inventory-tabs">${inventoryTabs.map(([id,label])=>`<button type="button" data-inventory-section="${id}" class="${inventorySection===id?'active':''}">${label}</button>`).join('')}</div>`}
+function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY</small><h1>Track stock</h1><p class="muted">Store sealed cartons, move them to Haadi, open them, then issue individual items to clients.</p></div><button id="inventoryRefresh" type="button">Refresh list</button></div><div class="help-strip"><strong>Follow the stock journey:</strong><span>Godown → Haadi → open cartons → client.</span></div><div class="tabs inventory-tabs" role="tablist" aria-label="Inventory sections">${inventoryTabs.map(([id,label])=>`<button type="button" role="tab" aria-selected="${inventorySection===id}" data-inventory-section="${id}" class="${inventorySection===id?'active':''}">${label}</button>`).join('')}</div>`}
 function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory database setup required</h2><p class="warning">The inventory schema has not been installed in Supabase yet. Client sorting stays available, and no fake stock balance will be shown.</p><p class="muted">${esc(inventoryLoadError)}</p><p>An owner must run <code>supabase/migrations/202609210001_inventory_foundation.sql</code> once in the project SQL editor, then refresh this page.</p></section>`}
 function inventoryLocationOptions(selected='',exclude=''){return inventoryLocations.filter(x=>x.active&&x.id!==exclude).map(x=>inventoryOption(x.id,`${x.name} · ${x.code}${x.is_dispatch_hub?' · dispatch hub':''}`,x.id===selected)).join('')}
 function inventoryProductOptions(selected=''){return products.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(x=>inventoryOption(x.id,`${x.name}${x.sku?' · '+x.sku:''}`,x.id===selected)).join('')}

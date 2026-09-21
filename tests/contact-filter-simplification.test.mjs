@@ -11,6 +11,6 @@ for(const source of [app,profiles]){
 }
 assert.doesNotMatch(app,/data-incorrect=/,'The active contact card must not expose a hidden incorrect category.');
 assert.doesNotMatch(app,/<span>Review status<\/span>/,'Staff should not have to choose among internal review states.');
-assert.match(html,/<button data-view="review">Needs revision<\/button>/);
+assert.match(html,/<button data-view="review">Fix contacts<\/button>/);
 
 console.log('PASS: contact UI exposes only All contacts and Needs revision.');

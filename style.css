@@ -25,3 +25,42 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border:2px solid #b42318;
 
 /* Incomplete client profiles are red; contact review cards retain yellow. */
 .profile-tile.incomplete,.account-head.incomplete{background:#fff0ee;border-color:#cc6a5d;color:#6c2923}.profile-tile.incomplete .revision-label,.account-head.incomplete .revision-label{color:#9b342b}.profile-tile.incomplete small,.account-head.incomplete small{color:#7e4943}.profile-tile.incomplete:hover{border-color:#a33d31}.recycle-record{display:flex;justify-content:space-between;align-items:center;gap:20px;border-top:1px solid var(--line);padding:18px 0}.recycle-record h3{margin:0}.recycle-record p{margin:6px 0}.recycle-parent-note{color:#8c3e32;font-size:13px}.recycle-affected{max-height:220px;overflow:auto;padding-left:22px}.recycle-affected li{padding:4px 0}@media(max-width:600px){.recycle-record{align-items:flex-start;flex-direction:column;gap:10px}}
+
+/* Simple team interface: plain hierarchy, generous controls, one attention colour. */
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+:root{font-size:16px;--green:#176149;--green-dark:#104936;--ink:#18352b;--muted:#5d7068;--surface:#fff;--soft:#f5f7f5;--attention:#fff7d6;--attention-line:#d7ad32}
+body{color:var(--ink);background:#f5f7f5}
+header{min-height:72px;padding:12px max(20px,4vw);gap:24px;box-shadow:0 1px 0 rgba(16,73,54,.05)}
+.brand{gap:12px;white-space:nowrap}.brand>span:last-child{display:flex;flex-direction:column;line-height:1.1}.brand small{margin-top:4px;font-size:11px;text-transform:none}
+.logo{display:grid;place-items:center;width:42px;height:42px;padding:0;border-radius:12px}
+nav{gap:4px;flex:1;overflow-x:auto;padding:4px;scrollbar-width:thin}
+nav button{white-space:nowrap;border-color:transparent;background:transparent;font-weight:650;color:#496158}
+nav button:hover{background:#edf4f0;color:var(--green-dark)}
+nav button.active{background:#dcece4;color:var(--green-dark);border-color:#c8dfd2}
+#identity{white-space:nowrap;color:var(--muted)}
+main{max-width:1280px;padding:40px max(20px,4vw) 64px}
+h1,h2,h3{text-wrap:balance}h1{font-size:clamp(30px,4vw,42px);line-height:1.1;letter-spacing:-1.2px}h2{line-height:1.25}p,.muted,.review-reasons li{text-wrap:pretty}
+button,.button{min-height:44px;padding:10px 16px;border-radius:10px;font-weight:650;transition-property:transform,background-color,border-color,box-shadow;transition-duration:140ms;transition-timing-function:ease-out}
+button:active,.button:active{transform:scale(.98)}button:disabled{transform:none}
+button.primary-action,button[type=submit]{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
+button.primary-action:hover,button[type=submit]:hover{background:var(--green-dark)}
+.secondary-action{background:#fff}
+input,select,textarea{min-height:46px;border-radius:9px;font-size:16px}label span{font-size:14px}
+.heading{gap:20px}.heading>div:first-child{min-width:0}.heading p{max-width:720px}
+.help-strip{display:flex;align-items:flex-start;gap:10px 18px;flex-wrap:wrap;background:#eaf4ef;border:1px solid #cfe2d8;border-radius:12px;padding:14px 16px;margin:22px 0;color:#294d40}.help-strip strong{color:var(--green-dark)}
+.card,.account-directory,.profile-tile,.contact,.group-panel{border-color:#d7e1db;box-shadow:0 1px 2px rgba(21,57,43,.04)}
+.card{border-radius:16px}.contact{border-radius:14px;padding:22px}.profile-tile{border-radius:16px;transition-property:transform,border-color,box-shadow}.profile-tile:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(21,57,43,.09)}
+.profile-tile.incomplete,.account-head.incomplete,.contact.incomplete,.org.incomplete,.org.incomplete:hover{background:var(--attention);border-color:var(--attention-line);color:#493e16}
+.profile-tile.incomplete .revision-label,.account-head.incomplete .revision-label,.contact.incomplete .revision-label{color:#725812}.profile-tile.incomplete small,.account-head.incomplete small{color:#665726}.profile-tile.incomplete:hover{border-color:#b98b12}
+.account-head{border:1px solid #cfe1d7;border-radius:16px;background:#eaf4ef}.account-head h1,.account-head h2{text-wrap:balance}
+.tag{border-radius:999px;padding:5px 10px;font-weight:700}.tag.warn{background:#f2d97b;color:#4d3c09}.tag:not(.warn){color:#285345}
+.count,.inventory-metrics strong{font-variant-numeric:tabular-nums}.count{font-size:14px}
+.tabs{gap:6px;padding:5px;background:#edf1ee;border-radius:12px;width:max-content;max-width:100%;overflow-x:auto;flex-wrap:nowrap}.tabs button{border-color:transparent;background:transparent;white-space:nowrap}.tabs button.active{background:#fff;color:var(--green-dark);border-color:#d2ddd6;box-shadow:0 1px 3px rgba(21,57,43,.08)}
+.inventory-tabs{border:0;padding:5px}.profile-sections{overflow-x:auto;flex-wrap:nowrap}.client-pages .profile-sections>button{min-width:max-content}
+.review-reasons{margin:14px 0 18px;padding-left:24px}.review-reasons li{margin:6px 0}
+.empty{background:#fff;border:1px dashed #cbd8d0;border-radius:14px}.empty strong{color:var(--ink)}
+summary{min-height:44px;display:flex;align-items:center;font-weight:700;color:var(--green-dark)}
+dialog{border-radius:18px;box-shadow:0 24px 70px rgba(13,43,32,.28)}#closeEditor{min-width:44px;padding:8px;font-size:24px}
+@media(max-width:900px){header{align-items:flex-start}nav{order:3;flex-basis:100%}#identity{margin-left:auto}.workspace{grid-template-columns:1fr}.account-directory{position:static}.orgs{max-height:280px}}
+@media(max-width:600px){main{padding:26px 14px 50px}header{padding:10px 14px}.brand small{display:block}#identity{font-size:11px}.heading{align-items:flex-start}.heading>.actions{width:100%}.heading>.actions button{flex:1}.help-strip{display:block}.help-strip span{display:block;margin-top:4px}.profile-grid{gap:12px}.profile-tile,.contact,.card{padding:18px}.tabs{width:100%}.tabs button{flex:1}.inventory-metrics{grid-template-columns:1fr 1fr;gap:10px}.inventory-metrics>div{padding:15px}}
+@media(prefers-reduced-motion:reduce){button,.button,.profile-tile{transition:none}.profile-tile:hover{transform:none}}

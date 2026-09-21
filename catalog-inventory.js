@@ -39,7 +39,7 @@ function catalogProduct(p,rows){
 }
 function catalogInventory(){
  const rows=catalogRows(),machine=rows.find(p=>p.id===catalogMachineId&&p.source?.category==='machines');
- const heading='<div class="heading"><div><small>INVENTORY · PRODUCT REVIEW</small><h1>Product catalog</h1><p class="muted">Sort the real Tally and godown item lists into reviewed inventory categories.</p></div><button id="refresh" type="button">Refresh</button></div><p class="warning">The item lists contain names, not verified stock balances. Name clues help staff review categories; stock is entered separately by godown, carton definition and physical count.</p>';
+ const heading='<div class="heading"><div><small>INVENTORY · PRODUCTS</small><h1>Sort products</h1><p class="muted">Check each product name, choose its category, and add a SKU when you have one.</p></div><button id="refresh" type="button">Refresh list</button></div><div class="help-strip"><strong>Product names are not stock counts.</strong><span>Add real quantities only in the Stock section after a physical count.</span></div>';
  if(catalogMachineId&&!machine)catalogMachineId='';
  if(machine){
   const linked=rows.filter(p=>p.source?.category!=='machines'&&(p.source?.machine_ids||[]).includes(machine.id));
