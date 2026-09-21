@@ -1,5 +1,14 @@
 # Anudha ERP completion checklist
 
+## Current scope: exactly two workflows
+
+This checklist is governed by [TWO_WORKFLOW_SCOPE.md](TWO_WORKFLOW_SCOPE.md). The current connected workflow scope contains only:
+
+1. **Sales:** draft and revisions → customer acceptance → Pro forma submitted → Accounts approved → tax invoice created → downstairs sales/packing queue → packing in progress → ready for delivery → out for delivery → signed delivery note. Every transition records the employee and timestamp, and Pro forma, tax-invoice and delivery-note PDFs are retained. Accounts role restrictions are deferred.
+2. **Service:** signed machine delivery → installation created → HOD assignment → installation completion → maintenance schedule → service assignment → service completion. Every transition records the employee and timestamp, and installation, maintenance and service PDFs are retained.
+
+**Out of current workflow scope:** purchasing, general ledger, suppliers and returns. Any related entries below are retained only as historical comparison or launch-readiness context; they are not active connected workflows.
+
 Status key: **Working**, **Partial**, **Not started**, **Server week**.
 
 ## Old ERP vs new ERP feature matrix
@@ -25,15 +34,12 @@ Status key: **Working**, **Partial**, **Not started**, **Server week**.
 | Dashboards and reports | Role dashboards and weekly/customer reports; some used samples | **Not started** | Sales, stock, service, purchasing and finance dashboards using live data only |
 | Audit, backup and server operations | Audit/security foundations and deployment documents | **Partial:** inventory and sales transition histories exist | Management audit viewer/export, full write audit, monitoring, encrypted backups, restore drill and 70-user load proof |
 
-### Connected build sequence
+### Current two-workflow sequence
 
-1. Leads → Pro forma invoice without retyping.
-2. Accepted Pro forma → sales order → stock reservation/shortage.
-3. Haadi pick/pack → dispatch → delivery proof → client consumption history.
-4. Delivered machine → installation/service case → engineer report → equipment history.
-5. Stock shortage → purchase request → supplier order → receipt → inventory.
-6. Approved sales/purchase events → Tally/Sangam handoff → reconciliation.
-7. Live tasks, notifications, dashboards, audit and reports across every workflow.
+1. **Sales:** draft/revisions → customer acceptance → Pro forma submitted → Accounts approved → tax invoice created → downstairs sales/packing queue → packing in progress → ready for delivery → out for delivery → signed delivery note.
+2. **Service:** signed machine delivery → installation created → HOD assignment → installation completion → maintenance schedule → service assignment → service completion.
+
+Both workflows must record the responsible employee and timestamp at every transition and retain their required PDFs. Accounts role restrictions are deferred. Purchasing, general ledger, suppliers and returns are not connected build sequences in the current scope.
 
 ## What is working now
 
@@ -89,76 +95,46 @@ Launch targets: p95 screen/API response under 2 seconds for normal work, less th
 
 “Unlimited” is an architecture goal, not a literal capacity. The software must avoid hard-coded employee limits and scale by adding server/database resources. Every production system still has measured CPU, memory, storage, connection and bandwidth limits.
 
-## Complete ERP business workflows
+## Current workflow completion checks
 
-### 1. CRM and sales
+### 1. Sales
 
-- [ ] Lead and opportunity pipeline with owner, stage, value, next action and history.
-- [ ] Quotation and pro forma invoice with revision, approval, PDF and customer acceptance.
-- [ ] Sales order created from the accepted pro forma invoice without retyping lines.
-- [ ] Stock check and reservation, including partial availability and supplier-order shortages.
-- [ ] Tax invoice handoff to the approved accounting process.
-- [ ] Haadi packing, dispatch, delivery note and proof of delivery.
-- [ ] Customer history by machine, reagent, consumable, spare, branch and month.
+- [ ] Draft Pro forma supports revisions without losing revision history.
+- [ ] Customer acceptance identifies the accepted revision and records the employee and timestamp.
+- [ ] Pro forma moves through **Submitted** and **Accounts approved** with employee and timestamp records.
+- [ ] Tax invoice is created and retained as a PDF.
+- [ ] Approved work enters the downstairs sales/packing queue.
+- [ ] Packing moves through **In progress**, **Ready for delivery** and **Out for delivery**, recording employee and timestamp at each transition.
+- [ ] Signed delivery note is retained as a PDF and completes delivery.
+- [ ] Pro forma and acceptance documents are retained as PDFs.
+- [ ] Accounts role restrictions remain deferred and are not a completion condition for this scope.
 
-### 2. Purchasing and suppliers
+### 2. Service
 
-- [ ] Supplier master, contacts, terms, currencies and approved product relationships.
-- [ ] Purchase request, approval, request for quotation and supplier comparison.
-- [ ] Local purchase order with revisions and approval limits.
-- [ ] Incoming shipment, goods receipt, inspection, variance and quarantine.
-- [ ] Supplier invoice matching against PO and receipt before accounts payment.
-- [ ] Lead-time, fill-rate and price history.
+- [ ] Signed machine delivery creates an installation record.
+- [ ] HOD assignment records the assigned employee and timestamp.
+- [ ] Installation completion records the employee and timestamp and retains the installation PDF.
+- [ ] Installation completion creates the maintenance schedule.
+- [ ] HOD service assignment records the assigned employee and timestamp.
+- [ ] Service completion records the employee and timestamp and retains the service PDF.
+- [ ] Maintenance records are retained as PDFs.
 
-### 3. Inventory and godowns
+### Out of current workflow scope
 
-- [x] Product, carton and individual-unit model.
-- [x] Godown-to-Haadi transfer and receipt model.
-- [x] Haadi carton opening and individual client issue.
-- [ ] Complete godown master and opening physical counts.
-- [ ] Machine serials, warranties and ownership history.
-- [ ] Reservations, picking, packing and dispatch linkage to sales orders.
-- [ ] Cycle counts, full stock counts, variance approval and stock reconciliation.
-- [ ] Returns, expiry, damage, quarantine release and disposal.
-- [ ] Reorder levels, purchase suggestions and demand planning after clean history exists.
+- Purchasing
+- General ledger
+- Suppliers
+- Returns
 
-### 4. Service and engineering
+## Recommended delivery order for the current scope
 
-- [ ] Installation case created from delivered equipment.
-- [ ] Engineer assignment, schedule and customer/site contacts.
-- [ ] Installation checklist, photos, serial numbers and customer signature.
-- [ ] Service request, diagnosis, parts used, labour and visit history.
-- [ ] Service report PDF based on the existing approved form.
-- [ ] Warranty, preventive maintenance schedule and equipment service history.
-
-### 5. Finance and integrations
-
-- [ ] Confirm which system is the accounting source of truth: Tally, Sangam or ERP.
-- [ ] Define approved mappings for customers, suppliers, items, taxes, ledgers and document numbers.
-- [ ] Post invoices, receipts, supplier bills, payments and stock value without duplicate entries.
-- [ ] Reconciliation queue for rejected or mismatched postings.
-- [ ] Credit limits, ageing, receivables and payable reports.
-- [ ] Tax and statutory reports reviewed by the responsible accountant.
-
-### 6. Management and operations
-
-- [ ] Role-specific home screens and task queues.
-- [ ] Notifications and escalations with ownership and due dates.
-- [ ] Searchable attachments for quotations, delivery, installation, service, returns and counts.
-- [ ] Sales, inventory, service, purchasing and finance dashboards.
-- [ ] Export controls and personally identifiable information access logs.
-- [ ] Training material, user acceptance testing, sign-off and phased rollout.
-
-## Recommended delivery order
-
-1. Finish clean clients, products, godowns and verified opening inventory.
-2. Complete server migration and prove the 70-user launch targets.
-3. Build lead → pro forma → acceptance → order → stock reservation.
-4. Build Haadi packing → dispatch → delivery.
-5. Build service and installation reports.
-6. Build purchasing → receiving → supplier invoice matching.
-7. Integrate the approved accounting source of truth.
-8. Add forecasting and management analytics only after transaction history is reliable.
+1. Complete server migration and prove the launch security, backup and load targets.
+2. Complete sales draft, revision, acceptance, submission, Accounts approval and PDF records.
+3. Complete tax-invoice creation and the downstairs sales/packing queue.
+4. Complete packing, ready-for-delivery, out-for-delivery and signed-delivery-note transitions and PDFs.
+5. Connect signed machine delivery to installation creation and HOD assignment.
+6. Complete installation, maintenance scheduling, service assignment and service completion with employee/timestamp history and PDFs.
+7. Run end-to-end acceptance tests for these two workflows only.
 
 ## Information still needed from management
 

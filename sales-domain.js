@@ -17,7 +17,16 @@ function proformaLineTotal(line){
  return {gross,discount,tax,total:gross-discount+tax};
 }
 function proformaNextActions(status){return ({draft:['send','cancel'],sent:['accept','revise','reject','cancel'],accepted:[],rejected:[],cancelled:[]})[status]||[]}
-function deliveryNextActions(status){return ({draft:['ready','cancel'],ready:['dispatch','cancel'],out_for_delivery:['deliver'],delivered:[],cancelled:[]})[status]||[]}
+function deliveryNextActions(status){return ({
+ accounts_approved:['tax_invoice','cancel'],
+ tax_invoice_created:['send_to_sales','cancel'],
+ sent_to_sales:['start_packing','cancel'],
+ packing:['ready','cancel'],
+ ready:['dispatch','cancel'],
+ out_for_delivery:['deliver'],
+ delivered:[],
+ cancelled:[]
+})[status]||[]}
 function remainingDeliveryQuantity(proformaLine,deliveryLines,deliveryNotes){
  const active=new Set(deliveryNotes.filter(note=>note.status!=='cancelled').map(note=>note.id));
  const allocated=deliveryLines.filter(line=>line.proforma_line_id===proformaLine.id&&active.has(line.delivery_note_id)).reduce((sum,line)=>sum+line.quantity,0);
