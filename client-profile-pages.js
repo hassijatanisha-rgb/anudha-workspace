@@ -1,5 +1,6 @@
 'use strict';
-let profileTab='contacts';
+let profileTab='contacts',branchHistoryMonth='';
+const branchHistoryCache=new Map();
 function readProfileRoute(){
  const match=location.hash.match(/^#\/(clients|client|branch)(?:\/([^/?#]+))?\/?$/);
  if(!match||match[1]==='clients')return {kind:'clients',id:''};
@@ -16,6 +17,37 @@ window.addEventListener('hashchange',()=>{
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-profile-tab]');if(!button||busy)return;
  profileTab=button.dataset.profileTab;page=0;profileView();
+ if(profileTab==='history'&&selected&&!branchHistoryCache.has(selected))run(()=>loadBranchHistory(selected));
+});
+async function loadBranchHistory(organizationId,force=false){
+ if(!force&&branchHistoryCache.has(organizationId))return;
+ if(!inventoryLoaded)await loadInventoryOperations();
+ if(!inventoryLoaded)throw Error(inventoryLoadError||'Inventory history is unavailable.');
+ const result=await client.from('inventory_issues').select('*').eq('organization_id',organizationId).order('issued_on',{ascending:false}).limit(1000);
+ if(result.error)throw result.error;
+ branchHistoryCache.set(organizationId,result.data||[]);
+ if(profileTab==='history'&&selected===organizationId)profileView();
+}
+function historyCategory(issue){return catalogCategoryOf(inventoryProduct(issue.product_id))}
+function historyCategoryLabel(category){return catalogLabel(category==='non_stock'?'non_stock':category)}
+function historyMonthLabel(value){const [year,month]=value.split('-').map(Number);return new Intl.DateTimeFormat(undefined,{month:'long',year:'numeric'}).format(new Date(year,month-1,1))}
+function branchConsumerHistory(o){
+ if(!branchHistoryCache.has(o.id))return '<div class="card empty"><h2>Consumer history</h2><p>Loading real issued and delivered items for this branch…</p></div>';
+ const allRows=branchHistoryCache.get(o.id),months=[...new Set(allRows.map(row=>String(row.issued_on).slice(0,7)))].sort().reverse();
+ if(branchHistoryMonth&&!months.includes(branchHistoryMonth))branchHistoryMonth='';
+ const rows=branchHistoryMonth?allRows.filter(row=>String(row.issued_on).startsWith(branchHistoryMonth)):allRows;
+ const categories=['machines','reagents','consumables','spares'];
+ const totals=new Map(categories.map(category=>[category,0]));
+ let other=0;for(const row of rows){const category=historyCategory(row);if(totals.has(category))totals.set(category,totals.get(category)+row.quantity);else other+=row.quantity;}
+ return `<div class="heading"><div><h2>Consumer history</h2><p class="muted">Real items issued or delivered to ${esc(o.name)}. Filter by month; every row keeps its delivery or sale reference.</p></div><button type="button" id="refreshBranchHistory">Refresh history</button></div><label class="directory-search"><span>Month</span><select id="branchHistoryMonth"><option value="">All months</option>${months.map(month=>`<option value="${month}" ${month===branchHistoryMonth?'selected':''}>${esc(historyMonthLabel(month))}</option>`).join('')}</select></label><div class="inventory-metrics">${categories.map(category=>`<div><small>${esc(historyCategoryLabel(category))}</small><strong>${totals.get(category)}</strong></div>`).join('')}${other?`<div><small>Other / not sorted yet</small><strong>${other}</strong></div>`:''}</div><section class="card"><div class="heading"><div><h3>Issued items</h3><p class="muted">${rows.length} record${rows.length===1?'':'s'}${allRows.length>=1000?' · first 1,000 shown':''}</p></div></div>${rows.map(row=>{const product=inventoryProduct(row.product_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(historyCategoryLabel(historyCategory(row)))} · ${esc(row.reference)}${row.reason?' · '+esc(row.reason):''}</small></div><div class="activity-change"><strong>${row.quantity}</strong><small>${esc(row.issued_on)}</small></div></article>`}).join('')||'<p class="empty">No issued or delivered items are recorded for this branch yet.</p>'}</section>`;
+}
+document.addEventListener('change',event=>{
+ if(event.target.id!=='branchHistoryMonth')return;
+ branchHistoryMonth=event.target.value;profileView();
+});
+document.addEventListener('click',event=>{
+ if(event.target.id!=='refreshBranchHistory'||busy)return;
+ run(()=>loadBranchHistory(selected,true));
 });
 function profileApproval(o,isParent=false){
  const scope=isParent?familyIds(o):new Set([o.id]);
@@ -57,7 +89,8 @@ function profileBranch(o){
  const rows=sortedContacts(ownContacts.filter(c=>inContactView(c,filter))),pages=Math.max(1,Math.ceil(rows.length/30));page=Math.min(Math.max(page,0),pages-1);
  const tabs=[['contacts','Contacts'],['orders','Active orders'],['leads','Leads'],['service','Service'],['history','Consumer history']];
  const activeTab=tabs.find(([id])=>id===profileTab)||tabs[0];
- $('#content').innerHTML=`<section class="client-pages"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="#/clients">Clients</a><span aria-hidden="true">/</span><a href="#/client/${esc(parent.id)}">${esc(parent.name)}</a><span aria-hidden="true">/</span><span aria-current="page">${esc(o.name)} · ${esc(o.location||'Location missing')}</span></nav><section class="account-head ${needsRevision(o)?'incomplete':''}"><small>BRANCH PROFILE</small><h1>${esc(o.name||'Branch name missing')}</h1><p class="branch-location"><strong>${esc(o.location||'Location missing')}</strong> · ${esc(o.type||'Organisation type missing')}</p>${profileApproval(o)}<div class="actions">${me.role==='owner'?`<button data-edit-account="${esc(o.id)}">Edit branch profile</button><button class="danger" data-delete-org="${esc(o.id)}">Delete branch</button>${o.parent_id?'<button id="ungroupAccount">Remove branch from group</button>':''}`:''}</div></section><div class="profile-sections" role="tablist" aria-label="Branch sections">${tabs.map(([id,label])=>`<button role="tab" id="profile-tab-${id}" aria-selected="${profileTab===id}" aria-controls="profile-panel" data-profile-tab="${id}" class="${profileTab===id?'current':''}">${label}</button>`).join('')}</div><section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab-${activeTab[0]}">${profileTab==='contacts'?`<div class="heading"><div><h2>Branch contacts</h2><p class="muted">Contacts for ${esc(o.location||o.name)} only · email is optional.</p></div><button id="newContact">+ Contact</button></div><div class="tabs" aria-label="Contact filters">${[['all','All contacts'],['revision','Needs revision']].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label} <small>${ownContacts.filter(c=>inContactView(c,id)).length}</small></button>`).join('')}</div>${rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>'}${profilePagination(rows.length,pages,'contacts')}`:`<div class="card empty"><h2>${activeTab[1]}</h2><p>Not yet implemented.</p></div>`}</section></section>`;
+ const panel=profileTab==='contacts'?`<div class="heading"><div><h2>Branch contacts</h2><p class="muted">Contacts for ${esc(o.location||o.name)} only · email is optional.</p></div><button id="newContact">+ Contact</button></div><div class="tabs" aria-label="Contact filters">${[['all','All contacts'],['revision','Needs revision']].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label} <small>${ownContacts.filter(c=>inContactView(c,id)).length}</small></button>`).join('')}</div>${rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>'}${profilePagination(rows.length,pages,'contacts')}`:profileTab==='history'?branchConsumerHistory(o):`<div class="card empty"><h2>${activeTab[1]}</h2><p>Not yet implemented.</p></div>`;
+ $('#content').innerHTML=`<section class="client-pages"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="#/clients">Clients</a><span aria-hidden="true">/</span><a href="#/client/${esc(parent.id)}">${esc(parent.name)}</a><span aria-hidden="true">/</span><span aria-current="page">${esc(o.name)} · ${esc(o.location||'Location missing')}</span></nav><section class="account-head ${needsRevision(o)?'incomplete':''}"><small>BRANCH PROFILE</small><h1>${esc(o.name||'Branch name missing')}</h1><p class="branch-location"><strong>${esc(o.location||'Location missing')}</strong> · ${esc(o.type||'Organisation type missing')}</p>${profileApproval(o)}<div class="actions">${me.role==='owner'?`<button data-edit-account="${esc(o.id)}">Edit branch profile</button><button class="danger" data-delete-org="${esc(o.id)}">Delete branch</button>${o.parent_id?'<button id="ungroupAccount">Remove branch from group</button>':''}`:''}</div></section><div class="profile-sections" role="tablist" aria-label="Branch sections">${tabs.map(([id,label])=>`<button role="tab" id="profile-tab-${id}" aria-selected="${profileTab===id}" aria-controls="profile-panel" data-profile-tab="${id}" class="${profileTab===id?'current':''}">${label}</button>`).join('')}</div><section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab-${activeTab[0]}">${panel}</section></section>`;
 }
 function profileView(){
  const route=readProfileRoute();

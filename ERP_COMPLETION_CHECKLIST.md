@@ -2,11 +2,44 @@
 
 Status key: **Working**, **Partial**, **Not started**, **Server week**.
 
+## Old ERP vs new ERP feature matrix
+
+| Business feature | Old ERP had | New ERP has now | New ERP still needs |
+| --- | --- | --- | --- |
+| Staff login and access | Individual logins, roles and permissions; some permission screens were frontend-only | **Working:** individual Supabase login, active staff check, owner/staff access | Staff roster, departments, job roles, location permissions, MFA, password reset and offboarding |
+| Client groups and branches | Customer directory and portfolio screens; several histories used sample data | **Working:** real client groups, branches, contacts, search, approval and revision flags | Server-side search/paging and final data cleanup |
+| Contact cleanup | Contact viewing/editing with duplicate review | **Working:** one Needs revision queue, exact error reasons, edit, complete, recoverable delete and restore | Bulk assignment, progress reporting and manager review |
+| Leads and opportunities | Lead stages, assignment and conversion screens; conversion had previously required repair | **Not started:** branch tab is present only | Real lead records, owner, stage, value, next action, history and conversion into Pro forma without retyping |
+| Pro forma invoice | Pro forma workflow, approvals and stock-check steps; earlier lifecycle bugs were repaired in the old codebase | **Working:** database-backed draft/revision/send/accept/reject/cancel, printable document and acceptance proof | Create from a lead, approval limits, attachments and customer-send connector |
+| Sales order and stock reservation | Order handoff, stock check, packing and delivery workflows | **Partial:** accepted Pro forma feeds delivery; Haadi lot availability is checked | Explicit sales order, reservation before dispatch, partial shortage workflow and supplier-order handoff |
+| Delivery | Packing checklist, dispatch, delivery proof and customer delivery views | **Working:** accepted Pro forma → Accounts reference → Haadi lot selection → ready → dispatch → signed proof | Durable photo/file uploads, route/driver fields, customer notification and returns link |
+| Products | Product directory, compatibility and packing rules; parts of inventory used static data | **Working:** 4,247 imported products, source review, categories and stock-code editing | Complete classification, verified carton sizes, machine compatibility and serial tracking |
+| Inventory and godowns | Stock lookup/history, packing, receipt and godown views; some screens were static | **Working foundation:** locations, physical counts, transfers, Haadi receipt, carton opening, client issue, quarantine and movement history | Opening counts, reservations, serials, cycle counts, expiry/damage resolution, reorder alerts |
+| Customer consumption history | Customer portfolio purchase/history views, some backed by fixed examples | **Working:** branch history queries real issued/delivered items and totals them by month, machine, reagent, consumable and spare | Server-side export and longer-history paging after the server move |
+| Service and installation | Service cases, engineer tasks, reports, signatures and maintenance; core service handler passed isolated tests | **Not started:** branch tab is present only | Delivery-created installation case, assignment, checklist, parts/labour, signatures, approved PDF and maintenance schedule |
+| Purchasing and suppliers | Purchasing/escalation screens; some actions only saved activity summaries | **Not started** | Supplier master, purchase request, RFQ comparison, LPO, receipt/inspection, three-way invoice matching and history |
+| Returns | Return screens and printable output; stock movement was not fully connected in old UI | **Not started** | Linked return request, approval, quarantine/stock movement, replacement/credit outcome and PDF |
+| Finance and accounting | Balanced journals, invoice/payment primitives and reports; not a complete accounting package | **Partial:** Accounts/tax-invoice reference gates delivery | Decide Tally/Sangam/ERP source of truth, mappings, posting, reconciliation, ageing, credit limits and approved tax reporting |
+| Tasks and notifications | Company tasks, assignments, calendar and queued messages; several dashboard totals were static | **Not started** | Live role queues, due dates, escalation, record links, email/WhatsApp connectors and delivery status |
+| Documents and attachments | Pro forma, delivery, return and service PDFs plus evidence/photo screens | **Partial:** printable Pro forma and delivery records | Durable private file storage, approved templates, versioning, access rules and searchable attachments |
+| Dashboards and reports | Role dashboards and weekly/customer reports; some used samples | **Not started** | Sales, stock, service, purchasing and finance dashboards using live data only |
+| Audit, backup and server operations | Audit/security foundations and deployment documents | **Partial:** inventory and sales transition histories exist | Management audit viewer/export, full write audit, monitoring, encrypted backups, restore drill and 70-user load proof |
+
+### Connected build sequence
+
+1. Leads → Pro forma invoice without retyping.
+2. Accepted Pro forma → sales order → stock reservation/shortage.
+3. Haadi pick/pack → dispatch → delivery proof → client consumption history.
+4. Delivered machine → installation/service case → engineer report → equipment history.
+5. Stock shortage → purchase request → supplier order → receipt → inventory.
+6. Approved sales/purchase events → Tally/Sangam handoff → reconciliation.
+7. Live tasks, notifications, dashboards, audit and reports across every workflow.
+
 ## What is working now
 
 - **Working — Individual login:** no public signup; active staff membership is checked before business data loads.
 - **Working — Client directory:** client groups, branches, contacts, search, revision queue, approval, edit, recoverable delete and restore.
-- **Working — Product master:** 4,247 imported product records, source review, duplicate review, category confirmation and SKU editing.
+- **Working — Product master:** 4,247 imported product records, source review, duplicate review, category confirmation and stock-code editing.
 - **Working — Inventory foundation:** locations, carton definitions, physical opening counts, count corrections, transfers, Haadi receipt, carton opening, individual client issues, quarantine and immutable movement history.
 - **Working — Concurrent inventory writes:** stock-changing database functions lock rows and reject stale versions instead of silently overwriting another employee's work.
 - **Partial — Permissions:** owner and staff exist, but department, job-role and godown-specific access do not.
@@ -19,7 +52,7 @@ Status key: **Working**, **Partial**, **Not started**, **Server week**.
 
 - [ ] Finish client/contact cleanup and approve the records staff may use.
 - [ ] Confirm every real godown and dispatch location; do not create guessed locations.
-- [ ] Classify the active product list and assign canonical SKUs.
+- [ ] Classify the active product list and assign clear stock codes.
 - [ ] Verify carton/unit definitions from supplier labels or approved documentation.
 - [ ] Enter opening stock from signed physical counts, including batch and expiry where applicable.
 - [ ] Add serial-number tracking for machines and serialized spares.

@@ -53,7 +53,7 @@ function openOrganizationForm(o=null){
 function openProductForm(p=null){
  if(!p&&me?.role!=='owner')throw Error('Owner access is required to add products.');
  const id=p?.id||crypto.randomUUID();
- return actionForm(p?'Edit product':'Add product',field('name','Product name',p?.name||'','text',true)+field('sku','SKU · optional',p?.sku||''),async values=>{
+ return actionForm(p?'Edit product':'Add product',field('name','Product name',p?.name||'','text',true)+field('sku','Stock code · optional',p?.sku||''),async values=>{
   const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('import_records',{p_products:[{id,name:values.name,sku:values.sku,source:{origin:'manual'}}]});
   if(r.error)throw r.error;
   if(p){const row=Array.isArray(r.data)?r.data[0]:r.data;const index=products.findIndex(x=>x.id===id);if(index>=0)products[index]=row;render()}
@@ -69,8 +69,8 @@ function openIncorrectForm(c){
 function openMatchForm(p){
  const candidates=products.filter(x=>x.id!==p.id&&normalize(x.name)===normalize(p.name));
  const current=products.find(x=>x.id===p.match_id);
- const options=candidates.map(x=>`<option value="${esc(x.id)}" ${x.id===p.match_id?'selected':''}>${esc(x.name)} · ${esc(x.sku||'No SKU')} · ${esc(x.source?.source_file||'Manual entry')} ${esc(x.source?.source_row?'row '+x.source.source_row:'')} · ${esc(x.id.slice(0,8))}</option>`).join('');
- return actionForm('Review product match',`<p>Review the exact-name candidates for <strong>${esc(p.name)}</strong>. Saving a match keeps both records separate.</p>${current?`<p>Current match: ${esc(current.name)} · ${esc(current.sku||'No SKU')}</p>`:''}<label><span>Matching product</span><select name="match_id"><option value="">Clear match · leave unreviewed</option>${options}</select></label>${candidates.length?'':'<p class="muted">No exact-name candidates found. You can clear the current match.</p>'}`,async values=>{
+ const options=candidates.map(x=>`<option value="${esc(x.id)}" ${x.id===p.match_id?'selected':''}>${esc(x.name)} · ${esc(x.sku||'No stock code')} · ${esc(x.source?.source_file||'Manual entry')} ${esc(x.source?.source_row?'row '+x.source.source_row:'')} · ${esc(x.id.slice(0,8))}</option>`).join('');
+ return actionForm('Review product match',`<p>Review the exact-name candidates for <strong>${esc(p.name)}</strong>. Saving a match keeps both records separate.</p>${current?`<p>Current match: ${esc(current.name)} · ${esc(current.sku||'No stock code')}</p>`:''}<label><span>Matching product</span><select name="match_id"><option value="">Clear match · leave unreviewed</option>${options}</select></label>${candidates.length?'':'<p class="muted">No exact-name candidates found. You can clear the current match.</p>'}`,async values=>{
   if(values.match_id&&!candidates.some(x=>x.id===values.match_id))throw Error('Choose a listed product.');
   const r=await client.rpc('set_product_match',{p_id:p.id,p_revision:p.revision,p_match_id:values.match_id||null,p_match_status:values.match_id?'confirmed':'unreviewed'});
   if(r.error)throw r.error;
