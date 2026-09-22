@@ -4,7 +4,7 @@
 const workspaceGroups=[
  {name:'Main',tone:'main',items:[
   ['Client accounts','contacts'],['Product search','inventory','catalog'],
-  ['Service calendar','service','schedule'],['To-do tasks · urgent first'],['My notes & reminders']
+  ['My calendar'],['To-do tasks · urgent first'],['My notes & reminders']
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],
