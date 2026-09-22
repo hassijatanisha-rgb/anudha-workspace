@@ -1,5 +1,7 @@
 # Anudha ERP completion checklist
 
+> Updated direction, 22 September 2026: [Legacy feature parity checklist](docs/LEGACY_FEATURE_PARITY.md) is the full reference backlog. The historical two-workflow scope below describes earlier work, not the final product. Existing “Working” labels require current runtime verification. Financial permissions are required, not deferred. Latest sales handoff is Mujtaba → Jagroop assignment, creator notification and separate Pending stock for shortages.
+
 ## Current scope: exactly two workflows
 
 This checklist is governed by [TWO_WORKFLOW_SCOPE.md](TWO_WORKFLOW_SCOPE.md). The current connected workflow scope contains only:

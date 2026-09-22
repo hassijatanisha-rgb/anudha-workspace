@@ -1,0 +1,20 @@
+/* Visual identity from the original Anudha ERP; no business data or workflow changes. */
+:root{--green:#315c32;--brand-lime:#72ad3d;--green-dark:#315c32;--ink:#243128;--muted:#6b776d;--line:#dfe7df;--canvas:#f4f7f3;color:var(--ink);background:var(--canvas)}
+body{background:var(--canvas);color:var(--ink)}
+body>header{border-top:5px solid var(--brand-lime);gap:22px;box-shadow:0 2px 12px #24312808}
+.brand{letter-spacing:0;gap:14px;flex-shrink:0}
+.brand-logo{display:block;width:153px;height:auto;max-width:45vw}
+.brand>span{font-size:12px;font-weight:600;color:var(--muted);border-left:1px solid var(--line);padding-left:14px;letter-spacing:.06em}
+#nav{flex-wrap:wrap;gap:6px;min-width:0}
+#nav button{font-size:14px}
+#nav button.active,button[type=submit],.primary-action{background:var(--green-dark);color:#fff;border-color:var(--green-dark)}
+button:hover,.button:hover{background:#edf5e8}
+#nav button.active:hover,button[type=submit]:hover,.primary-action:hover{background:#243f25;color:#fff}
+button:disabled{cursor:not-allowed}
+.account-head{background:#edf5e8}
+.card,.profile-tile{border-color:var(--line)}
+.document-brand{border-bottom:2px solid var(--brand-lime);padding-bottom:16px}
+.document-brand img{object-fit:contain}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--brand-lime);outline-offset:3px}
+@media(max-width:800px){body>header{gap:14px;padding:14px}#nav{width:100%}#identity{margin-left:0;overflow-wrap:anywhere}.brand-logo{width:140px}}
+@media print{body{background:#fff}.document-brand{border-color:#315c32}}

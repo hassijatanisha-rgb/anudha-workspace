@@ -1,5 +1,7 @@
 # Anudha ERP — current two-workflow scope
 
+> Historical scope. The user's 22 September direction is tracked in [Legacy feature parity](docs/LEGACY_FEATURE_PARITY.md). It retains these workflows but adds the confirmed partial-invoice → Jagroop-assigned packing handoff. Do not treat the older deferred-role statements below as authorization to expose financial data.
+
 The current workflow scope contains exactly two connected workflows: sales and service.
 
 ## 1. Sales workflow
