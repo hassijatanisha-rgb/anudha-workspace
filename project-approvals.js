@@ -24,6 +24,7 @@ async function projectApprovals(){
   if(attempt){form.elements.answer.value=attempt.p_answer;form.elements.answer.readOnly=true;form.querySelector('button').textContent='Retry same answer';}
   form.onsubmit=async event=>{event.preventDefault();if(saving)return;
    const status=form.querySelector('.approvalStatus'),button=form.querySelector('button'),input=form.elements.answer;
+   if(view!=='approvals'||load!==approvalLoad||me?.role!=='owner'||(me?.user_id||me?.id)!==actor){status.textContent='Your page or session changed. Reopen Awaiting approval before answering.';button.disabled=true;return;}
    if(!attempt)attempt={p_id:crypto.randomUUID(),p_question_id:q.id,p_version:q.version,p_answer:input.value.trim()};
    if(!attempt.p_answer){attempt=null;status.textContent='Enter your decision.';return;}
    approvalAttempts.set(key,attempt);saving=true;button.disabled=true;input.readOnly=true;status.textContent='Saving…';
