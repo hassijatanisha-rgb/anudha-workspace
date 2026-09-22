@@ -14,6 +14,6 @@ assert.doesNotMatch(app,/<span>Review status<\/span>/,'Staff should not have to 
 assert.ok((app.match(/>Edit contact<\/button>/g)||[]).length>=2,'Both contact views should provide a clear Edit contact action.');
 assert.ok((app.match(/data-delete-contact=/g)||[]).length>=2,'Both contact views should provide a recoverable Delete contact action.');
 assert.match(app,/>Mark complete ✓<\/button>/,'Contacts needing review should provide a clear completion action.');
-assert.match(html,/<button data-view="review">Fix contacts<\/button>/);
+assert.match(profiles,/<button data-view="review">Fix contacts<\/button>/);
 
 console.log('PASS: contact UI exposes only All contacts and Needs revision.');

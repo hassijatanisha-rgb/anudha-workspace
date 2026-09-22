@@ -7,6 +7,13 @@ body>header{border-top:5px solid var(--brand-lime);gap:22px;box-shadow:0 2px 12p
 .brand>span{font-size:12px;font-weight:600;color:var(--muted);border-left:1px solid var(--line);padding-left:14px;letter-spacing:.06em}
 #nav{flex-wrap:wrap;gap:6px;min-width:0}
 #nav button{font-size:14px}
+#systemNav{position:relative}
+#systemNav summary{cursor:pointer;padding:10px 14px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff}
+#systemNav summary:focus-visible{outline:3px solid var(--brand-lime);outline-offset:3px}
+#systemNav:has(button.active)>summary{background:var(--green-dark);color:#fff}
+.system-links{position:absolute;right:0;top:100%;z-index:20;min-width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #24312820;display:flex;flex-direction:column;gap:6px}
+.system-links button{text-align:left}
+@media(max-width:800px){.system-links{position:static;box-shadow:none;margin-top:6px}}
 #nav button.active,button[type=submit],.primary-action{background:var(--green-dark);color:#fff;border-color:var(--green-dark)}
 button:hover,.button:hover{background:#edf5e8}
 #nav button.active:hover,button[type=submit]:hover,.primary-action:hover{background:#243f25;color:#fff}
