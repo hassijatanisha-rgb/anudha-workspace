@@ -1,5 +1,15 @@
 'use strict';
 
+function inventoryAvailableTotals(lots){
+ return lots.filter(lot=>lot.stock_status==='available').reduce((sum,lot)=>{
+  const cartons=lot.sealed_cartons,loose=lot.loose_units,reserved=lot.reserved_units;
+  if(![cartons,loose,reserved].every(value=>Number.isSafeInteger(value)&&value>=0)||reserved>loose)throw Error('Invalid stock or reservation count. Refresh and review this lot.');
+  sum.cartons+=cartons;sum.loose+=loose-reserved;sum.reserved+=reserved;
+  if(!Object.values(sum).every(Number.isSafeInteger))throw Error('Stock totals exceed the supported range.');
+  return sum;
+ },{cartons:0,loose:0,reserved:0});
+}
+
 function inventoryInteger(value,label){
  if(!Number.isSafeInteger(value)||value<0)throw Error(`${label} must be a whole number.`);
  return value;

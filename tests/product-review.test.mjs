@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const c=vm.createContext({});vm.runInContext(readFileSync(new URL('../product-review.js',import.meta.url),'utf8'),c);
+const valid={name:'Analyzer',company:'Maker',specification:'Model A',sale_status:'active',batch_required:false,expiry_required:false};
+test('Missing details and applicability stay flagged',()=>{assert.equal(c.productReviewIssues({}).length,6)});
+test('Negative reported quantity is preserved but never saleable',()=>{const r=c.productStockReview(valid,{quantity:-4,unit:'PCS',verified:true});assert.equal(r.reported,-4);assert.equal(r.saleable,null);assert.ok(r.issues.some(x=>x.includes('Negative')))});
+test('Unknown quantity is not zero and boxes are not pieces',()=>{assert.equal(c.productStockReview(valid,{quantity:null,unit:'PCS',verified:true}).saleable,null);assert.equal(c.productStockReview(valid,{quantity:4,unit:'BOX',verified:true}).saleable,null)});
+test('Inactive serviced product remains visible but not saleable',()=>{assert.equal(c.productStockReview({...valid,sale_status:'inactive_serviced'},{quantity:4,unit:'PCS',verified:true}).saleable,0)});
+test('Batch and expiry required only when applicable',()=>{assert.equal(c.productStockReview(valid,{quantity:4,unit:'PCS',verified:true}).saleable,4);assert.equal(c.productStockReview({...valid,batch_required:true,expiry_required:true},{quantity:4,unit:'PCS',verified:true}).saleable,null)});
+test('Unverified or expired stock stays blocked',()=>{assert.equal(c.productStockReview(valid,{quantity:4,unit:'PCS'}).saleable,null);assert.equal(c.productStockReview({...valid,expiry_required:true},{quantity:4,unit:'PCS',verified:true,expiry:'2020-01-01'},'2026-09-23').saleable,null)});

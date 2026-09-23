@@ -1,7 +1,7 @@
 'use strict';
 
 let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventorySearch='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[],inventoryMovements=[],inventoryClassifications=[],inventoryImportPreview=null,inventoryImportFileName='';
-const inventoryTabs=[['stock','Stock'],['transfers','Move cartons'],['locations','Locations'],['catalog','Products']];
+const inventoryTabs=[['stock','Stock'],['review','Tally stock review'],['transfers','Move cartons'],['locations','Locations'],['catalog','Products']];
 function inventoryProduct(id){return products.find(row=>row.id===id)||{name:'Unknown product',sku:''}}
 function inventoryLocation(id){return inventoryLocations.find(row=>row.id===id)||{name:'Unknown godown',code:''}}
 function inventoryPack(id){return inventoryPacks.find(row=>row.id===id)||{base_unit:'unit',units_per_carton:0,version:0}}
@@ -14,6 +14,8 @@ function inventoryProductChoices(){return products.slice().sort((a,b)=>a.name.lo
 function inventoryProductFromChoice(choice){return products.find(product=>inventoryProductChoice(product)===choice)}
 async function loadInventoryOperations(){
  inventoryLoadError='';
+ productDetailReviews=new Map();
+ try{const reviews=await all('product_detail_reviews','*');for(const row of reviews){if((productDetailReviews.get(row.product_id)?.version||0)<row.version)productDetailReviews.set(row.product_id,row);}}catch(error){/* Uninstalled review schema must not disable existing inventory. The correction form reports this explicitly. */}
  const requests=await Promise.all([
   client.from('inventory_locations').select('*').order('name'),
   client.from('product_pack_definitions').select('*').order('created_at',{ascending:false}),
@@ -43,7 +45,7 @@ function inventoryMovementCard(movement){const lot=inventoryLots.find(x=>x.id===
 function inventoryIssueCard(issue){const product=inventoryProduct(issue.product_id),organization=orgIndex.get(issue.organization_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(organization?.name||'Client unavailable')} · ${esc(issue.reference)}</small></div><div class="activity-change"><strong>${issue.quantity}</strong><small>${esc(issue.issued_on)}</small></div></article>`}
 function inventoryStock(){
  const available=inventoryLots.filter(x=>x.stock_status==='available'),quarantine=inventoryLots.filter(x=>x.stock_status==='quarantine');
- const totalCartons=available.reduce((n,x)=>n+x.sealed_cartons,0),totalLoose=available.reduce((n,x)=>n+x.loose_units,0);
+ const {cartons:totalCartons,loose:totalLoose}=inventoryAvailableTotals(available);
  const q=inventorySearch.trim().toLowerCase(),shown=available.filter(lot=>{const product=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id);return `${product.name} ${product.sku||''} ${place.name} ${place.code} ${lot.batch_number}`.toLowerCase().includes(q)});
  return `${inventoryHeader()}${inventorySetupProgress()}${me.role==='owner'?inventoryImportPanel():''}<div class="inventory-metrics"><div><small>Available sealed cartons</small><strong>${totalCartons}</strong></div><div><small>Available loose units</small><strong>${totalLoose}</strong></div><div><small>Quarantined lots</small><strong>${quarantine.length}</strong></div><div><small>Active locations</small><strong>${inventoryLocations.filter(x=>x.active).length}</strong></div></div>
  ${me.role==='owner'?`<details class="card"><summary>1. Set a product carton size</summary><form data-inventory-action="pack"><div class="grid"><label class="wide"><span>Find product</span><input name="productChoice" list="inventoryProductChoices" placeholder="Start typing a product name" autocomplete="off" required><datalist id="inventoryProductChoices">${inventoryProductChoices()}</datalist></label><label><span>Individual unit name</span><input name="baseUnit" placeholder="piece, bottle, test" required maxlength="40"></label><label><span>Units in one sealed carton</span><input name="unitsPerCarton" type="number" min="1" step="1" required></label><label class="wide"><span>Where was this carton size verified?</span><textarea name="reason" minlength="5" placeholder="Example: supplier carton label checked by…" required></textarea></label></div><button type="submit">Save carton size</button></form></details>
@@ -67,6 +69,7 @@ function inventoryTransferCard(t){
 function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='owner'?`<section class="card"><h2>Add godown or Haadi dispatch hub</h2><form data-inventory-action="location"><div class="grid"><label><span>Name</span><input name="name" required maxlength="120" placeholder="Haadi"></label><label><span>Short code</span><input name="code" required maxlength="30" placeholder="HAA"></label><label><span>Type</span><select name="locationType"><option value="godown">Godown · sealed-carton storage</option><option value="dispatch_hub">Dispatch hub · may open cartons</option></select></label></div><button type="submit">Save location</button></form></section>`:''}<section class="card"><h2>Storage locations</h2>${inventoryLocations.map(x=>`<article class="contact"><div class="heading"><div><h3>${esc(x.name)}</h3><p>${esc(x.code)} · ${x.is_dispatch_hub?'Dispatch hub; cartons can be opened here':'Godown; sealed-carton storage'}</p></div><span class="tag">${x.active?'Active':'Inactive'}</span></div></article>`).join('')||'<p class="empty">No godowns have been entered yet.</p>'}</section>`}
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
+ if(inventorySection==='review'){if(!inventoryLoaded||force)await loadInventoryOperations();await tallyStockScreen();return;}
  if(inventorySection==='catalog'){if(!inventoryLoaded)await loadInventoryOperations();catalogInventory();return;}
  $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
  if(force||!inventoryLoaded)await loadInventoryOperations();
