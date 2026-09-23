@@ -7,7 +7,7 @@ const workspaceGroups=[
   ['My calendar'],['To-do tasks · urgent first'],['My notes & reminders']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],
+  ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],['Accounting forms','accounting'],
   ['Delivery progress','sales','delivery'],['Pending stock orders'],['Inquiries'],['Lead / Opportunity']
  ]},
  {name:'Service',tone:'service',items:[
