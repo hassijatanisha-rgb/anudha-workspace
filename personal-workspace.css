@@ -1,0 +1,12 @@
+.personal-entry.company-event{background:#e4f2dc;border:2px solid #315c32}
+.personal-entry.personal-event{background:#fff;border:1px solid #a7b2aa}
+.personal-entry{margin-block:16px}
+.personal-entry p{white-space:pre-wrap;overflow-wrap:anywhere}
+.personal-entry h2{font-size:19px;overflow-wrap:anywhere}
+.personal-entry .tag{margin-right:12px}
+.personal-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-block:16px;min-width:560px}
+.calendar-day{min-height:95px;border:1px solid #dfe7df;border-radius:4px;padding:8px;background:#fff}
+.calendar-day h3{font-size:14px}.calendar-day p{font-size:12px;overflow-wrap:anywhere;padding:4px}
+.calendar-day .company-event{background:#e4f2dc;border-left:3px solid #315c32}
+.calendar-day .personal-event{background:white;border:1px solid #a7b2aa}
+#content:has(.personal-calendar){overflow-x:auto}

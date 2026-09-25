@@ -4,7 +4,7 @@
 const workspaceGroups=[
  {name:'Main',tone:'main',items:[
   ['Client accounts','contacts'],['Product search','inventory','catalog'],
-  ['My calendar'],['To-do tasks · urgent first'],['My notes & reminders']
+  ['My calendar','personal','event'],['To-do tasks · urgent first','personal','task'],['My notes & reminders','personal','note']
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],['Accounting forms','accounting'],
@@ -34,6 +34,7 @@ function installWorkspaceNavigation(){
   const button=event.target.closest('#nav [data-view]');
   if(!button||busy)return;
   const section=button.dataset.workspaceSection;
+  if(button.dataset.view==='personal'){personalSection=section||'event';personalPage=0;}
   if(button.dataset.view==='sales'){
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
@@ -45,7 +46,7 @@ function installWorkspaceNavigation(){
 function syncWorkspaceNavigation(){
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
