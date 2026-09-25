@@ -30,10 +30,10 @@ async function fixture(t){
   window.products=[{id:'product',name:'Fixture Product',sku:'SKU'}];window.inventoryLocations=[];window.inventoryLots=[];
   window.inventoryOption=(id,label,selected=false)=>`<option value="${esc(id)}" ${selected?'selected':''}>${esc(label)}</option>`;
   window.inventoryProductChoice=p=>p.name;window.inventoryProductFromChoice=value=>products.find(p=>p.name===value);
-  window.rows=[];window.lines=[];window.calls=[];
+  window.rows=[];window.lines=[];window.calls=[];window.loads=0;
   window.client={from:table=>{
    const query={};for(const method of ['select','order','limit'])query[method]=()=>query;
-   query.then=(ok,bad)=>Promise.resolve({data:structuredClone(table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[])}).then(ok,bad);return query;
+   query.then=(ok,bad)=>{loads++;return Promise.resolve({data:structuredClone(table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[])}).then(ok,bad)};return query;
   },rpc:async(name,args)=>{
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
    if(window.saveError)return {error:{message:saveError}};
@@ -42,6 +42,7 @@ async function fixture(t){
     const row=rows.find(row=>row.id===args.p_id);row.status=args.p_action==='accept'?'accepted':args.p_action==='send'?'sent':'draft';row.version++;return {data:structuredClone(row)};
    }
    const row={id:args.p_id,version:args.p_expected_version+1,revision:args.p_expected_version+1,document_number:'PF-FIXTURE',status:'draft',organization_id:args.p_organization_id,contact_id:args.p_contact_id,currency:args.p_currency,valid_until:args.p_valid_until,delivery_period:args.p_delivery_period,payment_terms:args.p_payment_terms,notes:args.p_notes,subtotal_minor:10000,discount_minor:0,tax_minor:0,total_minor:10000};
+   row.revision=(rows.find(r=>r.id===row.id)?.revision||0)+1;
    rows=rows.filter(r=>r.id!==row.id).concat(row);
    lines=args.p_lines.map((l,i)=>({id:'line-'+i,proforma_id:row.id,product_id:l.productId,sort_order:i,description:l.description,quantity:l.quantity,uom:l.uom,unit_price_minor:l.unitPriceMinor,discount_basis_points:l.discountBasisPoints,tax_basis_points:l.taxBasisPoints}));
    return {data:row};
@@ -95,4 +96,41 @@ acceptance('Record-sent action acknowledges manual sending; accepted submission 
  await p.locator('[data-proforma-action="accept"]').click();await p.locator('#actionFields [name="reference"]').fill('Customer LPO 42');
  await p.locator('#actionEditor [type="submit"]').click();await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
  const call=await p.evaluate(()=>calls.at(-1));assert.equal(call.name,'advance_sales_proforma');assert.equal(call.args.p_action,'accept');assert.equal(call.args.p_reference,'Customer LPO 42');
+});
+acceptance('Sent proforma returns for revision and saves changes under its original document ID',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);
+ const original=await p.evaluate(()=>structuredClone(rows[0]));
+ await p.locator('[data-proforma-action="send"]').click();await p.locator('#actionEditor [type="submit"]').click();
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ assert.equal(await p.locator('[data-edit-proforma]').count(),0);
+ await p.locator('[data-proforma-action="revise"]').click();await p.locator('#actionFields [name="reference"]').fill('Customer requested revised quantity');
+ await p.locator('#actionEditor [type="submit"]').click();await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ await p.locator('[data-edit-proforma]').click();assert.equal(await p.locator('[name="description"]').inputValue(),'Fixture description');
+ await p.locator('[name="quantity"]').fill('3');await save(p,4);
+ const result=await p.evaluate(()=>({rows,calls,lines}));assert.equal(result.rows.length,1);
+ assert.equal(result.rows[0].id,original.id);assert.equal(result.rows[0].revision,2);assert.equal(result.rows[0].version,4);
+ assert.equal(result.calls[2].args.p_action,'revise');assert.equal(result.calls[2].args.p_reference,'Customer requested revised quantity');
+ assert.equal(result.calls[3].args.p_id,original.id);assert.equal(result.calls[3].args.p_expected_version,3);assert.equal(result.calls[3].args.p_lines[0].quantity,3);
+ assert.equal(await p.locator('[data-document-card]').count(),1);assert.match(await p.locator('[data-document-card]').innerText(),/Revision 2/);
+});
+acceptance('Stale save rejection preserves edited values and original expected version',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);await p.locator('[data-edit-proforma]').click();
+ await p.locator('[name="description"]').fill('Unconfirmed change');await p.evaluate(()=>window.saveError='Pro forma changed; refresh before saving');await save(p,2);
+ assert.equal(await p.locator('[name="description"]').inputValue(),'Unconfirmed change');
+ assert.match(await p.locator('#notice').innerText(),/Pro forma changed/);
+ assert.equal(await p.locator('#proformaForm').getAttribute('data-version'),'1');
+ assert.equal(await p.evaluate(()=>rows[0].revision),1);assert.equal(await p.locator('#proformaForm [type="submit"]').isEnabled(),true);
+});
+for(const changed of ['actor','view'])acceptance(`Pending save cannot overwrite replacement page after ${changed} changes`,async t=>{
+ const p=await fixture(t);await fillEntry(p);await p.evaluate(()=>window.delaySave=true);
+ await p.locator('#proformaForm [type="submit"]').click();await p.waitForFunction(()=>typeof releaseSave==='function');
+ const loads=await p.evaluate(()=>window.loads);
+ await p.evaluate(changed=>{if(changed==='actor')me={user_id:'other',role:'staff'};else view='personal';$('#content').textContent='Replacement page';$('#notice').textContent='Replacement notice';releaseSave()},changed);
+ await p.waitForFunction(()=>pending===0);
+ assert.equal(await p.locator('#content').innerText(),'Replacement page');assert.equal(await p.locator('#notice').innerText(),'Replacement notice');assert.equal(await p.evaluate(()=>window.loads),loads);
+});
+acceptance('Print failure clears the temporary print selection',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);
+ const error=await p.evaluate(()=>{window.print=()=>{throw Error('Fixture print failure')};try{printSalesDocument(rows[0].id)}catch(error){return error.message}});
+ assert.equal(error,'Fixture print failure');assert.equal(await p.locator('.print-document').count(),0);
 });
