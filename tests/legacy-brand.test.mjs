@@ -17,3 +17,8 @@ test('theme preserves accessible dark actions, keyboard focus and wrapping navig
  assert.match(css,/focus-visible/);
  assert.match(css,/@media print/);
 });
+test('original forest sidebar keeps labelled groups, readable states and print exclusion',()=>{
+ const css=read('workspace-navigation.css');
+ assert.match(css,/background:#1f3928/);assert.match(css,/color:#e0e9df/);
+ assert.match(css,/box-shadow:inset 3px 0 #83bb41/);assert.match(css,/@media print/);
+});

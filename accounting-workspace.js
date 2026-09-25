@@ -32,6 +32,10 @@ async function accountingEditor(row,actor){
  $('#content').innerHTML=`<button id="accountingBack">← Saved drafts</button><section class="card"><p id="accountingLinkHelp">Search, then choose a linked record. Searching keeps your current selection. Links do not change the names or other text entered on the form below.</p><label for="accountingCustomerSearch">Search ${partyLabel}</label><input id="accountingCustomerSearch" type="search" autocomplete="off" aria-controls="accountingCustomer" aria-describedby="accountingLinkHelp accountingCustomerResults"><label for="accountingCustomer">Link ${partyLabel}</label><select id="accountingCustomer" aria-describedby="accountingCustomerResults"></select><p id="accountingCustomerResults" role="status" aria-atomic="true"></p><label for="accountingContactSearch">Search specific contact person</label><input id="accountingContactSearch" type="search" autocomplete="off" aria-controls="accountingContact" aria-describedby="accountingLinkHelp accountingContactResults"><label for="accountingContact">Link specific contact person</label><select id="accountingContact" aria-describedby="accountingContactResults"></select><p id="accountingContactResults" role="status" aria-atomic="true"></p><button id="accountingSave" type="button">Save draft</button><p id="accountingSaveStatus" role="status"></p></section><section id="accountingForm"></section>`;
  const target=$('#accountingForm');mountCompanyForm(target,row.kind,row.body);
  const status=$('#accountingSaveStatus');status.textContent=row.version?`Saved revision ${row.version}. Further edits are unsaved until you press Save draft.`:'New draft — not yet saved.';
+ const attachments=document.createElement('button');attachments.type='button';attachments.textContent='Upload / view documents';attachments.disabled=!row.version;
+ attachments.title=row.version?'Documents linked to this saved accounting draft':'Save the draft before attaching documents';
+ attachments.onclick=()=>run(()=>openDocumentAttachments('accounting',row.id,row.body.number||companyFormDefinition(row.kind).title));
+ if(typeof openDocumentAttachments==='function')status.after(attachments);
  function linkOptions(prefix,records,selectedId,kind){
   const result=accountingSearchLinks(records,$(`#${prefix}Search`).value,selectedId,kind);
   const unavailable=selectedId&&!result.rows.some(record=>record.id===selectedId);
@@ -62,7 +66,7 @@ async function accountingEditor(row,actor){
    if(me?.user_id!==actor||view!=='accounting'||!target.isConnected)return;
    if(result.error)throw result.error;
    const saved=Array.isArray(result.data)?result.data[0]:result.data;if(!saved?.version)throw Error('Server did not confirm the saved revision.');
-   row=saved;status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
+   row=saved;attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
    target.querySelector('[role="status"]').textContent='Draft editor. Use Save draft after each change. Printing does not save changes.';
   }catch(error){if(me?.user_id===actor&&target.isConnected)status.textContent=`Not confirmed saved: ${error.message}. Reopen the saved list to check before retrying.`;}
   finally{button.disabled=false;}

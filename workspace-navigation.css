@@ -13,3 +13,13 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
 .nav-unavailable small{display:block;font-size:11px;color:#66736d}
 @media(max-width:800px){body>header{position:static}#nav:not([hidden]){position:static;width:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}body:has(#nav:not([hidden]))>main{margin-left:0;padding:20px 16px}.nav-group{margin-bottom:8px}}
 @media print{#nav{display:none!important}body:has(#nav:not([hidden]))>main{margin-left:0;padding:0}}
+/* Original ERP identity; retain the current five-group navigation and mobile flow. */
+@media screen{
+ #nav:not([hidden]){background:#1f3928;color:#c5d4c6;border-right-color:#38533d;scrollbar-color:#6a826a #1f3928}
+ #nav .nav-group{border-left-color:var(--group-color)}
+ #nav .nav-group h2{color:#c5d4c6}
+ #nav .nav-group button{background:transparent;color:#e0e9df;border-radius:8px}
+ #nav .nav-group button:hover,#nav .nav-group button.active{background:rgba(130,188,74,.18);color:#fff}
+ #nav .nav-group button.active{border-color:transparent;box-shadow:inset 3px 0 #83bb41}
+ #nav .nav-unavailable,#nav .nav-unavailable small{color:#c5d4c6}
+}

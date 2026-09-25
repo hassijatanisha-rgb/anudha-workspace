@@ -20,6 +20,10 @@ button:hover,.button:hover{background:#edf5e8}
 button:disabled{cursor:not-allowed}
 .account-head{background:#edf5e8}
 .card,.profile-tile{border-color:var(--line)}
+.card,.profile-tile,.contact{border-radius:12px;background:#fff;box-shadow:none}
+input,select,textarea{border-color:#cfd9d0;border-radius:8px;padding:9px 11px}
+label{color:#4d5d50}
+input:focus,select:focus,textarea:focus{border-color:var(--brand-lime);box-shadow:0 0 0 3px rgba(114,173,61,.13)}
 .document-brand{border-bottom:2px solid var(--brand-lime);padding-bottom:16px}
 .document-brand img{object-fit:contain}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--brand-lime);outline-offset:3px}
