@@ -22,6 +22,9 @@ async function accountingWorkspace(){
  document.querySelectorAll('[data-accounting-new]').forEach(b=>b.onclick=()=>run(()=>accountingEditor({id:crypto.randomUUID(),kind:b.dataset.accountingNew,version:0,body:{}},actor)));
  document.querySelectorAll('[data-accounting-open]').forEach(b=>b.onclick=()=>run(()=>accountingEditor(rows.find(r=>r.id===b.dataset.accountingOpen),actor)));
  $('#accountingPrevious').onclick=()=>run(()=>{accountingPage--;return accountingWorkspace()});$('#accountingNext').onclick=()=>run(()=>{accountingPage++;return accountingWorkspace()});
+ const queue=document.createElement('section');queue.className='card';queue.id='proformaAccountingQueue';
+ $('#content').querySelector('section').before(queue);
+ await mountProformaAccountingQueue(queue,actor);
 }
 async function accountingEditor(row,actor){
  await requireAccountingAccess(client,()=>me);if(me?.user_id!==actor||view!=='accounting')return;

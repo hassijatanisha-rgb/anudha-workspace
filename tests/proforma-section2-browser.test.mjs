@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.PROFORMA_BROWSER_QA==='1';
-const sources=['sales-domain.js','sales-delivery.js','action-forms.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['company-forms.js','sales-domain.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -24,17 +24,19 @@ async function fixture(t){
   window.message=s=>$('#notice').textContent=s;
   window.pending=0;window.run=async fn=>{pending++;try{await fn()}catch(error){message(error.message)}finally{pending--}};
   window.syncWorkspaceNavigation=()=>{};window.inventoryLoaded=true;window.loadInventoryOperations=async()=>{};
-  window.companyFormBrand=()=>'<div>Fixture company brand</div>';
   window.organizations=[{id:'branch',name:'Fixture Hospital',location:'Dar'}];window.orgIndex=new Map(organizations.map(row=>[row.id,row]));
   window.contacts=[{id:'contact',organization_id:'branch',first_name:'Named',last_name:'Contact',status:'valid'}];
   window.products=[{id:'product',name:'Fixture Product',sku:'SKU'}];window.inventoryLocations=[];window.inventoryLots=[];
   window.inventoryOption=(id,label,selected=false)=>`<option value="${esc(id)}" ${selected?'selected':''}>${esc(label)}</option>`;
   window.inventoryProductChoice=p=>p.name;window.inventoryProductFromChoice=value=>products.find(p=>p.name===value);
-  window.rows=[];window.lines=[];window.calls=[];window.loads=0;
+  window.rows=[];window.lines=[];window.calls=[];window.loads=0;window.accountingAllowed=true;window.accessChecks=0;window.reads=[];
   window.client={from:table=>{
-   const query={};for(const method of ['select','order','limit'])query[method]=()=>query;
-   query.then=(ok,bad)=>{loads++;return Promise.resolve({data:structuredClone(table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[])}).then(ok,bad)};return query;
+   const query={},filters=[];let bounds=null,limit=null,single=false;
+   for(const method of ['select','order'])query[method]=()=>query;
+   query.eq=(key,value)=>{filters.push([key,value]);return query};query.range=(start,end)=>{bounds=[start,end];return query};query.limit=value=>{limit=value;return query};query.single=()=>{single=true;return query};
+   query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[];data=data.filter(row=>filters.every(([key,value])=>row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
   },rpc:async(name,args)=>{
+   if(name==='accounting_access'){accessChecks++;return {data:accountingAllowed}}
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
    if(window.saveError)return {error:{message:saveError}};
    if(window.invalidResponse)return {data:window.invalidResponse==='empty'?null:window.invalidResponse==='wrong-id'?{id:'different',version:1}:{id:args.p_id}};
@@ -133,4 +135,30 @@ acceptance('Print failure clears the temporary print selection',async t=>{
  const p=await fixture(t);await fillEntry(p);await save(p);
  const error=await p.evaluate(()=>{window.print=()=>{throw Error('Fixture print failure')};try{printSalesDocument(rows[0].id)}catch(error){return error.message}});
  assert.equal(error,'Fixture print failure');assert.equal(await p.locator('.print-document').count(),0);
+});
+acceptance('Accounting opens accepted persisted proforma from the queue with its print action',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);
+ const id=await p.evaluate(async()=>{rows[0].status='accepted';rows[0].acceptance_reference='LPO 42';rows[0].accepted_at='2026-09-25T10:00:00Z';rows.push({...rows[0],id:'draft-other',status:'draft',document_number:'PF-DRAFT'});view='accounting';await accountingWorkspace();return rows[0].id});
+ assert.equal(await p.locator('#proformaAccountingQueue [data-proforma-accounting-open]').count(),1);
+ assert.match(await p.locator('#proformaAccountingQueue').innerText(),/PF-FIXTURE/);assert.doesNotMatch(await p.locator('#proformaAccountingQueue').innerText(),/PF-DRAFT/);
+ assert.match(await p.locator('#proformaAccountingQueue').innerText(),/LPO 42/);
+ await p.locator('[data-proforma-accounting-open]').click();await p.waitForFunction(()=>pending===0&&view==='sales');
+ const card=p.locator(`[data-document-card="${id}"]`);assert.equal(await card.count(),1);assert.equal(await card.locator('[data-print-document]').getAttribute('data-print-document'),id);
+ assert.match(await card.innerText(),/PF-FIXTURE/);assert.match(await card.innerText(),/LPO 42/);assert.match(await card.locator('.company-form-brand').innerText(),/ANUDHA LIMITED/);
+ assert.equal(await p.evaluate(()=>calls.length),1);assert.ok(await p.evaluate(()=>accessChecks>=3));
+ assert.ok(await p.evaluate(()=>reads.some(read=>read.table==='sales_proformas'&&read.filters.some(([key,value])=>key==='status'&&value==='accepted'))));
+});
+acceptance('Denied accounting membership stops all accounting and queue data reads',async t=>{
+ const p=await fixture(t);const result=await p.evaluate(async()=>{view='accounting';accountingAllowed=false;const before=loads;let error;try{await accountingWorkspace()}catch(e){error=e.message}return {before,after:loads,error}});
+ assert.equal(result.after,result.before);assert.match(result.error,/restricted to approved financial users/);
+ assert.equal(await p.locator('#proformaAccountingQueue').count(),0);
+});
+acceptance('Queue and opened record escape malicious customer names and acceptance references',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);
+ const malicious='<img id="injected" src=x onerror="window.injected=true"><script>window.injected=true</script>';
+ await p.evaluate(async malicious=>{organizations[0].name=malicious;rows[0].status='accepted';rows[0].acceptance_reference=malicious;view='accounting';await accountingWorkspace()},malicious);
+ assert.ok((await p.locator('#proformaAccountingQueue').innerText()).includes(malicious));
+ assert.equal(await p.locator('#content script, #injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
+ await p.locator('[data-proforma-accounting-open]').click();await p.waitForFunction(()=>pending===0&&view==='sales');
+ assert.ok((await p.locator('[data-document-card]').innerText()).includes(malicious));assert.equal(await p.locator('#content script, #injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
 });
