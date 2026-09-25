@@ -4,7 +4,7 @@
 // Labels transcribed from the seven user-supplied accountingvouchers PDFs.
 function companyFormDefinitions(){
  const common=[['number','Document number'],['date','Date','date'],['contact','Specific contact person']];
- const shipping=[['consignee','Consignee (Ship to)'],['buyer','Buyer (Bill to)'],['reference','Reference No. & Date'],['buyer_order','Buyer’s Order No.'],['buyer_order_date','Order date','date'],['dispatch_document','Dispatch Doc No.'],['carrier','Dispatched through'],['destination','Destination'],['payment_terms','Mode / Terms of Payment'],['other_references','Other references'],['delivery_terms','Terms of Delivery'],['buyer_cst','Buyer’s CST No.']];
+ const shipping=[['consignee','Consignee (Ship to)'],['buyer','Buyer (Bill to)'],['reference','Reference No. & Date'],['buyer_order','Buyer’s Order No.'],['buyer_order_date','Order date','date'],['dispatch_document','Dispatch Doc No.'],['carrier','Dispatched through'],['destination','Destination'],['payment_terms','Mode / Terms of Payment'],['other_references','Other references'],['delivery_terms','Terms of Delivery'],['buyer_cst','Buyer’s TIN No.']];
  const voucher=[['account','Account'],['through','Through'],['less','Less'],['amount_words','Amount in words']];
  return {
   tax_invoice:{title:'Tax Invoice',source:'invoice format.pdf',fields:[...common,...shipping,['delivery_note','Delivery Note'],['delivery_note_date','Delivery Note Date','date']],columns:['description','quantity','rate','per','amount'],fiscal:true,declaration:true},

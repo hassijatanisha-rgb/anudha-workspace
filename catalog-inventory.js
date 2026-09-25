@@ -50,7 +50,7 @@ function catalogInventory(){
  const categoryRows=rows.filter(p=>catalogCategory==='all'||catalogCategory==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===catalogCategory),matches=categoryRows.filter(p=>catalogMatches(p,catalogSearch));
  $('#content').innerHTML=heading+`<div class="tabs" role="group" aria-label="Product categories">${catalogCategories.map(([category,label])=>`<button type="button" data-catalog-category="${category}" class="${category===catalogCategory?'active':''}" aria-pressed="${category===catalogCategory}">${label} <small>${rows.filter(p=>category==='all'||category==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===category).length}</small></button>`).join('')}</div><label><span>Search product name, model, company or stock code</span><input id="catalogSearch" type="search" value="${esc(catalogSearch)}" placeholder="Find a product"></label><p role="status">${matches.length} matching product${matches.length===1?'':'s'} · ${categoryRows.length} in ${esc(catalogLabel(catalogCategory).toLowerCase())}</p>`+matches.slice(0,100).map(p=>catalogProduct(p,rows)).join('')+(matches.length?'':`<div class="empty">${rows.length?'No products match this category and search.':'No product-list records have been imported yet.'}</div>`)+(matches.length>100?'<p class="warning">Showing the first 100 matches. Search to narrow the review list.</p>':'');
  $('#catalogSearch').addEventListener('input',e=>{
-  catalogSearch=e.target.value;catalogInventory();$('#catalogSearch').focus();
+  catalogSearch=e.target.value;renderSearchPreservingPosition(e.target,catalogInventory);
  });
  if(typeof bindInventoryWorkspace==='function')bindInventoryWorkspace();
 }
