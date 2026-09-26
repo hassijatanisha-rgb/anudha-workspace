@@ -1,7 +1,7 @@
 'use strict';
 
 const catalogCategories=[['review','Needs review'],['all','All products'],['machines','Machines'],['reagents','Reagents'],['consumables','Consumables'],['spares','Spares'],['non_stock','Service / non-stock'],['unclassified','Unclassified']];
-let catalogCategory='review',catalogSearch='',catalogMachineId='';
+let catalogCategory='review',catalogSearch='',catalogMachineId='',catalogSort='name';
 function catalogRows(){return products.map(reviewedCatalogProduct)}
 function catalogNameClues(name){
  const value=String(name||''),lower=value.toLowerCase();let suggestedCategory='',categoryReason='';
@@ -20,6 +20,12 @@ function catalogProductIssues(p){
  return issues;
 }
 function catalogMatches(p,query){return [p.name,p.sku,p.source?.model,p.source?.company].join(' ').toLowerCase().includes(query.trim().toLowerCase())}
+function catalogSorted(rows){return [...rows].sort((a,b)=>{
+ const issueDelta=catalogProductIssues(b).length-catalogProductIssues(a).length;
+ if(catalogSort==='issues'&&issueDelta)return issueDelta;
+ if(catalogSort==='company')return String(a.source?.company||'').localeCompare(String(b.source?.company||''))||String(a.name||'').localeCompare(String(b.name||''));
+ return String(a.name||'').localeCompare(String(b.name||''));
+})}
 function catalogLabel(category){return catalogCategories.find(([id])=>id===category)?.[1]||'Unclassified'}
 function catalogMachineLinks(p,rows){
  const machines=rows.filter(x=>x.source?.category==='machines'&&(p.source?.machine_ids||[]).includes(x.id));
@@ -37,7 +43,8 @@ function catalogProduct(p,rows){
 }
 function catalogInventory(){
  const rows=catalogRows(),machine=rows.find(p=>p.id===catalogMachineId&&p.source?.category==='machines');
- const heading='<div class="heading"><div><small>INVENTORY · PRODUCTS</small><h1>Sort products</h1><p class="muted">Check each product name, choose its category, and add a stock code when you have one.</p></div><button id="refresh" type="button">Refresh list</button></div><div class="help-strip"><strong>Product names are not stock counts.</strong><span>Add real quantities only in the Stock section after a physical count.</span></div>';
+ const reviewCount=rows.filter(p=>catalogProductIssues(p).length).length,activeCount=rows.filter(p=>p.source?.sale_status==='active').length,manufacturerCount=new Set(rows.map(p=>String(p.source?.company||'').trim()).filter(Boolean)).size;
+ const heading='<section class="cleanup-hero"><div><small>INVENTORY · PRODUCT DATA</small><h1>Product cleanup workspace</h1><p>Search, sort and correct product names, manufacturers, specifications and sale status without touching stock counts.</p></div><button id="refresh" type="button">Refresh data</button></section><div class="cleanup-metrics"><div><small>Products</small><strong>'+rows.length+'</strong></div><div><small>Need review</small><strong>'+reviewCount+'</strong></div><div><small>Active for sale</small><strong>'+activeCount+'</strong></div><div><small>Manufacturers</small><strong>'+manufacturerCount+'</strong></div></div>';
  if(catalogMachineId&&!machine)catalogMachineId='';
  if(machine){
   const linked=rows.filter(p=>p.source?.category!=='machines'&&(p.source?.machine_ids||[]).includes(machine.id));
@@ -47,11 +54,12 @@ function catalogInventory(){
   }).join('');
   return;
  }
- const categoryRows=rows.filter(p=>catalogCategory==='all'||catalogCategory==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===catalogCategory),matches=categoryRows.filter(p=>catalogMatches(p,catalogSearch));
- $('#content').innerHTML=heading+`<div class="tabs" role="group" aria-label="Product categories">${catalogCategories.map(([category,label])=>`<button type="button" data-catalog-category="${category}" class="${category===catalogCategory?'active':''}" aria-pressed="${category===catalogCategory}">${label} <small>${rows.filter(p=>category==='all'||category==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===category).length}</small></button>`).join('')}</div><label><span>Search product name, model, company or stock code</span><input id="catalogSearch" type="search" value="${esc(catalogSearch)}" placeholder="Find a product"></label><p role="status">${matches.length} matching product${matches.length===1?'':'s'} · ${categoryRows.length} in ${esc(catalogLabel(catalogCategory).toLowerCase())}</p>`+matches.slice(0,100).map(p=>catalogProduct(p,rows)).join('')+(matches.length?'':`<div class="empty">${rows.length?'No products match this category and search.':'No product-list records have been imported yet.'}</div>`)+(matches.length>100?'<p class="warning">Showing the first 100 matches. Search to narrow the review list.</p>':'');
+ const categoryRows=rows.filter(p=>catalogCategory==='all'||catalogCategory==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===catalogCategory),matches=catalogSorted(categoryRows.filter(p=>catalogMatches(p,catalogSearch)));
+ $('#content').innerHTML=heading+`<section class="cleanup-controls"><div class="tabs" role="group" aria-label="Product categories">${catalogCategories.map(([category,label])=>`<button type="button" data-catalog-category="${category}" class="${category===catalogCategory?'active':''}" aria-pressed="${category===catalogCategory}">${label} <small>${rows.filter(p=>category==='all'||category==='review'&&catalogProductIssues(p).length||catalogCategoryOf(p)===category).length}</small></button>`).join('')}</div><div class="cleanup-search"><label><span>Search products</span><input id="catalogSearch" type="search" value="${esc(catalogSearch)}" placeholder="Name, manufacturer, model or stock code"></label><label><span>Sort by</span><select id="catalogSort"><option value="name" ${catalogSort==='name'?'selected':''}>Product name</option><option value="company" ${catalogSort==='company'?'selected':''}>Manufacturer</option><option value="issues" ${catalogSort==='issues'?'selected':''}>Most issues first</option></select></label></div><p role="status"><strong>${matches.length}</strong> matching product${matches.length===1?'':'s'} · ${categoryRows.length} in ${esc(catalogLabel(catalogCategory).toLowerCase())}</p></section><div class="cleanup-grid">`+matches.slice(0,100).map(p=>catalogProduct(p,rows)).join('')+'</div>'+(matches.length?'':`<div class="empty">${rows.length?'No products match this category and search.':'No product-list records have been imported yet.'}</div>`)+(matches.length>100?'<p class="warning">Showing the first 100 matches. Search to narrow the review list.</p>':'');
  $('#catalogSearch').addEventListener('input',e=>{
   catalogSearch=e.target.value;renderSearchPreservingPosition(e.target,catalogInventory);
  });
+ $('#catalogSort').onchange=e=>{catalogSort=e.target.value;catalogInventory()};
  if(typeof bindInventoryWorkspace==='function')bindInventoryWorkspace();
 }
 document.addEventListener('click',e=>{
