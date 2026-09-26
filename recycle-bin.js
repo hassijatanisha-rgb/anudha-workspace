@@ -3,7 +3,7 @@ let recycleRequest=0;
 let recycleOrganizations=[],recycleContacts=[];
 async function openDeleteRecord(kind,id){
  if(!['organization','contact'].includes(kind))throw Error('Choose a client, branch or contact.');
- if(kind==='organization'&&me?.role!=='owner')throw Error('Owner access is required to delete client profiles.');
+ if(me?.role!=='owner')throw Error('Owner access is required to delete client profiles.');
  const record=kind==='organization'?orgIndex.get(id):contacts.find(c=>c.id===id);
  if(!record)throw Error('This record is no longer available. Refresh and try again.');
  const affectedIds=kind==='organization'?familyIds(record):new Set();
@@ -34,15 +34,16 @@ async function renderRecycleBin(){
   const restoreButton=(kind,record)=>{
    const blocked=deletedOrgIds.has(kind==='organization'?record.parent_id:record.organization_id);
    if(blocked)return '<p class="recycle-parent-note">Restore the parent profile first.</p>';
-   if(kind==='organization'&&me.role!=='owner')return '<p class="muted">An owner can restore this profile.</p>';
+   if(me.role!=='owner')return '<p class="muted">An owner can restore this profile.</p>';
    return `<button data-restore-record="${esc(record.id)}" data-record-kind="${kind}">Restore ${kind==='organization'?'profile':'contact'}</button>`;
   };
   $('#content').innerHTML=`<section class="client-pages"><div class="heading"><div><small>CLIENT RECORDS</small><h1>Recycle bin</h1><p class="muted">Restore deleted clients, branches and contacts. Restore a parent profile before its deleted children.</p></div><button data-recycle-refresh>Refresh recycle bin</button></div><section class="card"><h2>Clients and branches <small>(${orgRows.length})</small></h2>${sortNewest(orgRows).map(o=>`<article class="recycle-record"><div><h3>${esc(o.name||'Unnamed profile')}</h3><p class="muted">Deleted ${esc(recycleDate(o.deleted_at))}</p>${o.parent_id?`<small>Parent: ${esc(orgRows.find(p=>p.id===o.parent_id)?.name||orgIndex.get(o.parent_id)?.name||'Unavailable profile')}</small>`:''}</div><div>${restoreButton('organization',o)}</div></article>`).join('')||'<p class="muted">No deleted client profiles.</p>'}</section><section class="card"><h2>Contacts <small>(${contactRows.length})</small></h2>${sortNewest(contactRows).map(c=>`<article class="recycle-record"><div><h3>${esc([c.first_name,c.last_name].filter(Boolean).join(' ')||'Unnamed contact')}</h3><p class="muted">${esc(orgRows.find(o=>o.id===c.organization_id)?.name||orgIndex.get(c.organization_id)?.name||'Unavailable branch')} · Deleted ${esc(recycleDate(c.deleted_at))}</p></div><div>${restoreButton('contact',c)}</div></article>`).join('')||'<p class="muted">No deleted contacts.</p>'}</section></section>`;
+  await appendDeletedBusinessRecords(request);
  }catch(error){if(request===recycleRequest&&view==='recycle')$('#content').innerHTML='<section class="card"><h1>Recycle bin</h1><p>Deleted records could not be loaded. Try again.</p><button data-recycle-refresh>Retry</button></section>';throw error;}
 }
 async function restoreDeletedRecord(kind,id){
  if(!['organization','contact'].includes(kind))throw Error('Choose a deleted profile or contact.');
- if(kind==='organization'&&me?.role!=='owner')throw Error('Owner access is required to restore profiles.');
+ if(me?.role!=='owner')throw Error('Owner access is required to restore profiles.');
  const record=(kind==='organization'?recycleOrganizations:recycleContacts).find(r=>r.id===id);if(!record)throw Error('Refresh the recycle bin before restoring this record.');
  const parentId=kind==='organization'?record.parent_id:record.organization_id;
  if(recycleOrganizations.some(o=>o.id===parentId))throw Error('Restore the parent profile first.');
