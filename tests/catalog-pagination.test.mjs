@@ -18,3 +18,7 @@ test('Forced catalog refresh reloads shared database corrections',()=>{
  const source=readFileSync(new URL('../inventory-operations.js',import.meta.url),'utf8');
  assert.match(source,/inventorySection==='catalog'\)\{if\(!inventoryLoaded\|\|force\)/);
 });
+test('Visible Refresh data button invalidates cached inventory before reloading',()=>{
+ const source=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+ assert.ok(source.includes("else if(b.id==='refresh'){inventoryLoaded=false;await load();}"));
+});
