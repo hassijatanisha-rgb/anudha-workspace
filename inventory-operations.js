@@ -70,7 +70,7 @@ function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='own
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
  if(inventorySection==='review'){if(!inventoryLoaded||force)await loadInventoryOperations();await tallyStockScreen();return;}
- if(inventorySection==='catalog'){if(!inventoryLoaded)await loadInventoryOperations();catalogInventory();return;}
+ if(inventorySection==='catalog'){if(!inventoryLoaded||force)await loadInventoryOperations();catalogInventory();return;}
  $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
  if(force||!inventoryLoaded)await loadInventoryOperations();
  if(!inventoryLoaded){$('#content').innerHTML=inventoryUnavailable();bindInventoryWorkspace();return;}
