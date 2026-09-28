@@ -102,7 +102,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.linkParent)return openBranchForm(orgIndex.get(b.dataset.linkParent));
  run(async()=>{
  if(b.id==='logout'){await client.auth.signOut();login()}
- else if(b.id==='refresh')await load();
+ else if(b.id==='refresh'){inventoryLoaded=false;await load();}
  else if(b.dataset.approveOrg){const r=await client.rpc('approve_organization',{p_id:b.dataset.approveOrg});if(r.error)throw r.error;const row=Array.isArray(r.data)?r.data[0]:r.data;Object.assign(orgIndex.get(row.id),row);render();message('Client profile approved.');}
  else if(b.dataset.keep)await save({...contacts.find(x=>x.id===b.dataset.keep),status:'kept'});
  else if(b.dataset.restore){const c=contacts.find(x=>x.id===b.dataset.restore),r=await client.rpc('restore_contact',{p_id:c.id,p_revision:c.revision});if(r.error)throw r.error;const value=Array.isArray(r.data)?r.data[0]:r.data;contacts[contacts.findIndex(x=>x.id===c.id)]=value;invalidateLocalApproval(c.organization_id);scan();render();message('Contact restored to review.');}
