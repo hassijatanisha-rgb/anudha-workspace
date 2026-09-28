@@ -15,7 +15,7 @@ const workspaceGroups=[
   ['Service forms','service','forms']
  ]},
  {name:'Inventory',tone:'inventory',items:[
-  ['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations']
+  ['Product data workbench','inventory','catalog'],['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations']
  ]},
  {name:'System',tone:'system',items:[
   ['Staff','staff'],['Deleted items','recycle'],['Awaiting approval','approvals'],['Setup progress','checklist'],['Help','guide']
