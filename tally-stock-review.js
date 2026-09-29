@@ -52,6 +52,10 @@ function renderTallyStock(){
  const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
  readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
+ if(me.role==='owner'){
+  const heading=document.createElement('th');heading.textContent='Location mapping';readiness.querySelector('thead tr').append(heading);
+  readiness.querySelectorAll('tbody tr').forEach(row=>{const name=row.cells[0].textContent,cell=document.createElement('td'),button=document.createElement('button');button.type='button';button.textContent='Review location mapping';button.disabled=!tallyRows.some(r=>r.godown===name);button.onclick=()=>openGodownMapping(name);cell.append(button);row.append(cell);});
+ }
  const file=$('#tallyFile');if(file)file.onchange=()=>run(async()=>{
   const actor=me?.user_id,payload=JSON.parse(await file.files[0].text());
   if(!Array.isArray(payload.records))throw Error('Choose the prepared stock review JSON.');
@@ -74,4 +78,32 @@ function openTallyCorrection(id){
    if(me?.user_id!==actor){dialog.close();return;}if(r.error)throw r.error;dialog.close();await tallyStockScreen();
   }catch(error){dialog.querySelector('[role="alert"]').textContent=`Not confirmed saved: ${error.message}. Reopen to check the latest version before retrying.`;}finally{button.disabled=false;}
  };
+}
+async function openGodownMapping(godown){
+ if(me?.role!=='owner'||!godown?.trim())return;
+ const actor=me.user_id,current=()=>me?.user_id===actor&&me?.role==='owner'&&inventorySection==='review';
+ const dialog=document.createElement('dialog');dialog.innerHTML='<h2>Map source godown</h2><p role="status">Loading mapping…</p><button type="button">Close</button>';
+ document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('button').onclick=()=>dialog.close();dialog.showModal();
+ try{
+  const [locations,history]=await Promise.all([all('inventory_locations','id,name,active'),all('godown_mapping_reviews','id,source_godown,version,location_id,reason')]);
+  if(!current()||!dialog.isConnected){dialog.close();return;}
+  const previous=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version)[0];
+  const active=locations.filter(r=>r.active),validPrior=active.some(r=>r.id===previous?.location_id);
+  dialog.innerHTML=`<form><h2>Map source godown</h2><p>${esc(godown)} · version ${previous?.version||0}</p><p>This saves a location mapping only. Stock quantities are unchanged.</p>${previous?.location_id&&!validPrior?'<p role="status">Previous location is inactive or missing. Choose a location or explicitly leave unresolved.</p>':''}<label>ERP location<select name="location"><option value="">Unresolved — do not import</option>${active.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><label>Reason / evidence<textarea name="reason" required minlength="5" maxlength="1000"></textarea></label><p role="alert"></p><p role="status"></p><button type="button" data-close>Close</button><button type="submit">Save mapping only</button></form>`;
+  dialog.querySelector('[name="location"]').value=validPrior?previous.location_id:'';
+  dialog.querySelector('[data-close]').onclick=()=>dialog.close();let request=null;
+  dialog.querySelector('form').onsubmit=async e=>{
+   e.preventDefault();if(!current()){dialog.close();return;}
+   const button=dialog.querySelector('[type="submit"]');if(button.disabled)return;
+   const f=new FormData(e.target),location=f.get('location')||null,reason=f.get('reason').trim(),alert=dialog.querySelector('[role="alert"]');
+   if(reason.length<5){alert.textContent='Enter the evidence for this mapping.';return;}
+   if(request&&(request.p_location_id!==location||request.p_reason!==reason)){alert.textContent='Previous save is unconfirmed. Retry unchanged or close and reopen to check the latest saved mapping.';return;}
+   request??={p_id:crypto.randomUUID(),p_godown:godown,p_expected_version:previous?.version||0,p_location_id:location,p_reason:reason};button.disabled=true;
+   try{const r=await client.rpc('save_godown_mapping_review',request);if(!current()||!dialog.isConnected){dialog.close();return;}if(r.error)throw r.error;
+    const saved=Array.isArray(r.data)?r.data[0]:r.data;if(saved?.id!==request.p_id||saved?.version!==request.p_expected_version+1)throw Error('Saved mapping could not be verified');
+    alert.textContent='';dialog.querySelector('[role="status"]').textContent='Mapping saved. Stock quantities unchanged.';
+    dialog.querySelectorAll('input,select,textarea').forEach(el=>el.disabled=true);
+   }catch(error){if(current()&&dialog.isConnected){alert.textContent=`Not confirmed saved: ${error.message}`;button.disabled=false;}}
+  };
+ }catch(error){if(current()&&dialog.isConnected)dialog.querySelector('[role="status"]').textContent=`Mapping could not load: ${error.message}. No changes saved.`;else dialog.close();}
 }
