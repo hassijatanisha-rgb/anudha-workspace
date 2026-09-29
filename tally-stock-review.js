@@ -26,6 +26,18 @@ function tallyRowReview(row){
  if(!product)result.issues.unshift('Choose the matching catalog product');
  return {correction,product,result};
 }
+function tallyGodownReadiness(rows,review){
+ const groups=new Map();
+ for(const row of rows){
+  const name=row.godown||'';
+  if(!groups.has(name))groups.set(name,{name,total:0,checked:0,blocked:0,unmapped:0,negative:0});
+  const group=groups.get(name),check=review(row);group.total++;
+  if(!check.product)group.unmapped++;
+  if(row.quantity<0)group.negative++;
+  if(!name.trim()||!check.product||check.result.issues.length)group.blocked++;else group.checked++;
+ }
+ return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
+}
 function renderTallyStock(){
  const scope=tallyGodownReview(tallyRows,tallyCorrections,tallyGodown,tallySearch),rows=scope.rows;
  const pages=Math.max(1,Math.ceil(rows.length/50));tallyPage=Math.min(tallyPage,pages-1);
@@ -34,6 +46,9 @@ function renderTallyStock(){
  bindInventoryWorkspace();$('#tallyGodown').value=tallyGodown;$('#tallyGodown').onchange=e=>{tallyGodown=e.target.value;tallyPage=0;renderTallyStock();$('#tallyGodown').focus();};$('#tallySearch').value=tallySearch;$('#tallySearch').oninput=e=>{tallySearch=e.target.value;tallyPage=0;renderSearchPreservingPosition(e.target,renderTallyStock);};
  $('#tallyPrev').onclick=()=>{tallyPage--;renderTallyStock()};$('#tallyNext').onclick=()=>{tallyPage++;renderTallyStock()};
  document.querySelectorAll('[data-tally-review]').forEach(b=>b.onclick=()=>openTallyCorrection(b.dataset.tallyReview));
+ const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
+ readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyGodownReadiness(tallyRows,tallyRowReview).map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
+ $('#content').append(readiness);
  const file=$('#tallyFile');if(file)file.onchange=()=>run(async()=>{
   const actor=me?.user_id,payload=JSON.parse(await file.files[0].text());
   if(!Array.isArray(payload.records))throw Error('Choose the prepared stock review JSON.');
