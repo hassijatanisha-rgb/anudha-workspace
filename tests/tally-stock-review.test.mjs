@@ -21,3 +21,10 @@ test('Tally UI does not expose raw financial export columns',()=>{
  assert.ok(!source.includes("all('tally_stock_sources','*')"));
  assert.ok(source.includes('do not post operational stock'));
 });
+test('archived product cannot make a source row pass reconciliation checks',()=>{
+ c.products.push({id:'archived',name:'Archived',deleted_at:'2026-09-29',source:{company:'Maker',specification:'Model',sale_status:'active',batch_required:false,expiry_required:false}});
+ vm.runInContext("tallyCorrections.set('archived-row',{product_id:'archived',pieces:5})",c);
+ const review=c.tallyRowReview({id:'archived-row',product_name:'Archived',quantity:5,unit:'PCS'});
+ assert.equal(review.product,undefined);assert.equal(review.result.saleable,null);
+ assert.ok(review.result.issues.includes('Choose the matching catalog product'));
+});
