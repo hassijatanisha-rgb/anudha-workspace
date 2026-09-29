@@ -1,0 +1,54 @@
+// Disposable local PostgreSQL-compatible engine only; no live access.
+import {readFileSync,existsSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const {PGlite}=await import('/private/tmp/anudha-db-tests.aRoaJU/package/dist/index.js');
+const db=new PGlite(),id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
+let checks=0;
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create table staff(user_id uuid primary key,active boolean,role text);
+ create table organizations(id uuid primary key);create table contacts(id uuid primary key);
+ create table products(id uuid primary key,name text,source jsonb,deleted_at timestamptz);
+ insert into auth.users values('${id(1)}'),('${id(2)}'),('${id(3)}');
+ insert into staff values('${id(1)}',true,'owner'),('${id(2)}',true,'staff'),('${id(3)}',false,'owner');
+ insert into products values('${id(10)}','Reagent','{"category":"reagents","machine_ids":[],"company":"Original"}',null),('${id(11)}','Machine A','{"category":"machines"}',null),('${id(12)}','Machine B','{"category":"machines"}',null),('${id(13)}','Not machine','{"category":"reagents"}',null),('${id(14)}','Archived','{"category":"machines"}',now());`);
+ for(const name of ['202609210001_inventory_foundation.sql','202609210002_product_inventory_classification.sql'])await db.exec(readFileSync('/Users/tanisha/Desktop/ERP/anudha-stock-review-release/supabase/migrations/'+name,'utf8'));
+ const migration=new URL('../supabase/migrations/202609280032_product_machine_links.sql',import.meta.url);
+ if(existsSync(migration))await db.exec(readFileSync(migration,'utf8'));
+ assert.equal((await db.query("select to_regprocedure('public.save_product_machine_link_review(uuid,uuid,integer,uuid[],text)') is not null installed")).rows[0].installed,true,'Compatibility save RPC must exist');checks++;
+ let seq=100;
+ const save=(version=0,machines=[id(11),id(12)],product=id(10),reason='Verified manufacturer documentation')=>db.query('select * from save_product_machine_link_review($1,$2,$3,$4,$5)',[id(seq++),product,version,machines,reason]);
+ const reject=async(p,pattern)=>{await assert.rejects(p,pattern);checks++};
+ await db.exec(`set test.actor='${id(1)}';set role authenticated`);
+ const first=(await save()).rows[0];assert.deepEqual(first.machine_ids,[id(11),id(12)]);assert.equal(first.product_id,id(10));checks++;
+ await reject(save(0),/changed/i);await reject(save(null),/changed/i);
+ await reject(save(1,null),/array/i);await reject(save(1,[null]),/null/i);
+ await reject(save(1,[[id(11),id(12)]]),/one-dimensional/i);
+ await reject(save(1,[id(11),id(11)]),/duplicate/i);await reject(save(1,[id(10)]),/itself/i);
+ await reject(save(1,Array.from({length:101},(_,i)=>id(1000+i))),/100/i);
+ await reject(save(1,[id(999)]),/existing|saved/i);await reject(save(1,[id(14)]),/archived/i);
+ await reject(save(1,[id(13)]),/machine/i);await reject(save(1,[],id(14)),/archived/i);
+ await reject(save(0,[],id(11)),/reagent|consumable|spare/i);
+ await db.exec('reset role');await db.query("update products set source=jsonb_set(source,'{category}','\"non_stock\"') where id=$1",[id(13)]);await db.exec('set role authenticated');
+ await reject(save(0,[],id(13)),/reagent|consumable|spare/i);
+ await db.query("select save_product_inventory_classification($1,$2,0,'consumables','Reviewed source category')",[id(501),id(13)]);
+ assert.equal((await save(0,[id(12)],id(13))).rows[0].version,1);checks++;
+ await db.query("select save_product_inventory_classification($1,$2,1,'non_stock','Reviewed source category')",[id(502),id(13)]);
+ await reject(save(1,[],id(13)),/reagent|consumable|spare/i);
+ await reject(save(0,[],id(999)),/existing|saved/i);await reject(save(1,[],id(10),'x'),/check constraint/i);
+ const cleared=(await save(1,[])).rows[0];assert.deepEqual(cleared.machine_ids,[]);assert.equal(cleared.version,2);checks++;
+ await reject(db.query("insert into product_machine_link_reviews(id,product_id,version,machine_ids,reason,created_by) values($1,$2,3,'{}','Direct bypass',$3)",[id(600),id(10),id(1)]),/permission denied/i);
+ await reject(db.query("update product_machine_link_reviews set reason='Direct bypass'"),/permission denied/i);
+ await db.exec(`set test.actor='${id(2)}'`);assert.equal((await db.query('select count(*)::int n from product_machine_link_reviews')).rows[0].n,3);checks++;
+ await reject(save(2),/Owner/i);await reject(db.query('delete from product_machine_link_reviews'),/permission denied/i);
+ // Existing active-staff classification authorization is retained, and latest category overrides source.
+ await db.query('select save_product_inventory_classification($1,$2,0,\'reagents\',\'Correct category\')',[id(500),id(11)]);
+ await db.exec(`set test.actor='${id(1)}'`);await reject(save(2,[id(11)]),/machine/i);
+ await db.exec(`set test.actor='${id(3)}'`);await reject(save(2),/Owner/i);assert.equal((await db.query('select count(*)::int n from product_machine_link_reviews')).rows[0].n,0);checks++;
+ await db.exec('set role anon');await reject(save(2),/permission denied/i);await reject(db.query('select * from product_machine_link_reviews'),/permission denied/i);
+ await db.exec('reset role');await reject(db.query("update product_machine_link_reviews set reason='changed'"),/immutable/i);await reject(db.query('delete from product_machine_link_reviews'),/immutable/i);
+ assert.deepEqual((await db.query('select source from products where id=$1',[id(10)])).rows[0].source,{category:'reagents',machine_ids:[],company:'Original'});checks++;
+ assert.equal((await db.query('select count(*)::int n from products')).rows[0].n,5);checks++;
+ console.log(`PASS: ${checks} compatibility persistence/security assertions; two machines share one product; clearing, stale/null version, invalid targets, classification override, access, immutable history and source preservation.`);
+}finally{await db.close()}

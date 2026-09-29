@@ -1,6 +1,7 @@
 'use strict';
 let productDetailReviews=new Map();
-function reviewedCatalogProduct(product){const r=productDetailReviews.get(product.id);return r?{...product,name:r.name,source:{...product.source,company:r.company,specification:r.specification,model:r.specification,sale_status:r.sale_status,batch_required:r.batch_required,expiry_required:r.expiry_required}}:product;}
+let productReviewLoadError='';
+function reviewedCatalogProduct(product){const r=productDetailReviews.get(product.id),reviewed=r?{...product,name:r.name,source:{...product.source,company:r.company,specification:r.specification,model:r.specification,sale_status:r.sale_status,batch_required:r.batch_required,expiry_required:r.expiry_required}}:product;return typeof machineLinkReviewedProduct==='function'?machineLinkReviewedProduct(reviewed):reviewed;}
 
 function productReviewDefaults(product){
  const s=product.source||{};
