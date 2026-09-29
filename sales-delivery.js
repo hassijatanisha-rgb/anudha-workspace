@@ -42,7 +42,7 @@ async function loadOrderTiming(panel){
  }catch(error){if(current())target.textContent='Timing unavailable: '+error.message;}
  finally{if(current())button.disabled=false;}
 }
-function deliveryHistory(note){const events=salesDeliveryEvents.filter(event=>event.delivery_note_id===note.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));if(!events.length)return '';return `<details class="workflow-history"><summary>Who changed this order and when</summary>${events.map(event=>`<div><strong>${esc(salesStatus(event.to_status))}</strong><small>${esc(event.actor_user_id===me?.user_id?'You':event.actor_user_id)} · ${esc(new Date(event.created_at).toLocaleString('en-TZ'))}${event.reference?' · '+esc(event.reference):''}</small></div>`).join('')}</details>`}
+function deliveryHistory(note){const events=salesDeliveryEvents.filter(event=>event.delivery_note_id===note.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));if(!events.length)return '';return `<details class="workflow-history"><summary>Who changed this order and when</summary>${events.map(event=>`<div><strong>${esc(salesStatus(event.to_status))}</strong><small>${esc(employeeName(event.actor_user_id))} · ${esc(new Date(event.created_at).toLocaleString('en-TZ'))}${event.reference?' · '+esc(event.reference):''}</small></div>`).join('')}</details>`}
 async function loadSalesDelivery(){
  const actor=me?.user_id;
  salesLoadError='';
