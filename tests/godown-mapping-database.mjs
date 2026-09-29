@@ -16,5 +16,8 @@ try{
  assert.equal((await save(1,id(24),'CITY PRINTER',null,'Unresolved location')).rows[0].version,2);
  await actor(2);assert.equal((await db.query('select * from godown_mapping_reviews')).rows.length,2);await assert.rejects(save(2,id(25)),/Owner/);await assert.rejects(db.exec('delete from godown_mapping_reviews'),/permission/);
  await db.exec('reset role');await assert.rejects(db.exec('delete from godown_mapping_reviews'),/immutable/);assert.equal((await db.query('select quantity from tally_stock_sources')).rows[0].quantity,'-4');assert.equal((await db.query('select count(*)::int n from inventory_lots')).rows[0].n,0);
- console.log('PASS: godown mapping actual predecessor SQL, owner/staff, immutable history, replay, stale version, unknown source/location, unresolved mapping, unchanged negative source and zero lots.');
+ await db.exec(`update inventory_locations set active=false where id='${id(10)}'`);await actor(1);await assert.rejects(save(2,id(26)),/active/i);
+ await db.exec(`reset role;update staff set active=false where user_id='${id(1)}'`);await actor(1);await assert.rejects(save(2,id(27)),/Owner/);assert.equal((await db.query('select * from godown_mapping_reviews')).rows.length,0);
+ await db.exec('reset role;set role anon');await assert.rejects(save(2,id(28)),/permission/);await assert.rejects(db.query('select * from godown_mapping_reviews'),/permission/);
+ console.log('PASS: godown mapping actual predecessor SQL, owner/staff/inactive/anonymous, immutable history, replay, stale version, unknown source/inactive location, unresolved mapping, unchanged negative source and zero lots.');
 }finally{await db.close();}
