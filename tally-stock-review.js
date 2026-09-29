@@ -20,7 +20,7 @@ async function tallyStockScreen(){
  }catch(error){if(me?.user_id===actor&&inventorySection==='review'){$('#content').innerHTML=inventoryHeader()+`<p role="alert">Stock review could not load: ${esc(error.message)}. No stock was changed.</p>`;bindInventoryWorkspace();}}
 }
 function tallyRowReview(row){
- const correction=tallyCorrections.get(row.id),product=products.find(p=>p.id===correction?.product_id);
+ const correction=tallyCorrections.get(row.id),product=products.find(p=>p.id===correction?.product_id&&!p.deleted_at);
  const details=product?productReviewDefaults(reviewedCatalogProduct(product)):{name:row.product_name};
  const result=productStockReview(details,{quantity:correction?.pieces??row.quantity,unit:correction?.pieces!=null?'PCS':row.unit,verified:correction?.pieces!=null,batch:correction?.batch,expiry:correction?.expiry});
  if(!product)result.issues.unshift('Choose the matching catalog product');
