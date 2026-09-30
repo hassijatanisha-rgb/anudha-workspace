@@ -54,7 +54,7 @@ acceptance('PDF upload finalizes, persists on reopen, and downloads through a br
  const calls=await page.evaluate(()=>window.calls);
  assert.equal(calls.filter(call=>call.kind==='upload').length,1);
  assert.equal(calls.filter(call=>call.name==='finalize_document_attachment').length,1);
- assert.ok(calls.filter(call=>call.kind==='list').every(call=>call.start===0&&call.end===24));
+ assert.ok(calls.filter(call=>call.kind==='list').every(call=>call.start===0&&call.end===25));
 });
 acceptance('Mismatched PDF contents fail before any storage request',async t=>{
  const page=await fixture(t);await open(page);

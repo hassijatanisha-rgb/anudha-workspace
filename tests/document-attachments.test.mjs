@@ -4,6 +4,15 @@ import {readFileSync,existsSync} from 'node:fs';
 import vm from 'node:vm';
 const recordId='00000000-0000-0000-0000-000000000001',requestId='00000000-0000-0000-0000-000000000002';
 const file=(name='proof.pdf',type='application/pdf',bytes=[37,80,68,70,45,49,46,55])=>({name,type,size:bytes.length,slice:()=>({arrayBuffer:async()=>Uint8Array.from(bytes).buffer})});
+// Produce the exact error object the vendored Supabase client returns for a failed private download.
+async function realDownloadError(status,body){
+ const context=vm.createContext({fetch:()=>{throw Error("No network in fixture")},FormData,ReadableStream,Response,Headers,Request,URL,URLSearchParams,AbortController,TextEncoder,TextDecoder,Blob,setTimeout,clearTimeout,console});context.self=context;context.globalThis=context;
+ vm.runInContext(readFileSync(new URL('../vendor/supabase.js',import.meta.url),'utf8'),context);
+ const fetch=async()=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
+ const client=context.supabase.createClient('https://fixture.supabase.co','sb_publishable_fixture',{global:{fetch},auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+ const result=await client.storage.from('erp-documents').download(`proforma/${recordId}/${requestId}.pdf`);
+ assert.ok(result.error,'fixture must reproduce a storage error');return result.error;
+}
 function fixture(options={}){
  const calls=[],elements=new Map(),listeners={};let finalizeCalls=0;
  const buttons=[];
@@ -29,7 +38,7 @@ test('invalid record type, missing actor and denied access cannot query or uploa
 });
 test('metadata failure is displayed without claiming an empty successful list',async()=>{
  const f=fixture({listError:true});await f.ctx.openDocumentAttachments('proforma',recordId,'PF-1');assert.match(f.element('[data-attachment-status]').textContent,/List unavailable/);
- assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,24]]);
+ assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,25]]);
 });
 test('failed finalization retries same request without uploading twice',async()=>{
  const f=fixture({finalize:(count,args)=>count===1?{error:{message:'Finalize unavailable'}}:{data:{id:args.p_id}}});
@@ -49,12 +58,12 @@ test('failed upload remains retryable with the same object path and request',asy
  let count=0;const f=fixture({upload:()=>++count===1?{error:{message:'Offline'}}:{data:{}}});await f.ctx.openDocumentAttachments('service',recordId,'Job');f.element('[data-attachment-file]').files=[file()];await f.element('form').onsubmit({preventDefault(){}});assert.match(f.element('[data-attachment-status]').textContent,/Offline/);await f.element('form').onsubmit({preventDefault(){}});
  const uploads=f.calls.filter(c=>c[0]==='upload');assert.equal(uploads[0][1],uploads.at(-1)[1]);
 });
-test('metadata pagination uses25 rows and downloaded files have temporary private URLs',async()=>{
+test('metadata pagination shows 25 rows and downloaded files have temporary private URLs',async()=>{
  const row={id:requestId,object_path:`proforma/${recordId}/${requestId}.pdf`,original_filename:'proof.pdf',mime_type:'application/pdf',byte_size:8,uploaded_at:'2026-09-25'};
- const f=fixture({rows:start=>start===0?Array.from({length:25},()=>row):[]});await f.ctx.openDocumentAttachments('proforma',recordId,'PF');
+ const f=fixture({rows:start=>start===0?Array.from({length:26},()=>row):[]});await f.ctx.openDocumentAttachments('proforma',recordId,'PF');
  await f.buttons[0].onclick();assert.ok(f.calls.some(c=>c[0]==='download'&&c[1]===row.object_path));assert.ok(f.calls.some(c=>c[0]==='click'&&c[2]==='proof.pdf'));
  const timer=f.calls.find(c=>c[0]==='timer');assert.equal(timer[2],60000);timer[1]();assert.ok(f.calls.some(c=>c[0]==='revoke'));
- await f.element('[data-attachment-next]').onclick();assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,24],['range',25,49]]);assert.equal(f.element('[data-attachment-next]').disabled,true);
+ await f.element('[data-attachment-next]').onclick();assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,25],['range',25,50]]);assert.equal(f.element('[data-attachment-next]').disabled,true);
 });
 test('permission revocation before upload prevents storage writes',async()=>{
  let allowed=true;const f=fixture({access:async()=>({data:allowed})});await f.ctx.openDocumentAttachments('accounting',recordId,'Draft');allowed=false;f.element('[data-attachment-file]').files=[file()];await f.element('form').onsubmit({preventDefault(){}});assert.ok(!f.calls.some(c=>c[0]==='upload'));assert.match(f.element('[data-attachment-status]').textContent,/access/);
@@ -76,4 +85,35 @@ test('view or actor changes during list loading remove stale dialog and discard 
 });
 test('lost upload response recovery compares bytes and refuses same-size corrupted object',async()=>{
  const f=fixture({upload:async()=>({error:{message:'Lost response'}}),download:async()=>({data:new Blob(['%PDF-X.X'],{type:'application/pdf'})})});await f.ctx.openDocumentAttachments('proforma',recordId,'PF');f.element('[data-attachment-file]').files=[file()];await f.element('form').onsubmit({preventDefault(){}});await f.element('form').onsubmit({preventDefault(){}});assert.match(f.element('[data-attachment-status]').textContent,/contents do not match/);assert.equal(f.calls.filter(c=>c[0]==='upload').length,1);assert.ok(!f.calls.some(c=>c[1]==='finalize_document_attachment'));
+});
+test('exactly 25 attachments do not offer an empty next page',async()=>{
+ const row={id:requestId,object_path:`proforma/${recordId}/${requestId}.pdf`,original_filename:'proof.pdf',mime_type:'application/pdf',byte_size:8,uploaded_at:'2026-09-25'};
+ const f=fixture({rows:start=>start===0?Array.from({length:25},()=>row):[]});await f.ctx.openDocumentAttachments('proforma',recordId,'PF');
+ assert.equal(f.buttons.length,25);assert.equal(f.element('[data-attachment-next]').disabled,true);
+});
+for(const [status,label] of [[400,'HTTP 400 with not_found body'],[404,'HTTP 404']])test(`retry after a lost upload re-uploads the same request when storage reports ${label}`,async()=>{
+ const missing=await realDownloadError(status,{statusCode:'404',error:'not_found',message:'Object not found'});
+ let uploads=0;const f=fixture({upload:()=>++uploads===1?{error:{message:'Network dropped'}}:{data:{}},download:()=>({data:null,error:missing})});
+ await f.ctx.openDocumentAttachments('service',recordId,'Job');f.element('[data-attachment-file]').files=[file()];
+ await f.element('form').onsubmit({preventDefault(){}});assert.match(f.element('[data-attachment-status]').textContent,/Network dropped/);
+ await f.element('form').onsubmit({preventDefault(){}});
+ const uploadCalls=f.calls.filter(c=>c[0]==='upload'),finalizes=f.calls.filter(c=>c[1]==='finalize_document_attachment');
+ assert.equal(uploadCalls.length,2);assert.equal(uploadCalls[0][1],uploadCalls[1][1]);assert.equal(uploadCalls[1][3].upsert,false);
+ assert.equal(finalizes.length,1);assert.equal(finalizes[0][2].p_id,requestId);assert.match(f.element('[data-attachment-status]').textContent,/saved/i);
+});
+test('retry does not re-upload when the storage check fails for another reason',async()=>{
+ const failure=await realDownloadError(500,{statusCode:'500',error:'internal',message:'Storage unavailable'});
+ let uploads=0;const f=fixture({upload:()=>++uploads===1?{error:{message:'Network dropped'}}:{data:{}},download:()=>({data:null,error:failure})});
+ await f.ctx.openDocumentAttachments('service',recordId,'Job');f.element('[data-attachment-file]').files=[file()];
+ await f.element('form').onsubmit({preventDefault(){}});await f.element('form').onsubmit({preventDefault(){}});
+ assert.equal(f.calls.filter(c=>c[0]==='upload').length,1);assert.ok(!f.calls.some(c=>c[1]==='finalize_document_attachment'));
+ assert.match(f.element('[data-attachment-status]').textContent,/could not be checked/);
+});
+test('download failure shows a readable reason instead of an empty object',async()=>{
+ const row={id:requestId,object_path:`proforma/${recordId}/${requestId}.pdf`,original_filename:'proof.pdf',mime_type:'application/pdf',byte_size:8,uploaded_at:'2026-09-25'};
+ for(const [status,body,expected] of [[400,{statusCode:'404',error:'not_found',message:'Object not found'},/not found, or your access/],[500,{statusCode:'500',error:'internal',message:'Storage unavailable'},/Storage unavailable/]]){
+  const error=await realDownloadError(status,body);
+  const f=fixture({rows:()=>[row],download:()=>({data:null,error})});await f.ctx.openDocumentAttachments('proforma',recordId,'PF');await f.buttons[0].onclick();
+  const text=f.element('[data-attachment-status]').textContent;assert.match(text,expected);assert.doesNotMatch(text,/\{\}/);assert.ok(!f.calls.some(c=>c[0]==='url'));
+ }
 });

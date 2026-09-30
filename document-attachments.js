@@ -12,6 +12,16 @@ async function validateDocumentAttachment(file){
  return {extension,mimeType,byteSize:file.size};
 }
 
+// Storage download errors wrap the HTTP response (status and JSON body) instead of exposing statusCode.
+async function documentStorageErrorDetails(error){
+ const response=error?.originalError;let body=null;
+ if(typeof response?.clone==='function'){try{body=await response.clone().json()}catch{body=null}}
+ const status=Number(response?.status??error?.status??error?.statusCode)||0,code=String(body?.statusCode??error?.statusCode??'');
+ const missing=status===404||code==='404'||[body?.error,error?.error,error?.code].includes('not_found');
+ const text=[body?.message,error?.message].find(value=>typeof value==='string'&&value.trim()&&value.trim()!=='{}');
+ return {missing,message:text||(status?`Storage request failed (HTTP ${status}).`:'Storage request failed.')};
+}
+
 async function openDocumentAttachments(recordType,recordId,recordLabel){
  if(!['proforma','delivery','service','accounting'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
  const actor=me?.user_id,openingView=view;
@@ -46,7 +56,8 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
    await requireAccess();
    status.textContent='Downloading private attachment…';
    const result=await client.storage.from('erp-documents').download(row.object_path);
-   checkCurrent();if(result.error)throw result.error;
+   checkCurrent();
+   if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
    if(!result.data)throw Error('The server returned no file.');
    const safeFile=new Blob([result.data],{type:row.mime_type});
    await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:safeFile.size,slice:(start,end)=>safeFile.slice(start,end)});checkCurrent();
@@ -58,12 +69,13 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
  }
  async function loadList(){
   checkCurrent();
-  const response=await client.from('document_attachments').select('id,record_type,record_id,object_path,original_filename,mime_type,byte_size,uploaded_by,uploaded_at').eq('record_type',recordType).eq('record_id',recordId).order('uploaded_at',{ascending:false}).order('id',{ascending:false}).range(page*25,page*25+24);
+  const response=await client.from('document_attachments').select('id,record_type,record_id,object_path,original_filename,mime_type,byte_size,uploaded_by,uploaded_at').eq('record_type',recordType).eq('record_id',recordId).order('uploaded_at',{ascending:false}).order('id',{ascending:false}).range(page*25,page*25+25);
   checkCurrent();if(response.error)throw response.error;
-  const rows=response.data||[];
+  // One extra row tells whether a next page exists without offering an empty page.
+  const fetched=response.data||[],rows=fetched.slice(0,25);
   list.innerHTML=rows.map(row=>`<article><strong>${esc(row.original_filename)}</strong><p>${esc(row.mime_type)} · ${esc(row.byte_size)} bytes · ${esc(row.uploaded_at)}</p><button type="button" data-attachment-open="${esc(row.id)}">Download / open to print</button></article>`).join('')||'<p>No saved attachments on this page.</p>';
   list.querySelectorAll?.('[data-attachment-open]').forEach(button=>button.onclick=()=>download(rows.find(row=>row.id===button.dataset.attachmentOpen)));
-  previous.disabled=page===0;next.disabled=rows.length<25;dialog.querySelector('[data-attachment-page]').textContent=`Page ${page+1}`;
+  previous.disabled=page===0;next.disabled=fetched.length<=25;dialog.querySelector('[data-attachment-page]').textContent=`Page ${page+1}`;
  }
  async function changePage(direction){
   if(busy||!current()||(direction<0&&page===0)||(direction>0&&next.disabled))return;
@@ -85,13 +97,14 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
    if(pending.attempted&&!pending.uploaded){
     // Resolve a lost upload response before trying to write the same private object again.
     const prior=await client.storage.from('erp-documents').download(pending.path);checkCurrent();
+    const priorError=prior.error?await documentStorageErrorDetails(prior.error):null;checkCurrent();
     if(!prior.error&&prior.data?.size===pending.byteSize){
      const [original,stored]=await Promise.all([pending.file.slice(0,pending.byteSize).arrayBuffer(),prior.data.arrayBuffer()]);checkCurrent();
      const originalBytes=new Uint8Array(original),storedBytes=new Uint8Array(stored);
      if(originalBytes.length!==storedBytes.length||!originalBytes.every((byte,index)=>byte===storedBytes[index]))throw Error('The earlier upload contents do not match this file. Close and reopen to choose a new upload; the existing object will not be overwritten.');
      pending.uploaded=true;
     }
-    else if(prior.error&&!['404','not_found'].includes(String(prior.error.statusCode||prior.error.status||prior.error.code)))throw Error('The earlier upload could not be checked. Keep this dialog open and retry.');
+    else if(priorError&&!priorError.missing)throw Error('The earlier upload could not be checked. Keep this dialog open and retry.');
     else if(!prior.error)throw Error('The earlier upload size could not be confirmed. Keep this dialog open and retry.');
    }
    if(!pending.uploaded){
