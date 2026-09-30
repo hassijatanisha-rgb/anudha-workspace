@@ -1,6 +1,6 @@
 import {readFileSync,existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const {PGlite}=await import('/private/tmp/anudha-db-tests.aRoaJU/package/dist/index.js');
+const {PGlite}=await import(process.env.PGLITE_MODULE||'@electric-sql/pglite');
 const db=new PGlite(),id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 try{
  await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;create table staff(user_id uuid,active boolean,role text);create table products(id uuid primary key);create table organizations(id uuid primary key);insert into auth.users values('${id(1)}'),('${id(2)}');insert into staff values('${id(1)}',true,'owner'),('${id(2)}',true,'staff');grant usage on schema auth to authenticated,anon;`);

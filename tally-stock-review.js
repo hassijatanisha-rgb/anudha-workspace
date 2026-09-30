@@ -72,7 +72,7 @@ function renderTallyStock(){
  readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
  const locationHeading=document.createElement('th');locationHeading.textContent='Location check';readiness.querySelector('thead tr').append(locationHeading);
- const sourceGroups=tallyGodownReadiness(tallyRows,tallyRowReview);
+ const sourceGroups=tallyReadiness;
  readiness.querySelectorAll('tbody tr').forEach((row,index)=>{row.dataset.sourceGodown=sourceGroups[index].name;const cell=document.createElement('td');cell.dataset.locationReady='false';row.append(cell);});
  refreshGodownLocationChecks();
  const locationNotice=document.createElement('p');locationNotice.textContent='Product checks alone do not authorize import. A saved active location mapping is also required. Operational import is not enabled here.';readiness.append(locationNotice);
