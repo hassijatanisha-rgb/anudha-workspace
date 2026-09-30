@@ -29,3 +29,13 @@ test('settings page is in the menu, routed, and loaded before app.js',()=>{
  assert.match(read('workspace-navigation.js'),/\['My settings','settings'\]/);assert.match(read('app.js'),/view==='settings'\)return settingsWorkspace\(\)/);
  assert.ok(html.indexOf('user-settings.js')>html.indexOf('reports.js')&&html.indexOf('user-settings.js')<html.indexOf('app.js'));
 });
+test('Tally is an external link only, to the configured tallycloud address',()=>{
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
+ const ctx=vm.createContext({globalThis:{},URL});vm.runInContext(read('user-settings.js').replace(/\napplyTextSize\(\);\s*$/,''),ctx);
+ const url=cfg=>{vm.runInContext(`globalThis.ERP_CONFIG=${JSON.stringify(cfg)}`,ctx);return ctx.tallyUrl();};
+ assert.equal(url({tallyUrl:'https://anudha.tallycloud.in/software/html5.html'}),'https://anudha.tallycloud.in/software/html5.html');
+ assert.equal(url({tallyUrl:'http://anudha.tallycloud.in/'}),'','https only');
+ assert.equal(url({tallyUrl:'https://tallycloud.in.evil.example/'}),'');assert.equal(url({tallyUrl:'javascript:alert(1)'}),'');assert.equal(url({}),'');
+ assert.match(read('config.js'),/tallyUrl:'https:\/\/anudha\.tallycloud\.in\/software\/html5\.html'/);
+ assert.match(read('workspace-navigation.js'),/target="_blank" rel="noopener noreferrer"/);
+});

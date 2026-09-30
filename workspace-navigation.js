@@ -3,7 +3,7 @@
 // Navigation only: these links reuse the existing permission-checked workflows.
 const workspaceGroups=[
  {name:'Main',tone:'main',items:[
-  ['Client accounts','contacts'],['Product search','inventory','catalog'],
+  ['Client accounts','contacts'],['Product search','inventory','catalog'],['Open Tally','external:tally'],
   ['My calendar','personal','event'],['To-do tasks · urgent first','personal','task'],['My notes & reminders','personal','note']
  ]},
  {name:'Orders',tone:'orders',items:[
@@ -25,7 +25,7 @@ function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target==='external:tally'?(typeof tallyUrl==='function'&&tallyUrl()?`<a class="nav-external" href="${tallyUrl()}" target="_blank" rel="noopener noreferrer">${label}<small>New tab · separate Tally login</small></a>`:''):target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
