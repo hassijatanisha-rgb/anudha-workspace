@@ -65,3 +65,19 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Disposable database with the real file: 9,766 rows gave 4,244 existing products updated, 5,546 created, and every product with an AN stock code.
 - The owner still has to load the file once: Inventory → Product data workbench → **Apply product list file**, or through the Stock count screen, which does the same.
 - Recorded migrations now: 042–048.
+
+## Migration 049 and the staff-accounts Edge Function (applied and deployed the same day)
+- Migration 049 adds:
+  - `staff.phone`, in +country-code format;
+  - an append-only `staff_account_events` log, readable by owners only;
+  - owner-only `set_staff_phone` and `record_staff_account_event`.
+- Pre-check: `staff` had no phone column, and the log table didn't exist. There were 2 staff rows.
+- Edge Function `staff-accounts` (version 1, JWT verification on):
+  - It checks `is_owner()` with the caller's own session.
+  - It uses the service key only for `auth.admin.createUser` / `updateUserById` / `getUserById`, and for `deleteUser`, which removes a new login again if enabling its access fails.
+  - Staff-table changes and log entries go through existing owner RPCs under the owner's session.
+  - Temporary passwords are returned once and never stored.
+  - CORS allows only the official GitHub Pages origin.
+- Employees sign in with an ID made from their name (`tanisha.hassija`), or the name typed with spaces. At first sign-in they must choose their own password.
+- Not yet exercised live: the container cannot reach Supabase over HTTPS. The first real run is the owner's first **Add employee**.
+- Recorded migrations now: 042–049.
