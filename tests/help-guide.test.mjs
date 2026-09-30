@@ -13,5 +13,7 @@ test('help page only names buttons and menu items that exist',()=>{
 });
 test('help page does not describe live workflows as future work or name removed menus',()=>{
  assert.doesNotMatch(guide,/remain later work|ChatGPT|Staff &amp; import|Staff & import/);
+ // Reviewer withheld 93be2d7 over readiness/privacy wording not verified live; keep such guarantees out of Help.
+ assert.doesNotMatch(guide,/Other staff cannot read|shared company database|colleagues see it/);
  for(const menu of ['Create Pro forma','Delivery progress','Machines to install','Deleted items'])assert.match(guide.replaceAll('&amp;','&'),new RegExp(menu));
 });
