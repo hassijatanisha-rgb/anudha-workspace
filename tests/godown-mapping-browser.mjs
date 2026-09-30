@@ -1,7 +1,9 @@
-import {chromium} from '/Users/tanisha/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+import {dirname,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||resolve(dirname(process.execPath),'../node_modules/playwright/index.mjs')).href);
+const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 try{
  const page=await browser.newPage();await page.route('https://inventory-fixture.test/**',route=>route.fulfill({contentType:'text/html',body:'<main id="content"></main>'}));await page.goto('https://inventory-fixture.test/');
  await page.addScriptTag({content:`let me={user_id:'owner',role:'owner'},inventorySection='review';let calls=[],fail=true;const client={rpc:async(n,p)=>{calls.push(p);if(fail)return {error:{message:'Network uncertain'}};return {data:{...p,id:p.p_id,version:1}}}};function esc(v){const e=document.createElement('span');e.textContent=String(v);return e.innerHTML.replace(/"/g,'&quot;');}async function all(name){return name==='inventory_locations'?[{id:'loc',name:'City Printer',active:true}]:[];}`});

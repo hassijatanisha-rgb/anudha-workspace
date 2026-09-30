@@ -1,6 +1,8 @@
-import {chromium} from '/Users/tanisha/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {readFileSync,existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
+import {dirname,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||resolve(dirname(process.execPath),'../node_modules/playwright/index.mjs')).href);
 const {PGlite}=await import(process.env.PGLITE_MODULE||'../../../test-runtime/pglite-0.3.14/package/dist/index.js');
 const db=new PGlite(),id=n=>'00000000-0000-0000-0000-'+String(n).padStart(12,'0');
 let browser;
@@ -12,7 +14,7 @@ try{
  const migration=new URL('202609290041_godown_mapping_reviews.sql',root);if(existsSync(migration))await db.exec(readFileSync(migration,'utf8'));
 
  await db.exec(`set test.actor='${id(1)}';set role authenticated`);
- browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+ browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
  const page=await browser.newPage();
  await page.exposeFunction('readFixture',async name=>{
   const queries={inventory_locations:'select id,name,active from inventory_locations',godown_mapping_reviews:'select id,source_godown,version,location_id,reason from godown_mapping_reviews'};
