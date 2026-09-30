@@ -69,7 +69,7 @@ function renderTallyStock(){
  $('#tallyPrev').onclick=()=>{tallyPage--;renderTallyStock()};$('#tallyNext').onclick=()=>{tallyPage++;renderTallyStock()};
  document.querySelectorAll('[data-tally-review]').forEach(b=>b.onclick=()=>openTallyCorrection(b.dataset.tallyReview));
  const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
- readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
+ readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name.trim()?g.name:'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
  const locationHeading=document.createElement('th');locationHeading.textContent='Location check';readiness.querySelector('thead tr').append(locationHeading);
  const sourceGroups=tallyReadiness;
@@ -115,6 +115,7 @@ async function openGodownMapping(godown){
   const active=locations.filter(r=>r.active),validPrior=active.some(r=>r.id===previous?.location_id);
   dialog.innerHTML=`<form><h2>Map source godown</h2><p>${esc(godown)} · version ${previous?.version||0}</p><p>This saves a location mapping only. Stock quantities are unchanged.</p>${previous?.location_id&&!validPrior?'<p role="status">Previous location is inactive or missing. Choose a location or explicitly leave unresolved.</p>':''}<label>ERP location<select name="location"><option value="">Unresolved — do not import</option>${active.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><label>Reason / evidence<textarea name="reason" required minlength="5" maxlength="1000"></textarea></label><p role="alert"></p><p role="status"></p><button type="button" data-close>Close</button><button type="submit">Save mapping only</button></form>`;
   const audit=document.createElement('section');audit.dataset.mappingHistory='';
+  const versionLabel=dialog.querySelector('form > p');
   const auditHeading=document.createElement('h3');auditHeading.textContent='Saved mapping history';
   const revisions=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version);
   function renderHistory(){
@@ -143,6 +144,7 @@ async function openGodownMapping(godown){
     refreshGodownLocationChecks();
     revisions.unshift({...saved,location_id:request.p_location_id,reason:request.p_reason});
     renderHistory();
+    versionLabel.textContent=`${godown} · version ${saved.version}`;
     alert.textContent='';dialog.querySelector('[role="status"]').textContent='Mapping saved. Stock quantities unchanged.';
     dialog.querySelectorAll('input,select,textarea').forEach(el=>el.disabled=true);
    }catch(error){if(current()&&dialog.isConnected){alert.textContent=`Not confirmed saved: ${error.message}`;button.disabled=false;}}
