@@ -87,6 +87,12 @@ async function openGodownMapping(godown){
   const previous=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version)[0];
   const active=locations.filter(r=>r.active),validPrior=active.some(r=>r.id===previous?.location_id);
   dialog.innerHTML=`<form><h2>Map source godown</h2><p>${esc(godown)} · version ${previous?.version||0}</p><p>This saves a location mapping only. Stock quantities are unchanged.</p>${previous?.location_id&&!validPrior?'<p role="status">Previous location is inactive or missing. Choose a location or explicitly leave unresolved.</p>':''}<label>ERP location<select name="location"><option value="">Unresolved — do not import</option>${active.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><label>Reason / evidence<textarea name="reason" required minlength="5" maxlength="1000"></textarea></label><p role="alert"></p><p role="status"></p><button type="button" data-close>Close</button><button type="submit">Save mapping only</button></form>`;
+  const audit=document.createElement('section');audit.dataset.mappingHistory='';
+  const auditHeading=document.createElement('h3');auditHeading.textContent='Saved mapping history';audit.append(auditHeading);
+  const revisions=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version);
+  for(const r of revisions){const item=document.createElement('p'),location=locations.find(l=>l.id===r.location_id);item.textContent=`Version ${r.version} · ${r.location_id?(location?location.name+(location.active?'':' (inactive)'):'Location unavailable'):'Unresolved — do not import'} · ${r.reason}`;audit.append(item);}
+  if(!revisions.length){const empty=document.createElement('p');empty.textContent='No saved mapping yet.';audit.append(empty);}
+  dialog.append(audit);
   dialog.querySelector('[name="location"]').value=validPrior?previous.location_id:'';
   dialog.querySelector('[data-close]').onclick=()=>dialog.close();let request=null;
   dialog.querySelector('form').onsubmit=async e=>{
