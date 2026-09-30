@@ -22,6 +22,7 @@ insert into public.organizations values('${org}',null),('${otherOrg}',null);inse
 insert into public.products values('${product}',null),('${archived}',now());insert into public.sales_proformas values('${pf}','${org}',null),('${otherPf}','${otherOrg}',null);
 insert into public.inventory_lots values(gen_random_uuid(),'${product}',10,2);`);
 await db.exec(readFileSync(new URL('../supabase/migrations/202609300043_pending_stock_requests.sql',import.meta.url),'utf8'));
+await db.exec(readFileSync(new URL('../supabase/migrations/202610010050_pending_retry_content.sql',import.meta.url),'utf8'));
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const create=(requestId,fields={})=>{const f={org,contact:null,product,quantity:5,proforma:null,lead:null,salesperson:null,notes:'Customer needs 5 more',...fields};
  return db.query('select * from public.create_pending_stock_request($1,$2,$3,$4,$5,$6,$7,$8,$9)',[requestId,f.org,f.contact,f.product,f.quantity,f.proforma,f.lead,f.salesperson,f.notes]).then(r=>r.rows[0]);};
