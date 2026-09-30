@@ -10,8 +10,6 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
 #nav .nav-group button[hidden]{display:none}
 #nav .nav-group button.active{border-color:var(--group-color);box-shadow:inset 3px 0 var(--group-color);background:#edf5e8;color:#20352f;font-weight:700}
 .nav-unavailable{padding:8px;font-size:13px;color:#66736d}
-#nav .nav-external{display:block;min-height:44px;margin:3px 0;padding:8px 12px;border-radius:8px;text-decoration:none;color:inherit}
-#nav .nav-external small{display:block;font-size:11px;opacity:.8}
 .nav-unavailable small{display:block;font-size:11px;color:#66736d}
 @media(max-width:800px){body>header{position:static}#nav:not([hidden]){position:static;width:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}body:has(#nav:not([hidden]))>main{margin-left:0;padding:20px 16px}.nav-group{margin-bottom:8px}}
 @media print{#nav{display:none!important}body:has(#nav:not([hidden]))>main{margin-left:0;padding:0}}
@@ -24,6 +22,4 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
  #nav .nav-group button:hover,#nav .nav-group button.active{background:rgba(130,188,74,.18);color:#fff}
  #nav .nav-group button.active{border-color:transparent;box-shadow:inset 3px 0 #83bb41}
  #nav .nav-unavailable,#nav .nav-unavailable small{color:#c5d4c6}
- #nav .nav-external{color:#e0e9df}
- #nav .nav-external:hover{background:rgba(130,188,74,.18);color:#fff}
 }
