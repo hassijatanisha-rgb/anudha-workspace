@@ -54,7 +54,7 @@ function countCatalogueRows(text){
  if(data?.format!=='anudha-count-catalogue-v1'||!Array.isArray(data.rows)||!data.rows.length)throw Error('This is not the product list file.');
  const categories=['Machine','Furniture','Spare','Consumable','Reagent','Not sure'],seen=new Set();
  return data.rows.map((row,index)=>{
-  const out={code:String(row.code||''),product:String(row.product||'').trim(),company:String(row.company||'').trim(),specification:String(row.specification||'').trim(),category:String(row.category||''),search_text:String(row.search_text||'').slice(0,4000),erp_product_ids:Array.isArray(row.erp_product_ids)?row.erp_product_ids.map(String):[]};
+  const out={code:String(row.code||''),product:String(row.product||'').trim(),company:String(row.company||'').trim(),specification:String(row.specification||'').trim(),category:String(row.category||''),search_text:String(row.search_text||'').slice(0,4000),erp_product_ids:Array.isArray(row.erp_product_ids)?row.erp_product_ids.map(String):[],company_note:String(row.company_note||'').trim().slice(0,500),suggested_company:String(row.suggested_company||'').trim().slice(0,200)};
   if(!/^AN-\d{5}$/.test(out.code)||seen.has(out.code))throw Error(`Row ${index+1}: missing or repeated AN code.`);seen.add(out.code);
   if(!out.product)throw Error(`Row ${index+1} (${out.code}): product name is empty.`);
   if(!categories.includes(out.category))throw Error(`Row ${index+1} (${out.code}): unknown category.`);
@@ -63,14 +63,9 @@ function countCatalogueRows(text){
 }
 async function loadCountCatalogueFile(file){
  if(me?.role!=='owner')throw Error('Only the owner can load the product list.');
- const rows=countCatalogueRows(await file.text()),actor=me?.user_id;
- for(let i=0;i<rows.length;i+=500){
-  message(`Loading product list… ${i} of ${rows.length}`);
-  const result=await client.rpc('load_count_catalogue',{p_rows:rows.slice(i,i+500)});
-  if(me?.user_id!==actor)throw Error('Login changed. Loading stopped.');
-  if(result.error)throw Error(`Stopped at product ${i+1}: ${result.error.message}. Load the file again; loaded products are updated, not duplicated.`);
- }
- countCatalogue=[];await stockCountWorkspace(true);message(`Product list loaded: ${rows.length} products.`);
+ // The same file also updates the ERP products, so the count and the product list stay one list.
+ const total=await applyProductListFile(file);
+ countCatalogue=[];await stockCountWorkspace(true);message(productListSummary(total));
 }
 async function loadStockCount(){
  const epoch=++countEpoch,actor=me?.user_id;
@@ -102,7 +97,7 @@ function countEntryRow(entry,{review=false}={}){
 function renderStockCount(){
  const owner=me?.role==='owner',session=countCurrentSession(),open=countOpenSession();
  const tabs=`<div class="tabs" role="group" aria-label="Stock count sections">${[['count','Count a godown'],['review',owner?'Review counts':'All counts']].map(([key,label])=>`<button type="button" data-count-tab="${key}" class="${countTab===key?'active':''}" aria-pressed="${countTab===key}">${label}</button>`).join('')}</div>`;
- const loader=owner?`<details class="card count-loader"${countCatalogue.length?'':' open'}><summary>${countCatalogue.length?`Product list: ${countCatalogue.length} products · load a newer file`:'Load the product list'}</summary><p class="muted">Choose the product list file (.json) prepared from the Tally and CRM data. Loading again updates products with the same AN code; it never touches stock.</p><label><span>Product list file</span><input type="file" id="countCatalogueFile" accept=".json,application/json"></label></details>`:'';
+ const loader=owner?`<details class="card count-loader"${countCatalogue.length?'':' open'}><summary>${countCatalogue.length?`Product list: ${countCatalogue.length} products · load a newer file`:'Load the product list'}</summary><p class="muted">Choose the product list file (.json) prepared from the Tally and CRM data. It also updates the ERP product list. Loading again updates products with the same AN code and keeps corrections staff have made; it never touches stock.</p><label><span>Product list file</span><input type="file" id="countCatalogueFile" accept=".json,application/json"></label></details>`:'';
  const sessionBar=`<div class="help-strip">${open?`<strong>Count running: ${esc(open.name)}</strong><span>Started ${esc(new Date(open.opened_at).toLocaleDateString())} by ${esc(employeeName(open.opened_by))}</span>`:`<strong>No count is running.</strong><span>${owner?'Start one to let staff record counts.':'Ask the owner to start the count.'}</span>`}${owner?(open?'<button type="button" id="countClose">Close this count</button>':'<button type="button" id="countOpen">Start a count</button>'):''}</div>`;
  let body='';
  if(!countCatalogue.length&&!countLoadError)body=`<p class="notice">The product list has not been loaded yet.${owner?' Load it above before starting the count.':' The owner loads it once before counting starts.'}</p>`;

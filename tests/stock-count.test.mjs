@@ -59,3 +59,7 @@ test('product list file is validated before anything is sent',()=>{
  const [row]=ctx.countCatalogueRows(rows([{...ok,company:' Fixture ',erp_product_ids:['x']}]));
  assert.equal(row.company,'Fixture');assert.equal(row.specification,'');assert.equal(row.erp_product_ids.length,1);
 });
+test('product list file keeps the research note and suggested company',()=>{
+ const ctx=load(),[row]=ctx.countCatalogueRows(JSON.stringify({format:'anudha-count-catalogue-v1',rows:[{code:'AN-00001',product:'Bag',category:'Consumable',company_note:'Found online: https://x.test',suggested_company:' Polymed '}]}));
+ assert.equal(row.company_note,'Found online: https://x.test');assert.equal(row.suggested_company,'Polymed');
+});

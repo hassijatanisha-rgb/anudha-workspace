@@ -60,3 +60,18 @@ main .count-result:hover{border-color:var(--green);background:#f4faf6}
 .count-result small{color:var(--muted,#5d7068);font-size:12px}
 .count-form input[name="quantity"]{font-size:20px;font-weight:600}
 .stock-count-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+
+/* Data quality colours: yellow = one thing to fix, red = two or more. Shared by products and contacts. */
+:root{--quality-yellow:#fff3b8;--quality-yellow-line:#d9b000;--quality-red:#fde2df;--quality-red-line:#c8483b}
+main tr.quality-yellow>td{background:var(--quality-yellow)}
+main tr.quality-red>td{background:var(--quality-red)}
+main tr.quality-yellow>td:first-child{box-shadow:inset 4px 0 var(--quality-yellow-line)}
+main tr.quality-red>td:first-child{box-shadow:inset 4px 0 var(--quality-red-line)}
+main .contact.quality-yellow{background:var(--quality-yellow);border-color:var(--quality-yellow-line)}
+main .contact.quality-red{background:var(--quality-red);border-color:var(--quality-red-line);color:#5a1f19}
+.quality-badge{display:inline-block;margin:4px 0 0;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid}
+.quality-badge.quality-yellow{background:#ffe680;border-color:var(--quality-yellow-line);color:#4d3c00}
+.quality-badge.quality-red{background:#f4a6a0;border-color:var(--quality-red-line);color:#4a120d}
+td .quality-badge{display:block;width:max-content}
+main .file-button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+main .file-button input{max-width:220px;font-size:13px}
