@@ -22,7 +22,6 @@ insert into public.organizations values('${org}',null),('${otherOrg}',null);inse
 insert into public.products values('${product}',null),('${archived}',now());insert into public.sales_proformas values('${pf}','${org}',null),('${otherPf}','${otherOrg}',null);
 insert into public.inventory_lots values(gen_random_uuid(),'${product}',10,2);`);
 await db.exec(readFileSync(new URL('../supabase/migrations/202609300043_pending_stock_requests.sql',import.meta.url),'utf8'));
-await db.exec(readFileSync(new URL('../supabase/migrations/202610010050_pending_retry_content.sql',import.meta.url),'utf8'));
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const create=(requestId,fields={})=>{const f={org,contact:null,product,quantity:5,proforma:null,lead:null,salesperson:null,notes:'Customer needs 5 more',...fields};
  return db.query('select * from public.create_pending_stock_request($1,$2,$3,$4,$5,$6,$7,$8,$9)',[requestId,f.org,f.contact,f.product,f.quantity,f.proforma,f.lead,f.salesperson,f.notes]).then(r=>r.rows[0]);};
@@ -38,6 +37,12 @@ for(const [fields,pattern] of [[{quantity:0},/Quantity/],[{quantity:1000001},/Qu
  await assert.rejects(create(id(100),fields),pattern);ok();
 }
 const first=await create(id(100),{contact,proforma:pf});
+// Apply the forward fix over an existing request, then prove row/event preservation.
+const snapshot=async()=>(await db.query('select row_to_json(r) data from public.pending_stock_requests r order by id')).rows;
+const existing=await snapshot();
+const fix=readFileSync(new URL('../supabase/migrations/202610010050_pending_retry_content.sql',import.meta.url),'utf8');
+await db.exec(fix);await db.exec(fix);
+assert.deepEqual(await snapshot(),existing,'forward fix preserves existing records and is safe to rerun');ok();
 assert.equal(first.status,'waiting');assert.match(first.request_number,/^PS-\d{6}$/);assert.equal(first.salesperson_user_id,sales);ok();
 const due=(await db.query(`select (current_date + interval '6 months')::date as d`)).rows[0].d;
 assert.equal(new Date(first.expires_on).getTime(),new Date(due).getTime(),'closes six months after creation');ok();
@@ -88,6 +93,13 @@ assert.deepEqual(actions,['create','extend','extend','extend','extend','expire']
 await assert.rejects(db.query('update public.pending_stock_events set note=$1',['x']),/immutable/);ok();
 await assert.rejects(db.query('delete from public.pending_stock_requests'),/never hard-deleted/);ok();
 assert.deepEqual(await lots(),before);ok();
-const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create`)).rows[0];
-assert.deepEqual(grants,{ins:false,anon_create:false});ok();
+const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create,has_function_privilege('authenticated','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') staff_create`)).rows[0];
+assert.deepEqual(grants,{ins:false,anon_create:false,staff_create:true});ok();
+await as(inactive);await assert.rejects(create(id(100),{contact,proforma:pf}),/Active staff/);ok();
+await as('');await db.exec('set role anon');
+await assert.rejects(create(id(103)),/permission denied/);ok();
+await db.exec('reset role');await as(sales);await db.exec('set role authenticated');
+assert.equal((await create(id(100),{contact,proforma:pf})).id,first.id);ok();
+await assert.rejects(create(id(100),{contact,proforma:pf,notes:'Different'}),/already exists/);ok();
+await db.exec('reset role');
 console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, salesperson/owner closing, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
