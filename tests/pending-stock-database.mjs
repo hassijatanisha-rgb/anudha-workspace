@@ -46,14 +46,20 @@ assert.equal(new Date(first.expires_on).getTime(),new Date(due).getTime(),'close
 assert.equal((await create(id(100),{contact,proforma:pf})).request_number,first.request_number);ok();
 await assert.rejects(create(id(100),{contact,proforma:pf,quantity:6}),/already exists/);ok();
 
-// Only the salesperson or owner may close it, with a reference; stale versions are refused.
+// Cancellation is owner-only even for the assigned salesperson, including direct RPC calls.
 const cancelTarget=await create(id(102));
+await db.exec('set role authenticated');
 await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Only the owner can cancel/);ok();
+await db.exec('reset role');
 assert.equal((await db.query('select status from public.pending_stock_requests where id=$1',[cancelTarget.id])).rows[0].status,'waiting');ok();
 assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[cancelTarget.id])).rows[0].n,1);ok();
 await as(inactive);await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Active staff/);ok();
+await as('');await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Active staff/);ok();
+await as(other);await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Only the owner can cancel/);ok();
 await as(owner);await assert.rejects(advance(cancelTarget.id,1,'cancel',''),/reference/);ok();
+await db.exec('set role authenticated');
 const cancelled=await advance(cancelTarget.id,1,'cancel','Customer declined');
+await db.exec('reset role');
 assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.closed_by,owner);assert.equal(cancelled.version,2);ok();
 await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/changed/);ok();
 assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[cancelTarget.id])).rows[0].n,2);ok();
@@ -87,4 +93,4 @@ await assert.rejects(db.query('delete from public.pending_stock_requests'),/neve
 assert.deepEqual(await lots(),before);ok();
 const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create`)).rows[0];
 assert.deepEqual(grants,{ins:false,anon_create:false});ok();
-console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, salesperson/owner closing, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
+console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, owner-only cancellation, salesperson/owner fulfilment, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
