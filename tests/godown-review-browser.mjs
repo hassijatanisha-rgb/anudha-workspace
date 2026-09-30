@@ -32,5 +32,8 @@ try{
  await page.evaluate(()=>{tallyLocationReviews.push({source_godown:'City Printer',version:2,location_id:null});renderTallyStock();});
  assert.equal(await page.locator('[data-location-ready="true"]').count(),0);
  assert.ok((await page.locator('#godownReadiness').textContent()).includes('Unresolved — do not import'));
+ await page.evaluate(()=>{tallyRows.push({id:'blank',godown:'',product_name:'Unplaced item',quantity:1,unit:'PCS'});renderTallyStock();});
+ const blank=page.locator('#godownReadiness tbody tr').filter({hasText:'Missing godown — needs correction'});
+ assert.equal(await blank.locator('[data-location-ready]').textContent(),'Missing source godown');
  console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
 }finally{await browser.close();}
