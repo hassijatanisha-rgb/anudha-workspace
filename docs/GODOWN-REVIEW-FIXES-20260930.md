@@ -12,7 +12,7 @@
 - All three browser scripts pass: godown-mapping-integration.mjs, godown-mapping-browser.mjs, and godown-review-browser.mjs.
 - Preview RED checkpoint ccb2a6f requires a visible readiness table. The preview now renders that table using the actual application status and save functions. Preview and location-readiness tests: 4 passed, 0 failed, 0 skipped.
 - Visible in-app walkthrough on 2026-09-30: saved City Printer, reopened its persisted version 1, saved Unresolved, closed the dialog, and verified the table immediately displayed "Unresolved — do not import" without reloading. This used an isolated in-memory database and fictional records, not Supabase or company stock.
-- Limitation: the open dialog's history is refreshed on reopening, not immediately after save. No claim of production deployment or migration activation is made.
+- Follow-up fixed the open dialog's stale history: RED abe4308 reproduced "No saved mapping yet" after a confirmed save; GREEN 21933ea refreshes history from the verified result. Failed saves leave history unchanged. Both `node tests/godown-mapping-browser.mjs` and `node tests/godown-mapping-integration.mjs` passed. Visible walkthrough showed version 3 immediately after Save with versions 2 and 1 retained. Coverage percentage was not measured for this browser change. No claim of production deployment or migration activation is made.
 
 ## Existing pending-stock integration contract
 
