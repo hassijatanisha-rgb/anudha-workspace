@@ -1,0 +1,53 @@
+/* Interface polish, loaded last. Adds visual hierarchy without changing any workflow markup:
+   primary = the usual next step, danger = cancels, rejects, loses or deletes, quiet = look-up actions. */
+:root{--danger:#a12a2a;--danger-line:#e5c3c3;--danger-soft:#fbf1f1}
+
+/* Calmer, evenly spaced buttons in the work area. The header and sidebar keep their own styles. */
+main button{min-height:40px;padding:8px 14px;font-size:14px;line-height:1.3}
+main .actions{gap:8px}
+main .card .actions{margin-top:14px}
+main .heading .actions{gap:10px}
+
+/* Primary: the step most people take next. */
+#newLead,#newPending,#addEmployee,
+[data-lead-action="qualify"],[data-lead-proforma],
+[data-proforma-action="send"],[data-proforma-action="accept"],
+[data-delivery-action]:not([data-delivery-action="cancel"]),
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish]{
+ background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
+#newLead:hover,#newPending:hover,#addEmployee:hover,
+[data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
+[data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
+[data-delivery-action]:not([data-delivery-action="cancel"]):hover,
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+
+/* Danger: clearly different so nobody cancels or deletes by mistake. */
+button.danger,[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
+[data-delivery-action="cancel"],[data-service-action="cancel"],[data-delete-contact],[data-delete-org],[data-archive-business]{
+ color:var(--danger);border-color:var(--danger-line);background:#fff}
+button.danger:hover,[data-lead-action="lost"]:hover,[data-pending-action="cancel"]:hover,[data-proforma-action="cancel"]:hover,[data-proforma-action="reject"]:hover,
+[data-delivery-action="cancel"]:hover,[data-service-action="cancel"]:hover,[data-delete-contact]:hover,[data-delete-org]:hover,[data-archive-business]:hover{
+ background:var(--danger-soft);color:var(--danger);border-color:var(--danger)}
+
+/* Quiet: looking things up, not changing them. */
+[data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],
+#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
+ background:transparent;border-color:transparent;color:#3f5a50}
+[data-lead-history]:hover,[data-pending-history]:hover,[data-lead-edit]:hover,[data-load-order-timing]:hover,[data-work-open]:hover,
+#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
+
+/* Keyboard users always see where they are. */
+main button:focus-visible,main a:focus-visible,main input:focus-visible,main select:focus-visible,main textarea:focus-visible{outline:3px solid #8cc63f;outline-offset:2px}
+
+/* Card details use the full width: as many 180px columns as fit, labels small and muted above values. */
+main .card .details{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 24px;margin:16px 0}
+main .card .details small{display:block;margin-bottom:2px;color:var(--muted,#5d7068);font-size:12px;letter-spacing:.02em}
+main .card h2{line-height:1.25;margin:4px 0 6px}
+main .card .heading{gap:12px}
+
+/* Tags read as small labels, not buttons. */
+main .tag{white-space:nowrap;font-size:12px}
+
+/* Summary strip and notices breathe a little more. */
+main .help-strip{gap:6px 16px}
+#notice:empty{display:none}
