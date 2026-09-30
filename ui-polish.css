@@ -13,28 +13,28 @@ main .heading .actions{gap:10px}
 [data-lead-action="qualify"],[data-lead-proforma],
 [data-proforma-action="send"],[data-proforma-action="accept"],
 [data-delivery-action]:not([data-delivery-action="cancel"]),
-[data-pending-action="fulfil"],[data-work-done],[data-work-finish]{
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish],#countSave,#countOpen,[data-count-action="accept"]{
  background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
 #newLead:hover,#newPending:hover,#addEmployee:hover,#newPurchase:hover,#newSupplier:hover,[data-purchase-action="approve"]:hover,[data-purchase-action="order"]:hover,[data-purchase-action="close"]:hover,
 [data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
 [data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
 [data-delivery-action]:not([data-delivery-action="cancel"]):hover,
-[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
 
 /* Danger: clearly different so nobody cancels or deletes by mistake. */
-button.danger,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
+button.danger,[data-count-action="void"],[data-count-action="reject"],#countClose,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
 [data-delivery-action="cancel"],[data-service-action="cancel"],[data-delete-contact],[data-delete-org],[data-archive-business]{
  color:var(--danger);border-color:var(--danger-line);background:#fff}
-button.danger:hover,[data-purchase-action="cancel"]:hover,[data-lead-action="lost"]:hover,[data-pending-action="cancel"]:hover,[data-proforma-action="cancel"]:hover,[data-proforma-action="reject"]:hover,
+button.danger:hover,[data-count-action="void"]:hover,[data-count-action="reject"]:hover,#countClose:hover,[data-purchase-action="cancel"]:hover,[data-lead-action="lost"]:hover,[data-pending-action="cancel"]:hover,[data-proforma-action="cancel"]:hover,[data-proforma-action="reject"]:hover,
 [data-delivery-action="cancel"]:hover,[data-service-action="cancel"]:hover,[data-delete-contact]:hover,[data-delete-org]:hover,[data-archive-business]:hover{
  background:var(--danger-soft);color:var(--danger);border-color:var(--danger)}
 
 /* Quiet: looking things up, not changing them. */
 [data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
-#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
+#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
  background:transparent;border-color:transparent;color:#3f5a50}
 [data-lead-history]:hover,[data-pending-history]:hover,[data-lead-edit]:hover,[data-load-order-timing]:hover,[data-work-open]:hover,[data-purchase-history]:hover,[data-purchase-edit]:hover,[data-supplier-edit]:hover,
-#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
+#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
 
 /* Keyboard users always see where they are. */
 main button:focus-visible,main a:focus-visible,main input:focus-visible,main select:focus-visible,main textarea:focus-visible{outline:3px solid #8cc63f;outline-offset:2px}
@@ -51,3 +51,12 @@ main .tag{white-space:nowrap;font-size:12px}
 /* Summary strip and notices breathe a little more. */
 main .help-strip{gap:6px 16px}
 #notice:empty{display:none}
+
+/* Stock count: large tap targets for counting on a phone in the godown. */
+.count-results{display:grid;gap:8px;margin:12px 0}
+main .count-result{display:grid;gap:2px;text-align:left;min-height:56px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:8px}
+main .count-result:hover{border-color:var(--green);background:#f4faf6}
+.count-result span{color:#3f5a50;font-size:13px}
+.count-result small{color:var(--muted,#5d7068);font-size:12px}
+.count-form input[name="quantity"]{font-size:20px;font-weight:600}
+.stock-count-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}

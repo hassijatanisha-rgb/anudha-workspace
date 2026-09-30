@@ -43,3 +43,11 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Post-check: RLS on all four tables. `authenticated` has SELECT only (no INSERT). `anon` has no table or RPC access, and API roles cannot use the number sequences.
 - Live functional check in an aborted transaction as the real owner: a signed-out call was refused; SUP-000001 was created; PO-000001 went request → approve → order (LPO) → close with 1 item and 4 history rows. After the abort: suppliers, orders, items and events are all 0, and `inventory_lots` is unchanged at 0.
 - Recorded migrations now: 042–046.
+
+## Migration 047: temporary stock count (applied the same day)
+- Pre-check: none of `count_catalogue`, `stock_count_sessions` or `stock_count_entries` existed; `inventory_active_staff()` and `inventory_owner()` exist; `inventory_lots` had 0 rows.
+- Post-check in an aborted transaction as the real owner: one product loaded, a count started, a count recorded and accepted. A direct UPDATE of a saved count was refused ("permission denied"). `inventory_lots` stayed at 0.
+- As `anon`: "permission denied" for `open_stock_count` and for reading `count_catalogue`.
+- After the abort, all three tables are empty. The security advisor lists only the existing categories: signed-in RPC access, which is by design, and leaked-password protection.
+- The product list (9,766 AN-coded products) is not stored in this repository. The owner loads it from the prepared file through **Stock count → Load the product list**. The same file was checked against this migration in a disposable database: all 9,766 rows load, and loading it again updates the rows instead of duplicating them.
+- Recorded migrations now: 042–047.
