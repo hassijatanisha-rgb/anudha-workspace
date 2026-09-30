@@ -1,5 +1,15 @@
 'use strict';
 let tallyRows=[],tallyCorrections=new Map(),tallySearch='',tallyPage=0,tallyGodown='';
+let tallyLocationReviews=null,tallyLocations=null;
+function tallyGodownLocationStatus(godown,reviews,locations){
+ if(!godown?.trim())return {ready:false,label:'Missing source godown',version:0};
+ if(!Array.isArray(reviews)||!Array.isArray(locations))return {ready:false,label:'Location checks unavailable',version:0};
+ const latest=reviews.filter(r=>r.source_godown===godown).reduce((best,r)=>!best||r.version>best.version?r:best,null);
+ if(!latest)return {ready:false,label:'Location not mapped',version:0};
+ if(!latest.location_id)return {ready:false,label:'Unresolved — do not import',version:latest.version};
+ const location=locations.find(r=>r.id===latest.location_id&&r.active===true);
+ return {ready:!!location,label:location?location.name:'Mapped location inactive or missing',version:latest.version};
+}
 function tallyGodownReview(source,corrections,godown,search){
  const godowns=[...new Set(source.map(r=>r.godown||''))].sort((a,b)=>a.localeCompare(b));
  const scoped=godown?source.filter(r=>r.godown===godown):source;
@@ -13,8 +23,9 @@ async function tallyStockScreen(){
  const actor=me?.user_id;
  $('#content').innerHTML='<p role="status">Loading Tally stock review…</p>';
  try{
-  const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
+  const [rows,corrections,mapping]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*'),Promise.all([all('godown_mapping_reviews','id,source_godown,version,location_id,reason'),all('inventory_locations','id,name,active')]).catch(()=>[null,null])]);
   if(me?.user_id!==actor||inventorySection!=='review')return;
+  [tallyLocationReviews,tallyLocations]=mapping;
   tallyRows=rows;tallyCorrections=new Map();for(const r of corrections)if((tallyCorrections.get(r.source_id)?.version||0)<r.version)tallyCorrections.set(r.source_id,r);
   renderTallyStock();
  }catch(error){if(me?.user_id===actor&&inventorySection==='review'){$('#content').innerHTML=inventoryHeader()+`<p role="alert">Stock review could not load: ${esc(error.message)}. No stock was changed.</p>`;bindInventoryWorkspace();}}
@@ -49,6 +60,9 @@ function renderTallyStock(){
  const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
  readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyGodownReadiness(tallyRows,tallyRowReview).map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
+ const locationHeading=document.createElement('th');locationHeading.textContent='Location check';readiness.querySelector('thead tr').append(locationHeading);
+ readiness.querySelectorAll('tbody tr').forEach(row=>{const check=tallyGodownLocationStatus(row.cells[0].textContent,tallyLocationReviews,tallyLocations),cell=document.createElement('td');cell.dataset.locationReady=String(check.ready);cell.textContent=check.label;row.append(cell);});
+ const locationNotice=document.createElement('p');locationNotice.textContent='Product checks alone do not authorize import. A saved active location mapping is also required. Operational import is not enabled here.';readiness.append(locationNotice);
  if(me.role==='owner'){
   const heading=document.createElement('th');heading.textContent='Location mapping';readiness.querySelector('thead tr').append(heading);
   readiness.querySelectorAll('tbody tr').forEach(row=>{const name=row.cells[0].textContent,cell=document.createElement('td'),button=document.createElement('button');button.type='button';button.textContent='Review location mapping';button.disabled=!tallyRows.some(r=>r.godown===name);button.onclick=()=>openGodownMapping(name);cell.append(button);row.append(cell);});

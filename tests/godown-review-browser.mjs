@@ -25,5 +25,12 @@ try{
  assert.equal(await page.locator('#tallyFile').count(),0);
  assert.equal(await page.locator('#godownReadiness tbody tr').count(),2);
  assert.ok((await page.locator('#godownReadiness').textContent()).includes('not that stock has been imported'));
+ assert.equal(await page.locator('[data-location-ready="false"]').count(),2);
+ await page.evaluate(()=>{tallyLocationReviews=[{source_godown:'City Printer',version:1,location_id:'loc'}];tallyLocations=[{id:'loc',name:'Verified Warehouse',active:true}];renderTallyStock();});
+ assert.equal(await page.locator('[data-location-ready="true"]').count(),1);
+ assert.equal(await page.locator('[data-location-ready="true"]').textContent(),'Verified Warehouse');
+ await page.evaluate(()=>{tallyLocationReviews.push({source_godown:'City Printer',version:2,location_id:null});renderTallyStock();});
+ assert.equal(await page.locator('[data-location-ready="true"]').count(),0);
+ assert.ok((await page.locator('#godownReadiness').textContent()).includes('Unresolved — do not import'));
  console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
 }finally{await browser.close();}
