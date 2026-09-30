@@ -51,3 +51,17 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - After the abort, all three tables are empty. The security advisor lists only the existing categories: signed-in RPC access, which is by design, and leaked-password protection.
 - The product list (9,766 AN-coded products) is not stored in this repository. The owner loads it from the prepared file through **Stock count → Load the product list**. The same file was checked against this migration in a disposable database: all 9,766 rows load, and loading it again updates the rows instead of duplicating them.
 - Recorded migrations now: 042–047.
+
+## Migration 048: apply the product list to ERP products (applied the same day)
+- Pre-check: 4,247 products and 0 product detail reviews or classifications. `apply_product_list` did not exist. The products table has two triggers: `products_audit` (records every change in `audit_log`) and `products_soft_delete_guard`.
+- Adds the Furniture category (a wider check constraint, and `save_product_inventory_classification` accepts it) and the owner-only `apply_product_list(jsonb)`, 500 rows per call.
+- How it applies the list:
+  - A product linked to the list gets a new review version (name, company, specification) and a new category version. Nothing is overwritten.
+  - A correction saved by a person is never replaced by the list.
+  - Products not in the ERP are created, with the AN code as the stock code.
+  - Running it again changes nothing.
+  - Stock, prices and documents are untouched.
+- Live check in an aborted transaction as the real owner: the first run updated one real product and created one new product. The second run reported 0 changes. The stock code was set to the AN code and the category to Furniture. Everything was rolled back.
+- Disposable database with the real file: 9,766 rows gave 4,244 existing products updated, 5,546 created, and every product with an AN stock code.
+- The owner still has to load the file once: Inventory → Product data workbench → **Apply product list file**, or through the Stock count screen, which does the same.
+- Recorded migrations now: 042–048.
