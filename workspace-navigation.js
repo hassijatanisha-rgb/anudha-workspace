@@ -8,7 +8,7 @@ const workspaceGroups=[
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],['Accounting forms','accounting'],
-  ['Delivery progress','sales','delivery'],['Pending stock orders'],['Inquiries'],['Lead / Opportunity']
+  ['Delivery progress','sales','delivery'],['Pending stock orders'],['Inquiries','leads','inquiries'],['Lead / Opportunity','leads','pipeline']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -35,7 +35,8 @@ function installWorkspaceNavigation(){
   if(!button||busy)return;
   const section=button.dataset.workspaceSection;
   if(button.dataset.view==='personal'){personalSection=section||'event';personalPage=0;}
-  if(button.dataset.view==='sales'){
+  if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
+ if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
   }
@@ -46,7 +47,7 @@ function installWorkspaceNavigation(){
 function syncWorkspaceNavigation(){
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
