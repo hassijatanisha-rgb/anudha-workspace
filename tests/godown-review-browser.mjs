@@ -1,7 +1,9 @@
-import {chromium} from '/Users/tanisha/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs';
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
+import {dirname,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||resolve(dirname(process.execPath),'../node_modules/playwright/index.mjs')).href);
+const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 try{
  const page=await browser.newPage();await page.setContent('<main id="content"></main>');
  await page.addScriptTag({content:`const me={user_id:'fixture',role:'staff'};const $=s=>document.querySelector(s);const products=[];
