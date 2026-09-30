@@ -6,6 +6,7 @@ function tallyGodownLocationStatus(godown,reviews,locations){
  if(!Array.isArray(reviews)||!Array.isArray(locations))return {ready:false,label:'Location checks unavailable',version:0};
  const latest=reviews.filter(r=>r.source_godown===godown).reduce((best,r)=>!best||r.version>best.version?r:best,null);
  if(!latest)return {ready:false,label:'Location not mapped',version:0};
+ if(latest.unconfirmed)return {ready:false,label:'Mapping save unconfirmed — do not import',version:latest.version};
  if(!latest.location_id)return {ready:false,label:'Unresolved — do not import',version:latest.version};
  const location=locations.find(r=>r.id===latest.location_id&&r.active===true);
  return {ready:!!location,label:location?location.name:'Mapped location inactive or missing',version:latest.version};
@@ -125,6 +126,9 @@ async function openGodownMapping(godown){
    if(reason.length<5){alert.textContent='Enter the evidence for this mapping.';return;}
    if(request&&(request.p_location_id!==location||request.p_reason!==reason)){alert.textContent='Previous save is unconfirmed. Retry unchanged or close and reopen to check the latest saved mapping.';return;}
    request??={p_id:crypto.randomUUID(),p_godown:godown,p_expected_version:previous?.version||0,p_location_id:location,p_reason:reason};button.disabled=true;
+   tallyLocations=locations;
+   tallyLocationReviews=[...(tallyLocationReviews||[]).filter(item=>item.id!==request.p_id),{id:request.p_id,source_godown:godown,version:request.p_expected_version+1,unconfirmed:true}];
+   refreshGodownLocationChecks();
    try{const r=await client.rpc('save_godown_mapping_review',request);if(!current()||!dialog.isConnected){dialog.close();return;}if(r.error)throw r.error;
     const saved=Array.isArray(r.data)?r.data[0]:r.data;if(saved?.id!==request.p_id||saved?.version!==request.p_expected_version+1)throw Error('Saved mapping could not be verified');
     tallyLocations=locations;
