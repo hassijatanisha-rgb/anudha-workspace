@@ -37,3 +37,9 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Post-check: RLS on; `authenticated` can SELECT only (no INSERT/UPDATE); `anon` has no table or RPC access; the `work_record_exists` helper is not executable by API roles.
 - Live functional check in an aborted transaction as the real owner: first handoff opened; a second handoff that did not name the open one was refused; a correct second handoff closed the first as `handed_on` and linked to it; marking it done worked; RLS showed both rows. After the abort, `work_assignments` has 0 rows.
 - Recorded migrations now: 042, 043, 044, 045.
+
+## Migration 046: suppliers and purchasing (applied the same day)
+- Pre-check: `products` and `pending_stock_requests` exist. No supplier or purchasing table or sequence existed.
+- Post-check: RLS on all four tables. `authenticated` has SELECT only (no INSERT). `anon` has no table or RPC access, and API roles cannot use the number sequences.
+- Live functional check in an aborted transaction as the real owner: a signed-out call was refused; SUP-000001 was created; PO-000001 went request → approve → order (LPO) → close with 1 item and 4 history rows. After the abort: suppliers, orders, items and events are all 0, and `inventory_lots` is unchanged at 0.
+- Recorded migrations now: 042–046.
