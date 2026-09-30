@@ -30,10 +30,12 @@ try{
  await page.route('https://inventory-fixture.test/**',route=>route.fulfill({contentType:'text/html',body:'<main id="content"></main>'}));await page.goto('https://inventory-fixture.test/');
  await page.addScriptTag({content:`let me={user_id:'owner',role:'owner'},inventorySection='review';const client={rpc:(n,p)=>window.saveFixture(n,p)};const all=n=>window.readFixture(n);function esc(v){const e=document.createElement('span');e.textContent=String(v);return e.innerHTML.replace(/"/g,'&quot;');}`});
  await page.addScriptTag({content:readFileSync(new URL('../tally-stock-review.js',import.meta.url),'utf8')});
- await page.evaluate(()=>{document.querySelector('#content').innerHTML='<section id="godownReadiness"><table><tbody><tr data-source-godown="CITY PRINTER"><td data-location-ready="false">Location not mapped</td></tr></tbody></table></section>';});
+ await page.evaluate(()=>{document.querySelector('#content').innerHTML='<section id="godownReadiness"><table><tbody><tr data-source-godown="CITY PRINTER"><td data-location-ready="true">Previously checked location</td></tr></tbody></table></section>';});
  await page.evaluate(()=>openGodownMapping('CITY PRINTER'));
  await page.locator('select[name="location"]').selectOption(id(10));await page.locator('textarea').fill('Warehouse checked in fixture');
  await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Not confirmed saved: Simulated lost response after commit').waitFor();
+ assert.equal(await page.locator('[data-location-ready]').getAttribute('data-location-ready'),'false');
+ assert.equal(await page.locator('[data-location-ready]').textContent(),'Mapping save unconfirmed — do not import');
  assert.equal((await db.query('select count(*)::int n from godown_mapping_reviews')).rows[0].n,1);
  await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Mapping saved. Stock quantities unchanged.').waitFor();
  assert.equal(await page.locator('[data-location-ready]').getAttribute('data-location-ready'),'true');
