@@ -25,3 +25,9 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 ## Not yet done
 - The frontend (`sales-leads.js`, `pending-stock.js`) reaches the official site only once `claude/friendly-volta-3lwcib` is reviewed and merged into `main`.
 - Codex should call `create_pending_stock_request` from the invoice "split remainder to pending" step in the stock-timing work, instead of creating a second pending mechanism.
+
+## Migration 044: close anonymous RPC access (applied the same day)
+- Pre-check (read-only): `anon` holds no table grants in `public`, and no RLS policy for `anon`/`public` calls `inventory_active_staff()` or `inventory_owner()`.
+- Revoked EXECUTE from `PUBLIC` and `anon` on the ten inventory SECURITY DEFINER functions and the two access helpers. `authenticated` keeps explicit grants. The trigger-only `create_installation_cases_for_delivery()` is no longer executable by any API role. `protect_project_approval_answers()` now pins `search_path`.
+- Post-check in an aborted transaction as the real owner: both helpers return true, and 2 locations and 4,247 products are visible through RLS. As `anon`, calling `inventory_owner()` gives "permission denied".
+- The Supabase security advisor no longer reports anonymous-executable functions or a mutable search_path. Remaining: signed-in RPC access (by design, since every RPC checks the caller) and leaked-password protection (a dashboard setting for the owner).
