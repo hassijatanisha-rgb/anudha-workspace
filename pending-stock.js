@@ -3,13 +3,18 @@
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
 function clearPendingStock(){pendingEpoch++;pendingRows=[];pendingAvailability=new Map();pendingLoaded=false;pendingCreating=false;pendingRequestId=null;}
-function pendingToday(){return new Date().toISOString().slice(0,10);}
+function pendingToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
 // Saleable pieces per product: sealed cartons × units per carton + loose − reserved, available lots at active locations only.
-function pendingAvailableByProduct(lots,packs,locations){
+function pendingAvailableByProduct(lots,packs,locations,today=pendingToday()){
  const perCarton=new Map(packs.map(pack=>[pack.id,pack.units_per_carton])),active=new Set(locations.filter(location=>location.active).map(location=>location.id)),out=new Map();
  for(const lot of lots){
   if(lot.stock_status!=='available'||!active.has(lot.location_id))continue;
+  // Match stock-review policy: lots expiring today are not available for sale.
+  if(lot.expiry_date!=null){
+   const expiry=String(lot.expiry_date),date=new Date(`${expiry}T00:00:00Z`);
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(expiry)||!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==expiry||expiry<=today)continue;
+  }
   const units=perCarton.get(lot.pack_definition_id),cartons=lot.sealed_cartons,loose=lot.loose_units,reserved=lot.reserved_units;
   if(![units,cartons,loose,reserved].every(value=>Number.isSafeInteger(value)&&value>=0)||reserved>loose)continue;
   out.set(lot.product_id,(out.get(lot.product_id)||0)+cartons*units+loose-reserved);
@@ -57,7 +62,7 @@ async function loadPendingStock(){
  pendingRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
-  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
   if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
   pendingAvailability=pendingAvailableByProduct(lots,packs,locations);pendingAvailabilityError='';
  }catch(error){if(epoch!==pendingEpoch)return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
