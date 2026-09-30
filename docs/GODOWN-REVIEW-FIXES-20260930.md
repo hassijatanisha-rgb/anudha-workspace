@@ -6,6 +6,14 @@
 - GREEN: godown-review-browser.mjs and godown-mapping-integration.mjs pass, plus 13 focused unit tests. Database fixture verifies retry uniqueness and unchanged source/operational stock. No live SQL executed.
 - Migration 041 remains unapplied by this change. These are review-branch fixes, not a live activation.
 
+## Interrupted-save and visible walkthrough verification
+
+- RED checkpoint 9d25db2 reproduces a stale ready state when the database commits but the response is lost. GREEN 9e24719 marks the row unconfirmed before saving and restores readiness only from a confirmed response. Retrying keeps the same request ID and does not duplicate history.
+- All three browser scripts pass: godown-mapping-integration.mjs, godown-mapping-browser.mjs, and godown-review-browser.mjs.
+- Preview RED checkpoint ccb2a6f requires a visible readiness table. The preview now renders that table using the actual application status and save functions. Preview and location-readiness tests: 4 passed, 0 failed, 0 skipped.
+- Visible in-app walkthrough on 2026-09-30: saved City Printer, reopened its persisted version 1, saved Unresolved, closed the dialog, and verified the table immediately displayed "Unresolved — do not import" without reloading. This used an isolated in-memory database and fictional records, not Supabase or company stock.
+- Limitation: the open dialog's history is refreshed on reopening, not immediately after save. No claim of production deployment or migration activation is made.
+
 ## Existing pending-stock integration contract
 
 User and Claude's docs/LEADS-PENDING-LIVE-20260930.md report migrations 042/043 already applied. Do not reapply or create another pending table.
