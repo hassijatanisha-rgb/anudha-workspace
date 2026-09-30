@@ -8,7 +8,7 @@ const workspaceGroups=[
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Current orders','sales','proformas'],['Create Pro forma','sales','new'],['Accounting forms','accounting'],
-  ['Delivery progress','sales','delivery'],['Pending stock orders'],['Inquiries','leads','inquiries'],['Lead / Opportunity','leads','pipeline']
+  ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Inquiries','leads','inquiries'],['Lead / Opportunity','leads','pipeline']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
