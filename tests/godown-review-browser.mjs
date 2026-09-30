@@ -10,6 +10,7 @@ try{
  function productStockReview(){return {issues:['Needs review']};}
  function renderSearchPreservingPosition(input,render){const id=input.id,start=input.selectionStart;render();document.getElementById(id).focus();document.getElementById(id).setSelectionRange(start,start);}`});
  await page.addScriptTag({content:readFileSync(new URL('../tally-stock-review.js',import.meta.url),'utf8')});
+ await page.evaluate(()=>{window.checklistRuns=0;const calculate=tallyGodownReadiness;tallyGodownReadiness=(...args)=>{window.checklistRuns++;return calculate(...args);};});
  await page.evaluate(()=>{tallyRows=Array.from({length:55},(_,i)=>({id:'c'+i,godown:'City Printer',product_name:'Blood bag '+i,quantity:i===0?-2:1,unit:'PCS'}));tallyRows.push({id:'other',godown:'City Printer 2',product_name:'Other-only item',quantity:22,unit:'PCS'});renderTallyStock();});
  await page.locator('#tallyGodown').selectOption({label:'City Printer'});
  assert.equal(await page.locator('.cleanup-table tbody tr').count(),50);
@@ -25,5 +26,10 @@ try{
  assert.equal(await page.locator('#tallyFile').count(),0);
  assert.equal(await page.locator('#godownReadiness tbody tr').count(),2);
  assert.ok((await page.locator('#godownReadiness').textContent()).includes('not that stock has been imported'));
+ assert.equal(await page.evaluate(()=>window.checklistRuns),1,'search, filters and pagination must reuse the unchanged checklist');
+ await page.addScriptTag({content:`let inventorySection='review';async function all(table){return table==='tally_stock_sources'?[{id:'new',godown:'Reloaded godown',product_name:'New source',quantity:1,unit:'PCS'}]:[];}`});
+ await page.evaluate(()=>tallyStockScreen());
+ assert.equal(await page.evaluate(()=>window.checklistRuns),2,'reloading data after a correction must recalculate');
+ assert.match(await page.locator('#godownReadiness').innerText(),/Reloaded godown/);
  console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
 }finally{await browser.close();}
