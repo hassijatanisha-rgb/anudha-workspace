@@ -10,6 +10,13 @@ function tallyGodownLocationStatus(godown,reviews,locations){
  const location=locations.find(r=>r.id===latest.location_id&&r.active===true);
  return {ready:!!location,label:location?location.name:'Mapped location inactive or missing',version:latest.version};
 }
+function refreshGodownLocationChecks(){
+ document.querySelectorAll('#godownReadiness tbody tr[data-source-godown]').forEach(row=>{
+  const cell=row.querySelector('[data-location-ready]');if(!cell)return;
+  const check=tallyGodownLocationStatus(row.dataset.sourceGodown,tallyLocationReviews,tallyLocations);
+  cell.dataset.locationReady=String(check.ready);cell.textContent=check.label;
+ });
+}
 function tallyGodownReview(source,corrections,godown,search){
  const godowns=[...new Set(source.map(r=>r.godown||''))].sort((a,b)=>a.localeCompare(b));
  const scoped=godown?source.filter(r=>r.godown===godown):source;
@@ -61,11 +68,13 @@ function renderTallyStock(){
  readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyGodownReadiness(tallyRows,tallyRowReview).map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
  const locationHeading=document.createElement('th');locationHeading.textContent='Location check';readiness.querySelector('thead tr').append(locationHeading);
- readiness.querySelectorAll('tbody tr').forEach(row=>{const check=tallyGodownLocationStatus(row.cells[0].textContent,tallyLocationReviews,tallyLocations),cell=document.createElement('td');cell.dataset.locationReady=String(check.ready);cell.textContent=check.label;row.append(cell);});
+ const sourceGroups=tallyGodownReadiness(tallyRows,tallyRowReview);
+ readiness.querySelectorAll('tbody tr').forEach((row,index)=>{row.dataset.sourceGodown=sourceGroups[index].name;const cell=document.createElement('td');cell.dataset.locationReady='false';row.append(cell);});
+ refreshGodownLocationChecks();
  const locationNotice=document.createElement('p');locationNotice.textContent='Product checks alone do not authorize import. A saved active location mapping is also required. Operational import is not enabled here.';readiness.append(locationNotice);
  if(me.role==='owner'){
   const heading=document.createElement('th');heading.textContent='Location mapping';readiness.querySelector('thead tr').append(heading);
-  readiness.querySelectorAll('tbody tr').forEach(row=>{const name=row.cells[0].textContent,cell=document.createElement('td'),button=document.createElement('button');button.type='button';button.textContent='Review location mapping';button.disabled=!tallyRows.some(r=>r.godown===name);button.onclick=()=>openGodownMapping(name);cell.append(button);row.append(cell);});
+  readiness.querySelectorAll('tbody tr').forEach(row=>{const name=row.dataset.sourceGodown,cell=document.createElement('td'),button=document.createElement('button');button.type='button';button.textContent='Review location mapping';button.disabled=!name.trim();button.onclick=()=>openGodownMapping(name);cell.append(button);row.append(cell);});
  }
  const file=$('#tallyFile');if(file)file.onchange=()=>run(async()=>{
   const actor=me?.user_id,payload=JSON.parse(await file.files[0].text());
@@ -118,6 +127,9 @@ async function openGodownMapping(godown){
    request??={p_id:crypto.randomUUID(),p_godown:godown,p_expected_version:previous?.version||0,p_location_id:location,p_reason:reason};button.disabled=true;
    try{const r=await client.rpc('save_godown_mapping_review',request);if(!current()||!dialog.isConnected){dialog.close();return;}if(r.error)throw r.error;
     const saved=Array.isArray(r.data)?r.data[0]:r.data;if(saved?.id!==request.p_id||saved?.version!==request.p_expected_version+1)throw Error('Saved mapping could not be verified');
+    tallyLocations=locations;
+    tallyLocationReviews=[...(tallyLocationReviews||[]).filter(item=>item.id!==saved.id),{...saved,source_godown:godown,location_id:request.p_location_id}];
+    refreshGodownLocationChecks();
     alert.textContent='';dialog.querySelector('[role="status"]').textContent='Mapping saved. Stock quantities unchanged.';
     dialog.querySelectorAll('input,select,textarea').forEach(el=>el.disabled=true);
    }catch(error){if(current()&&dialog.isConnected){alert.textContent=`Not confirmed saved: ${error.message}`;button.disabled=false;}}
