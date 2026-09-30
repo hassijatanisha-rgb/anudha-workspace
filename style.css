@@ -98,3 +98,4 @@ body>header .brand{min-width:0;max-width:100%}
 body>header .brand{flex-wrap:wrap;row-gap:2px}body>header .brand span{white-space:normal}body>header .brand-logo{max-width:100%;height:auto}
 .inventory-tabs{flex-wrap:wrap}
 .setup-steps{grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))}.setup-steps>div{min-width:0}.setup-steps b,.setup-steps small{overflow-wrap:anywhere}
+.purchasing-workspace .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.purchasing-workspace .tabs button.active{background:var(--green);color:#fff}.purchase-card .overdue{color:#9b1c1c}.purchase-card td small{display:block;color:var(--muted,#5d7068)}#purchaseLines input{width:100%;min-width:0}

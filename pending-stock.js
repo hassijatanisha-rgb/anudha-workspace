@@ -36,6 +36,7 @@ function pendingProductLabel(row){const product=typeof inventoryProduct==='funct
 function pendingActions(row){
  if(row.status!=='waiting')return `<button type="button" data-pending-history="${esc(row.id)}">History</button>`;
  const mine=row.salesperson_user_id===me?.user_id||me?.role==='owner',buttons=[];
+ buttons.push(`<button type="button" data-pending-purchase="${esc(row.id)}">Order from supplier</button>`);
  if(mine)buttons.push(`<button type="button" data-pending-action="fulfil" data-id="${esc(row.id)}">Mark fulfilled</button>`,`<button type="button" data-pending-action="cancel" data-id="${esc(row.id)}">Cancel</button>`);
  if(me?.role==='owner'&&row.extension_count<4)buttons.push(`<button type="button" data-pending-action="extend" data-id="${esc(row.id)}">Extend</button>`);
  if(pendingDaysLeft(row)<0)buttons.push(`<button type="button" data-pending-action="expire" data-id="${esc(row.id)}">Close as expired</button>`);
@@ -93,6 +94,7 @@ function bindPendingStock(){
  $('#pendingPrev').onclick=()=>{pendingPage--;renderPendingStock();};$('#pendingNext').onclick=()=>{pendingPage++;renderPendingStock();};
  document.querySelectorAll('[data-pending-filter]').forEach(button=>button.onclick=()=>{pendingFilter=button.dataset.pendingFilter;pendingPage=0;renderPendingStock();});
  document.querySelectorAll('[data-pending-action]').forEach(button=>button.onclick=()=>openPendingAction(pendingRows.find(row=>row.id===button.dataset.id),button.dataset.pendingAction));
+ document.querySelectorAll('[data-pending-purchase]').forEach(button=>button.onclick=()=>{if(typeof startPurchaseFromPending==='function')startPurchaseFromPending(pendingRows.find(row=>row.id===button.dataset.pendingPurchase));});
  document.querySelectorAll('[data-pending-history]').forEach(button=>button.onclick=()=>run(()=>showPendingHistory(button.dataset.pendingHistory)));
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
