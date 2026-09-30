@@ -46,6 +46,16 @@ assert.equal((await create(id(100),{contact,proforma:pf})).request_number,first.
 await assert.rejects(create(id(100),{contact,proforma:pf,quantity:6}),/already exists/);ok();
 
 // Only the salesperson or owner may close it, with a reference; stale versions are refused.
+const cancelTarget=await create(id(102));
+await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Only the owner can cancel/);ok();
+assert.equal((await db.query('select status from public.pending_stock_requests where id=$1',[cancelTarget.id])).rows[0].status,'waiting');ok();
+assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[cancelTarget.id])).rows[0].n,1);ok();
+await as(inactive);await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/Active staff/);ok();
+await as(owner);await assert.rejects(advance(cancelTarget.id,1,'cancel',''),/reference/);ok();
+const cancelled=await advance(cancelTarget.id,1,'cancel','Customer declined');
+assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.closed_by,owner);assert.equal(cancelled.version,2);ok();
+await assert.rejects(advance(cancelTarget.id,1,'cancel','Customer declined'),/changed/);ok();
+assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[cancelTarget.id])).rows[0].n,2);ok();
 await as(other);await assert.rejects(advance(id(100),1,'fulfil','INV-1'),/salesperson or the owner/);ok();
 await as(sales);await assert.rejects(advance(id(100),1,'fulfil',''),/reference/);ok();
 await assert.rejects(advance(id(100),9,'cancel','Customer cancelled'),/changed/);ok();
