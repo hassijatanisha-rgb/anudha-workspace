@@ -31,3 +31,9 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Revoked EXECUTE from `PUBLIC` and `anon` on ten SECURITY DEFINER functions: eight inventory write functions plus the two access helpers `inventory_active_staff()` and `inventory_owner()`. `authenticated` keeps explicit grants. The trigger-only `create_installation_cases_for_delivery()` is no longer executable by any API role. `protect_project_approval_answers()` now pins `search_path`.
 - Post-check in an aborted transaction as the real owner: both helpers return true, and 2 locations and 4,247 products are visible through RLS. As `anon`, calling `inventory_owner()` gives "permission denied".
 - The Supabase security advisor no longer reports anonymous-executable functions or a mutable search_path. Remaining: signed-in RPC access (by design, since every RPC checks the caller) and leaked-password protection (a dashboard setting for the owner).
+
+## Migration 045: handoffs and personal task list (applied the same day)
+- Pre-check: all five parent tables exist and `work_assignments` did not.
+- Post-check: RLS on; `authenticated` can SELECT only (no INSERT/UPDATE); `anon` has no table or RPC access; the `work_record_exists` helper is not executable by API roles.
+- Live functional check in an aborted transaction as the real owner: first handoff opened; a second handoff that did not name the open one was refused; a correct second handoff closed the first as `handed_on` and linked to it; marking it done worked; RLS showed both rows. After the abort, `work_assignments` has 0 rows.
+- Recorded migrations now: 042, 043, 044, 045.

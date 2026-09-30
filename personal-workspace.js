@@ -34,6 +34,7 @@ async function personalWorkspace(){
  $('#personalPrevious').onclick=()=>{personalPage--;run(personalWorkspace)};
  $('#personalNext').onclick=()=>{personalPage++;run(personalWorkspace)};
  target.querySelectorAll('[data-personal-edit]').forEach(button=>button.onclick=()=>personalEditor(rows.find(row=>row.id===button.dataset.personalEdit),epoch,actor));
+ if(kind==='task'&&typeof renderMyHandoffs==='function')renderMyHandoffs(target);
 }
 function personalEditor(record,epoch,actor){
  const kind=record?.kind||personalSection;

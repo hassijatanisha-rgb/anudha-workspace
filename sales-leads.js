@@ -1,8 +1,11 @@
 'use strict';
 // Inquiries → leads → opportunities → won (linked Pro forma) or lost. Writes go through save/advance RPCs only.
 let leadSection='inquiries',leadFilter='open',leadSearch='',leadPage=0,leadRows=[],leadLoaded=false,leadLoadError='',leadEpoch=0,leadEditing='';
+let leadFocusId='';
+// Open one lead from elsewhere (e.g. a task): the section is chosen from its stage once the list has loaded.
+function focusLead(id){leadFocusId=id;leadEditing='';leadPage=0;view='leads';}
 function openLeadSection(section){leadSection=section||'inquiries';leadPage=0;leadEditing='';}
-function clearLeads(){leadEpoch++;leadRows=[];leadLoaded=false;leadEditing='';leadPendingSave=null;if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
+function clearLeads(){leadEpoch++;leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';leadPendingSave=null;if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
 const leadStages={inquiry:'Inquiry',lead:'Lead',opportunity:'Opportunity',won:'Won',lost:'Lost'};
 const leadSources={phone:'Phone call',email:'Email',walk_in:'Walk-in',whatsapp:'WhatsApp',referral:'Referral',website:'Website',other:'Other'};
 function leadToday(){return new Date().toISOString().slice(0,10);}
@@ -72,6 +75,7 @@ async function leadsWorkspace(force=false){
   try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
  }
  if(view!=='leads'||me?.user_id!==actor)return;
+ if(leadFocusId){const row=leadRows.find(r=>r.id===leadFocusId);leadFocusId='';if(row){leadSection=row.stage==='inquiry'?'inquiries':'pipeline';leadFilter='all';leadSearch=row.lead_number;}}
  renderLeads();
 }
 function renderLeads(){
@@ -99,6 +103,7 @@ function bindLeads(){
  document.querySelectorAll('[data-lead-action]').forEach(button=>button.onclick=()=>openLeadAction(leadRows.find(row=>row.id===button.dataset.id),button.dataset.leadAction));
  document.querySelectorAll('[data-lead-proforma]').forEach(button=>button.onclick=()=>startProformaFromLead(leadRows.find(row=>row.id===button.dataset.leadProforma)));
  document.querySelectorAll('[data-lead-history]').forEach(button=>button.onclick=()=>run(()=>showLeadHistory(button.dataset.leadHistory)));
+ if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
 function openLeadAction(row,action){
  if(!row)return;

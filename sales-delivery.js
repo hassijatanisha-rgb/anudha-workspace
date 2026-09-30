@@ -150,4 +150,5 @@ function bindSalesDelivery(){
  document.querySelectorAll('[data-proforma-action]').forEach(button=>button.onclick=()=>openProformaAction(salesProforma(button.dataset.id),button.dataset.proformaAction));
  document.querySelectorAll('[data-delivery-action]').forEach(button=>button.onclick=()=>openDeliveryAction(salesDeliveryNotes.find(row=>row.id===button.dataset.id),button.dataset.deliveryAction));
  document.querySelectorAll('[data-print-document]').forEach(button=>button.onclick=()=>printSalesDocument(button.dataset.printDocument));
+ if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }

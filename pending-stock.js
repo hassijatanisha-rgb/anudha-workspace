@@ -94,6 +94,7 @@ function bindPendingStock(){
  document.querySelectorAll('[data-pending-filter]').forEach(button=>button.onclick=()=>{pendingFilter=button.dataset.pendingFilter;pendingPage=0;renderPendingStock();});
  document.querySelectorAll('[data-pending-action]').forEach(button=>button.onclick=()=>openPendingAction(pendingRows.find(row=>row.id===button.dataset.id),button.dataset.pendingAction));
  document.querySelectorAll('[data-pending-history]').forEach(button=>button.onclick=()=>run(()=>showPendingHistory(button.dataset.pendingHistory)));
+ if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
 async function savePendingForm(form){
  const f=new FormData(form),product=inventoryProductFromChoice(String(f.get('productChoice')||'')),quantity=Number(f.get('quantity'));
