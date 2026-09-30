@@ -44,6 +44,19 @@ assert.equal(new Date(first.expires_on).getTime(),new Date(due).getTime(),'close
 // Identical retry returns the same row; different content with the same ID is refused.
 assert.equal((await create(id(100),{contact,proforma:pf})).request_number,first.request_number);ok();
 await assert.rejects(create(id(100),{contact,proforma:pf,quantity:6}),/already exists/);ok();
+const retryConflicts=[];
+for(const fields of [{notes:'Changed customer instructions'},{salesperson:other}]){
+ try { await create(id(100),{contact,proforma:pf,...fields});retryConflicts.push(Object.keys(fields)[0]); }
+ catch(error){assert.match(error.message,/already exists/);}
+}
+assert.deepEqual(retryConflicts,[],'same retry ID must reject changed notes and salesperson');ok();
+assert.equal((await create(id(100),{contact,proforma:pf,salesperson:sales,notes:'  Customer needs 5 more  '})).id,first.id);ok();
+await as(other);await assert.rejects(create(id(100),{contact,proforma:pf,salesperson:sales}),/already exists/);ok();
+await as(sales);
+const blankNotes=await create(id(102),{notes:null});
+assert.equal((await create(id(102),{notes:'   ',salesperson:sales})).id,blankNotes.id);ok();
+assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[first.id])).rows[0].n,1,'retries do not duplicate history');ok();
+assert.deepEqual((await db.query('select salesperson_user_id,notes from public.pending_stock_requests where id=$1',[first.id])).rows[0],{salesperson_user_id:sales,notes:first.notes});ok();
 
 // Only the salesperson or owner may close it, with a reference; stale versions are refused.
 await as(other);await assert.rejects(advance(id(100),1,'fulfil','INV-1'),/salesperson or the owner/);ok();
