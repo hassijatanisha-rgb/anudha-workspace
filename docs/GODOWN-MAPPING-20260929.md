@@ -1,5 +1,7 @@
 # Godown mapping database boundary — isolated only
 
+Integrated verification added 30 September: tests/godown-mapping-integration.mjs drives the actual browser form into actual PGlite predecessor SQL + migration041. PASS: lost response after committed save retries without duplicate history; reopening restores selected location/version; unresolved revision persists; source -4 remains and operational lots remain zero. This is isolated integration, not live Supabase or multi-connection concurrency proof. Prior temporary PGlite directory disappeared; restored pinned official npm 0.3.14 under erp-task-loops/test-runtime, SHA-512 checked against registry integrity. Test supports PGLITE_MODULE override.
+
 RED checkpoint efc773b: actual predecessor migrations loaded, new save RPC missing (42883). New additive migration 041 implements exact source-label to active ERP-location reviews, nullable location for unresolved decisions, owner-only saves, active-staff reads, immutable history, expected versions and actor/payload-bound request replay. No auto-matching and no stock writes.
 
 Validation: Node tests/godown-mapping-database.mjs with PGlite and actual migrations 001/002/018 passes. Checks owner/staff/inactive/anonymous permissions, stale versions, changed request payload, unknown source/location, inactive location, unresolved revisions, immutable history, unchanged negative source and zero operational lots.
