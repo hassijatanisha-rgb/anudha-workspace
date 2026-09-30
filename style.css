@@ -90,3 +90,4 @@ dialog{border-radius:18px;box-shadow:0 24px 70px rgba(13,43,32,.28)}#closeEditor
 /* Handoffs: responsible person on each record and the personal list. */
 .work-handoff{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;background:#f5f7f5;border-radius:8px}.work-handoff .overdue,.my-handoffs .overdue{color:#9b1c1c}.handoff-list{padding-left:20px}.handoff-list li{margin:0 0 10px}.handoff-list li.attention{border-left:4px solid #d7ad32;padding-left:8px}
 @media print{.work-handoff{display:none!important}}
+.reports-workspace .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.reports-workspace .tabs button.active{background:var(--green);color:#fff}.reports-workspace tfoot th{border-top:2px solid var(--line)}

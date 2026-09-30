@@ -18,7 +18,7 @@ const workspaceGroups=[
   ['Product data workbench','inventory','catalog'],['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations']
  ]},
  {name:'System',tone:'system',items:[
-  ['Staff','staff'],['Deleted items','recycle'],['Awaiting approval','approvals'],['Setup progress','checklist'],['Help','guide']
+  ['Staff','staff'],['Reports','reports'],['Deleted items','recycle'],['Awaiting approval','approvals'],['Setup progress','checklist'],['Help','guide']
  ]}
 ];
 function installWorkspaceNavigation(){
