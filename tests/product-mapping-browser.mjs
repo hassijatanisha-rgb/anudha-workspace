@@ -18,6 +18,7 @@ try{
  await page.locator('input[type="file"]').setInputFiles({name:'mapping.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(payload))});
  await page.waitForFunction(()=>document.querySelector('[data-mapping-status]').textContent.includes('Login changed'));
  await page.evaluate(()=>{document.body.insertAdjacentHTML('beforeend','<nav id="nav"></nav><div id="identity"></div><dialog id="editor"></dialog><div id="fields"></div>');window.$=s=>document.querySelector(s);window.organizations=[];window.contacts=[];window.products=[];window.duplicates=new Map();});
+ await page.addScriptTag({content:readFileSync(new URL('../employee-names.js',import.meta.url),'utf8')});
  await page.addScriptTag({content:readFileSync(new URL('../app.js',import.meta.url),'utf8').split('\n').find(line=>line.startsWith('function clear()'))});
  await page.evaluate(()=>clear());assert.equal(await page.locator('dialog.product-review-editor').count(),0);
  console.log('PASS: mapping upload displays exact IDs and negatives without prices or writes, rejects wrong format/changed login and removes private dialogs on sign-out.');

@@ -1,7 +1,7 @@
 // Disposable local PostgreSQL-compatible engine only; no live access.
 import {readFileSync,existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
-const {PGlite}=await import('/private/tmp/anudha-db-tests.aRoaJU/package/dist/index.js');
+const {PGlite}=await import(process.env.PGLITE_MODULE||'/private/tmp/anudha-db-tests.aRoaJU/package/dist/index.js');
 const db=new PGlite(),id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 let checks=0;
 try{
@@ -13,7 +13,7 @@ try{
  insert into auth.users values('${id(1)}'),('${id(2)}'),('${id(3)}');
  insert into staff values('${id(1)}',true,'owner'),('${id(2)}',true,'staff'),('${id(3)}',false,'owner');
  insert into products values('${id(10)}','Reagent','{"category":"reagents","machine_ids":[],"company":"Original"}',null),('${id(11)}','Machine A','{"category":"machines"}',null),('${id(12)}','Machine B','{"category":"machines"}',null),('${id(13)}','Not machine','{"category":"reagents"}',null),('${id(14)}','Archived','{"category":"machines"}',now());`);
- for(const name of ['202609210001_inventory_foundation.sql','202609210002_product_inventory_classification.sql'])await db.exec(readFileSync('/Users/tanisha/Desktop/ERP/anudha-stock-review-release/supabase/migrations/'+name,'utf8'));
+ for(const name of ['202609210001_inventory_foundation.sql','202609210002_product_inventory_classification.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
  const migration=new URL('../supabase/migrations/202609280032_product_machine_links.sql',import.meta.url);
  if(existsSync(migration))await db.exec(readFileSync(migration,'utf8'));
  assert.equal((await db.query("select to_regprocedure('public.save_product_machine_link_review(uuid,uuid,integer,uuid[],text)') is not null installed")).rows[0].installed,true,'Compatibility save RPC must exist');checks++;
