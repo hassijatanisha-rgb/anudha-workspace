@@ -38,5 +38,8 @@ try{
  await page.evaluate(()=>tallyStockScreen());
  assert.equal(await page.evaluate(()=>window.checklistRuns),2,'reloading data after a correction must recalculate');
  assert.match(await page.locator('#godownReadiness').innerText(),/Reloaded godown/);
+ await page.evaluate(()=>{tallyRows.push({id:'blank',godown:'',product_name:'Unplaced item',quantity:1,unit:'PCS'});tallyReadiness=null;renderTallyStock();});
+ const blank=page.locator('#godownReadiness tbody tr').filter({hasText:'Missing godown — needs correction'});
+ assert.equal(await blank.locator('[data-location-ready]').textContent(),'Missing source godown');
  console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
 }finally{await browser.close();}

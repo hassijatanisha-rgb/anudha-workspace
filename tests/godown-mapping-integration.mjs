@@ -30,11 +30,13 @@ try{
  await page.route('https://inventory-fixture.test/**',route=>route.fulfill({contentType:'text/html',body:'<main id="content"></main>'}));await page.goto('https://inventory-fixture.test/');
  await page.addScriptTag({content:`let me={user_id:'owner',role:'owner'},inventorySection='review';const client={rpc:(n,p)=>window.saveFixture(n,p)};const all=n=>window.readFixture(n);function esc(v){const e=document.createElement('span');e.textContent=String(v);return e.innerHTML.replace(/"/g,'&quot;');}`});
  await page.addScriptTag({content:readFileSync(new URL('../tally-stock-review.js',import.meta.url),'utf8')});
+ await page.evaluate(()=>{document.querySelector('#content').innerHTML='<section id="godownReadiness"><table><tbody><tr data-source-godown="CITY PRINTER"><td data-location-ready="false">Location not mapped</td></tr></tbody></table></section>';});
  await page.evaluate(()=>openGodownMapping('CITY PRINTER'));
  await page.locator('select[name="location"]').selectOption(id(10));await page.locator('textarea').fill('Warehouse checked in fixture');
  await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Not confirmed saved: Simulated lost response after commit').waitFor();
  assert.equal((await db.query('select count(*)::int n from godown_mapping_reviews')).rows[0].n,1);
  await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Mapping saved. Stock quantities unchanged.').waitFor();
+ assert.equal(await page.locator('[data-location-ready]').getAttribute('data-location-ready'),'true');
  assert.equal((await db.query('select count(*)::int n from godown_mapping_reviews')).rows[0].n,1);
  await page.getByRole('button',{name:'Close',exact:true}).click();await page.locator('dialog').waitFor({state:'detached'});
  await page.evaluate(()=>openGodownMapping('CITY PRINTER'));
@@ -44,6 +46,8 @@ try{
  await page.locator('select').selectOption('');await page.locator('textarea').fill('Mapping needs physical confirmation');await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Mapping saved. Stock quantities unchanged.').waitFor();
  const history=(await db.query('select version,location_id from godown_mapping_reviews order by version')).rows;
  assert.equal(history.length,2);assert.equal(history[1].version,2);assert.equal(history[1].location_id,null);
+ assert.equal(await page.locator('[data-location-ready]').getAttribute('data-location-ready'),'false');
+ assert.equal(await page.locator('[data-location-ready]').textContent(),'Unresolved — do not import');
  assert.equal((await db.query('select quantity from tally_stock_sources')).rows[0].quantity,'-4');
  assert.equal((await db.query('select count(*)::int n from inventory_lots')).rows[0].n,0);
  console.log('PASS: actual browser → actual isolated SQL mapping, lost-response retry does not duplicate, reopen persists selection/version, unresolved revision persists, original negative/operational lots unchanged.');
