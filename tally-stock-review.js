@@ -1,5 +1,6 @@
 'use strict';
 let tallyRows=[],tallyCorrections=new Map(),tallySearch='',tallyPage=0,tallyGodown='';
+let tallyReadiness=null;
 function tallyGodownReview(source,corrections,godown,search){
  const godowns=[...new Set(source.map(r=>r.godown||''))].sort((a,b)=>a.localeCompare(b));
  const scoped=godown?source.filter(r=>r.godown===godown):source;
@@ -16,6 +17,7 @@ async function tallyStockScreen(){
   const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
   if(me?.user_id!==actor||inventorySection!=='review')return;
   tallyRows=rows;tallyCorrections=new Map();for(const r of corrections)if((tallyCorrections.get(r.source_id)?.version||0)<r.version)tallyCorrections.set(r.source_id,r);
+  tallyReadiness=tallyGodownReadiness(tallyRows,tallyRowReview);
   renderTallyStock();
  }catch(error){if(me?.user_id===actor&&inventorySection==='review'){$('#content').innerHTML=inventoryHeader()+`<p role="alert">Stock review could not load: ${esc(error.message)}. No stock was changed.</p>`;bindInventoryWorkspace();}}
 }
@@ -39,6 +41,7 @@ function tallyGodownReadiness(rows,review){
  return [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
 }
 function renderTallyStock(){
+ tallyReadiness??=tallyGodownReadiness(tallyRows,tallyRowReview);
  const scope=tallyGodownReview(tallyRows,tallyCorrections,tallyGodown,tallySearch),rows=scope.rows;
  const pages=Math.max(1,Math.ceil(rows.length/50));tallyPage=Math.min(tallyPage,pages-1);
  const negative=scope.negative,reviewed=scope.reviewed,godowns=scope.godowns.length;
@@ -47,7 +50,7 @@ function renderTallyStock(){
  $('#tallyPrev').onclick=()=>{tallyPage--;renderTallyStock()};$('#tallyNext').onclick=()=>{tallyPage++;renderTallyStock()};
  document.querySelectorAll('[data-tally-review]').forEach(b=>b.onclick=()=>openTallyCorrection(b.dataset.tallyReview));
  const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
- readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyGodownReadiness(tallyRows,tallyRowReview).map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
+ readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
  const file=$('#tallyFile');if(file)file.onchange=()=>run(async()=>{
   const actor=me?.user_id,payload=JSON.parse(await file.files[0].text());
