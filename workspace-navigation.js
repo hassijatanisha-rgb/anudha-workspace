@@ -34,6 +34,8 @@ function installWorkspaceNavigation(){
   const button=event.target.closest('#nav [data-view]');
   if(!button||busy)return;
   const section=button.dataset.workspaceSection;
+ // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
+ if(typeof message==='function')message('');
   if(button.dataset.view==='personal'){personalSection=section||'event';personalPage=0;}
   if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
