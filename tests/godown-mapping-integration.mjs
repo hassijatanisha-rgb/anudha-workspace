@@ -39,6 +39,8 @@ try{
  await page.getByRole('button',{name:'Close',exact:true}).click();await page.locator('dialog').waitFor({state:'detached'});
  await page.evaluate(()=>openGodownMapping('CITY PRINTER'));
  assert.equal(await page.locator('select').inputValue(),id(10));await page.getByText('CITY PRINTER · version 1').waitFor();
+ await page.locator('[data-mapping-history]').getByText('Warehouse checked in fixture',{exact:false}).waitFor({timeout:3000});
+ assert.ok((await page.locator('[data-mapping-history]').textContent()).includes('City Printer'));
  await page.locator('select').selectOption('');await page.locator('textarea').fill('Mapping needs physical confirmation');await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Mapping saved. Stock quantities unchanged.').waitFor();
  const history=(await db.query('select version,location_id from godown_mapping_reviews order by version')).rows;
  assert.equal(history.length,2);assert.equal(history[1].version,2);assert.equal(history[1].location_id,null);
