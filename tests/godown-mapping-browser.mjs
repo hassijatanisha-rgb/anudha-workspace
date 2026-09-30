@@ -11,10 +11,12 @@ try{
  await page.getByRole('button',{name:'Save mapping only'}).click();await page.locator('[role="alert"]').filter({hasText:'Network uncertain'}).waitFor();
  assert.equal(await page.locator('select').inputValue(),'loc');
  assert.equal(await page.locator('[data-mapping-history]').innerText(),'Saved mapping history\n\nNo saved mapping yet.');
+ assert.equal(await page.getByText('CITY PRINTER · version 0',{exact:true}).count(),1);
  await page.evaluate(()=>fail=false);await page.getByRole('button',{name:'Save mapping only'}).click();await page.getByText('Mapping saved. Stock quantities unchanged.').waitFor();
  assert.equal(await page.evaluate(()=>calls[0].p_id===calls[1].p_id),true);assert.equal(await page.evaluate(()=>calls[1].p_expected_version),0);
  assert.match(await page.locator('[data-mapping-history]').innerText(),/Version 1 · City Printer · Physical location checked/);
  assert.equal(await page.getByText('No saved mapping yet.',{exact:true}).count(),0);
+ assert.equal(await page.getByText('CITY PRINTER · version 1',{exact:true}).count(),1,'confirmed save must update the displayed version');
  await page.getByRole('button',{name:'Close',exact:true}).click();await page.locator('dialog').waitFor({state:'detached'});await page.evaluate(()=>{me.role='staff';return openGodownMapping('CITY PRINTER')});assert.equal(await page.locator('dialog').count(),0);
  console.log('PASS: mapping dialog retains edits after error, reuses retry key, saves versioned mapping, closes, rejects staff. Fixture RPC only.');
 }finally{await browser.close();}
