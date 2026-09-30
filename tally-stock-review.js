@@ -115,10 +115,14 @@ async function openGodownMapping(godown){
   const active=locations.filter(r=>r.active),validPrior=active.some(r=>r.id===previous?.location_id);
   dialog.innerHTML=`<form><h2>Map source godown</h2><p>${esc(godown)} · version ${previous?.version||0}</p><p>This saves a location mapping only. Stock quantities are unchanged.</p>${previous?.location_id&&!validPrior?'<p role="status">Previous location is inactive or missing. Choose a location or explicitly leave unresolved.</p>':''}<label>ERP location<select name="location"><option value="">Unresolved — do not import</option>${active.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><label>Reason / evidence<textarea name="reason" required minlength="5" maxlength="1000"></textarea></label><p role="alert"></p><p role="status"></p><button type="button" data-close>Close</button><button type="submit">Save mapping only</button></form>`;
   const audit=document.createElement('section');audit.dataset.mappingHistory='';
-  const auditHeading=document.createElement('h3');auditHeading.textContent='Saved mapping history';audit.append(auditHeading);
+  const auditHeading=document.createElement('h3');auditHeading.textContent='Saved mapping history';
   const revisions=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version);
+  function renderHistory(){
+  audit.replaceChildren(auditHeading);
   for(const r of revisions){const item=document.createElement('p'),location=locations.find(l=>l.id===r.location_id);item.textContent=`Version ${r.version} · ${r.location_id?(location?location.name+(location.active?'':' (inactive)'):'Location unavailable'):'Unresolved — do not import'} · ${r.reason}`;audit.append(item);}
   if(!revisions.length){const empty=document.createElement('p');empty.textContent='No saved mapping yet.';audit.append(empty);}
+  }
+  renderHistory();
   dialog.append(audit);
   dialog.querySelector('[name="location"]').value=validPrior?previous.location_id:'';
   dialog.querySelector('[data-close]').onclick=()=>dialog.close();let request=null;
@@ -137,6 +141,8 @@ async function openGodownMapping(godown){
     tallyLocations=locations;
     tallyLocationReviews=[...(tallyLocationReviews||[]).filter(item=>item.id!==saved.id),{...saved,source_godown:godown,location_id:request.p_location_id}];
     refreshGodownLocationChecks();
+    revisions.unshift({...saved,location_id:request.p_location_id,reason:request.p_reason});
+    renderHistory();
     alert.textContent='';dialog.querySelector('[role="status"]').textContent='Mapping saved. Stock quantities unchanged.';
     dialog.querySelectorAll('input,select,textarea').forEach(el=>el.disabled=true);
    }catch(error){if(current()&&dialog.isConnected){alert.textContent=`Not confirmed saved: ${error.message}`;button.disabled=false;}}
