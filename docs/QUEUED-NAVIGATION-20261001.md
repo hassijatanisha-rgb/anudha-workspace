@@ -11,3 +11,11 @@ Six focused cases pass, including existing sidebar test and contact success/fail
 No general route rewrite or concurrent request cancellation. If an operation refreshes the session object, the queued choice is conservatively discarded. Page-specific asynchronous callbacks outside global run are not covered. Independent Claude review remains required; preserve other app.js changes when integrating. PR22 separately handles inventory reload/back and is not included here.
 
 Validation: `node --test tests/queued-navigation.test.mjs tests/workspace-navigation.test.mjs`; `node --test tests/*.test.mjs`; `git diff --check`.
+
+## Browser evidence — 1 October, 17:12 UTC cycle
+
+Executed `tests/queued-navigation-fixture.mjs` on a temporary loopback port. It serves actual sidebar and app run/event handlers with fictional actor, simulated save promises and stub screen renderer. CSP blocks backend connections; no credentials or business data.
+
+Earlier success-path walkthrough: while pending, Service then Stock choices left contacts displayed; successful completion opened only inventory/stock. This cycle closed the interrupted failure-path check: Start save -> Stock -> Reject kept contacts displayed, showed `Fixture save rejected`, and finished the operation. Starting and successfully finishing a subsequent save without a new navigation choice still left contacts displayed, proving the discarded choice was not replayed.
+
+Temporary tab closed and server stopped. These are click-path runtime checks, not real persistence, keyboard/accessibility, responsive visuals, or production acceptance. No application code changed this cycle. PR26 remains open with no independent review; do not merge automatically.
