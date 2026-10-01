@@ -23,7 +23,7 @@ Limits: isolated fixtures, no production test yet.
 This is a conservative stop-for-review, not automatic separation/import of legitimate
 same-name variants. Two entirely unknown identities retain legacy name-only behavior;
 that is not evidence of verified identity. Raw product source is used; reviewed
-identity overlays, concurrent file selections, stale catalogue between preview and
+identity overlays, session/navigation changes during file reads, stale catalogue between preview and
 commit, and server-side import validation still need review. No measured coverage
 percentage or complete import acceptance is claimed. Independent review required.
 
@@ -37,3 +37,14 @@ submits only that corrected manufacturer's record to a fixture RPC. All browser
 network requests are blocked. The real import panel, binder and planner run; the
 surrounding stock page, auth, load and RPC are fixtures. This is not live Supabase
 persistence or cross-account acceptance. No application code changed in this run.
+
+## 05:53 UTC out-of-order file reads
+
+RED 101abb6: an older delayed read overwrote new.json with old.json; an older failed
+read surfaced an obsolete error after a newer successful selection. A monotonically
+increasing read version now ignores superseded success and error completions.
+The same eight Node/VM import tests pass, zero skipped; JS syntax/diff checks pass.
+This new race is verified with controlled promises, not a real-browser delayed File
+fixture. Earlier browser check covers sequential file replacement only. Session and
+navigation ownership remain separate concerns. Review lookup this cycle failed when
+automatic permission review timed out; no independent review was inferred.
