@@ -2,6 +2,23 @@
 -- No row, stock, signature or ACL changes. Retirement requires a reviewed forward
 -- replacement; do not restore the permissive retry comparison.
 begin;
+create or replace function public.open_stock_count(p_id uuid, p_name text)
+returns public.stock_count_sessions language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_row public.stock_count_sessions;
+begin
+ if not public.inventory_owner() then raise exception 'Only the owner can start a count'; end if;
+ if p_id is null then raise exception 'Count id is required'; end if;
+ perform pg_advisory_xact_lock(hashtextextended('stock-count-session:'||p_id::text,0));
+ select * into v_row from public.stock_count_sessions where id=p_id;
+ if found then
+  if v_row.opened_by=auth.uid() and v_row.name=trim(coalesce(p_name,'')) then return v_row; end if;
+  raise exception 'Count session already saved with different details; refresh';
+ end if;
+ if exists(select 1 from public.stock_count_sessions where status='open') then raise exception 'A count is already running; close it first'; end if;
+ insert into public.stock_count_sessions(id,name,status,opened_by) values(p_id,trim(coalesce(p_name,'')),'open',auth.uid()) returning * into v_row;
+ return v_row;
+end $$;
+
 create or replace function public.record_stock_count(p_id uuid, p_session_id uuid, p_godown text, p_code text, p_unlisted text, p_quantity numeric,
  p_unit text, p_batch text default '', p_expiry date default null, p_condition text default 'good', p_notes text default '')
 returns public.stock_count_entries language plpgsql security definer set search_path=public,pg_temp as $$
