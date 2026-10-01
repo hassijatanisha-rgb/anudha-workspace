@@ -81,3 +81,17 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Employees sign in with an ID made from their name (`tanisha.hassija`), or the name typed with spaces. At first sign-in they must choose their own password.
 - Not yet exercised live: the container cannot reach Supabase over HTTPS. The first real run is the owner's first **Add employee**.
 - Recorded migrations now: 042–049.
+
+## Migration 050: Tally sales invoice register (applied 1 October)
+- Decision by the owner: tax invoices are made in Tally and flow into the ERP. The ERP does not issue invoices.
+- Adds:
+  - `tally_sales_invoices` (no deletes) and an append-only `tally_sales_invoice_events`;
+  - `tally_proforma_number()`, which reads `PF-2026-1`, `pf 2026 12` and `PF2026000012` as Pro forma numbers;
+  - `tally_invoice_staff()`, which is the owner or accounting access;
+  - `import_tally_invoices(jsonb, source)`, 500 rows per call. It matches on the Tally GUID, or on type + number + date. Unchanged rows are skipped. A changed voucher is updated and its old values are kept in history. Only links the system made itself are re-matched; a person's link, unlink or ignore stays;
+  - `review_tally_invoice` (match, unmatch or ignore, with a reason).
+- It is a register only. It changes no stock, delivery status or accounting record.
+- Pre-check: the tables didn't exist; `accounting_access()` and `inventory_owner()` exist.
+- Live check in an aborted transaction as the real owner: 2 imported, 1 linked automatically to `PF-2026-000001`, and the re-import reported 1 unchanged. `anon` was refused. Afterwards there were 0 invoices and 0 events.
+- Upload path: Tally Day Book or Sales Register → Export → XML, then Orders → Tally invoices → **Upload Tally XML export**. The in-house connector will send the same normalised rows with source `connector`.
+- Not yet checked against a real export from your Tally. The reader follows Tally's documented XML layouts (`ALLINVENTORYENTRIES.LIST` / `LEDGERENTRIES.LIST` and the older `INVENTORYENTRIES.LIST` / `ALLLEDGERENTRIES.LIST`). The first real file should be checked by eye.
