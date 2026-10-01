@@ -212,3 +212,7 @@ body.stock-protected #content input,body.stock-protected #content textarea{-webk
 .travel-people label{display:flex;align-items:center;gap:6px;margin:0;padding:7px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer}
 .travel-people input{width:auto;margin:0}
 .travel-people label:has(input:checked){border-color:var(--green);background:#e7f1ec;font-weight:700}
+
+/* Two-step sign-in */
+.two-step-qr{display:block;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+.two-step-on{background:#e2f4e6;color:#1d6332}

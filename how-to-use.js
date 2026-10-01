@@ -126,6 +126,12 @@ const howToTopics=[
   'Set their **Department** so reports group them correctly.',
   'If someone forgets their password, press **Reset password** next to their name.',
   'Under **Who does each step**, choose who receives each step of an order automatically.']},
+ {id:'two-step',role:'everyone',title:'Turn on two-step sign-in',screens:['settings'],steps:[
+  'Install Google Authenticator or Microsoft Authenticator on your phone.',
+  'Open **My settings** and, under **Two-step sign-in**, press **Turn on**.',
+  'In the app, add an account and scan the picture. Type the 6 numbers it shows and press **Confirm**.',
+  'From now on, after your password you type the 6 numbers from the app.',
+  'Lost your phone? Ask the owner to press **Reset two-step** next to your name on the Staff page.']},
  {id:'text',role:'everyone',title:'Make the text bigger',screens:['settings'],steps:[
   'Open **My settings**.',
   'Under **Text size**, choose a larger size. It is saved on this computer or phone.']},
