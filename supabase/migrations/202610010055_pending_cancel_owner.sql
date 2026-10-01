@@ -1,6 +1,7 @@
 -- Restrict manual pending cancellation to existing owners; no new memberships or stock changes.
 -- Department-head delegation is not configured by this migration.
 -- Rollback: reviewed forward function replacement; restoring 043 would reopen staff cancellation.
+-- Unapplied candidate renumbered after concurrent main migrations 050–053.
 begin;
 create or replace function public.advance_pending_stock_request(p_id uuid, p_expected_version integer, p_action text, p_note text default '', p_extend_months integer default null)
 returns public.pending_stock_requests language plpgsql security definer set search_path=public,pg_temp as $$
