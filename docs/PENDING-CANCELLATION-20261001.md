@@ -18,13 +18,17 @@ Commands: `PGLITE_MODULE=<installed runtime>/dist/index.js node tests/pending-st
 
 ## Release constraints
 
-Migration 043 is unchanged and must not be reapplied. Apply only 051 after review/required activation, then publish frontend and verify staff/owner sessions without real business-data tests. The function keeps its signature, ACL, search path, locking, expiry and fulfilment logic; no stock writes or data backfill. A rollback would require a reviewed forward function replacement and would reopen this permission gap, so prefer fixing forward.
+Migration 043 is unchanged and must not be reapplied. Apply only `20261001112436_pending_cancel_owner.sql` after review/required activation, then publish frontend and verify staff/owner sessions without real business-data tests. The function keeps its signature, ACL, search path, locking, expiry and fulfilment logic; no stock writes or data backfill. A rollback would require a reviewed forward function replacement and would reopen this permission gap, so prefer fixing forward.
 
 PR #8 separately fixes retry-content validation in the creation function. These SQL changes are independent, but both branches edit the database test: preserve both sets of regression checks during integration. This fix does NOT establish verified invoice-linked fulfilment, automatic expiry scheduling, fiscal issuance or complete department permissions.
 # Migration identifier update — 1 October, 08:12 UTC
 
-The unapplied candidate is now `202610010055_pending_cancel_owner.sql`, not 051.
+At 08:12 the unapplied candidate became `202610010055_pending_cancel_owner.sql`, not 051 (superseded below).
 Main bd87100 records concurrent migrations 050–053 as applied. Their files are
 unchanged. This renumber only changes this candidate's path/test reference and adds
 a comment; 40 isolated DB checks still pass. Historical references below retain
 the original identifier. Integration with the new main trigger chain is still required.
+
+## 11:24 UTC identifier correction
+
+Main now includes 055_hardening. The unapplied cancellation fix is renamed to `20261001112436_pending_cancel_owner.sql` to avoid that collision. SQL behavior is unchanged; applied migrations are untouched. PR9 and PR22 review lookup returned open with no comments/reviews this cycle. This is not approval or activation.
