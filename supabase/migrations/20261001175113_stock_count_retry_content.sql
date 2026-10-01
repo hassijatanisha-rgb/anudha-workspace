@@ -1,7 +1,7 @@
 -- Forward-only correction to 047: a retry must describe the same saved count.
 -- No row, stock, signature or ACL changes. Retirement requires a reviewed forward
 -- replacement; do not restore the permissive retry comparison.
--- Unapplied candidate renumbered after concurrent main migrations 050–053.
+-- Unapplied candidate timestamp avoids main's 202610010056 team-tasks migration.
 begin;
 create or replace function public.open_stock_count(p_id uuid, p_name text)
 returns public.stock_count_sessions language plpgsql security definer set search_path=public,pg_temp as $$

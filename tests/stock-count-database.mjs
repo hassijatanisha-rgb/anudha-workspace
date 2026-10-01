@@ -15,7 +15,7 @@ insert into auth.users values('${owner}'),('${counter}'),('${other}'),('${inacti
 insert into public.staff values('${owner}','owner',true),('${counter}','staff',true),('${other}','staff',true),('${inactive}','staff',false);
 insert into public.inventory_lots values(gen_random_uuid(),10);`);
 await db.exec(readFileSync(new URL('../supabase/migrations/202609300047_stock_count.sql',import.meta.url),'utf8'));
-const retryMigration=new URL('../supabase/migrations/202610010056_stock_count_retry_content.sql',import.meta.url);
+const retryMigration=new URL('../supabase/migrations/20261001175113_stock_count_retry_content.sql',import.meta.url);
 if(existsSync(retryMigration))await db.exec(readFileSync(retryMigration,'utf8'));
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const load=rows=>db.query('select public.load_count_catalogue($1::jsonb) n',[JSON.stringify(rows)]).then(r=>r.rows[0].n);
