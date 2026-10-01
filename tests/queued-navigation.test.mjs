@@ -6,7 +6,7 @@ const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const navSource=readFileSync(new URL('../workspace-navigation.js',import.meta.url),'utf8');
 function fixture(){
  const listeners=[],renders=[],nodes=new Map();
- const node=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',before(){},setAttribute(){}});return nodes.get(s)};
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',before(){},setAttribute(){},close(){}});return nodes.get(s)};
  const ctx=vm.createContext({busy:false,me:{user_id:'fixture'},view:'contacts',search:'',page:0,
   inventorySection:'stock',serviceSection:'forms',salesSection:'delivery',salesEditing:'',
   document:{querySelector:node,addEventListener:(type,fn,capture)=>{if(type==='click')listeners.push({fn,capture})}},
@@ -21,7 +21,8 @@ function fixture(){
   };return b;
  }
  let resolve,reject;const pending=new Promise((a,b)=>{resolve=a;reject=b});
- return {ctx,renders,button,resolve,reject,start:()=>ctx.run(()=>pending)};
+ ctx.editing={};ctx.showFieldErrors=()=>{};ctx.FormData=class{*[Symbol.iterator](){}};ctx.save=()=>pending;
+ return {ctx,renders,button,resolve,reject,start:()=>ctx.run(()=>pending),submit:()=>node('#editForm').onsubmit({preventDefault(){},target:{}})};
 }
 test('latest sidebar choice runs once after operation completes, never during it',async()=>{
  const f=fixture(),work=f.start();f.button('service','schedule').click();f.button('inventory','stock').click();
@@ -41,4 +42,11 @@ test('queued navigation cannot cross account changes or use removed controls',as
 });
 test('non-sidebar action buttons are never replayed after busy state',async()=>{
  const f=fixture(),work=f.start();f.button('inventory','stock',false).click();f.resolve();await work;assert.deepEqual(f.renders,[]);
+});
+test('contact save success flushes navigation; save failure discards it',async()=>{
+ for(const success of [true,false]){
+  const f=fixture(),work=f.submit();f.button('inventory','stock').click();assert.deepEqual(f.renders,[]);
+  if(success)f.resolve();else f.reject(Error('validation failed'));await work;
+  assert.deepEqual(f.renders,success?['inventory']:[]);
+ }
 });
