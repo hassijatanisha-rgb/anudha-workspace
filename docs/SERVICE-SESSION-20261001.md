@@ -2,6 +2,8 @@
 
 Status: locally tested; NOT deployed. Base c9cff60. No SQL or permission changes.
 
+09:21 UTC integration: merged main 1929652 into the review branch (f6a58be). Resolved the shared app.js clear hook by preserving both service and Tally-register cleanup plus all existing hooks. Eighteen combined service/session, work-assignment, step-time and work-report tests pass; app.js syntax and diff checks pass. Earlier browser evidence remains scoped to the earlier fixture run, not a new signed-in production check. Independent review remains required before release.
+
 RED 8ae3c9e reproduced three failures: a previous account's pending response populated the cache, service loading overwrote the Client screen after navigation, and no service clear hook existed.
 
 GREEN f921301 adds actor/request-generation checks, a cache-owner identifier, and a sign-out clearing hook. `app.js` changes only the shared `clear()` hook; reviewer should preserve all concurrent hooks when integrating. No other app routing or authentication behavior is replaced.
