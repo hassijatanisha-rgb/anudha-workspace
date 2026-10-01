@@ -7,21 +7,21 @@ function load(){
  vm.runInContext(readFileSync(new URL('../sales-leads.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 const row=(id,stage,extra={})=>({id,stage,lead_number:'LD-'+id,subject:'Need '+id,created_at:'2026-09-0'+(id.length%9+1),...extra});
-test('inquiries and pipeline sections separate by stage and filters combine with search',()=>{
+test('one leads list: filters combine with search; new inquiries are open until passed on',()=>{
  const ctx=load(),rows=[row('1','inquiry'),row('2','lead',{owner_user_id:'a'}),row('3','opportunity',{owner_user_id:'b'}),row('4','won'),row('5','lost',{lost_reason:'price'})];
  const ids=options=>ctx.leadVisibleRows(rows,{today:'2026-09-30',search:'',actor:'a',...options}).map(r=>r.id).sort();
- assert.deepEqual(ids({section:'inquiries',filter:'open'}),['1']);
- assert.deepEqual(ids({section:'pipeline',filter:'open'}),['2','3']);
- assert.deepEqual(ids({section:'pipeline',filter:'mine'}),['2']);
- assert.deepEqual(ids({section:'pipeline',filter:'won'}),['4']);
- assert.deepEqual(ids({section:'pipeline',filter:'all'}),['2','3','4','5']);
- assert.deepEqual(ids({section:'pipeline',filter:'all',search:'baraka'}),['3']);
- assert.deepEqual(ids({section:'pipeline',filter:'all',search:'LD-4'}),['4']);
+ assert.deepEqual(ids({filter:'open'}),['1','2','3']);
+ assert.deepEqual(ids({filter:'new'}),['1']);
+ assert.deepEqual(ids({filter:'mine'}),['2']);
+ assert.deepEqual(ids({filter:'won'}),['4']);
+ assert.deepEqual(ids({filter:'all'}),['1','2','3','4','5']);
+ assert.deepEqual(ids({filter:'all',search:'baraka'}),['3']);
+ assert.deepEqual(ids({filter:'all',search:'LD-4'}),['4']);
 });
 test('overdue follow-ups come first; closed leads are never overdue',()=>{
  const ctx=load(),rows=[row('a','lead',{next_action_on:'2026-10-05'}),row('b','lead',{next_action_on:'2026-09-01'}),row('c','lead'),row('d','won',{next_action_on:'2026-01-01'})];
  assert.equal(ctx.leadOverdue(rows[1],'2026-09-30'),true);assert.equal(ctx.leadOverdue(rows[3],'2026-09-30'),false);
- assert.deepEqual(ctx.leadVisibleRows(rows,{section:'pipeline',filter:'all',search:'',today:'2026-09-30'}).map(r=>r.id),['b','a','c','d']);
+ assert.deepEqual(ctx.leadVisibleRows(rows,{filter:'all',search:'',today:'2026-09-30'}).map(r=>r.id),['b','a','c','d']);
 });
 test('client label prefers the client record, then caller details',()=>{
  const ctx=load();
@@ -31,15 +31,15 @@ test('client label prefers the client record, then caller details',()=>{
 });
 test('actions follow the stage rules',()=>{
  const ctx=load(),actions=stage=>[...ctx.leadActions(row('x',stage)).matchAll(/data-lead-(?:action="([a-z]+)"|(proforma|edit|history))/g)].map(m=>m[1]||m[2]);
- assert.deepEqual(actions('inquiry'),['edit','assign','qualify','lost','history']);
- assert.deepEqual(actions('lead'),['edit','assign','opportunity','proforma','won','lost','history']);
+ assert.deepEqual(actions('inquiry'),['edit','qualify','lost','history']);
+ assert.deepEqual(actions('lead'),['edit','assign','proforma','won','lost','history']);
  assert.deepEqual(actions('opportunity'),['edit','assign','proforma','won','lost','history']);
  assert.deepEqual(actions('won'),['history']);
  assert.deepEqual(actions('lost'),['reopen','history']);
 });
 test('menu, router, sign-out and Pro forma prefill are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
- assert.match(read('workspace-navigation.js'),/\['Inquiries','leads','inquiries'\],\['Lead \/ Opportunity','leads','pipeline'\]/);
+ assert.match(read('workspace-navigation.js'),/\['Leads','leads','leads'\]/);assert.doesNotMatch(read('workspace-navigation.js'),/Inquiries|Lead \/ Opportunity/);
  assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{clearEmployeeNames\(\);if\(typeof clearLeads==='function'\)clearLeads\(\);/);
  assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>\{salesPrefill=null;/);
  const html=read('index.html');assert.ok(html.indexOf('sales-leads.js')>html.indexOf('sales-delivery.js')&&html.indexOf('sales-leads.js')<html.indexOf('app.js'));

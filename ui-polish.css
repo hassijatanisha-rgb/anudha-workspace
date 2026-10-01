@@ -151,3 +151,48 @@ main .proforma-filters{flex-wrap:wrap;overflow:visible;white-space:normal}
 main .proforma-filters button{flex:0 0 auto}
 /* All eight order steps stay visible: they wrap to a second row instead of scrolling off the side. */
 main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));overflow:visible}
+
+/* New inquiry: four numbered steps, choices as large tappable options. */
+.lead-step{border:1px solid var(--line);border-radius:12px;padding:14px 18px 6px;margin:0 0 16px}
+.lead-step legend{font-weight:800;font-size:1.05em;padding:0 6px;color:var(--green)}
+.lead-who,.lead-sources{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 12px}
+.lead-who label,.lead-sources label{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-weight:600}
+.lead-who input,.lead-sources input{width:auto;margin:0}
+.lead-who label:has(input:checked),.lead-sources label:has(input:checked){border-color:var(--green);background:#e7f1ec}
+.lead-tag-inquiry{background:#fff4cc;color:#6b4e00}
+.lead-tag-lead,.lead-tag-opportunity{background:#e3f0fd;color:#0d4a85}
+.lead-tag-won{background:#e2f4e6;color:#1d6332}
+.lead-tag-lost{background:#fde8e8;color:#8a2222}
+.purchase-tag-requested{background:#fff4cc;color:#6b4e00}
+.purchase-tag-approved{background:#e3f0fd;color:#0d4a85}
+.purchase-tag-ordered{background:#dff3f1;color:#0b5c55}
+.purchase-tag-closed{background:#e2f4e6;color:#1d6332}
+.purchase-tag-cancelled{background:#fde8e8;color:#8a2222}
+.purchase-supplier{max-width:520px}
+.purchase-supplier span,.document-editor h3{font-weight:800}
+.purchase-more{margin:14px 0}
+
+/* Tasks: urgency colour on every task; late tasks stand out. */
+.urgency-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.urgency-do_now{background:#fde8e8;color:#8a2222}
+.urgency-urgent{background:#fff4cc;color:#6b4e00}
+.urgency-normal{background:#eceff1;color:#37474f}
+.team-task{padding:16px 20px;margin-top:12px}
+.team-task.overdue{border-left:5px solid #c43d3d}
+.team-task.closed{opacity:.75}
+.team-task h3{margin:0}
+.team-task-meta{margin:6px 0 0}
+.team-task-group>h2,.team-task-group>summary{margin-top:26px;font-size:1.15em;font-weight:800}
+.urgency-choice{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:10px}
+.urgency-choice legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
+.urgency-choice label{display:flex;align-items:center;gap:8px;margin:0;padding:9px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:700}
+.urgency-choice input{width:auto;margin:0}
+.urgency-choice label:has(input:checked){outline:2px solid currentColor}
+.check-row{display:flex;align-items:center;gap:8px}
+.check-row input{width:auto}
+
+/* Stock pages: watermark over the page, no text selection, nothing printed. */
+#stockWatermark{position:fixed;inset:0;z-index:30;pointer-events:none;background-repeat:repeat}
+body.stock-protected #content{-webkit-user-select:none;user-select:none}
+body.stock-protected #content input,body.stock-protected #content textarea{-webkit-user-select:text;user-select:text}
+@media print{body.stock-protected main,body.stock-protected #nav,body.stock-protected>header{display:none!important}body.stock-protected::after{content:"Stock pages cannot be printed. Send customers a Pro forma instead.";display:block;padding:40px;font:16px sans-serif}#stockWatermark{display:none}}

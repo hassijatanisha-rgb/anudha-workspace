@@ -166,3 +166,18 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Staff no longer see Staff, Questions for the owner (formerly Awaiting approval) or Setup progress. Accounting forms appear only for people with accounting access.
 - Help is replaced by How to use: 22 step-by-step guides, searchable and filterable by job. A How to use button at the top of every page opens the guides for that page first, and Walk me through it shows the steps one at a time on the real page.
 - Checked by opening every menu screen as owner and as staff at 1280, 390 and 360 px wide: no errors and no sideways scrolling.
+
+## Migration 056: team tasks (applied 1 October)
+
+- New `team_tasks` and `team_task_events` tables. Anyone on the staff can give a task to a colleague or to themselves. Each task has an urgency (Do now / Urgent / Normal) and a due date and time. Only the person given the task, the person who gave it and the owner can see it. Tasks are closed (done or cancelled), never deleted, and their history can't be changed.
+- Checked on the live database inside a rolled-back transaction: a task was created (TK-000001), could be seen, and was marked done with two history rows. Nothing was saved. The task number counter moved on, so the first real task will be TK-000002.
+
+## Simpler pages (1 October)
+
+- Letterhead: one address line, one phone number (+255 783 523 777) and one email (sales2@ on sales forms, service@ on service reports). No fax or landline list.
+- Purchase requests: the supplier and a list of items only. No currency or price. Prices saved earlier are kept unchanged.
+- Leads: one page instead of Inquiries plus Lead / Opportunity. The new inquiry form has four numbered steps.
+- My tasks shows tasks with urgency and due time, plus order steps handed to the person. Notes & reminders are private; a reminder needs a time.
+- Reports is in the Main menu and has 8 reports in a single list. Stock movements and their download are owner-only.
+- Stock pages: no printing and no copying, and a watermark shows the viewer's name and the time. A browser cannot block screenshots or phone cameras; the watermark makes them traceable.
+- Removed tab bars that repeated the left menu, a duplicate menu item and single-page "Page 1 of 1" controls. Owner tools are hidden from staff.
