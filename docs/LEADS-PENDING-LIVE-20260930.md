@@ -181,3 +181,9 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Reports is in the Main menu and has 8 reports in a single list. Stock movements and their download are owner-only.
 - Stock pages: no printing and no copying, and a watermark shows the viewer's name and the time. A browser cannot block screenshots or phone cameras; the watermark makes them traceable.
 - Removed tab bars that repeated the left menu, a duplicate menu item and single-page "Page 1 of 1" controls. Owner tools are hidden from staff.
+
+## Migration 057: travel requests (applied 1 October)
+
+- New `travel_requests` and `travel_request_events` tables. Each request records who is going (one or more employees), where (a client from the list or a typed place), why, who they are meeting, and when they leave and return. The owner approves or declines; afterwards a traveller marks the trip done with how it went. Every active employee can see requests.
+- Checked on the live database inside a rolled-back transaction: TR-000001 was created and approved, then rolled back. The first real request will be TR-000002.
+- Reports has a new Travel report: trips, days away and the number of different places per person.

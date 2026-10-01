@@ -108,6 +108,12 @@ const howToTopics=[
   'Press **+ Note** for something to keep, for example: fill out the service form for Aga Khan.',
   'Press **+ Reminder** for something with a time, for example: call Dr Mushi at 10:00. Tick Done when it is done.',
   'Open **My calendar** for meetings. Green entries are company events everyone can see.']},
+ {id:'travel',role:'everyone',title:'Ask to travel to a client or meeting',screens:['travel'],steps:[
+  'Open **Travel requests** and press **+ New travel request**.',
+  'Tick everyone who is going, choose the client (or type another place), the reason and who you are meeting.',
+  'Choose when you leave and when you are back. The trip length is shown for you. Press **Save**.',
+  'The owner presses **Approve** or **Decline**. Everyone can see who is away under Upcoming and away now.',
+  'When you are back, press **Trip done** and write how it went.']},
  {id:'reports',role:'everyone',title:'See reports',screens:['reports'],steps:[
   'Open **Reports**.',
   'Choose the week or month and press **Show report**.',

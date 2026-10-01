@@ -196,3 +196,19 @@ main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr)
 body.stock-protected #content{-webkit-user-select:none;user-select:none}
 body.stock-protected #content input,body.stock-protected #content textarea{-webkit-user-select:text;user-select:text}
 @media print{body.stock-protected main,body.stock-protected #nav,body.stock-protected>header{display:none!important}body.stock-protected::after{content:"Stock pages cannot be printed. Send customers a Pro forma instead.";display:block;padding:40px;font:16px sans-serif}#stockWatermark{display:none}}
+
+/* Travel requests: status tag per trip; the form uses the same step boxes as a new inquiry. */
+.travel-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.travel-tag-waiting{background:#fff4cc;color:#6b4e00}
+.travel-tag-approved{background:#e3f0fd;color:#0d4a85}
+.travel-tag-away{background:#dff3f1;color:#0b5c55}
+.travel-tag-done{background:#e2f4e6;color:#1d6332}
+.travel-tag-closed{background:#fde8e8;color:#8a2222}
+.travel-card.travel-away{border-left:5px solid #1a948a}
+.travel-card h3{margin:0}
+.travel-step{border:1px solid var(--line);border-radius:12px;padding:10px 14px 4px;margin:0 0 12px}
+.travel-step legend{font-weight:800;color:var(--green);padding:0 6px}
+.travel-people{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;max-height:180px;overflow:auto}
+.travel-people label{display:flex;align-items:center;gap:6px;margin:0;padding:7px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer}
+.travel-people input{width:auto;margin:0}
+.travel-people label:has(input:checked){border-color:var(--green);background:#e7f1ec;font-weight:700}
