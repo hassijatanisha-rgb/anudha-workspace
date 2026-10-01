@@ -2,7 +2,8 @@
 // Pending stock orders: quantities a customer still needs once stock arrives. Advisory availability only;
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
-function clearPendingStock(){pendingEpoch++;pendingRows=[];pendingAvailability=new Map();pendingLoaded=false;pendingCreating=false;pendingRequestId=null;}
+let pendingAvailabilityDay='';
+function clearPendingStock(){pendingEpoch++;pendingRows=[];pendingAvailability=new Map();pendingAvailabilityDay='';pendingLoaded=false;pendingCreating=false;pendingRequestId=null;}
 function pendingToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
 // Saleable pieces per product: sealed cartons × units per carton + loose − reserved, available lots at active locations only.
@@ -64,13 +65,13 @@ async function loadPendingStock(){
  try{
   const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
   if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
-  pendingAvailability=pendingAvailableByProduct(lots,packs,locations);pendingAvailabilityError='';
+  pendingAvailabilityDay=pendingToday();pendingAvailability=pendingAvailableByProduct(lots,packs,locations,pendingAvailabilityDay);pendingAvailabilityError='';
  }catch(error){if(epoch!==pendingEpoch)return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
  pendingLoaded=true;pendingLoadError='';return true;
 }
 async function pendingStockWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
- if(force||!pendingLoaded){
+ if(force||!pendingLoaded||pendingAvailabilityDay!==pendingToday()){
   $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
   try{if(!(await loadPendingStock()))return;}catch(error){if(me?.user_id!==actor)return;pendingLoadError=error.message;pendingLoaded=false;}
  }
@@ -78,6 +79,9 @@ async function pendingStockWorkspace(force=false){
  renderPendingStock();
 }
 function renderPendingStock(){
+ if(pendingAvailabilityDay&&pendingAvailabilityDay!==pendingToday()){
+  pendingAvailability=new Map();pendingAvailabilityError='Stock check is from a previous day. Press Refresh to check current availability';
+ }
  const availability=pendingAvailabilityError?null:pendingAvailability;
  const rows=pendingVisibleRows(pendingRows,{filter:pendingFilter,search:pendingSearch,actor:me?.user_id,availability});
  const pages=Math.max(1,Math.ceil(rows.length/20));pendingPage=Math.min(Math.max(pendingPage,0),pages-1);
