@@ -93,3 +93,6 @@ main .handoff-list li.quality-yellow{background:var(--quality-yellow);border-rad
 main .handoff-list li.quality-red{background:var(--quality-red);border-radius:6px;padding:6px}
 main .work-timeline{margin-top:6px;width:100%}
 main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12px}
+
+/* Work report: department subtotal rows stand apart from people. */
+main tr.report-subtotal td{font-weight:700;background:#edf4f0}
