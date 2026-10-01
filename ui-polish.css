@@ -13,13 +13,13 @@ main .heading .actions{gap:10px}
 [data-lead-action="qualify"],[data-lead-proforma],
 [data-proforma-action="send"],[data-proforma-action="accept"],
 [data-delivery-action]:not([data-delivery-action="cancel"]),
-[data-pending-action="fulfil"],[data-work-done],[data-work-finish],#countSave,#countOpen,[data-count-action="accept"]{
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish],[data-tally-invoice-action="match"],[data-send-tally],#countSave,#countOpen,[data-count-action="accept"]{
  background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
 #newLead:hover,#newPending:hover,#addEmployee:hover,#newPurchase:hover,#newSupplier:hover,[data-purchase-action="approve"]:hover,[data-purchase-action="order"]:hover,[data-purchase-action="close"]:hover,
 [data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
 [data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
 [data-delivery-action]:not([data-delivery-action="cancel"]):hover,
-[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,[data-tally-invoice-action="match"]:hover,[data-send-tally]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
 
 /* Danger: clearly different so nobody cancels or deletes by mistake. */
 button.danger,[data-count-action="void"],[data-count-action="reject"],#countClose,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
@@ -31,10 +31,10 @@ button.danger:hover,[data-count-action="void"]:hover,[data-count-action="reject"
 
 /* Quiet: looking things up, not changing them. */
 [data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
-#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
+#tallyInvoiceRefresh,#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
  background:transparent;border-color:transparent;color:#3f5a50}
 [data-lead-history]:hover,[data-pending-history]:hover,[data-lead-edit]:hover,[data-load-order-timing]:hover,[data-work-open]:hover,[data-purchase-history]:hover,[data-purchase-edit]:hover,[data-supplier-edit]:hover,
-#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
+#tallyInvoiceRefresh:hover,#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
 
 /* Keyboard users always see where they are. */
 main button:focus-visible,main a:focus-visible,main input:focus-visible,main select:focus-visible,main textarea:focus-visible{outline:3px solid #8cc63f;outline-offset:2px}
@@ -75,3 +75,24 @@ main .contact.quality-red{background:var(--quality-red);border-color:var(--quali
 td .quality-badge{display:block;width:max-content}
 main .file-button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
 main .file-button input{max-width:220px;font-size:13px}
+
+/* Tally invoices: a cancelled voucher stays listed but is struck through. */
+.tally-invoices-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+.tally-invoices-workspace tr.tally-cancelled td:first-child strong{text-decoration:line-through}
+
+/* Accountability: nobody-responsible list stands out; step owner table stays compact. */
+main .unowned-work.attention{border-color:var(--quality-red-line);background:var(--quality-red)}
+main .work-notices{border-color:var(--green)}
+main .work-step-owners td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+main .work-step-owners label.check{display:block;padding:2px 0}
+
+/* Step timing: the responsible strip turns yellow after a day and red after two, or when an expected date passes. */
+main .work-handoff.quality-yellow{background:var(--quality-yellow);border-color:var(--quality-yellow-line)}
+main .work-handoff.quality-red{background:var(--quality-red);border-color:var(--quality-red-line)}
+main .handoff-list li.quality-yellow{background:var(--quality-yellow);border-radius:6px;padding:6px}
+main .handoff-list li.quality-red{background:var(--quality-red);border-radius:6px;padding:6px}
+main .work-timeline{margin-top:6px;width:100%}
+main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12px}
+
+/* Work report: department subtotal rows stand apart from people. */
+main tr.report-subtotal td{font-weight:700;background:#edf4f0}
