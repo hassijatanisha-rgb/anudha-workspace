@@ -11,3 +11,7 @@ Shared app.js edit requires independent Claude review; preserve PR22/26 routing 
 ## 20:15 UTC transport follow-up
 
 RED6496d84 reproduces a rejected staff-query promise bypassing the returned-error cleanup and retaining old workspace identity. GREEN06a6fb1 catches only the staff query rejection and routes it through the same fail-closed cleanup; later rendering/data errors are not mislabeled as staff failures. Five staff cases plus three MFA cases pass. No authentication revocation on transient rejection and no business-data load; inactive/missing memberships still denied. This closes the thrown staff-query gap, not all boot/auth/employee-name/data-loading exceptions or concurrent session changes. Browser/live acceptance and independent review remain outstanding.
+
+## 20:58 UTC isolated browser acceptance
+
+`tests/staff-read-browser.mjs` passed in isolated headless Chrome with all network routes blocked. Executes actual load(), clear(), login(), message() and field() code; fictional SDK responses only. Returned and thrown errors remove stale core data, identity, fields, navigation and content, show reload guidance, and do not sign out or load more data. Inactive membership signs out and displays the login form and denial message. Browser closed after checks. This closes the local DOM-cleanup gap, not Supabase authentication, all module caches, concurrent-account transitions, visual/accessibility or live acceptance. No application changes this cycle.
