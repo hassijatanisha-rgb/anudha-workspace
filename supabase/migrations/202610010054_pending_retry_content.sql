@@ -1,6 +1,7 @@
 -- Forward fix for migration 043. Existing rows, permissions and stock are unchanged.
 -- Rollback: restore the previous function body in a reviewed forward migration;
 -- doing so reintroduces the incomplete retry-content check. No data rollback needed.
+-- Unapplied candidate renumbered after concurrent main migrations 050–053.
 begin;
 
 create or replace function public.create_pending_stock_request(p_id uuid, p_organization_id uuid, p_contact_id uuid, p_product_id uuid, p_quantity integer,
