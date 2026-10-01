@@ -13,13 +13,13 @@ main .heading .actions{gap:10px}
 [data-lead-action="qualify"],[data-lead-proforma],
 [data-proforma-action="send"],[data-proforma-action="accept"],
 [data-delivery-action]:not([data-delivery-action="cancel"]),
-[data-pending-action="fulfil"],[data-work-done],[data-work-finish],[data-tally-invoice-action="match"],#countSave,#countOpen,[data-count-action="accept"]{
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish],[data-tally-invoice-action="match"],[data-send-tally],#countSave,#countOpen,[data-count-action="accept"]{
  background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
 #newLead:hover,#newPending:hover,#addEmployee:hover,#newPurchase:hover,#newSupplier:hover,[data-purchase-action="approve"]:hover,[data-purchase-action="order"]:hover,[data-purchase-action="close"]:hover,
 [data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
 [data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
 [data-delivery-action]:not([data-delivery-action="cancel"]):hover,
-[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,[data-tally-invoice-action="match"]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,[data-tally-invoice-action="match"]:hover,[data-send-tally]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
 
 /* Danger: clearly different so nobody cancels or deletes by mistake. */
 button.danger,[data-count-action="void"],[data-count-action="reject"],#countClose,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],

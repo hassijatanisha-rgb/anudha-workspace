@@ -111,3 +111,18 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Pre-check: the constraint name matched; neither new table existed; 0 assignments.
 - Live check in an aborted transaction as the real owner: packing default set (version 1); a Tally invoice for `PF-2026-1` created the packing job for that person; `unowned_work` returned 0. Afterwards, all counts were 0.
 - Recorded migrations now: 042–051.
+
+## Migration 052: Send to Tally (applied 1 October)
+- An accepted Pro forma downloads as a TallyPrime import file: a Sales Order with voucher number = Order No. = the Pro forma number.
+  - The voucher balances: the party debit equals sales plus VAT, and both match the Pro forma total exactly.
+  - Accounts import it (Import → Transactions) and make the tax invoice from it. That invoice then links back under Tally invoices.
+- Adds:
+  - `tally_export_settings` (versioned): company, voucher type, sales ledger and VAT ledger;
+  - `tally_ledger_names` per client and `tally_item_names` per product, corrected in place, never deleted, every change in `audit_log`;
+  - `tally_exports` (append-only): who sent which Pro forma version, with the file's SHA-256;
+  - owner- or accounts-only `save_tally_export_settings` and `record_tally_export`.
+- Default item names come from each product's original Tally export (`source.raw`). Products added from the CRM list need their Tally name typed, or must be created in Tally first.
+- TZS only for now; foreign-currency Pro formas are refused.
+- Live check in an aborted transaction as the real owner: settings saved as version 1; sending the cancelled `PF-2026-000001` was refused ("Only an accepted Pro forma can be sent to Tally"). Afterwards nothing remained.
+- Not yet run against your TallyPrime. The first import should be checked, and Order Processing must be enabled in Tally for Sales Orders.
+- Recorded migrations now: 042–052.
