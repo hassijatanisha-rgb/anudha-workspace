@@ -153,3 +153,16 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Department subtotal rows follow the people. The company total excludes the subtotals. CSV download is available.
 - Live check in an aborted transaction as the real owner: department set to management; 2 staff visible through `staff_departments()`; an invalid department was refused. Nothing remained afterwards.
 - Recorded migrations now: 042–054.
+
+## Migration 055: hardening (applied 1 October)
+
+- Removed direct insert, update, delete and truncate grants from signed-in users on 20 older workflow and inventory tables. No row policy allowed those writes, and every real save goes through the checked server functions, so behaviour is unchanged.
+- Five read policies now check the signed-in user once per query instead of once per row. The rules are the same.
+- Live check: saving a godown through the app's server function still works. A direct insert by a signed-in user is refused with "permission denied". Reads still work. The check ran inside a rolled-back transaction, so nothing was saved.
+
+## Plain interface and How to use (1 October)
+
+- Removed technical and back-end wording from staff screens: Supabase, file names, "immutable snapshot", "source lot", employee IDs shown as codes, and development notes.
+- Staff no longer see Staff, Questions for the owner (formerly Awaiting approval) or Setup progress. Accounting forms appear only for people with accounting access.
+- Help is replaced by How to use: 22 step-by-step guides, searchable and filterable by job. A How to use button at the top of every page opens the guides for that page first, and Walk me through it shows the steps one at a time on the real page.
+- Checked by opening every menu screen as owner and as staff at 1280, 390 and 360 px wide: no errors and no sideways scrolling.

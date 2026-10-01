@@ -96,3 +96,25 @@ main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12p
 
 /* Work report: department subtotal rows stand apart from people. */
 main tr.report-subtotal td{font-weight:700;background:#edf4f0}
+
+/* Phone: the company letterhead on Pro formas wraps instead of widening the page. */
+.company-form-brand>div{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+/* How to use: plain step lists, large type, and a walk-through panel that stays on screen while staff follow it. */
+.howto{max-width:900px}
+.howto-search{max-width:620px}
+.howto-here>h2{margin:24px 0 0}
+.howto-here .howto-topic{border-left:5px solid var(--green)}
+.howto-topic{padding:0}
+.howto-topic>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;font-size:1.1em;font-weight:700;list-style-position:outside}
+.howto-topic>summary small{font-weight:500;white-space:nowrap}
+.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 22px 18px}
+.howto-steps{padding-left:24px;font-size:1.05em;line-height:1.6}
+.howto-steps li{margin:8px 0;padding-left:4px}
+.howto-button{font-weight:700;border-color:var(--green);color:var(--green)}
+.howto-walk{position:fixed;right:16px;bottom:16px;z-index:50;width:min(380px,calc(100vw - 32px));padding:18px 20px;background:#fff;border:2px solid var(--green);border-radius:14px;box-shadow:0 12px 36px rgba(20,45,38,.22)}
+.howto-walk h2{font-size:1em;margin:4px 0 6px;color:var(--muted)}
+.howto-walk p{font-size:1.1em;margin:0 0 14px}
+.howto-walk .heading button{border:0;font-size:22px;padding:2px 10px;min-height:0}
+@media(max-width:600px){#identity{white-space:normal}.howto-topic>summary{padding:14px 16px}.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 16px 14px}}
+@media print{.howto-walk,.howto-button{display:none}}

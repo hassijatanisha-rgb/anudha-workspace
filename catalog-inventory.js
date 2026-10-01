@@ -62,7 +62,7 @@ function catalogInventory(){
  }
  const rows=catalogRows(),machine=rows.find(p=>p.id===catalogMachineId&&catalogCategoryOf(p)==='machines');
  const reviewCount=rows.filter(p=>catalogProductIssues(p).length).length,activeCount=rows.filter(p=>p.source?.sale_status==='active').length,manufacturerCount=new Set(rows.map(p=>String(p.source?.company||'').trim()).filter(Boolean)).size;
- const mappingAction=me.role==='owner'?'<button type="button" data-product-mapping-preview>Preview corrected stock mapping</button><label class="file-button"><span>Apply product list file</span><input type="file" id="productListFile" accept=".json,application/json"></label>':'';
+ const mappingAction=me.role==='owner'?'<button type="button" data-product-mapping-preview>Check stock mapping file</button><label class="file-button"><span>Apply product list file</span><input type="file" id="productListFile" accept=".json,application/json"></label>':'';
  const heading='<section class="cleanup-hero"><div><small>INVENTORY · PRODUCT DATA</small><h1>Product data workbench</h1><p>Search, sort and correct product names, manufacturers, specifications and sale status without touching stock counts.</p></div><button id="refresh" type="button">Refresh data</button>'+mappingAction+'</section><div class="cleanup-metrics"><div><small>Products</small><strong>'+rows.length+'</strong></div><div><small>Need review</small><strong>'+reviewCount+'</strong></div><div><small>Active for sale</small><strong>'+activeCount+'</strong></div><div><small>Manufacturers</small><strong>'+manufacturerCount+'</strong></div></div>';
  if(catalogMachineId&&!machine)catalogMachineId='';
  if(machine){

@@ -19,6 +19,6 @@ assert.match(sql,/tax invoice must reserve stock/i,'The legacy status action mus
 
 assert.match(ui,/create_tax_invoice_and_reserve_stock/);
 assert.match(ui,/start_reserved_sales_delivery_packing/);
-assert.match(ui,/Stock is reserved when the Tax Invoice is created/);
+assert.match(ui,/Stock is reserved when the tax invoice is made/);
 
 console.log('PASS: Tax Invoice creation reserves Haadi stock and cancellation releases it before dispatch.');

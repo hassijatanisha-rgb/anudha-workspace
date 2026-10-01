@@ -27,7 +27,7 @@ test('register lists newest first and searches invoice, customer, Pro forma and 
 test('menu, router, sign-out, help and script order are wired; nothing writes stock',()=>{
  const app=read('app.js'),html=read('index.html'),src=read('tally-invoices.js');
  assert.match(read('workspace-navigation.js'),/\['Tally invoices','tallyinvoices'\]/);assert.match(app,/view==='tallyinvoices'\)return tallyInvoicesWorkspace\(\)/);
- assert.match(app,/typeof clearTallyInvoices==='function'\)clearTallyInvoices\(\)/);assert.match(app,/tax invoices from Tally/);
+ assert.match(app,/typeof clearTallyInvoices==='function'\)clearTallyInvoices\(\)/);assert.match(readFileSync(new URL('../how-to-use.js',import.meta.url),'utf8'),/Bring Tally invoices into the ERP/);
  assert.ok(html.indexOf('tally-invoices.js')>0&&html.indexOf('tally-invoices.js')<html.indexOf('app.js'));
  assert.doesNotMatch(src,/inventory_lots|advance_sales_delivery|\.insert\(|\.update\(/);
 });
