@@ -7,3 +7,7 @@ RED392c76b: actual load() in isolated Node/VM receives a staff lookup error and 
 Validation: four new runtime cases plus three existing two-step cases pass; app syntax and diff checks clean. Tests exercise actual load() with stub SDK responses, not live sessions. Numeric coverage, browser recovery and production error handling remain unverified. This does not fix the underlying database timeout, add automatic retries or prove all transport rejection paths. Reload remains the retry action. No credentials, auth configuration, SQL, accounting or stock changed.
 
 Shared app.js edit requires independent Claude review; preserve PR22/26 routing and PR27 pagination changes during integration. Do not classify review-branch publication as deployed.
+
+## 20:15 UTC transport follow-up
+
+RED6496d84 reproduces a rejected staff-query promise bypassing the returned-error cleanup and retaining old workspace identity. GREEN06a6fb1 catches only the staff query rejection and routes it through the same fail-closed cleanup; later rendering/data errors are not mislabeled as staff failures. Five staff cases plus three MFA cases pass. No authentication revocation on transient rejection and no business-data load; inactive/missing memberships still denied. This closes the thrown staff-query gap, not all boot/auth/employee-name/data-loading exceptions or concurrent session changes. Browser/live acceptance and independent review remain outstanding.
