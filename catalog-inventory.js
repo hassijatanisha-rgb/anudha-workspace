@@ -1,6 +1,6 @@
 'use strict';
 
-const catalogCategories=[['review','Needs review'],['all','All products'],['machines','Machines'],['furniture','Furniture'],['reagents','Reagents'],['consumables','Consumables'],['spares','Spares'],['non_stock','Service / non-stock'],['unclassified','Unclassified']];
+const catalogCategories=[['review','Needs review'],['all','All products'],['machines','Machines'],['furniture','Furniture'],['reagents','Reagents'],['consumables','Consumables'],['spares','Spares'],['non_stock','Service / non-stock'],['unclassified','Not sorted yet']];
 let catalogCategory='review',catalogSearch='',catalogMachineId='',catalogSort='name',catalogPage=0,catalogColour='';
 function catalogPageRows(rows,page){
  const pages=Math.max(1,Math.ceil(rows.length/50));
@@ -57,13 +57,13 @@ function catalogProduct(p,rows){
 }
 function catalogInventory(){
  if(typeof productReviewLoadError!=='undefined'&&productReviewLoadError){
-  $('#content').innerHTML=`<section class="card"><h1>Product data workbench</h1><p role="alert">Product corrections could not be loaded. Refresh before reviewing the current catalog.</p><p>${esc(productReviewLoadError)}</p><button id="refresh" type="button">Retry loading data</button></section>`;
+  $('#content').innerHTML=`<section class="card"><h1>Products</h1><p role="alert">Product corrections could not be loaded. Refresh before reviewing the current catalog.</p><p>${esc(productReviewLoadError)}</p><button id="refresh" type="button">Retry loading data</button></section>`;
   return;
  }
  const rows=catalogRows(),machine=rows.find(p=>p.id===catalogMachineId&&catalogCategoryOf(p)==='machines');
  const reviewCount=rows.filter(p=>catalogProductIssues(p).length).length,activeCount=rows.filter(p=>p.source?.sale_status==='active').length,manufacturerCount=new Set(rows.map(p=>String(p.source?.company||'').trim()).filter(Boolean)).size;
  const mappingAction=me.role==='owner'?'<button type="button" data-product-mapping-preview>Check stock mapping file</button><label class="file-button"><span>Apply product list file</span><input type="file" id="productListFile" accept=".json,application/json"></label>':'';
- const heading='<section class="cleanup-hero"><div><small>INVENTORY · PRODUCT DATA</small><h1>Product data workbench</h1><p>Search, sort and correct product names, manufacturers, specifications and sale status without touching stock counts.</p></div><button id="refresh" type="button">Refresh data</button>'+mappingAction+'</section><div class="cleanup-metrics"><div><small>Products</small><strong>'+rows.length+'</strong></div><div><small>Need review</small><strong>'+reviewCount+'</strong></div><div><small>Active for sale</small><strong>'+activeCount+'</strong></div><div><small>Manufacturers</small><strong>'+manufacturerCount+'</strong></div></div>';
+ const heading='<section class="cleanup-hero"><div><small>INVENTORY · PRODUCT DATA</small><h1>Products</h1><p>Find a product, or correct its name, company or details.</p></div><button id="refresh" type="button">Refresh data</button>'+mappingAction+'</section><div class="cleanup-metrics"><div><small>Products</small><strong>'+rows.length+'</strong></div><div><small>Need review</small><strong>'+reviewCount+'</strong></div><div><small>Active for sale</small><strong>'+activeCount+'</strong></div><div><small>Manufacturers</small><strong>'+manufacturerCount+'</strong></div></div>';
  if(catalogMachineId&&!machine)catalogMachineId='';
  if(machine){
   if(typeof productMachineLinksError!=='undefined'&&productMachineLinksError){$('#content').innerHTML=heading+'<button type="button" data-catalog-back>← Back to catalog</button><p role="alert">Machine links could not be loaded. Refresh data before viewing related products.</p>';return;}

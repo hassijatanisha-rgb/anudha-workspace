@@ -9,22 +9,24 @@ const howToTopics=[
   'Sign in with your employee ID (your name, for example jagroop) and your password.',
   'The first time you sign in, choose your own password. You can change it later with **Change password** at the top of the page.',
   'Use the menu on the left to move between pages.',
-  'Open **To-do tasks · urgent first** every morning. Work that other people have sent to you is at the top.',
+  'Open **My tasks** every morning. Tasks and order steps given to you are there, most urgent first.',
   'Stuck? Press **How to use** at the top of any page to see the guide for that page.']},
- {id:'todo',role:'everyone',title:'Do the work sent to you and pass it on',screens:['personal:task'],steps:[
-  'Open **To-do tasks · urgent first**. Work sent to you is listed under **Work handed to me**, oldest first.',
-  'Press **Open** to go straight to the order or job.',
-  'Do your part. Then press **Mark my step done**. The order moves on to the next person by itself.',
-  'If you cannot finish on time, press **Report delay**, write the reason and choose the new date. The sender and the owner can see it.',
-  'To send work to someone yourself, open the order and press **Hand to next person**. Choose the person and say what they must do.']},
- {id:'inquiry',role:'sales',title:'Record a phone call, email or walk-in',screens:['leads:inquiries'],steps:[
-  'Open **Inquiries** and press **New inquiry**.',
-  'Write who called, what they want and how to reach them. They do not need to be in the client list yet.',
-  'Press **Save**.',
-  'Press **Pass to sales as lead** and choose the salesperson who will follow it up.']},
- {id:'lead',role:'sales',title:'Follow up a lead',screens:['leads:pipeline'],steps:[
-  'Open **Lead / Opportunity**. Overdue follow-ups are at the top.',
-  'Call the customer and write down what was agreed and the next follow-up date.',
+ {id:'todo',role:'everyone',title:'Do your tasks and give tasks to others',screens:['personal:task'],steps:[
+  'Open **My tasks**. Tasks given to you are under To do: red is Do now, yellow is Urgent, grey is Normal. Late tasks have a red edge.',
+  'When you finish a task, press **Mark done**.',
+  'To give someone a task, press **+ New task**. Write what needs doing, choose who does it, how urgent it is and when it is due, then press **Save**. You can also give a task to yourself.',
+  'Order steps sent to you are under **Work handed to me**. Press **Open** to go to the order, then **Mark my step done** when your part is finished.',
+  'If you cannot finish an order step on time, press **Report delay**, write the reason and choose the new date.']},
+ {id:'inquiry',role:'sales',title:'Record a phone call, message or walk-in',screens:['leads:leads'],steps:[
+  'Open **Leads** and press **+ New inquiry**.',
+  'Step 1: choose A client we already have, or Someone new and type their name and phone number.',
+  'Step 2: write in a few words what they need, for example: price for 2 centrifuges.',
+  'Step 3: choose how they contacted us.',
+  'Step 4: choose the salesperson and the follow-up date if you know them, then press **Save inquiry**.',
+  'If you left the salesperson empty, press **Pass to sales as lead** later and choose one.']},
+ {id:'lead',role:'sales',title:'Follow up a lead',screens:['leads:leads'],steps:[
+  'Open **Leads**. Late follow-ups are at the top. Press **Mine** to see only yours.',
+  'Call the customer, then press **Edit** to write what was agreed and the next follow-up date.',
   'When they want a quote, press **Create Pro forma**. The client is filled in for you.',
   'When they buy, press **Mark won** and choose the Pro forma. If they do not, press **Mark lost** and give the reason.']},
  {id:'proforma',role:'sales',title:'Make a Pro forma and send it to accounts',screens:['sales:new','sales:proformas'],steps:[
@@ -45,7 +47,7 @@ const howToTopics=[
   'In TallyPrime, export the Day Book or Sales Register as XML.',
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
-  'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not an ERP order**.']},
+  'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',
@@ -58,8 +60,9 @@ const howToTopics=[
   'The list shows when the stock has arrived, so you can call the customer back.',
   'To buy it in, press **Order from supplier**. When the customer has received it, press **Mark fulfilled**.']},
  {id:'purchase',role:'sales',title:'Buy from a supplier',screens:['purchasing:orders','purchasing:suppliers'],steps:[
-  'Open **Purchasing** and press **New purchase request**. Choose the supplier and press **Add item** for each product.',
-  'The owner checks it and presses **Approve purchase**.',
+  'Open **Purchasing** and press **New purchase request**.',
+  'Choose the supplier, for example Polymed. Then type each item and its quantity. Press **Add item** for more lines.',
+  'Press **Send for approval**. The owner checks it and presses **Approve purchase**.',
   'Send the LPO to the supplier, then press **Place order with supplier** and type the LPO number.',
   'When the goods arrive, press **Goods arrived — close** and type the delivery note number.',
   'New suppliers are added under **Suppliers** with **New supplier**.']},
@@ -100,11 +103,12 @@ const howToTopics=[
   'Open **Review stock counts** and press **Start a count**.',
   'As counts come in, press **Accept** or **Reject** for each one.',
   'When every godown is done, press **Close this count**.']},
- {id:'calendar',role:'everyone',title:'Your calendar, tasks and notes',screens:['personal:event','personal:note'],steps:[
-  'Open **My calendar** for meetings and appointments, or **My notes & reminders** for notes.',
-  'Press the add button at the top, fill it in and save.',
-  'Green entries are company events everyone can see. White entries are only yours.']},
- {id:'reports',role:'everyone',title:'See who did what',screens:['reports'],steps:[
+ {id:'calendar',role:'everyone',title:'Your notes, reminders and calendar',screens:['personal:note','personal:event'],steps:[
+  'Open **My notes & reminders**. Only you can see them.',
+  'Press **+ Note** for something to keep, for example: fill out the service form for Aga Khan.',
+  'Press **+ Reminder** for something with a time, for example: call Dr Mushi at 10:00. Tick Done when it is done.',
+  'Open **My calendar** for meetings. Green entries are company events everyone can see.']},
+ {id:'reports',role:'everyone',title:'See reports',screens:['reports'],steps:[
   'Open **Reports**.',
   'Choose the week or month and press **Show report**.',
   'The report shows each person’s finished steps, average time per step and anything overdue.',

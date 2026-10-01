@@ -11,7 +11,7 @@ test('Sidebar has five categories and distinguishes unavailable features from li
  assert.equal((nav.innerHTML.match(/class="nav-group /g)||[]).length,5);
  assert.match(nav.innerHTML,/data-view="contacts"/);
  assert.match(nav.innerHTML,/id="staffNav" hidden/);
- assert.match(nav.innerHTML,/data-view="pending">Pending stock orders/);assert.match(nav.innerHTML,/data-view="leads" data-workspace-section="inquiries">Inquiries/);
+ assert.match(nav.innerHTML,/data-view="pending">Pending stock orders/);assert.match(nav.innerHTML,/data-view="leads" data-workspace-section="leads">Leads/);
  handler({target:{closest:()=>({dataset:{view:'sales',workspaceSection:'new'}})}});
  assert.equal(context.salesSection,'proformas');assert.equal(context.salesEditing,'new');
  handler({target:{closest:()=>({dataset:{view:'service',workspaceSection:'schedule'}})}});

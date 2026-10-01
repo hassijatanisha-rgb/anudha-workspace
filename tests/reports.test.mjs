@@ -50,3 +50,25 @@ test('menu, router, sign-out and script order are wired',()=>{
  assert.match(read('workspace-navigation.js'),/\['Reports','reports'\]/);assert.match(read('app.js'),/view==='reports'\)return reportsWorkspace\(\)/);assert.match(read('app.js'),/typeof clearReports==='function'\)clearReports\(\)/);
  assert.ok(html.indexOf('reports.js')>html.indexOf('work-assignments.js')&&html.indexOf('reports.js')<html.indexOf('app.js'));
 });
+test('new reports: Pro formas by person and currency, leads by source, purchasing, service and tasks',()=>{
+ const ctx=load(),h=n=>new Date(Date.UTC(2026,9,1,n)).toISOString();
+ const pf=ctx.reportProformas([{prepared_by:'a',currency:'TZS',total_minor:1000,status:'accepted'},{prepared_by:'a',currency:'TZS',total_minor:500,status:'sent'},{prepared_by:'a',currency:'USD',total_minor:900,status:'draft'},{prepared_by:'b',currency:'TZS',total_minor:5,status:'accepted',deleted_at:h(1)}]);
+ const tzs=pf.find(r=>r.actor==='a'&&r.currency==='TZS');
+ assert.equal(pf.length,2,'currencies stay separate and deleted Pro formas are left out');assert.equal(tzs.quoted,1500);assert.equal(tzs.acceptedValue,1000);assert.equal(tzs.rate,50);
+ const leads=ctx.reportLeads([{source:'phone',stage:'won'},{source:'phone',stage:'lost'},{source:'phone',stage:'lead'},{source:'whatsapp',stage:'inquiry'}]);
+ assert.deepEqual({...leads[0]},{source:'phone',recorded:3,won:1,lost:1,open:1,rate:50});
+ const buy=ctx.reportPurchasing([{supplier_id:'s',status:'closed',created_at:h(0),closed_at:h(48)},{supplier_id:'s',status:'requested',created_at:h(0)},{supplier_id:'s',status:'cancelled',created_at:h(0)}]);
+ assert.equal(buy[0].arrived,1);assert.equal(buy[0].waiting,1);assert.equal(buy[0].avgMs,48*3600000);
+ const now=Date.parse(h(30));
+ const svc=ctx.reportService([{assigned_user_id:'a',case_type:'installation',status:'completed',created_at:h(0),completed_at:h(24)},{assigned_user_id:'a',case_type:'service',status:'scheduled',scheduled_for:h(10),created_at:h(0)}],now);
+ assert.equal(svc[0].installations,1);assert.equal(svc[0].services,1);assert.equal(svc[0].late,1);
+ const tasks=ctx.reportTasks([{assignee_user_id:'a',status:'done',due_at:h(10),closed_at:h(9)},{assignee_user_id:'a',status:'done',due_at:h(10),closed_at:h(11)},{assignee_user_id:'a',status:'open',due_at:h(20)},{assignee_user_id:'a',status:'cancelled',due_at:h(20)}],now);
+ assert.deepEqual({...tasks[0]},{actor:'a',given:4,onTime:1,late:1,open:1,lateNow:1});
+ const del=ctx.reportDeliveries([{id:'n',proforma_id:'p',status:'delivered',created_at:h(5),delivered_at:h(48)}],[{id:'p',accepted_at:h(0)}]);
+ assert.equal(del[0].ms,48*3600000,'measured from the customer accepting the Pro forma');
+});
+test('the report list hides stock movements from staff',()=>{
+ const src=readFileSync(new URL('../reports.js',import.meta.url),'utf8');
+ assert.match(src,/reportChoices\.filter\(\(\[key\]\)=>key!=='movements'\|\|me\?\.role==='owner'\)/);
+ assert.match(src,/Stock reports are for the owner only/);
+});

@@ -1,5 +1,5 @@
 'use strict';
-// Read-only reports from recorded history: weekly/monthly sales activity per employee and stock movements.
+// Read-only reports from recorded history. One report is chosen at a time from a list; stock movements are owner-only.
 let reportTab='work',reportPeriod='this_week',reportFrom='',reportTo='',reportEpoch=0,reportRows=[],reportColumns=[];
 const reportActivityColumns=[['inquiries','Inquiries recorded'],['qualified','Passed to sales'],['won','Leads won'],['lost','Leads lost'],['proformas','Pro formas created'],['sent','Pro formas sent'],['accepted','Pro formas accepted'],['delivered','Deliveries signed'],['serviceReports','Service reports completed'],['pendingCreated','Pending orders recorded'],['pendingFulfilled','Pending orders fulfilled'],['stepsDone','Handed-over steps done']];
 const reportMovementLabels={opening_balance:'Opening balance',opening_adjustment:'Opening correction',transfer_dispatch:'Sent to another godown',transfer_receipt:'Received from another godown',quarantine_receipt:'Received into quarantine',break_pack:'Carton opened',consumer_issue:'Issued to customer',consumer_return:'Returned by customer'};
@@ -56,6 +56,44 @@ function reportMovements(movements,lots){
  }
  return [...out.values()].sort((a,b)=>reportProductName(a.product_id).localeCompare(reportProductName(b.product_id))||a.movement_type.localeCompare(b.movement_type));
 }
+const reportChoices=[['work','Work done by each person'],['tasks','Tasks: done on time and late'],['activity','Sales activity by person'],['proformas','Pro formas and sales value'],['leads','Leads by how they contacted us'],['deliveries','Deliveries and how long they took'],['purchasing','Purchasing by supplier'],['service','Installations and service by engineer'],['movements','Stock movements (owner)']];
+function reportDays(ms){return ms==null?'—':`${(ms/86400000).toFixed(1)} days`}
+function reportMoney(minor,currency){return new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS',maximumFractionDigits:0}).format(Number(minor||0)/100)}
+// Pro formas made in the period, per person and currency (values in different currencies are never added together).
+function reportProformas(rows){
+ const out=new Map();
+ for(const r of rows){if(r.deleted_at)continue;const key=`${r.prepared_by||''}|${r.currency||'TZS'}`;if(!out.has(key))out.set(key,{actor:r.prepared_by||'',currency:r.currency||'TZS',made:0,quoted:0,accepted:0,acceptedValue:0});const o=out.get(key);o.made++;o.quoted+=Number(r.total_minor)||0;if(r.status==='accepted'){o.accepted++;o.acceptedValue+=Number(r.total_minor)||0;}}
+ return [...out.values()].map(o=>({...o,rate:o.made?Math.round(o.accepted*100/o.made):0}));
+}
+// Leads recorded in the period, by how the customer contacted us.
+function reportLeads(rows){
+ const out=new Map();
+ for(const r of rows){const k=r.source||'other';if(!out.has(k))out.set(k,{source:k,recorded:0,won:0,lost:0,open:0});const o=out.get(k);o.recorded++;if(r.stage==='won')o.won++;else if(r.stage==='lost')o.lost++;else o.open++;}
+ return [...out.values()].map(o=>({...o,rate:o.won+o.lost?Math.round(o.won*100/(o.won+o.lost)):0})).sort((a,b)=>b.recorded-a.recorded);
+}
+// Deliveries signed in the period: time from the customer accepting the Pro forma to the signed delivery note.
+function reportDeliveries(notes,proformas){
+ const accepted=new Map(proformas.map(p=>[p.id,p.accepted_at]));
+ return notes.filter(n=>n.status==='delivered'&&n.delivered_at).map(n=>{const start=accepted.get(n.proforma_id)||n.created_at,ms=Math.max(0,Date.parse(n.delivered_at)-Date.parse(start));return {...n,ms};}).sort((a,b)=>b.ms-a.ms);
+}
+// Purchase requests made in the period, per supplier.
+function reportPurchasing(orders){
+ const out=new Map();
+ for(const o of orders){const k=o.supplier_id||'';if(!out.has(k))out.set(k,{supplier_id:k,requests:0,waiting:0,ordered:0,arrived:0,cancelled:0,arrivalMs:0});const r=out.get(k);r.requests++;if(o.status==='requested'||o.status==='approved')r.waiting++;else if(o.status==='ordered')r.ordered++;else if(o.status==='closed'){r.arrived++;r.arrivalMs+=Math.max(0,Date.parse(o.closed_at)-Date.parse(o.created_at));}else if(o.status==='cancelled')r.cancelled++;}
+ return [...out.values()].map(r=>({...r,avgMs:r.arrived?r.arrivalMs/r.arrived:null})).sort((a,b)=>b.requests-a.requests);
+}
+// Service and installation jobs created in the period, per engineer; "late now" counts open jobs past their date.
+function reportService(cases,now=Date.now()){
+ const out=new Map();
+ for(const c of cases){const k=c.assigned_user_id||'';if(!out.has(k))out.set(k,{actor:k,installations:0,services:0,completed:0,open:0,late:0,doneMs:0});const r=out.get(k);if(c.case_type==='installation')r.installations++;else r.services++;if(c.status==='completed'){r.completed++;r.doneMs+=Math.max(0,Date.parse(c.completed_at)-Date.parse(c.created_at));}else if(c.status!=='cancelled'){r.open++;if(c.scheduled_for&&Date.parse(c.scheduled_for)<now)r.late++;}}
+ return [...out.values()].map(r=>({...r,avgMs:r.completed?r.doneMs/r.completed:null}));
+}
+// Team tasks due in the period, per person given the task.
+function reportTasks(tasks,now=Date.now()){
+ const out=new Map();
+ for(const t of tasks){const k=t.assignee_user_id;if(!out.has(k))out.set(k,{actor:k,given:0,onTime:0,late:0,open:0,lateNow:0});const r=out.get(k);r.given++;if(t.status==='done'){if(Date.parse(t.closed_at)<=Date.parse(t.due_at))r.onTime++;else r.late++;}else if(t.status==='open'){r.open++;if(Date.parse(t.due_at)<now)r.lateNow++;}}
+ return [...out.values()].sort((a,b)=>b.lateNow-a.lateNow||b.given-a.given);
+}
 function reportProductName(id){if(!id)return 'Unknown product';const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
 function reportLocationName(id){return (typeof inventoryLocations!=='undefined'?inventoryLocations:[]).find(l=>l.id===id)?.name||reportLocationNames.get(id)||'Unknown location';}
 let reportLocationNames=new Map();
@@ -102,7 +140,44 @@ async function reportsWorkspace(){
    if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
    reportRows=reportActivity({leadEvents,proformaEvents,deliveryEvents,serviceEvents,pendingEvents,steps}).map(row=>({...row,employee:employeeName(row.actor)}));
    reportColumns=[['employee','Employee'],...reportActivityColumns,['total','Total']];
+  }else if(reportTab==='proformas'){
+   const rows=await reportFetchRange('sales_proformas','id,prepared_by,status,total_minor,currency,deleted_at,created_at','created_at',from,to);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   reportRows=reportProformas(rows).map(r=>({employee:employeeName(r.actor),currency:r.currency,made:r.made,quoted:reportMoney(r.quoted,r.currency),accepted:r.accepted,acceptedValue:reportMoney(r.acceptedValue,r.currency),rate:`${r.rate}%`}));
+   reportColumns=[['employee','Prepared by'],['currency','Currency'],['made','Pro formas made'],['quoted','Value quoted'],['accepted','Accepted'],['acceptedValue','Value accepted'],['rate','Accepted %']];
+  }else if(reportTab==='leads'){
+   const rows=await reportFetchRange('sales_leads','id,source,stage,created_at','created_at',from,to);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   const sources=typeof leadSources!=='undefined'?leadSources:{};
+   reportRows=reportLeads(rows).map(r=>({...r,source:sources[r.source]||r.source,rate:`${r.rate}%`}));
+   reportColumns=[['source','How they contacted us'],['recorded','Leads recorded'],['won','Won'],['lost','Lost'],['open','Still open'],['rate','Won % of closed']];
+  }else if(reportTab==='deliveries'){
+   const notes=await reportFetchRange('sales_delivery_notes','id,delivery_number,proforma_id,organization_id,status,created_at,delivered_at','delivered_at',from,to);
+   const ids=[...new Set(notes.map(n=>n.proforma_id))],proformas=[];
+   for(let i=0;i<ids.length;i+=100){const r=await client.from('sales_proformas').select('id,document_number,accepted_at').in('id',ids.slice(i,i+100));if(r.error)throw Error(r.error.message);proformas.push(...(r.data||[]));}
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   const numbers=new Map(proformas.map(p=>[p.id,p.document_number]));
+   reportRows=reportDeliveries(notes,proformas).map(n=>({delivery:n.delivery_number,proforma:numbers.get(n.proforma_id)||'',client:orgIndex.get(n.organization_id)?.name||'',delivered:new Date(n.delivered_at).toLocaleDateString(),days:Number((n.ms/86400000).toFixed(1))}));
+   reportColumns=[['delivery','Delivery note'],['proforma','Pro forma'],['client','Client'],['delivered','Delivered on'],['days','Days from acceptance to delivery']];
+  }else if(reportTab==='purchasing'){
+   const [orders,supplierRows]=await Promise.all([reportFetchRange('purchase_orders','id,supplier_id,status,created_at,closed_at','created_at',from,to),client.from('suppliers').select('id,name')]);
+   if(supplierRows.error)throw Error(supplierRows.error.message);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   const names=new Map((supplierRows.data||[]).map(s=>[s.id,s.name]));
+   reportRows=reportPurchasing(orders).map(r=>({...r,supplier:names.get(r.supplier_id)||'Supplier not chosen',avg:reportDays(r.avgMs)}));
+   reportColumns=[['supplier','Supplier'],['requests','Requests'],['waiting','Waiting to be ordered'],['ordered','Ordered, not arrived'],['arrived','Arrived'],['cancelled','Cancelled'],['avg','Average days to arrive']];
+  }else if(reportTab==='service'){
+   const cases=await reportFetchRange('service_cases','id,case_type,status,assigned_user_id,scheduled_for,created_at,completed_at','created_at',from,to);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   reportRows=reportService(cases).map(r=>({...r,employee:r.actor?employeeName(r.actor):'No engineer yet',avg:reportDays(r.avgMs)}));
+   reportColumns=[['employee','Engineer'],['installations','Installations'],['services','Service jobs'],['completed','Completed'],['open','Still open'],['late','Late now'],['avg','Average days to complete']];
+  }else if(reportTab==='tasks'){
+   const tasks=await reportFetchRange('team_tasks','id,assignee_user_id,status,due_at,closed_at','due_at',from,to);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   reportRows=reportTasks(tasks).map(r=>({...r,employee:employeeName(r.actor)}));
+   reportColumns=[['employee','Employee'],['given','Tasks due'],['onTime','Done on time'],['late','Done late'],['open','Not done yet'],['lateNow','Late now']];
   }else{
+   if(me?.role!=='owner')throw Error('Stock reports are for the owner only.');
    const movements=await reportFetchRange('inventory_movements','id,lot_id,movement_type,base_unit_change,created_at','created_at',from,to);
    const lotIds=[...new Set(movements.map(m=>m.lot_id))],lots=[];
    for(let i=0;i<lotIds.length;i+=100){const r=await client.from('inventory_lots').select('id,product_id,location_id').in('id',lotIds.slice(i,i+100));if(r.error)throw Error(r.error.message);lots.push(...(r.data||[]));}
@@ -119,13 +194,13 @@ function renderReports(range,error=''){
  const [from,to]=range||['',''],last=to?reportIsoDate(new Date(new Date(`${to}T00:00:00`).getTime()-86400000)):'';
  // Department subtotal rows are not added again into the company total; text columns have no total.
  const totals=reportColumns.slice(1).map(([key])=>{const rows=reportRows.filter(row=>!row._subtotal);return rows.some(row=>typeof row[key]==='number')?rows.reduce((sum,row)=>sum+(typeof row[key]==='number'?row[key]:0),0):'';});
- $('#content').innerHTML=`<section class="reports-workspace"><div class="heading"><div><small>SYSTEM</small><h1>Reports</h1><p class="muted">Who did what, and how long each step took.</p></div></div><div class="tabs" role="group" aria-label="Report">${[['work','Work by person and department'],['activity','Sales activity by employee'],['movements','Stock movements']].map(([key,label])=>`<button type="button" data-report-tab="${key}" class="${reportTab===key?'active':''}" aria-pressed="${reportTab===key}">${label}</button>`).join('')}</div><form id="reportPeriod" class="grid"><label><span>Period</span><select name="period">${[['this_week','This week'],['last_week','Last week'],['this_month','This month'],['last_month','Last month'],['custom','Choose dates']].map(([key,label])=>`<option value="${key}" ${reportPeriod===key?'selected':''}>${label}</option>`).join('')}</select></label>${reportPeriod==='custom'?`<label><span>From</span><input name="from" type="date" value="${esc(reportFrom)}" required></label><label><span>To</span><input name="to" type="date" value="${esc(reportTo)}" required></label>`:''}<div class="actions"><button type="submit">Show report</button>${reportRows.length&&!error?'<button type="button" id="reportCsv">Download CSV</button>':''}</div></form>${error?`<p class="notice error" role="alert">${esc(error)}</p>`:''}${range&&!error?`<p class="muted">${esc(from)} to ${esc(last)} · ${reportRows.length} row${reportRows.length===1?'':'s'}</p>${reportRows.length?`<div class="table-wrap"><table><thead><tr>${reportColumns.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${reportRows.map(row=>`<tr${row._subtotal?' class="report-subtotal"':''}>${reportColumns.map(([key])=>`<td>${esc(row[key])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr><th>Total</th>${totals.map((value,i)=>`<th>${reportColumns[i+1][0]==='location'||reportColumns[i+1][0]==='type'?'':esc(value)}</th>`).join('')}</tr></tfoot></table></div>`:'<p class="muted">No recorded activity in this period.</p>'}`:''}</section>`;
- document.querySelectorAll('[data-report-tab]').forEach(button=>button.onclick=()=>{reportTab=button.dataset.reportTab;run(reportsWorkspace);});
+ $('#content').innerHTML=`<section class="reports-workspace"><div class="heading"><div><small>MAIN</small><h1>Reports</h1><p class="muted">Choose a report and a period.</p></div></div><form id="reportPeriod" class="grid"><label><span>Which report?</span><select name="report">${reportChoices.filter(([key])=>key!=='movements'||me?.role==='owner').map(([key,label])=>`<option value="${key}" ${reportTab===key?'selected':''}>${label}</option>`).join('')}</select></label><label><span>Period</span><select name="period">${[['this_week','This week'],['last_week','Last week'],['this_month','This month'],['last_month','Last month'],['custom','Choose dates']].map(([key,label])=>`<option value="${key}" ${reportPeriod===key?'selected':''}>${label}</option>`).join('')}</select></label>${reportPeriod==='custom'?`<label><span>From</span><input name="from" type="date" value="${esc(reportFrom)}" required></label><label><span>To</span><input name="to" type="date" value="${esc(reportTo)}" required></label>`:''}<div class="actions"><button type="submit">Show report</button>${reportRows.length&&!error&&(reportTab!=='movements'||me?.role==='owner')?'<button type="button" id="reportCsv">Download CSV</button>':''}</div></form>${error?`<p class="notice error" role="alert">${esc(error)}</p>`:''}${range&&!error?`<p class="muted">${esc(from)} to ${esc(last)} · ${reportRows.length} row${reportRows.length===1?'':'s'}</p>${reportRows.length?`<div class="table-wrap"><table><thead><tr>${reportColumns.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${reportRows.map(row=>`<tr${row._subtotal?' class="report-subtotal"':''}>${reportColumns.map(([key])=>`<td>${esc(row[key])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr><th>Total</th>${totals.map((value,i)=>`<th>${reportColumns[i+1][0]==='location'||reportColumns[i+1][0]==='type'?'':esc(value)}</th>`).join('')}</tr></tfoot></table></div>`:'<p class="muted">No recorded activity in this period.</p>'}`:''}</section>`;
  const form=$('#reportPeriod');
+ form.elements.report.onchange=event=>{reportTab=event.target.value;reportRows=[];if(reportPeriod==='custom'&&!(reportFrom&&reportTo))renderReports(null);else run(reportsWorkspace);};
  form.elements.period.onchange=event=>{reportPeriod=event.target.value;if(reportPeriod==='custom'){reportRows=[];renderReports(null);}else run(reportsWorkspace);};
  form.onsubmit=event=>{event.preventDefault();if(reportPeriod==='custom'){reportFrom=form.elements.from.value;reportTo=form.elements.to.value;}run(reportsWorkspace);};
  $('#reportCsv')?.addEventListener('click',()=>{
   const blob=new Blob(['﻿'+reportCsv(reportColumns,reportRows)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
-  link.href=url;link.download=`anudha-${reportTab==='work'?'work-by-person':reportTab==='activity'?'sales-activity':'stock-movements'}-${from}-to-${last}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  link.href=url;link.download=`anudha-${reportTab==='work'?'work-by-person':reportTab==='activity'?'sales-activity':reportTab==='movements'?'stock-movements':reportTab}-${from}-to-${last}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
  });
 }
