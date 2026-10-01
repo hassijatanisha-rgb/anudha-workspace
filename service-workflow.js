@@ -2,6 +2,8 @@
 
 let serviceSection='installations',serviceLoaded=false,serviceLoadError='',serviceCases=[],serviceAssets=[],serviceEvents=[],serviceReports=[],serviceAccessories=[],serviceAttendees=[],serviceTeam=[];
 const serviceTabs=[['installations','Installations'],['schedule','Service schedule'],['forms','Official forms']];
+let serviceEpoch=0,serviceLoadedActor=null;
+function clearServiceWorkflow(){serviceEpoch++;serviceLoadedActor=null;serviceLoaded=false;serviceLoadError='';serviceCases=[];serviceAssets=[];serviceEvents=[];serviceReports=[];serviceAccessories=[];serviceAttendees=[];serviceTeam=[];}
 function serviceCase(id){return serviceCases.find(row=>row.id===id)}
 function serviceAsset(id){return serviceAssets.find(row=>row.id===id)||{model:'',serial_number:'',installation_location:''}}
 function serviceReport(caseId){return serviceReports.find(row=>row.case_id===caseId)}
@@ -10,6 +12,8 @@ function serviceTeamOptions(selected=''){return serviceTeam.filter(row=>row.acti
 function serviceDate(offset=0){const date=new Date();date.setDate(date.getDate()+offset);return date.toISOString().slice(0,10)}
 function serviceMoney(minor,currency){return new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS',maximumFractionDigits:2}).format(Number(minor||0)/100)}
 async function loadServiceWorkflow(){
+ const epoch=++serviceEpoch,actor=me?.user_id;
+ if(!actor)return false;
  serviceLoadError='';
  const requests=await Promise.all([
   client.from('equipment_assets').select('*').order('created_at',{ascending:false}).limit(1000),
@@ -20,9 +24,10 @@ async function loadServiceWorkflow(){
   client.from('service_training_attendees').select('*').order('sort_order').limit(5000),
   client.from('staff').select('user_id,role,active').order('role')
  ]);
+ if(epoch!==serviceEpoch||me?.user_id!==actor)return false;
  const failed=requests.find(result=>result.error);
  if(failed){serviceLoaded=false;serviceLoadError=failed.error.message||'Service workflow schema has not been installed.';return;}
- [serviceAssets,serviceCases,serviceEvents,serviceReports,serviceAccessories,serviceAttendees,serviceTeam]=requests.map(result=>result.data||[]);serviceLoaded=true;
+ [serviceAssets,serviceCases,serviceEvents,serviceReports,serviceAccessories,serviceAttendees,serviceTeam]=requests.map(result=>result.data||[]);serviceLoaded=true;serviceLoadedActor=actor;return true;
 }
 function serviceHeader(){return `<div class="heading"><div><small>SERVICE ENGINEERING</small><h1>Service and installation</h1><p class="muted">Signed machine deliveries become installation jobs automatically. Completed work creates the next service date.</p></div><button id="serviceRefresh" type="button">Refresh list</button></div><div class="help-strip"><strong>Two clear queues:</strong><span>Installations are created from signed delivery notes. Service schedule shows planned maintenance and repair work.</span></div><nav class="tabs inventory-tabs" aria-label="Service sections">${serviceTabs.map(([id,label])=>`<button type="button" data-service-section="${id}" class="${serviceSection===id?'active':''}" ${serviceSection===id?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`}
 function serviceUnavailable(){return `${serviceHeader()}<section class="card"><h2>Service database setup required</h2><p class="warning">The service tables have not been installed in Supabase. No jobs are simulated or stored in the browser.</p><p class="muted">${esc(serviceLoadError)}</p><p>An owner must run migrations <code>202609210008</code> and <code>202609210009</code> in order, then refresh.</p></section>`}
@@ -57,4 +62,11 @@ function bindServiceWorkflow(){
  newCase?.addEventListener('submit',event=>{event.preventDefault();run(async()=>{const values=Object.fromEntries(new FormData(event.currentTarget)),asset=serviceAsset(values.assetId),contact=contacts.find(row=>row.id===values.contactId);if(values.contactId&&!(contact&&asset.organization_id===contact.organization_id))throw Error('Choose a contact from the same client as the machine.');const result=await client.rpc('create_service_case',{p_id:crypto.randomUUID(),p_asset_id:values.assetId,p_contact_id:values.contactId||null,p_problem_summary:String(values.problem||'').trim()});if(result.error)throw result.error;await serviceWorkspace(true);message('Service job created. Assign it to an engineer next.')})});
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
-async function serviceWorkspace(force=false){syncWorkspaceNavigation();$('#content').innerHTML='<p role="status">Loading service and installation jobs…</p>';if(force||!serviceLoaded)await loadServiceWorkflow();if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=serviceSection==='schedule'?serviceScheduleScreen():serviceSection==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
+async function serviceWorkspace(force=false){
+ const actor=me?.user_id;if(!actor||view!=='service')return;
+ syncWorkspaceNavigation();$('#content').innerHTML='<p role="status">Loading service and installation jobs…</p>';
+ if(force||!serviceLoaded||serviceLoadedActor!==actor){if(await loadServiceWorkflow()===false)return;}
+ if(me?.user_id!==actor||view!=='service')return;
+ if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}
+ $('#content').innerHTML=serviceSection==='schedule'?serviceScheduleScreen():serviceSection==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow();
+}
