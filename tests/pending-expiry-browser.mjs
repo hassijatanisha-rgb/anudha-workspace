@@ -19,5 +19,14 @@ try{
  await page.getByText('Partly available: 10 of 20 — reconfirm with the customer',{exact:true}).waitFor();
  assert.equal(await page.getByText(/Stock arrived:/).count(),0);
  assert.equal(await page.getByText('Fixture bags · 20 pcs',{exact:true}).count(),1);
- console.log('PASS: rendered pending card reports only unexpired pieces; no false stock-arrived label. Fixture only.');
+ await page.evaluate(()=>{
+  document.querySelector('main').id='content';window.$=s=>document.querySelector(s);bindPendingStock=()=>{};
+  pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);
+  pendingRows=[{id:'r',request_number:'PS-FIXTURE',product_id:'p1',quantity:20,status:'waiting',organization_id:'org',salesperson_user_id:'staff',expires_on:'2099-01-01',extension_count:0}];
+  renderPendingStock();
+ });
+ await page.getByRole('alert').filter({hasText:'previous day. Press Refresh'}).waitFor();
+ await page.getByText('Stock check unavailable',{exact:true}).waitFor();
+ assert.equal(await page.getByText(/Stock has arrived for|Stock arrived: 50/).count(),0);
+ console.log('PASS: rendered pending card reports only unexpired pieces and marks prior-day availability unavailable on render. Fixture only.');
 }finally{await browser.close();}
