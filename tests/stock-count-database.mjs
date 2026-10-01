@@ -43,6 +43,12 @@ await as(counter);await assert.rejects(open(id(100),'Full count'),/Only the owne
 await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS'),/closed/);ok();
 await as(owner);const s=await open(id(100),'Full count 2026');assert.equal(s.status,'open');ok();
 assert.equal((await open(id(100),'Full count 2026')).id,id(100),'retry returns the same count');ok();
+await assert.rejects(open(id(100),'Different count'),/different details/);ok();
+await assert.rejects(open(id(100),null),/different details/);ok();
+assert.equal((await open(id(100),'  Full count 2026  ')).name,'Full count 2026');ok();
+await db.exec(`insert into auth.users values('${id(5)}');insert into public.staff values('${id(5)}','owner',true)`);
+await as(id(5));await assert.rejects(open(id(100),'Full count 2026'),/different details/);ok();
+await as(owner);
 await assert.rejects(open(id(101),'Second'),/already running/);ok();
 
 // Counting.
@@ -104,6 +110,7 @@ await assert.rejects(db.exec(`update public.stock_count_entries set status='reco
 await as(counter);await assert.rejects(close(id(100),1),/Only the owner/);ok();
 await as(owner);await assert.rejects(close(id(100),5),/changed/);ok();
 const c=await close(id(100),1);assert.equal(c.status,'closed');assert.equal(c.closed_by,owner);ok();
+assert.equal((await open(id(100),'Full count 2026')).status,'closed','retry must not reopen a closed session');ok();
 await assert.rejects(close(id(100),2),/already closed/);ok();
 await as(counter);await assert.rejects(record(id(203),id(100),'New Dakawa','AN-00001','',1,'PCS'),/closed/);ok();
 await as(owner);assert.equal((await open(id(101),'Recount')).status,'open','a new count can start after closing');ok();
