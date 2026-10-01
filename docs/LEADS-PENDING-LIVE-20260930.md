@@ -95,3 +95,19 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Live check in an aborted transaction as the real owner: 2 imported, 1 linked automatically to `PF-2026-000001`, and the re-import reported 1 unchanged. `anon` was refused. Afterwards there were 0 invoices and 0 events.
 - Upload path: Tally Day Book or Sales Register → Export → XML, then Orders → Tally invoices → **Upload Tally XML export**. The in-house connector will send the same normalised rows with source `connector`.
 - Not yet checked against a real export from your Tally. The reader follows Tally's documented XML layouts (`ALLINVENTORYENTRIES.LIST` / `LEDGERENTRIES.LIST` and the older `INVENTORYENTRIES.LIST` / `ALLLEDGERENTRIES.LIST`). The first real file should be checked by eye.
+
+## Migration 051: automatic handoffs (applied 1 October)
+- Every open record has one responsible person, handed on automatically at each step:
+  - **Pro forma:** the creator while drafting and following up, then the invoice-step default (Mujtaba) once accepted.
+  - **Tally invoice linked:** invoicing is marked done, a packing job goes to the packing default (Jagroop), and the Pro forma creator gets an Update.
+  - **Delivery note:** packing default while packing, delivery default when out for delivery, done when delivered.
+  - **Service and installation:** the step default to assign an engineer, then the assigned engineer, then done.
+  - **Lead:** the owner, else the creator; closed when won or lost.
+  - **Pending order:** the salesperson.
+  - **Purchase:** the approval default, then the requester to order and receive.
+- Default people per step: owner-chosen in `workflow_step_owners`, which is versioned and append-only. Set them under Staff → Who does each step.
+- `unowned_work()` lists open records with nobody responsible (no default set, or an inactive person). It is shown on everyone's To-do page.
+- A failed handoff never blocks the business action: it raises a warning, and the record appears as nobody responsible.
+- Pre-check: the constraint name matched; neither new table existed; 0 assignments.
+- Live check in an aborted transaction as the real owner: packing default set (version 1); a Tally invoice for `PF-2026-1` created the packing job for that person; `unowned_work` returned 0. Afterwards, all counts were 0.
+- Recorded migrations now: 042–051.

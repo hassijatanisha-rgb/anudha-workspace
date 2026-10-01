@@ -79,3 +79,9 @@ main .file-button input{max-width:220px;font-size:13px}
 /* Tally invoices: a cancelled voucher stays listed but is struck through. */
 .tally-invoices-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}
 .tally-invoices-workspace tr.tally-cancelled td:first-child strong{text-decoration:line-through}
+
+/* Accountability: nobody-responsible list stands out; step owner table stays compact. */
+main .unowned-work.attention{border-color:var(--quality-red-line);background:var(--quality-red)}
+main .work-notices{border-color:var(--green)}
+main .work-step-owners td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+main .work-step-owners label.check{display:block;padding:2px 0}
