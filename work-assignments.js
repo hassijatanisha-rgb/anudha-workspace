@@ -29,9 +29,54 @@ function workSince(iso,now=Date.now()){
  if(minutes<60)return `${minutes} min`;const hours=Math.floor(minutes/60);if(hours<48)return `${hours} h`;return `${Math.floor(hours/24)} days`;
 }
 function workOverdue(row,today=new Date().toISOString().slice(0,10)){return row.status==='open'&&!!row.due_on&&row.due_on<today;}
-function workResponsibleHtml(open){
- if(!open)return '<span>Responsible: <strong>nobody assigned</strong></span>';
- return `<span>Responsible: <strong>${esc(employeeName(open.assignee_user_id))}</strong> · ${esc(open.task)}${open.due_on?` · due <strong${workOverdue(open)?' class="overdue"':''}>${esc(open.due_on)}</strong>`:''} · sent by ${esc(employeeName(open.assigned_by))} ${esc(workSince(open.created_at))} ago</span>`;
+function workToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function workDuration(ms){const minutes=Math.max(0,Math.floor(ms/60000));if(minutes<60)return `${minutes} min`;const hours=Math.floor(minutes/60);if(hours<48)return `${hours} h`;const days=Math.floor(hours/24),rest=hours%24;return rest?`${days} days ${rest} h`:`${days} days`;}
+// Colour of a waiting step: a reported delay with a future expected date is on track; otherwise over a day is
+// yellow and over two days, a passed due date or a passed expected date is red.
+function workAgeLevel(open,delay,now=Date.now(),today=workToday()){
+ if(!open)return '';
+ if(delay?.expected_on)return delay.expected_on<today?'red':'';
+ if(open.due_on)return open.due_on<today?'red':'';
+ const hours=(now-Date.parse(open.created_at))/3600000;
+ return hours>48?'red':hours>24?'yellow':'';
+}
+// Every person who held a record, in order, with how long each step took.
+function workTimeline(rows,now=Date.now()){
+ const steps=[...rows].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id))).map(r=>({id:r.id,person:r.assignee_user_id,task:r.task,status:r.status,from:r.created_at,to:r.closed_at||null,ms:Date.parse(r.closed_at||new Date(now).toISOString())-Date.parse(r.created_at),note:r.close_note||''}));
+ const first=steps[0]?Date.parse(steps[0].from):null,openStep=steps.find(s=>s.status==='open'),last=steps.length?Math.max(...steps.map(s=>Date.parse(s.to||new Date(now).toISOString()))):null;
+ return {steps,totalMs:first==null?0:(openStep?now:last)-first,finished:!openStep&&steps.length>0};
+}
+function workLatestDelays(delays){const out=new Map();for(const d of [...delays].sort((a,b)=>String(b.recorded_at).localeCompare(String(a.recorded_at))))if(!out.has(d.assignment_id))out.set(d.assignment_id,d);return out;}
+async function loadWorkDelays(assignmentIds){
+ const out=[];
+ for(let i=0;i<assignmentIds.length;i+=100){const r=await client.from('work_delays').select('assignment_id,reason,expected_on,recorded_by,recorded_at').in('assignment_id',assignmentIds.slice(i,i+100));if(r.error)throw Error(r.error.message);out.push(...(r.data||[]));}
+ return out;
+}
+function openWorkDelay(row){
+ if(!row)return;
+ actionForm('Report a delay',`<p><strong>${esc(row.record_label)}</strong> · ${esc(row.task)} · with ${esc(employeeName(row.assignee_user_id))} for ${esc(workSince(row.created_at))}</p><label><span>Why is it delayed?</span><textarea name="reason" required minlength="3" maxlength="500" placeholder="For example: waiting for stock from Keko godown"></textarea></label><label><span>New expected date</span><input name="expected" type="date" required min="${workToday()}"></label>`,async values=>{
+  const actor=me?.user_id,result=await client.rpc('record_work_delay',{p_id:crypto.randomUUID(),p_assignment_id:row.id,p_reason:String(values.reason||'').trim(),p_expected_on:values.expected});
+  if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
+  if(result.error)throw Error(result.error.message);
+  await render();message(`${row.record_label}: delay recorded, expected ${values.expected}.`);
+ });
+}
+function workResponsibleHtml(open,delay=null,timeline=null){
+ if(!open)return `<span>Responsible: <strong>nobody assigned</strong>${timeline?.finished?` · finished · took ${esc(workDuration(timeline.totalMs))} in total`:''}</span>`;
+ const level=workAgeLevel(open,delay);
+ return `<span class="${level?'work-age-'+level:''}">With <strong>${esc(employeeName(open.assignee_user_id))}</strong> · ${esc(open.task)} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(open.created_at)))}</strong>${timeline&&timeline.steps.length>1?` · ${esc(workDuration(timeline.totalMs))} since the start`:''}${delay?` · <strong>expected ${esc(delay.expected_on)}</strong>: ${esc(delay.reason)}`:''}${open.due_on?` · due <strong${workOverdue(open)?' class="overdue"':''}>${esc(open.due_on)}</strong>`:''} · sent by ${esc(employeeName(open.assigned_by))}</span>`;
+}
+function workTimelineHtml(timeline){
+ if(!timeline||!timeline.steps.length)return '';
+ return `<details class="work-timeline"><summary>Step times · ${timeline.steps.length} step${timeline.steps.length===1?'':'s'}</summary><ol>${timeline.steps.map(s=>`<li><strong>${esc(employeeName(s.person))}</strong> · ${esc(s.task)} · ${esc(workDuration(s.ms))}${s.status==='open'?' so far':''} <small>${esc(new Date(s.from).toLocaleString())}${s.to?' → '+esc(new Date(s.to).toLocaleString()):''}${s.status!=='open'?' · '+esc(s.status.replace('_',' ')):''}</small></li>`).join('')}</ol></details>`;
+}
+async function loadWorkHistory(type,ids){
+ const out=[];
+ for(let i=0;i<ids.length;i+=100){
+  const result=await client.from('work_assignments').select('id,record_id,task,assignee_user_id,status,created_at,closed_at,close_note').eq('record_type',type).in('record_id',ids.slice(i,i+100)).order('created_at').limit(2000);
+  if(result.error)throw Error(result.error.message);out.push(...(result.data||[]));
+ }
+ return out;
 }
 async function loadOpenWork(type,ids){
  const out=new Map();
@@ -49,14 +94,21 @@ async function decorateWorkHandoffs(){
  for(const item of cards){if(!byType.has(item.type))byType.set(item.type,[]);byType.get(item.type).push(item);}
  for(const item of cards){const box=document.createElement('div');box.className='work-handoff';box.dataset.workHandoff=item.id;box.innerHTML='<span>Responsible: loading…</span>';(item.card.querySelector('.actions')||item.card).before(box);}
  for(const [type,items] of byType){
-  let open;
-  try{open=await loadOpenWork(type,items.map(item=>item.id));}
+  let open,history=new Map(),delays=new Map();
+  try{
+   open=await loadOpenWork(type,items.map(item=>item.id));
+   const all=await loadWorkHistory(type,items.map(item=>item.id));for(const row of all){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
+   delays=workLatestDelays(await loadWorkDelays([...open.values()].map(row=>row.id)));
+  }
   catch(error){if(epoch!==workEpoch||me?.user_id!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(error.message)}</span>`;});continue;}
   if(epoch!==workEpoch||me?.user_id!==actor)return;
   for(const item of items){
    const box=item.card.querySelector('[data-work-handoff]');if(!box?.isConnected)continue;
-   const current=open.get(item.id)||null,canClose=current&&(current.assignee_user_id===actor||me.role==='owner');
-   box.innerHTML=`${workResponsibleHtml(current)} <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}`;
+   const current=open.get(item.id)||null,canClose=current&&(current.assignee_user_id===actor||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor||current.assigned_by===actor||me.role==='owner');
+   const delay=current?delays.get(current.id):null,timeline=workTimeline(history.get(item.id)||[]),level=workAgeLevel(current,delay);
+   box.classList.toggle('quality-yellow',level==='yellow');box.classList.toggle('quality-red',level==='red');
+   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)} <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
+   box.querySelector('[data-work-delay]')?.addEventListener('click',()=>openWorkDelay({...current,record_label:item.label}));
    box.querySelector('[data-work-assign]').onclick=()=>openWorkHandoff({...item,current});
    box.querySelector('[data-work-done]')?.addEventListener('click',()=>openWorkClose(current,'done'));
   }
@@ -103,10 +155,14 @@ async function renderMyHandoffs(target){
  const result=await client.from('work_assignments').select('id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at').eq('assignee_user_id',actor).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}).order('created_at').limit(200);
  if(epoch!==workEpoch||me?.user_id!==actor||!box.isConnected)return;
  if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return;}
- const rows=[...(result.data||[])].sort((a,b)=>Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at)));
- box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>`<li class="${workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))}, ${esc(workSince(row.created_at))} ago${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open</button> <button type="button" data-work-finish="${esc(row.id)}">Mark done</button></li>`).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
+ let delays=new Map();try{delays=workLatestDelays(await loadWorkDelays((result.data||[]).map(r=>r.id)));}catch{}
+ if(epoch!==workEpoch||me?.user_id!==actor||!box.isConnected)return;
+ const levelRank=row=>({red:2,yellow:1}[workAgeLevel(row,delays.get(row.id))]||0);
+ const rows=[...(result.data||[])].sort((a,b)=>levelRank(b)-levelRank(a)||Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at)));
+ box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>{const delay=delays.get(row.id),level=workAgeLevel(row,delay);return `<li class="${level?'quality-'+level:workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(row.created_at)))}</strong>${delay?` · expected ${esc(delay.expected_on)}: ${esc(delay.reason)}`:''}${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open</button> <button type="button" data-work-finish="${esc(row.id)}">Mark done</button> <button type="button" data-work-delay-row="${esc(row.id)}">Report delay</button></li>`;}).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
  box.querySelectorAll('[data-work-open]').forEach(button=>button.onclick=()=>workOpenRecord(rows.find(row=>row.id===button.dataset.workOpen)));
  box.querySelectorAll('[data-work-finish]').forEach(button=>button.onclick=()=>openWorkClose(rows.find(row=>row.id===button.dataset.workFinish),'done'));
+ box.querySelectorAll('[data-work-delay-row]').forEach(button=>button.onclick=()=>openWorkDelay(rows.find(row=>row.id===button.dataset.workDelayRow)));
 }
 
 // Updates for the signed-in employee (for example: your Pro forma was invoiced and sent to packing).
