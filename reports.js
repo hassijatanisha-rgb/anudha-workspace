@@ -1,9 +1,28 @@
 'use strict';
 // Read-only reports from recorded history: weekly/monthly sales activity per employee and stock movements.
-let reportTab='activity',reportPeriod='this_week',reportFrom='',reportTo='',reportEpoch=0,reportRows=[],reportColumns=[];
+let reportTab='work',reportPeriod='this_week',reportFrom='',reportTo='',reportEpoch=0,reportRows=[],reportColumns=[];
 const reportActivityColumns=[['inquiries','Inquiries recorded'],['qualified','Passed to sales'],['won','Leads won'],['lost','Leads lost'],['proformas','Pro formas created'],['sent','Pro formas sent'],['accepted','Pro formas accepted'],['delivered','Deliveries signed'],['serviceReports','Service reports completed'],['pendingCreated','Pending orders recorded'],['pendingFulfilled','Pending orders fulfilled'],['stepsDone','Handed-over steps done']];
 const reportMovementLabels={opening_balance:'Opening balance',opening_adjustment:'Opening correction',transfer_dispatch:'Sent to another godown',transfer_receipt:'Received from another godown',quarantine_receipt:'Received into quarantine',break_pack:'Carton opened',consumer_issue:'Issued to customer',consumer_return:'Returned by customer'};
 function clearReports(){reportEpoch++;reportRows=[];reportColumns=[];}
+const reportDepartments={sales:'Sales',accounts:'Accounts',stores:'Stores & delivery',service:'Service',management:'Management','':'No department'};
+function reportHours(ms){if(ms==null)return '—';const hours=ms/3600000;return hours<48?`${hours.toFixed(1)} h`:`${(hours/24).toFixed(1)} days`;}
+// Work done per person in the period, plus what is open and overdue right now. A step counts as finished when its
+// holder marked it done or it moved on to the next person; cancelled steps are not counted. Department rows are
+// subtotals (excluded from the company total).
+function reportWork({finished=[],open=[],delays=[],departments=new Map(),now=Date.now(),overdue=row=>false}){
+ const people=new Map(),person=id=>{if(!people.has(id))people.set(id,{actor:id,finished:0,stepMs:0,open_now:0,overdue_now:0,longestMs:null,delays:0});return people.get(id);};
+ for(const row of finished)if(['done','handed_on'].includes(row.status)&&row.assignee_user_id){const p=person(row.assignee_user_id);p.finished++;p.stepMs+=Math.max(0,Date.parse(row.closed_at)-Date.parse(row.created_at));}
+ for(const row of open){const p=person(row.assignee_user_id);p.open_now++;if(overdue(row))p.overdue_now++;const wait=now-Date.parse(row.created_at);if(p.longestMs==null||wait>p.longestMs)p.longestMs=wait;}
+ for(const d of delays)if(d.assignee_user_id)person(d.assignee_user_id).delays++;
+ const rows=[...people.values()].map(p=>({...p,department:departments.get(p.actor)||'',avgMs:p.finished?p.stepMs/p.finished:null}));
+ const dept=new Map();for(const r of rows){if(!dept.has(r.department))dept.set(r.department,{department:r.department,finished:0,stepMs:0,open_now:0,overdue_now:0,longestMs:null,delays:0,people:0});const d=dept.get(r.department);d.people++;d.finished+=r.finished;d.stepMs+=r.stepMs;d.open_now+=r.open_now;d.overdue_now+=r.overdue_now;d.delays+=r.delays;if(r.longestMs!=null&&(d.longestMs==null||r.longestMs>d.longestMs))d.longestMs=r.longestMs;}
+ const order=Object.keys(reportDepartments);
+ return {people:rows.sort((a,b)=>order.indexOf(a.department)-order.indexOf(b.department)||b.overdue_now-a.overdue_now||String(a.actor).localeCompare(String(b.actor))),
+  departments:[...dept.values()].map(d=>({...d,avgMs:d.finished?d.stepMs/d.finished:null})).sort((a,b)=>order.indexOf(a.department)-order.indexOf(b.department))};
+}
+async function reportFetchOpenWork(){
+ const out=[];for(let offset=0;;offset+=1000){const r=await client.from('work_assignments').select('id,assignee_user_id,status,created_at,due_on').eq('status','open').order('id').range(offset,offset+999);if(r.error)throw Error(r.error.message);out.push(...(r.data||[]));if((r.data||[]).length<1000)return out;}
+}
 function reportIsoDate(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 // Returns [from, to) as local dates. Weeks start on Monday.
 function reportRange(period,today=new Date(),from='',to=''){
@@ -60,7 +79,19 @@ async function reportsWorkspace(){
  $('#content').innerHTML='<p role="status">Building report…</p>';
  const [from,to]=range;
  try{
-  if(reportTab==='activity'){
+  if(reportTab==='work'){
+   const [finished,open,delayRows,depts]=await Promise.all([reportFetchRange('work_assignments','id,assignee_user_id,status,created_at,closed_at','closed_at',from,to),reportFetchOpenWork(),reportFetchRange('work_delays','assignment_id,recorded_at','recorded_at',from,to),client.rpc('staff_departments')]);
+   if(depts.error)throw Error(depts.error.message);
+   const ids=[...new Set(delayRows.map(d=>d.assignment_id))],holders=new Map();
+   for(let i=0;i<ids.length;i+=100){const r=await client.from('work_assignments').select('id,assignee_user_id').in('id',ids.slice(i,i+100));if(r.error)throw Error(r.error.message);for(const a of r.data||[])holders.set(a.id,a.assignee_user_id);}
+   const openIds=open.map(o=>o.id),latest=new Map();
+   for(let i=0;i<openIds.length;i+=100){const r=await client.from('work_delays').select('assignment_id,expected_on,recorded_at').in('assignment_id',openIds.slice(i,i+100));if(r.error)throw Error(r.error.message);for(const d of r.data||[])if(!latest.has(d.assignment_id)||latest.get(d.assignment_id).recorded_at<d.recorded_at)latest.set(d.assignment_id,d);}
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   const result=reportWork({finished,open,delays:delayRows.map(d=>({...d,assignee_user_id:holders.get(d.assignment_id)})),departments:new Map((depts.data||[]).map(d=>[d.user_id,d.department])),overdue:row=>typeof workAgeLevel==='function'&&workAgeLevel(row,latest.get(row.id))==='red'});
+   reportRows=[...result.people.map(p=>({employee:employeeName(p.actor),department:reportDepartments[p.department],finished:p.finished,avg:reportHours(p.avgMs),open_now:p.open_now,overdue_now:p.overdue_now,longest:reportHours(p.longestMs),delays:p.delays})),
+    ...result.departments.map(d=>({_subtotal:true,employee:`All ${reportDepartments[d.department]} (${d.people})`,department:reportDepartments[d.department],finished:d.finished,avg:reportHours(d.avgMs),open_now:d.open_now,overdue_now:d.overdue_now,longest:reportHours(d.longestMs),delays:d.delays}))];
+   reportColumns=[['employee','Employee'],['department','Department'],['finished','Steps finished'],['avg','Average time per step'],['open_now','Open now'],['overdue_now','Overdue now'],['longest','Longest waiting now'],['delays','Delays reported']];
+  }else if(reportTab==='activity'){
    const [leadEvents,proformaEvents,deliveryEvents,serviceEvents,pendingEvents,steps]=await Promise.all([
     reportFetchRange('sales_lead_events','id,action,from_stage,to_stage,actor_user_id,created_at','created_at',from,to),
     reportFetchRange('sales_proforma_events','id,from_status,to_status,actor_user_id,created_at','created_at',from,to),
@@ -86,14 +117,15 @@ async function reportsWorkspace(){
 }
 function renderReports(range,error=''){
  const [from,to]=range||['',''],last=to?reportIsoDate(new Date(new Date(`${to}T00:00:00`).getTime()-86400000)):'';
- const totals=reportColumns.slice(1).map(([key])=>reportRows.reduce((sum,row)=>sum+(typeof row[key]==='number'?row[key]:0),0));
- $('#content').innerHTML=`<section class="reports-workspace"><div class="heading"><div><small>SYSTEM</small><h1>Reports</h1><p class="muted">Counts come from the saved history of each record. Nothing here changes any data.</p></div></div><div class="tabs" role="group" aria-label="Report">${[['activity','Sales activity by employee'],['movements','Stock movements']].map(([key,label])=>`<button type="button" data-report-tab="${key}" class="${reportTab===key?'active':''}" aria-pressed="${reportTab===key}">${label}</button>`).join('')}</div><form id="reportPeriod" class="grid"><label><span>Period</span><select name="period">${[['this_week','This week'],['last_week','Last week'],['this_month','This month'],['last_month','Last month'],['custom','Choose dates']].map(([key,label])=>`<option value="${key}" ${reportPeriod===key?'selected':''}>${label}</option>`).join('')}</select></label>${reportPeriod==='custom'?`<label><span>From</span><input name="from" type="date" value="${esc(reportFrom)}" required></label><label><span>To</span><input name="to" type="date" value="${esc(reportTo)}" required></label>`:''}<div class="actions"><button type="submit">Show report</button>${reportRows.length&&!error?'<button type="button" id="reportCsv">Download CSV</button>':''}</div></form>${error?`<p class="notice error" role="alert">${esc(error)}</p>`:''}${range&&!error?`<p class="muted">${esc(from)} to ${esc(last)} · ${reportRows.length} row${reportRows.length===1?'':'s'}</p>${reportRows.length?`<div class="table-wrap"><table><thead><tr>${reportColumns.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${reportRows.map(row=>`<tr>${reportColumns.map(([key])=>`<td>${esc(row[key])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr><th>Total</th>${totals.map((value,i)=>`<th>${reportColumns[i+1][0]==='location'||reportColumns[i+1][0]==='type'?'':esc(value)}</th>`).join('')}</tr></tfoot></table></div>`:'<p class="muted">No recorded activity in this period.</p>'}`:''}</section>`;
+ // Department subtotal rows are not added again into the company total; text columns have no total.
+ const totals=reportColumns.slice(1).map(([key])=>{const rows=reportRows.filter(row=>!row._subtotal);return rows.some(row=>typeof row[key]==='number')?rows.reduce((sum,row)=>sum+(typeof row[key]==='number'?row[key]:0),0):'';});
+ $('#content').innerHTML=`<section class="reports-workspace"><div class="heading"><div><small>SYSTEM</small><h1>Reports</h1><p class="muted">Counts come from the saved history of each record. Nothing here changes any data.</p></div></div><div class="tabs" role="group" aria-label="Report">${[['work','Work by person and department'],['activity','Sales activity by employee'],['movements','Stock movements']].map(([key,label])=>`<button type="button" data-report-tab="${key}" class="${reportTab===key?'active':''}" aria-pressed="${reportTab===key}">${label}</button>`).join('')}</div><form id="reportPeriod" class="grid"><label><span>Period</span><select name="period">${[['this_week','This week'],['last_week','Last week'],['this_month','This month'],['last_month','Last month'],['custom','Choose dates']].map(([key,label])=>`<option value="${key}" ${reportPeriod===key?'selected':''}>${label}</option>`).join('')}</select></label>${reportPeriod==='custom'?`<label><span>From</span><input name="from" type="date" value="${esc(reportFrom)}" required></label><label><span>To</span><input name="to" type="date" value="${esc(reportTo)}" required></label>`:''}<div class="actions"><button type="submit">Show report</button>${reportRows.length&&!error?'<button type="button" id="reportCsv">Download CSV</button>':''}</div></form>${error?`<p class="notice error" role="alert">${esc(error)}</p>`:''}${range&&!error?`<p class="muted">${esc(from)} to ${esc(last)} · ${reportRows.length} row${reportRows.length===1?'':'s'}</p>${reportRows.length?`<div class="table-wrap"><table><thead><tr>${reportColumns.map(([,label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${reportRows.map(row=>`<tr${row._subtotal?' class="report-subtotal"':''}>${reportColumns.map(([key])=>`<td>${esc(row[key])}</td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr><th>Total</th>${totals.map((value,i)=>`<th>${reportColumns[i+1][0]==='location'||reportColumns[i+1][0]==='type'?'':esc(value)}</th>`).join('')}</tr></tfoot></table></div>`:'<p class="muted">No recorded activity in this period.</p>'}`:''}</section>`;
  document.querySelectorAll('[data-report-tab]').forEach(button=>button.onclick=()=>{reportTab=button.dataset.reportTab;run(reportsWorkspace);});
  const form=$('#reportPeriod');
  form.elements.period.onchange=event=>{reportPeriod=event.target.value;if(reportPeriod==='custom'){reportRows=[];renderReports(null);}else run(reportsWorkspace);};
  form.onsubmit=event=>{event.preventDefault();if(reportPeriod==='custom'){reportFrom=form.elements.from.value;reportTo=form.elements.to.value;}run(reportsWorkspace);};
  $('#reportCsv')?.addEventListener('click',()=>{
   const blob=new Blob(['﻿'+reportCsv(reportColumns,reportRows)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
-  link.href=url;link.download=`anudha-${reportTab==='activity'?'sales-activity':'stock-movements'}-${from}-to-${last}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  link.href=url;link.download=`anudha-${reportTab==='work'?'work-by-person':reportTab==='activity'?'sales-activity':'stock-movements'}-${from}-to-${last}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
  });
 }

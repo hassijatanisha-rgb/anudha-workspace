@@ -141,3 +141,15 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Adds `work_delays` (append-only) and `record_work_delay`. Only the person doing the step, the sender or the owner can report a delay; the expected date must be today or later, and the step must be open.
 - Live check in an aborted transaction as the real owner: a delay was recorded (expected in 2 days) and a past date was refused. Nothing remained afterwards.
 - Recorded migrations now: 042–053.
+
+## Migration 054 and the work report (applied 1 October)
+- Adds:
+  - `staff.department` (sales, accounts, stores, service, management, or none), set by the owner on the Staff page and logged as `department_changed` in `staff_account_events`;
+  - `staff_departments()`, so any active staff member can read departments for the report without wider access to the staff table.
+- Reports → **Work by person and department** (now the default tab). For a week, a month or a custom range it shows, per person:
+  - steps finished (done or handed on, never cancelled) and the average time per step;
+  - open now, overdue now (red by the step-times rule), and the longest current wait;
+  - delays reported.
+- Department subtotal rows follow the people. The company total excludes the subtotals. CSV download is available.
+- Live check in an aborted transaction as the real owner: department set to management; 2 staff visible through `staff_departments()`; an invalid department was refused. Nothing remained afterwards.
+- Recorded migrations now: 042–054.
