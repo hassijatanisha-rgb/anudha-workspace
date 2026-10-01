@@ -65,6 +65,19 @@ const e2=await record(id(201),id(100),'Keko Manga A','','Unlabelled grey suction
 await assert.rejects(record(id(201),id(100),'Keko Manga A','','Different pump',1,'PCS',{condition:'damaged'}),/different details/);ok();
 assert.equal((await record(id(201),id(100),'Keko Manga A','','  Unlabelled grey suction pump  ',1,'PCS',{condition:'damaged',notes:'  '})).id,e2.id);ok();
 const e3=await record(id(202),id(100),'Keko Manga A','AN-00002','ignored text',10,'BOX');assert.equal(e3.unlisted,'','listed product ignores the description');ok();
+// Reapplying the function-only migration preserves existing data and grants.
+if(existsSync(retryMigration)){
+ const before=(await db.query('select * from public.stock_count_entries order by id')).rows;
+ await db.exec(readFileSync(retryMigration,'utf8'));
+ assert.deepEqual((await db.query('select * from public.stock_count_entries order by id')).rows,before);ok();
+}
+await db.exec('set role authenticated');
+assert.equal((await record(id(202),id(100),'Keko Manga A','AN-00002','other ignored text',10,'BOX')).id,e3.id);ok();
+await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31',condition:'quarantine'}),/different details/);ok();
+await as(other);
+await assert.rejects(record(id(202),id(100),'Keko Manga A','AN-00002','',10,'BOX'),/different details/);ok();
+await as(counter);await db.exec('reset role');
+assert.equal((await db.query('select count(*)::int n from public.stock_count_entries')).rows[0].n,3);ok();
 
 // Saved counts are immutable; only review moves them on.
 await assert.rejects(db.exec(`update public.stock_count_entries set quantity=99 where id='${id(200)}'`),/cannot be edited/);ok();
