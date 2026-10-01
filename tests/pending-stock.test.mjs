@@ -40,6 +40,20 @@ test('availability loader requests expiry dates from the database',async()=>{
  assert.equal(await ctx.loadPendingStock(),true);
  assert.ok(queries.find(q=>q.name==='inventory_lots').columns.split(',').includes('expiry_date'));
 });
+test('rendering after midnight stops using yesterday availability',()=>{
+ const ctx=load(),content={innerHTML:''};ctx.$=()=>content;ctx.bindPendingStock=()=>{};ctx.salesProformas=[];
+ vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);pendingRows=[{id:'r',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:20,expires_on:'2099-01-01'}];`,ctx);
+ ctx.renderPendingStock();
+ assert.doesNotMatch(content.innerHTML,/Stock has arrived for|Stock arrived: 50/);
+ assert.match(content.innerHTML,/previous day.*Refresh/);
+ assert.match(content.innerHTML,/Stock check unavailable/);
+});
+test('reopening pending orders after midnight forces a fresh load',async()=>{
+ const ctx=load();let loads=0;ctx.$=()=>({innerHTML:''});ctx.syncWorkspaceNavigation=()=>{};ctx.renderPendingStock=()=>{};ctx.view='pending';
+ ctx.loadPendingStock=async()=>{loads++;return true;};
+ vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingLoaded=true;`,ctx);
+ await ctx.pendingStockWorkspace();assert.equal(loads,1);
+});
 test('state labels: arrived, partial, waiting, due and unknown availability',()=>{
  const ctx=load(),waiting={status:'waiting',quantity:10,expires_on:'2027-03-30'},today='2026-09-30';
  assert.equal(ctx.pendingStockState(waiting,12,today).key,'arrived');
