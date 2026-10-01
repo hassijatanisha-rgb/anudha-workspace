@@ -187,3 +187,11 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - New `travel_requests` and `travel_request_events` tables. Each request records who is going (one or more employees), where (a client from the list or a typed place), why, who they are meeting, and when they leave and return. The owner approves or declines; afterwards a traveller marks the trip done with how it went. Every active employee can see requests.
 - Checked on the live database inside a rolled-back transaction: TR-000001 was created and approved, then rolled back. The first real request will be TR-000002.
 - Reports has a new Travel report: trips, days away and the number of different places per person.
+
+## Migration 058: two-step sign-in (applied 1 October)
+
+- Staff can turn on two-step sign-in with an authenticator app under My settings. Once it's on, the database refuses everything except their own staff row until the 6-digit code is entered. This is enforced in the shared access checks every page uses, not just on screen. Staff who have not turned it on are unaffected. At the time of applying, nobody had it on.
+- The owner sees who has it on and can press **Reset two-step** on the Staff page if a phone is lost. This goes through the staff-accounts server function (deployed as version 2), which checks the owner first and logs the reset.
+- Two older owner checks (the Questions for the owner page) now use the same shared check.
+- Checked live inside a rolled-back transaction: owner and staff access unchanged.
+- The 8-user test found and fixed a travel form bug: saving failed because a variable named `client` hid the database connection.
