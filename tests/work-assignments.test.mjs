@@ -28,8 +28,10 @@ test('responsible line names assignee, task and sender and escapes text',()=>{
 });
 test('every workflow screen, the task list, sign-out and print are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
- for(const file of ['sales-delivery.js','service-workflow.js','sales-leads.js','pending-stock.js'])assert.match(read(file),/typeof decorateWorkHandoffs==='function'\)decorateWorkHandoffs\(\)\.catch/,file);
- assert.match(read('personal-workspace.js'),/kind==='task'&&typeof renderMyHandoffs==='function'\)renderMyHandoffs\(target\)/);
+ for(const file of ['sales-delivery.js','service-workflow.js','sales-leads.js','pending-stock.js','purchasing.js'])assert.match(read(file),/typeof decorateWorkHandoffs==='function'\)decorateWorkHandoffs\(\)\.catch/,file);
+ assert.match(read('personal-workspace.js'),/kind==='task'&&typeof renderMyHandoffs==='function'\)\{renderMyHandoffs\(target\);/);
+ assert.match(read('personal-workspace.js'),/renderUnownedWork\(target\)/);assert.match(read('personal-workspace.js'),/renderWorkNotices\(target\)/);
+ assert.match(read('app.js'),/renderWorkStepOwners\(/);
  assert.match(read('app.js'),/typeof clearWorkAssignments==='function'\)clearWorkAssignments\(\)/);
  assert.match(read('style.css'),/@media print\{\.work-handoff\{display:none!important\}\}/);
  const html=read('index.html');assert.ok(html.indexOf('work-assignments.js')>html.indexOf('pending-stock.js')&&html.indexOf('work-assignments.js')<html.indexOf('app.js'));
