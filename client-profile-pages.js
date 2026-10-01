@@ -12,6 +12,7 @@ function goProfile(kind='clients',id=''){
  if(location.hash===hash){selected=id;render()}else location.hash=hash;
 }
 window.addEventListener('hashchange',()=>{
+ if(/^#\/inventory\/?$/.test(location.hash)){view='inventory';if(me)render();return;}
  const route=readProfileRoute();view='contacts';selected=route.id;filter='all';page=0;profileTab='contacts';if(me)render();
 });
 document.addEventListener('click',event=>{
