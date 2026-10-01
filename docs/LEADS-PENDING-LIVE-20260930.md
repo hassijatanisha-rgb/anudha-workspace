@@ -81,3 +81,117 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Employees sign in with an ID made from their name (`tanisha.hassija`), or the name typed with spaces. At first sign-in they must choose their own password.
 - Not yet exercised live: the container cannot reach Supabase over HTTPS. The first real run is the owner's first **Add employee**.
 - Recorded migrations now: 042–049.
+
+## Migration 050: Tally sales invoice register (applied 1 October)
+- Decision by the owner: tax invoices are made in Tally and flow into the ERP. The ERP does not issue invoices.
+- Adds:
+  - `tally_sales_invoices` (no deletes) and an append-only `tally_sales_invoice_events`;
+  - `tally_proforma_number()`, which reads `PF-2026-1`, `pf 2026 12` and `PF2026000012` as Pro forma numbers;
+  - `tally_invoice_staff()`, which is the owner or accounting access;
+  - `import_tally_invoices(jsonb, source)`, 500 rows per call. It matches on the Tally GUID, or on type + number + date. Unchanged rows are skipped. A changed voucher is updated and its old values are kept in history. Only links the system made itself are re-matched; a person's link, unlink or ignore stays;
+  - `review_tally_invoice` (match, unmatch or ignore, with a reason).
+- It is a register only. It changes no stock, delivery status or accounting record.
+- Pre-check: the tables didn't exist; `accounting_access()` and `inventory_owner()` exist.
+- Live check in an aborted transaction as the real owner: 2 imported, 1 linked automatically to `PF-2026-000001`, and the re-import reported 1 unchanged. `anon` was refused. Afterwards there were 0 invoices and 0 events.
+- Upload path: Tally Day Book or Sales Register → Export → XML, then Orders → Tally invoices → **Upload Tally XML export**. The in-house connector will send the same normalised rows with source `connector`.
+- Not yet checked against a real export from your Tally. The reader follows Tally's documented XML layouts (`ALLINVENTORYENTRIES.LIST` / `LEDGERENTRIES.LIST` and the older `INVENTORYENTRIES.LIST` / `ALLLEDGERENTRIES.LIST`). The first real file should be checked by eye.
+
+## Migration 051: automatic handoffs (applied 1 October)
+- Every open record has one responsible person, handed on automatically at each step:
+  - **Pro forma:** the creator while drafting and following up, then the invoice-step default (Mujtaba) once accepted.
+  - **Tally invoice linked:** invoicing is marked done, a packing job goes to the packing default (Jagroop), and the Pro forma creator gets an Update.
+  - **Delivery note:** packing default while packing, delivery default when out for delivery, done when delivered.
+  - **Service and installation:** the step default to assign an engineer, then the assigned engineer, then done.
+  - **Lead:** the owner, else the creator; closed when won or lost.
+  - **Pending order:** the salesperson.
+  - **Purchase:** the approval default, then the requester to order and receive.
+- Default people per step: owner-chosen in `workflow_step_owners`, which is versioned and append-only. Set them under Staff → Who does each step.
+- `unowned_work()` lists open records with nobody responsible (no default set, or an inactive person). It is shown on everyone's To-do page.
+- A failed handoff never blocks the business action: it raises a warning, and the record appears as nobody responsible.
+- Pre-check: the constraint name matched; neither new table existed; 0 assignments.
+- Live check in an aborted transaction as the real owner: packing default set (version 1); a Tally invoice for `PF-2026-1` created the packing job for that person; `unowned_work` returned 0. Afterwards, all counts were 0.
+- Recorded migrations now: 042–051.
+
+## Migration 052: Send to Tally (applied 1 October)
+- An accepted Pro forma downloads as a TallyPrime import file: a Sales Order with voucher number = Order No. = the Pro forma number.
+  - The voucher balances: the party debit equals sales plus VAT, and both match the Pro forma total exactly.
+  - Accounts import it (Import → Transactions) and make the tax invoice from it. That invoice then links back under Tally invoices.
+- Adds:
+  - `tally_export_settings` (versioned): company, voucher type, sales ledger and VAT ledger;
+  - `tally_ledger_names` per client and `tally_item_names` per product, corrected in place, never deleted, every change in `audit_log`;
+  - `tally_exports` (append-only): who sent which Pro forma version, with the file's SHA-256;
+  - owner- or accounts-only `save_tally_export_settings` and `record_tally_export`.
+- Default item names come from each product's original Tally export (`source.raw`). Products added from the CRM list need their Tally name typed, or must be created in Tally first.
+- TZS only for now; foreign-currency Pro formas are refused.
+- Live check in an aborted transaction as the real owner: settings saved as version 1; sending the cancelled `PF-2026-000001` was refused ("Only an accepted Pro forma can be sent to Tally"). Afterwards nothing remained.
+- Not yet run against your TallyPrime. The first import should be checked, and Order Processing must be enabled in Tally for Sales Orders.
+- Recorded migrations now: 042–052.
+
+## Migration 053: step times and delay reasons (applied 1 October)
+- Every handoff strip on a card shows:
+  - who holds the step, the task, and how long it has waited;
+  - the total time since the record's first handoff;
+  - the latest delay reason and expected date;
+  - a **Step times** timeline listing each holder, their task and its duration.
+- Colours:
+  - over a day waiting → yellow;
+  - over two days, or a passed due date or expected date → red;
+  - a reported delay with a future expected date → no colour (on track).
+- To-do lists are sorted red, then yellow, then the rest, with **Report delay** on each item.
+- Adds `work_delays` (append-only) and `record_work_delay`. Only the person doing the step, the sender or the owner can report a delay; the expected date must be today or later, and the step must be open.
+- Live check in an aborted transaction as the real owner: a delay was recorded (expected in 2 days) and a past date was refused. Nothing remained afterwards.
+- Recorded migrations now: 042–053.
+
+## Migration 054 and the work report (applied 1 October)
+- Adds:
+  - `staff.department` (sales, accounts, stores, service, management, or none), set by the owner on the Staff page and logged as `department_changed` in `staff_account_events`;
+  - `staff_departments()`, so any active staff member can read departments for the report without wider access to the staff table.
+- Reports → **Work by person and department** (now the default tab). For a week, a month or a custom range it shows, per person:
+  - steps finished (done or handed on, never cancelled) and the average time per step;
+  - open now, overdue now (red by the step-times rule), and the longest current wait;
+  - delays reported.
+- Department subtotal rows follow the people. The company total excludes the subtotals. CSV download is available.
+- Live check in an aborted transaction as the real owner: department set to management; 2 staff visible through `staff_departments()`; an invalid department was refused. Nothing remained afterwards.
+- Recorded migrations now: 042–054.
+
+## Migration 055: hardening (applied 1 October)
+
+- Removed direct insert, update, delete and truncate grants from signed-in users on 20 older workflow and inventory tables. No row policy allowed those writes, and every real save goes through the checked server functions, so behaviour is unchanged.
+- Five read policies now check the signed-in user once per query instead of once per row. The rules are the same.
+- Live check: saving a godown through the app's server function still works. A direct insert by a signed-in user is refused with "permission denied". Reads still work. The check ran inside a rolled-back transaction, so nothing was saved.
+
+## Plain interface and How to use (1 October)
+
+- Removed technical and back-end wording from staff screens: Supabase, file names, "immutable snapshot", "source lot", employee IDs shown as codes, and development notes.
+- Staff no longer see Staff, Questions for the owner (formerly Awaiting approval) or Setup progress. Accounting forms appear only for people with accounting access.
+- Help is replaced by How to use: 22 step-by-step guides, searchable and filterable by job. A How to use button at the top of every page opens the guides for that page first, and Walk me through it shows the steps one at a time on the real page.
+- Checked by opening every menu screen as owner and as staff at 1280, 390 and 360 px wide: no errors and no sideways scrolling.
+
+## Migration 056: team tasks (applied 1 October)
+
+- New `team_tasks` and `team_task_events` tables. Anyone on the staff can give a task to a colleague or to themselves. Each task has an urgency (Do now / Urgent / Normal) and a due date and time. Only the person given the task, the person who gave it and the owner can see it. Tasks are closed (done or cancelled), never deleted, and their history can't be changed.
+- Checked on the live database inside a rolled-back transaction: a task was created (TK-000001), could be seen, and was marked done with two history rows. Nothing was saved. The task number counter moved on, so the first real task will be TK-000002.
+
+## Simpler pages (1 October)
+
+- Letterhead: one address line, one phone number (+255 783 523 777) and one email (sales2@ on sales forms, service@ on service reports). No fax or landline list.
+- Purchase requests: the supplier and a list of items only. No currency or price. Prices saved earlier are kept unchanged.
+- Leads: one page instead of Inquiries plus Lead / Opportunity. The new inquiry form has four numbered steps.
+- My tasks shows tasks with urgency and due time, plus order steps handed to the person. Notes & reminders are private; a reminder needs a time.
+- Reports is in the Main menu and has 8 reports in a single list. Stock movements and their download are owner-only.
+- Stock pages: no printing and no copying, and a watermark shows the viewer's name and the time. A browser cannot block screenshots or phone cameras; the watermark makes them traceable.
+- Removed tab bars that repeated the left menu, a duplicate menu item and single-page "Page 1 of 1" controls. Owner tools are hidden from staff.
+
+## Migration 057: travel requests (applied 1 October)
+
+- New `travel_requests` and `travel_request_events` tables. Each request records who is going (one or more employees), where (a client from the list or a typed place), why, who they are meeting, and when they leave and return. The owner approves or declines; afterwards a traveller marks the trip done with how it went. Every active employee can see requests.
+- Checked on the live database inside a rolled-back transaction: TR-000001 was created and approved, then rolled back. The first real request will be TR-000002.
+- Reports has a new Travel report: trips, days away and the number of different places per person.
+
+## Migration 058: two-step sign-in (applied 1 October)
+
+- Staff can turn on two-step sign-in with an authenticator app under My settings. Once it's on, the database refuses everything except their own staff row until the 6-digit code is entered. This is enforced in the shared access checks every page uses, not just on screen. Staff who have not turned it on are unaffected. At the time of applying, nobody had it on.
+- The owner sees who has it on and can press **Reset two-step** on the Staff page if a phone is lost. This goes through the staff-accounts server function (deployed as version 2), which checks the owner first and logs the reset.
+- Two older owner checks (the Questions for the owner page) now use the same shared check.
+- Checked live inside a rolled-back transaction: owner and staff access unchanged.
+- The 8-user test found and fixed a travel form bug: saving failed because a variable named `client` hid the database connection.

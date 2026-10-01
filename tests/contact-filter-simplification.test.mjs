@@ -6,7 +6,7 @@ const profiles=fs.readFileSync(new URL('../client-profile-pages.js',import.meta.
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 
 for(const source of [app,profiles]){
- assert.match(source,/\[\['all','All contacts'\],\['revision','Needs revision'\]\]/);
+ assert.match(source,/\[\['all','All contacts'\],\['revision','Needs fixing'\]\]/);
  assert.doesNotMatch(source,/\['review','To review'\]|\['kept','Kept'\]|\['incorrect','Incorrect'\]|\['duplicates','Possible duplicates'\]/);
 }
 assert.doesNotMatch(app,/data-incorrect=/,'The active contact card must not expose a hidden incorrect category.');
