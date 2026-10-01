@@ -36,3 +36,18 @@ test('a rejected replacement file cannot leave the old import plan actionable',a
  assert.equal(nodes['#inventoryImportCommit'].disabled,true);
  assert.match(nodes['#inventoryImportStatus'].textContent,/identity needs review/);
 });
+for(const oldFails of [false,true])test(`newest file remains selected when old read ${oldFails?'fails':'succeeds'} late`,async()=>{
+ const nodes={'#inventoryProductImport':{},'#inventoryImportCommit':{},'#inventoryImportStatus':{},'#content':{}};
+ const c=vm.createContext({document:{querySelectorAll:()=>[]},$:key=>nodes[key],run:fn=>fn(),products:[],inventoryImportPlan:payload=>({newProducts:[payload]})});
+ vm.runInContext(fs.readFileSync('inventory-operations.js','utf8'),c);
+ vm.runInContext("inventoryStock=()=>'';bindInventoryWorkspace()",c);
+ let resolveOld,rejectOld;
+ const oldText=new Promise((resolve,reject)=>{resolveOld=resolve;rejectOld=reject;});
+ const first=nodes['#inventoryProductImport'].onchange({target:{files:[{name:'old.json',text:()=>oldText}]}});
+ await nodes['#inventoryProductImport'].onchange({target:{files:[{name:'new.json',text:async()=>'{}'}]}});
+ nodes['#inventoryImportStatus'].textContent='New file ready';
+ if(oldFails)rejectOld(Error('Old read failed'));else resolveOld('{}');
+ await first;
+ assert.equal(vm.runInContext('inventoryImportFileName',c),'new.json');
+ assert.equal(nodes['#inventoryImportStatus'].textContent,'New file ready');
+});
