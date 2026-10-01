@@ -50,6 +50,7 @@ function installWorkspaceNavigation(){
  if(button.dataset.view==='purchasing'&&typeof openPurchaseSection==='function')openPurchaseSection(section);
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
+   if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
   }
