@@ -40,3 +40,10 @@ open-session constraint remains unchanged. Tests also reject another owner's rep
 accept whitespace-normalized names and prove retries do not reopen closed sessions.
 No concurrent-session execution proof is claimed from single-instance PGlite.
 PR #12 was open with no review or comments at the start of this cycle.
+# Migration identifier update — 1 October, 08:12 UTC
+
+The unapplied candidate is now `202610010056_stock_count_retry_content.sql`, not 052.
+Main bd87100 records concurrent migrations 050–053 as applied. Their files are
+unchanged. This renumber only changes this candidate's path/test reference and adds
+a comment; 66 isolated DB checks still pass. Historical references below retain
+the original identifier. Integration with the new main trigger chain is still required.
