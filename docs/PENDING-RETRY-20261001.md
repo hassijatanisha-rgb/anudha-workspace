@@ -21,13 +21,17 @@ node --test tests/pending-stock.test.mjs
 
 ## Deployment and limits
 
-Do not reapply or edit 043. Apply only `202610010050_pending_retry_content.sql` after review/required activation gate. This replaces one function, keeping its signature, security-definer search path and ACL. No table rewrite or backfill. Rollback requires a reviewed forward function replacement; reverting would restore the known bug, so prefer fixing forward.
+Do not reapply or edit 043. Apply only `20261001095315_pending_retry_content.sql` after review/required activation gate. This replaces one function, keeping its signature, security-definer search path and ACL. No table rewrite or backfill. Rollback requires a reviewed forward function replacement; reverting would restore the known bug, so prefer fixing forward.
 
 No live Supabase activation or browser end-to-end claim. No production-size dataset, multi-connection race/load test or numerical SQL coverage measurement; advisory locking is unchanged. Existing fulfil/cancel permissions and fiscal-reference verification are outside this change and still need workflow acceptance. Accounting remains paused.
 # Migration identifier update — 1 October, 08:12 UTC
 
-The unapplied candidate is now `202610010054_pending_retry_content.sql`, not 050.
+At 08:12 the unapplied candidate became `202610010054_pending_retry_content.sql`, not 050 (superseded below).
 Main bd87100 records concurrent migrations 050–053 as applied. Their files are
 unchanged. This renumber only changes this candidate's path/test reference and adds
 a comment; 41 isolated DB checks still pass. Historical references below retain
 the original identifier. Integration with the new main trigger chain is still required.
+
+## 09:53 UTC identifier correction
+
+Main 1929652 introduced 054_staff_departments. This unapplied candidate now uses `20261001095315_pending_retry_content.sql`, a full UTC timestamp, rather than racing the shared short sequence. Applied migrations remain untouched. SQL behavior is unchanged; the isolated test reference follows the new path. This rename is not production activation or combined-trigger acceptance.

@@ -40,7 +40,7 @@ const first=await create(id(100),{contact,proforma:pf});
 // Apply the forward fix over an existing request, then prove row/event preservation.
 const snapshot=async()=>(await db.query('select row_to_json(r) data from public.pending_stock_requests r order by id')).rows;
 const existing=await snapshot();
-const fix=readFileSync(new URL('../supabase/migrations/202610010054_pending_retry_content.sql',import.meta.url),'utf8');
+const fix=readFileSync(new URL('../supabase/migrations/20261001095315_pending_retry_content.sql',import.meta.url),'utf8');
 await db.exec(fix);await db.exec(fix);
 assert.deepEqual(await snapshot(),existing,'forward fix preserves existing records and is safe to rerun');ok();
 assert.equal(first.status,'waiting');assert.match(first.request_number,/^PS-\d{6}$/);assert.equal(first.salesperson_user_id,sales);ok();
