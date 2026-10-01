@@ -56,7 +56,7 @@ function reportMovements(movements,lots){
  }
  return [...out.values()].sort((a,b)=>reportProductName(a.product_id).localeCompare(reportProductName(b.product_id))||a.movement_type.localeCompare(b.movement_type));
 }
-const reportChoices=[['work','Work done by each person'],['tasks','Tasks: done on time and late'],['activity','Sales activity by person'],['proformas','Pro formas and sales value'],['leads','Leads by how they contacted us'],['deliveries','Deliveries and how long they took'],['purchasing','Purchasing by supplier'],['service','Installations and service by engineer'],['movements','Stock movements (owner)']];
+const reportChoices=[['work','Work done by each person'],['tasks','Tasks: done on time and late'],['activity','Sales activity by person'],['proformas','Pro formas and sales value'],['leads','Leads by how they contacted us'],['deliveries','Deliveries and how long they took'],['purchasing','Purchasing by supplier'],['service','Installations and service by engineer'],['travel','Travel: trips and days away'],['movements','Stock movements (owner)']];
 function reportDays(ms){return ms==null?'—':`${(ms/86400000).toFixed(1)} days`}
 function reportMoney(minor,currency){return new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS',maximumFractionDigits:0}).format(Number(minor||0)/100)}
 // Pro formas made in the period, per person and currency (values in different currencies are never added together).
@@ -93,6 +93,12 @@ function reportTasks(tasks,now=Date.now()){
  const out=new Map();
  for(const t of tasks){const k=t.assignee_user_id;if(!out.has(k))out.set(k,{actor:k,given:0,onTime:0,late:0,open:0,lateNow:0});const r=out.get(k);r.given++;if(t.status==='done'){if(Date.parse(t.closed_at)<=Date.parse(t.due_at))r.onTime++;else r.late++;}else if(t.status==='open'){r.open++;if(Date.parse(t.due_at)<now)r.lateNow++;}}
  return [...out.values()].sort((a,b)=>b.lateNow-a.lateNow||b.given-a.given);
+}
+// Approved or finished trips leaving in the period, per traveller.
+function reportTravel(trips){
+ const out=new Map();
+ for(const t of trips){if(!['approved','done'].includes(t.status))continue;const ms=Math.max(0,Date.parse(t.return_at)-Date.parse(t.depart_at));for(const p of t.travellers||[]){if(!out.has(p))out.set(p,{actor:p,trips:0,ms:0,clients:new Set()});const r=out.get(p);r.trips++;r.ms+=ms;r.clients.add(t.organization_id||t.destination);}}
+ return [...out.values()].map(r=>({actor:r.actor,trips:r.trips,days:Number((r.ms/86400000).toFixed(1)),places:r.clients.size})).sort((a,b)=>b.days-a.days);
 }
 function reportProductName(id){if(!id)return 'Unknown product';const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
 function reportLocationName(id){return (typeof inventoryLocations!=='undefined'?inventoryLocations:[]).find(l=>l.id===id)?.name||reportLocationNames.get(id)||'Unknown location';}
@@ -171,6 +177,11 @@ async function reportsWorkspace(){
    if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
    reportRows=reportService(cases).map(r=>({...r,employee:r.actor?employeeName(r.actor):'No engineer yet',avg:reportDays(r.avgMs)}));
    reportColumns=[['employee','Engineer'],['installations','Installations'],['services','Service jobs'],['completed','Completed'],['open','Still open'],['late','Late now'],['avg','Average days to complete']];
+  }else if(reportTab==='travel'){
+   const trips=await reportFetchRange('travel_requests','id,travellers,status,organization_id,destination,depart_at,return_at','depart_at',from,to);
+   if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
+   reportRows=reportTravel(trips).map(r=>({...r,employee:employeeName(r.actor)}));
+   reportColumns=[['employee','Employee'],['trips','Trips'],['days','Days away'],['places','Different places']];
   }else if(reportTab==='tasks'){
    const tasks=await reportFetchRange('team_tasks','id,assignee_user_id,status,due_at,closed_at','due_at',from,to);
    if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
