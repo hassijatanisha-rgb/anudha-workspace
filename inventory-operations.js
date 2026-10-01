@@ -92,7 +92,17 @@ function bindInventoryWorkspace(){
  const refresh=$('#inventoryRefresh');if(refresh)refresh.onclick=()=>run(()=>inventoryWorkspace(true));
  const clearScope=$('#clearStockProduct');if(clearScope)clearScope.onclick=()=>{inventoryProductId='';inventorySearch='';$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()};
  const stockSearch=$('#inventorySearch');if(stockSearch)stockSearch.oninput=event=>{inventorySearch=event.target.value;renderSearchPreservingPosition(event.target,()=>{$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()})};
- const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=event=>run(async()=>{const file=event.target.files[0];if(!file)return;const payload=JSON.parse(await file.text());inventoryImportPreview=inventoryImportPlan(payload,products);inventoryImportFileName=file.name;$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()});
+ const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=event=>run(async()=>{
+  const file=event.target.files[0];if(!file)return;
+  inventoryImportPreview=null;inventoryImportFileName='';
+  const commit=$('#inventoryImportCommit'),status=$('#inventoryImportStatus');
+  if(commit)commit.disabled=true;
+  if(status)status.textContent='Checking product identities…';
+  try{
+   const payload=JSON.parse(await file.text());inventoryImportPreview=inventoryImportPlan(payload,products);inventoryImportFileName=file.name;
+   $('#content').innerHTML=inventoryStock();bindInventoryWorkspace();
+  }catch(error){if(status)status.textContent=error.message||'Import could not be checked.';throw error;}
+ });
  const importCommit=$('#inventoryImportCommit');if(importCommit)importCommit.onclick=()=>run(async()=>{const plan=inventoryImportPreview;if(!plan?.newProducts.length)return;if(!confirm(`Import ${plan.newProducts.length} new product names into this ERP? Existing exact-name matches will be skipped and no stock quantities will be created.`))return;for(let i=0;i<plan.newProducts.length;i+=250){const result=await client.rpc('import_records',{p_products:plan.newProducts.slice(i,i+250)});if(result.error)throw Error(`Import stopped at product ${i}. Completed batches are safe to retry. ${result.error.message}`)}inventoryImportPreview=null;inventoryImportFileName='';await load();message('Book2 product names imported. Enter stock only from verified physical counts.')});
  document.querySelectorAll('form[data-inventory-action]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(()=>submitInventoryForm(form))});
 }
