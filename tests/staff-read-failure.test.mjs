@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
-function fixture(result,twoStep=false){
+function fixture(result,twoStep=false,throws=false){
  const events=[],nodes=new Map();
  const ctx=vm.createContext({me:{user_id:'previous'},message(){},$:key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'old',hidden:false});return nodes.get(key)},
   clear(){events.push('clear');ctx.me=null},login(){events.push('login');ctx.me=null},
   twoStepNeeded:async()=>twoStep,showTwoStepPrompt(){events.push('two-step')},
   loadEmployeeNames:async()=>{events.push('load-data');throw Error('fixture authenticated boundary')},
   client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}}),signOut:async()=>{events.push('sign-out')}},
-   from:table=>{events.push(table);return {select:()=>({eq:()=>({single:async()=>result,maybeSingle:async()=>result})})}}}
+   from:table=>{events.push(table);const reply=async()=>{if(throws)throw result;return result};return {select:()=>({eq:()=>({single:reply,maybeSingle:reply})})}}}
  });
  vm.runInContext(app.slice(app.indexOf('async function load()'),app.indexOf('function missingAccount')),ctx);
  return {ctx,events,nodes};
@@ -26,6 +26,12 @@ test('missing and inactive staff remain denied and signed out',async()=>{
   const f=fixture({data,error:null});await assert.rejects(f.ctx.load(),/not on the active staff list/);
   assert.equal(f.events.includes('sign-out'),true);assert.equal(f.events.includes('load-data'),false);assert.equal(f.ctx.me,null);
  }
+});
+test('transport rejection clears stale workspace without revoking login or loading data',async()=>{
+ const f=fixture(Error('Network unavailable'),false,true);
+ await assert.rejects(f.ctx.load(),/Could not verify staff access.*Network unavailable/);
+ assert.equal(f.ctx.me,null);assert.equal(f.nodes.get('#content').innerHTML,'');
+ assert.equal(f.events.includes('sign-out'),false);assert.equal(f.events.includes('load-data'),false);
 });
 test('two-step challenge happens before any staff or business query',async()=>{
  const f=fixture({data:{active:true}},true);await f.ctx.load();assert.deepEqual(f.events,['two-step']);
