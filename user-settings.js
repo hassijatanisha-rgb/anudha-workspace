@@ -4,10 +4,10 @@
 const textSizes={normal:{label:'Normal',scale:'1'},large:{label:'Large',scale:'1.15'},xlarge:{label:'Extra large',scale:'1.3'}};
 // Status only changes here after a real provider is configured and tested; nothing is simulated.
 const externalConnections=[
- {name:'Email notifications',status:'Not connected',detail:'Handoffs and stock-arrival notices show inside the ERP. No emails are sent yet.'},
+ {name:'Email notifications',status:'Not connected',detail:'Work sent to you and stock-arrival notices show inside the ERP. No emails are sent yet.'},
  {name:'WhatsApp messages',status:'Not connected',detail:'No WhatsApp provider has been set up. No messages are sent.'},
- {name:'Tally',status:'Not connected',detail:'Tally will open as an external link once its address is confirmed. Stock sheets imported from Tally are a dated snapshot.'},
- {name:'VFD / tax invoice device',status:'Not connected',detail:'Tax invoices are not issued from the ERP. Accounting work is paused.'}
+ {name:'Tally',status:'Not connected',detail:'Use Send to Tally on an accepted Pro forma, and upload invoices under Tally invoices. A direct connection is planned.'},
+ {name:'VFD / tax invoice device',status:'Not connected',detail:'Tax invoices are made in TallyPrime.'}
 ];
 function readTextSize(){try{const value=localStorage.getItem('anudha.textSize');return textSizes[value]?value:'normal';}catch{return 'normal';}}
 function applyTextSize(size=readTextSize()){document.documentElement.style.zoom=(textSizes[size]||textSizes.normal).scale;document.documentElement.dataset.textSize=textSizes[size]?size:'normal';}

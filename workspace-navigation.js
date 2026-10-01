@@ -18,14 +18,21 @@ const workspaceGroups=[
   ['Product data workbench','inventory','catalog'],['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations'],['Stock count','stockcount','count'],['Review stock counts','stockcount','review']
  ]},
  {name:'System',tone:'system',items:[
-  ['Staff','staff'],['Reports','reports'],['My settings','settings'],['Deleted items','recycle'],['Awaiting approval','approvals'],['Setup progress','checklist'],['Help','guide']
+  ['How to use','guide'],['Staff','staff'],['Reports','reports'],['My settings','settings'],['Deleted items','recycle'],['Questions for the owner','approvals']
  ]}
 ];
+// Shown only once the signed-in person is known to be the owner (app.js load) or to have accounting access.
+const ownerOnlyViews=new Set(['staff','approvals']);
+async function showAccountingNavigation(){
+ const item=document.querySelector('#nav [data-accounting-only]');if(!item)return;
+ item.hidden=true;
+ try{const result=await client.rpc('accounting_access');item.hidden=result?.data!==true}catch{item.hidden=true}
+}
 function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)?' data-owner-only hidden':''}${target==='accounting'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
