@@ -1,5 +1,11 @@
 'use strict';
 
+let queuedWorkspaceNavigation=null;
+function flushWorkspaceNavigation(completed){
+ const queued=queuedWorkspaceNavigation;queuedWorkspaceNavigation=null;
+ if(completed&&queued&&typeof me!=='undefined'&&me&&me===queued.actor&&queued.button.isConnected)queued.button.click();
+}
+
 // Navigation only: these links reuse the existing permission-checked workflows.
 const workspaceGroups=[
  {name:'Main',tone:'main',items:[
@@ -42,7 +48,8 @@ function installWorkspaceNavigation(){
  }).observe(header);
  document.addEventListener('click',event=>{
   const button=event.target.closest('#nav [data-view]');
-  if(!button||busy)return;
+  if(!button)return;
+  if(busy){if(typeof me!=='undefined'&&me)queuedWorkspaceNavigation={button,actor:me};return;}
   const section=button.dataset.workspaceSection;
  // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
  if(typeof message==='function')message('');
