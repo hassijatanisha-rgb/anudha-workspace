@@ -26,3 +26,13 @@ test('same identity normalizes whitespace and case, retaining provenance',()=>{
  assert.deepEqual(Array.from(result.newProducts[0].source.source_rows),[3,5]);
  assert.equal(plan([a],[{id:'saved',...b}]).existingMatches.length,1);
 });
+test('a rejected replacement file cannot leave the old import plan actionable',async()=>{
+ const nodes={'#inventoryProductImport':{},'#inventoryImportCommit':{},'#inventoryImportStatus':{}};
+ const c=vm.createContext({document:{querySelectorAll:()=>[]},$:key=>nodes[key],run:fn=>fn(),products:[],inventoryImportPlan:()=>{throw Error('Product identity needs review');}});
+ vm.runInContext(fs.readFileSync('inventory-operations.js','utf8'),c);
+ vm.runInContext("inventoryImportPreview={newProducts:[{name:'Old file'}]};inventoryImportFileName='old.json';bindInventoryWorkspace()",c);
+ await assert.rejects(nodes['#inventoryProductImport'].onchange({target:{files:[{name:'new.json',text:async()=>'{}'}]}}),/identity needs review/);
+ assert.equal(vm.runInContext('inventoryImportPreview',c),null);
+ assert.equal(nodes['#inventoryImportCommit'].disabled,true);
+ assert.match(nodes['#inventoryImportStatus'].textContent,/identity needs review/);
+});
