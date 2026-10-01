@@ -37,6 +37,12 @@ for(const [fields,pattern] of [[{quantity:0},/Quantity/],[{quantity:1000001},/Qu
  await assert.rejects(create(id(100),fields),pattern);ok();
 }
 const first=await create(id(100),{contact,proforma:pf});
+// Apply the forward fix over an existing request, then prove row/event preservation.
+const snapshot=async()=>(await db.query('select row_to_json(r) data from public.pending_stock_requests r order by id')).rows;
+const existing=await snapshot();
+const fix=readFileSync(new URL('../supabase/migrations/20261001095315_pending_retry_content.sql',import.meta.url),'utf8');
+await db.exec(fix);await db.exec(fix);
+assert.deepEqual(await snapshot(),existing,'forward fix preserves existing records and is safe to rerun');ok();
 assert.equal(first.status,'waiting');assert.match(first.request_number,/^PS-\d{6}$/);assert.equal(first.salesperson_user_id,sales);ok();
 const due=(await db.query(`select (current_date + interval '6 months')::date as d`)).rows[0].d;
 assert.equal(new Date(first.expires_on).getTime(),new Date(due).getTime(),'closes six months after creation');ok();
@@ -44,6 +50,19 @@ assert.equal(new Date(first.expires_on).getTime(),new Date(due).getTime(),'close
 // Identical retry returns the same row; different content with the same ID is refused.
 assert.equal((await create(id(100),{contact,proforma:pf})).request_number,first.request_number);ok();
 await assert.rejects(create(id(100),{contact,proforma:pf,quantity:6}),/already exists/);ok();
+const retryConflicts=[];
+for(const fields of [{notes:'Changed customer instructions'},{salesperson:other}]){
+ try { await create(id(100),{contact,proforma:pf,...fields});retryConflicts.push(Object.keys(fields)[0]); }
+ catch(error){assert.match(error.message,/already exists/);}
+}
+assert.deepEqual(retryConflicts,[],'same retry ID must reject changed notes and salesperson');ok();
+assert.equal((await create(id(100),{contact,proforma:pf,salesperson:sales,notes:'  Customer needs 5 more  '})).id,first.id);ok();
+await as(other);await assert.rejects(create(id(100),{contact,proforma:pf,salesperson:sales}),/already exists/);ok();
+await as(sales);
+const blankNotes=await create(id(102),{notes:null});
+assert.equal((await create(id(102),{notes:'   ',salesperson:sales})).id,blankNotes.id);ok();
+assert.equal((await db.query('select count(*)::integer n from public.pending_stock_events where request_id=$1',[first.id])).rows[0].n,1,'retries do not duplicate history');ok();
+assert.deepEqual((await db.query('select salesperson_user_id,notes from public.pending_stock_requests where id=$1',[first.id])).rows[0],{salesperson_user_id:sales,notes:first.notes});ok();
 
 // Only the salesperson or owner may close it, with a reference; stale versions are refused.
 await as(other);await assert.rejects(advance(id(100),1,'fulfil','INV-1'),/salesperson or the owner/);ok();
@@ -74,6 +93,13 @@ assert.deepEqual(actions,['create','extend','extend','extend','extend','expire']
 await assert.rejects(db.query('update public.pending_stock_events set note=$1',['x']),/immutable/);ok();
 await assert.rejects(db.query('delete from public.pending_stock_requests'),/never hard-deleted/);ok();
 assert.deepEqual(await lots(),before);ok();
-const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create`)).rows[0];
-assert.deepEqual(grants,{ins:false,anon_create:false});ok();
+const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create,has_function_privilege('authenticated','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') staff_create`)).rows[0];
+assert.deepEqual(grants,{ins:false,anon_create:false,staff_create:true});ok();
+await as(inactive);await assert.rejects(create(id(100),{contact,proforma:pf}),/Active staff/);ok();
+await as('');await db.exec('set role anon');
+await assert.rejects(create(id(103)),/permission denied/);ok();
+await db.exec('reset role');await as(sales);await db.exec('set role authenticated');
+assert.equal((await create(id(100),{contact,proforma:pf})).id,first.id);ok();
+await assert.rejects(create(id(100),{contact,proforma:pf,notes:'Different'}),/already exists/);ok();
+await db.exec('reset role');
 console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, salesperson/owner closing, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
