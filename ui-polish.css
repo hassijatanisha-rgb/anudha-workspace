@@ -85,3 +85,11 @@ main .unowned-work.attention{border-color:var(--quality-red-line);background:var
 main .work-notices{border-color:var(--green)}
 main .work-step-owners td small{display:block;color:var(--muted,#5d7068);font-size:12px}
 main .work-step-owners label.check{display:block;padding:2px 0}
+
+/* Step timing: the responsible strip turns yellow after a day and red after two, or when an expected date passes. */
+main .work-handoff.quality-yellow{background:var(--quality-yellow);border-color:var(--quality-yellow-line)}
+main .work-handoff.quality-red{background:var(--quality-red);border-color:var(--quality-red-line)}
+main .handoff-list li.quality-yellow{background:var(--quality-yellow);border-radius:6px;padding:6px}
+main .handoff-list li.quality-red{background:var(--quality-red);border-radius:6px;padding:6px}
+main .work-timeline{margin-top:6px;width:100%}
+main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12px}

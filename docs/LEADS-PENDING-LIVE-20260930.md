@@ -126,3 +126,18 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Live check in an aborted transaction as the real owner: settings saved as version 1; sending the cancelled `PF-2026-000001` was refused ("Only an accepted Pro forma can be sent to Tally"). Afterwards nothing remained.
 - Not yet run against your TallyPrime. The first import should be checked, and Order Processing must be enabled in Tally for Sales Orders.
 - Recorded migrations now: 042–052.
+
+## Migration 053: step times and delay reasons (applied 1 October)
+- Every handoff strip on a card shows:
+  - who holds the step, the task, and how long it has waited;
+  - the total time since the record's first handoff;
+  - the latest delay reason and expected date;
+  - a **Step times** timeline listing each holder, their task and its duration.
+- Colours:
+  - over a day waiting → yellow;
+  - over two days, or a passed due date or expected date → red;
+  - a reported delay with a future expected date → no colour (on track).
+- To-do lists are sorted red, then yellow, then the rest, with **Report delay** on each item.
+- Adds `work_delays` (append-only) and `record_work_delay`. Only the person doing the step, the sender or the owner can report a delay; the expected date must be today or later, and the step must be open.
+- Live check in an aborted transaction as the real owner: a delay was recorded (expected in 2 days) and a past date was refused. Nothing remained afterwards.
+- Recorded migrations now: 042–053.
