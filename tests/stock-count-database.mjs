@@ -1,5 +1,5 @@
 // Disposable PGlite fixture only: run with PGLITE_MODULE pointing to @electric-sql/pglite dist/index.js.
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
 const db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -15,6 +15,8 @@ insert into auth.users values('${owner}'),('${counter}'),('${other}'),('${inacti
 insert into public.staff values('${owner}','owner',true),('${counter}','staff',true),('${other}','staff',true),('${inactive}','staff',false);
 insert into public.inventory_lots values(gen_random_uuid(),10);`);
 await db.exec(readFileSync(new URL('../supabase/migrations/202609300047_stock_count.sql',import.meta.url),'utf8'));
+const retryMigration=new URL('../supabase/migrations/202610010052_stock_count_retry_content.sql',import.meta.url);
+if(existsSync(retryMigration))await db.exec(readFileSync(retryMigration,'utf8'));
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const load=rows=>db.query('select public.load_count_catalogue($1::jsonb) n',[JSON.stringify(rows)]).then(r=>r.rows[0].n);
 const open=(sid,name)=>db.query('select * from public.open_stock_count($1,$2)',[sid,name]).then(r=>r.rows[0]);
@@ -54,9 +56,14 @@ await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',1,'CRATES
 await assert.rejects(record(id(200),id(100),'New Dakawa','','ab',1,'PCS'),/check constraint|violates/,'unlisted needs a description');ok();
 const e1=await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:' B1 ',expiry:'2028-01-31'});
 assert.equal(e1.status,'recorded');assert.equal(e1.batch,'B1');assert.equal(e1.counted_by,counter);ok();
-assert.equal((await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS')).id,id(200),'lost-response retry returns the saved count');ok();
+assert.equal((await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31'})).id,id(200),'same-content lost-response retry returns the saved count');ok();
+for(const extra of [{batch:'B2',expiry:'2028-01-31'},{batch:'B1',expiry:'2028-02-01'},{batch:'B1',expiry:'2028-01-31',condition:'damaged'},{batch:'B1',expiry:'2028-01-31',notes:'Different shelf'},{}]){
+ await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',extra),/different details/);ok();
+}
 await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',4,'PCS'),/different details/);ok();
 const e2=await record(id(201),id(100),'Keko Manga A','','Unlabelled grey suction pump',1,'PCS',{condition:'damaged'});assert.equal(e2.code,null);assert.equal(e2.unlisted,'Unlabelled grey suction pump');ok();
+await assert.rejects(record(id(201),id(100),'Keko Manga A','','Different pump',1,'PCS',{condition:'damaged'}),/different details/);ok();
+assert.equal((await record(id(201),id(100),'Keko Manga A','','  Unlabelled grey suction pump  ',1,'PCS',{condition:'damaged',notes:'  '})).id,e2.id);ok();
 const e3=await record(id(202),id(100),'Keko Manga A','AN-00002','ignored text',10,'BOX');assert.equal(e3.unlisted,'','listed product ignores the description');ok();
 
 // Saved counts are immutable; only review moves them on.
