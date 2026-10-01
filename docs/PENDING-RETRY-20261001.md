@@ -35,3 +35,7 @@ the original identifier. Integration with the new main trigger chain is still re
 ## 09:53 UTC identifier correction
 
 Main 1929652 introduced 054_staff_departments. This unapplied candidate now uses `20261001095315_pending_retry_content.sql`, a full UTC timestamp, rather than racing the shared short sequence. Applied migrations remain untouched. SQL behavior is unchanged; the isolated test reference follows the new path. This rename is not production activation or combined-trigger acceptance.
+
+## 21:30 UTC integration refresh
+
+Merged main37c44cb into this review branch without conflicts. Candidate diff against main remains limited to retry-content migration, regression test and this evidence. All 41 selected-chain PGlite checks pass on the refreshed tree; this still does not execute every production migration/trigger together. No new SQL behavior, stock changes or production activation. Existing MFA, workflow and interface contributions preserved without custom accounting/Tally development. Independent review and real deployment acceptance remain outstanding.

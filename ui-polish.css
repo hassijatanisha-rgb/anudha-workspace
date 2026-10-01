@@ -13,13 +13,13 @@ main .heading .actions{gap:10px}
 [data-lead-action="qualify"],[data-lead-proforma],
 [data-proforma-action="send"],[data-proforma-action="accept"],
 [data-delivery-action]:not([data-delivery-action="cancel"]),
-[data-pending-action="fulfil"],[data-work-done],[data-work-finish],#countSave,#countOpen,[data-count-action="accept"]{
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish],[data-tally-invoice-action="match"],[data-send-tally],#countSave,#countOpen,[data-count-action="accept"]{
  background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
 #newLead:hover,#newPending:hover,#addEmployee:hover,#newPurchase:hover,#newSupplier:hover,[data-purchase-action="approve"]:hover,[data-purchase-action="order"]:hover,[data-purchase-action="close"]:hover,
 [data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
 [data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
 [data-delivery-action]:not([data-delivery-action="cancel"]):hover,
-[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,[data-tally-invoice-action="match"]:hover,[data-send-tally]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
 
 /* Danger: clearly different so nobody cancels or deletes by mistake. */
 button.danger,[data-count-action="void"],[data-count-action="reject"],#countClose,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
@@ -31,10 +31,10 @@ button.danger:hover,[data-count-action="void"]:hover,[data-count-action="reject"
 
 /* Quiet: looking things up, not changing them. */
 [data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
-#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
+#tallyInvoiceRefresh,#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
  background:transparent;border-color:transparent;color:#3f5a50}
 [data-lead-history]:hover,[data-pending-history]:hover,[data-lead-edit]:hover,[data-load-order-timing]:hover,[data-work-open]:hover,[data-purchase-history]:hover,[data-purchase-edit]:hover,[data-supplier-edit]:hover,
-#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
+#tallyInvoiceRefresh:hover,#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
 
 /* Keyboard users always see where they are. */
 main button:focus-visible,main a:focus-visible,main input:focus-visible,main select:focus-visible,main textarea:focus-visible{outline:3px solid #8cc63f;outline-offset:2px}
@@ -75,3 +75,144 @@ main .contact.quality-red{background:var(--quality-red);border-color:var(--quali
 td .quality-badge{display:block;width:max-content}
 main .file-button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
 main .file-button input{max-width:220px;font-size:13px}
+
+/* Tally invoices: a cancelled voucher stays listed but is struck through. */
+.tally-invoices-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+.tally-invoices-workspace tr.tally-cancelled td:first-child strong{text-decoration:line-through}
+
+/* Accountability: nobody-responsible list stands out; step owner table stays compact. */
+main .unowned-work.attention{border-color:var(--quality-red-line);background:var(--quality-red)}
+main .work-notices{border-color:var(--green)}
+main .work-step-owners td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+main .work-step-owners label.check{display:block;padding:2px 0}
+
+/* Step timing: the responsible strip turns yellow after a day and red after two, or when an expected date passes. */
+main .work-handoff.quality-yellow{background:var(--quality-yellow);border-color:var(--quality-yellow-line)}
+main .work-handoff.quality-red{background:var(--quality-red);border-color:var(--quality-red-line)}
+main .handoff-list li.quality-yellow{background:var(--quality-yellow);border-radius:6px;padding:6px}
+main .handoff-list li.quality-red{background:var(--quality-red);border-radius:6px;padding:6px}
+main .work-timeline{margin-top:6px;width:100%}
+main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12px}
+
+/* Work report: department subtotal rows stand apart from people. */
+main tr.report-subtotal td{font-weight:700;background:#edf4f0}
+
+/* Phone: the company letterhead on Pro formas wraps instead of widening the page. */
+.company-form-brand>div{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+/* How to use: plain step lists, large type, and a walk-through panel that stays on screen while staff follow it. */
+.howto{max-width:900px}
+.howto-search{max-width:620px}
+.howto-here>h2{margin:24px 0 0}
+.howto-here .howto-topic{border-left:5px solid var(--green)}
+.howto-topic{padding:0}
+.howto-topic>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;font-size:1.1em;font-weight:700;list-style-position:outside}
+.howto-topic>summary small{font-weight:500;white-space:nowrap}
+.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 22px 18px}
+.howto-steps{padding-left:24px;font-size:1.05em;line-height:1.6}
+.howto-steps li{margin:8px 0;padding-left:4px}
+.howto-button{font-weight:700;border-color:var(--green);color:var(--green)}
+.howto-walk{position:fixed;right:16px;bottom:16px;z-index:50;width:min(380px,calc(100vw - 32px));padding:18px 20px;background:#fff;border:2px solid var(--green);border-radius:14px;box-shadow:0 12px 36px rgba(20,45,38,.22)}
+.howto-walk h2{font-size:1em;margin:4px 0 6px;color:var(--muted)}
+.howto-walk p{font-size:1.1em;margin:0 0 14px}
+.howto-walk .heading button{border:0;font-size:22px;padding:2px 10px;min-height:0}
+@media(max-width:600px){#identity{white-space:normal}.howto-topic>summary{padding:14px 16px}.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 16px 14px}}
+@media print{.howto-walk,.howto-button{display:none}}
+
+/* Pro forma list: one tile per Pro forma, coloured status tag in the top corner. */
+.proforma-search{max-width:520px}
+.proforma-filters button{font-size:.92em}
+.proforma-tiles{list-style:none;padding:0;margin:8px 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.proforma-tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;height:100%;min-height:150px;padding:18px 18px 14px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;font-weight:400}
+.proforma-tile:hover{border-color:var(--green);background:#fff;box-shadow:0 3px 14px #173b2a14}
+.proforma-tile>strong{font-size:1.1em;margin-top:26px}
+.proforma-tile>span:not(.proforma-tag){overflow-wrap:anywhere}
+.proforma-tile-foot{margin-top:auto;padding-top:10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;width:100%;flex-wrap:wrap}
+.proforma-tile .proforma-tag{position:absolute;top:12px;right:12px}
+.proforma-tag{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.proforma-tag-draft{background:#eceff1;color:#37474f;border-color:#cfd8dc}
+.proforma-tag-revised{background:#f1e8fb;color:#5b2a86;border-color:#d4bdf0}
+.proforma-tag-sent{background:#e3f0fd;color:#0d4a85;border-color:#b5d4f4}
+.proforma-tag-waiting{background:#fff4cc;color:#6b4e00;border-color:#e8c95a}
+.proforma-tag-delivery{background:#dff3f1;color:#0b5c55;border-color:#a6dbd4}
+.proforma-tag-done{background:#e2f4e6;color:#1d6332;border-color:#a9d9b4}
+.proforma-tag-closed{background:#fde8e8;color:#8a2222;border-color:#f2b8b8}
+.proforma-filters button[class*="proforma-filter-"]::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle;background:currentColor;opacity:.25}
+.proforma-filter-draft::before{background:#90a4ae!important;opacity:1!important}
+.proforma-filter-revised::before{background:#8e5cc2!important;opacity:1!important}
+.proforma-filter-sent::before{background:#2f7fd0!important;opacity:1!important}
+.proforma-filter-waiting::before{background:#d9a514!important;opacity:1!important}
+.proforma-filter-delivery::before{background:#1a948a!important;opacity:1!important}
+.proforma-filter-done::before{background:#2e8b47!important;opacity:1!important}
+.proforma-filter-closed::before{background:#c43d3d!important;opacity:1!important}
+@media(max-width:600px){.proforma-tiles{grid-template-columns:1fr}}
+@media print{.proforma-tag{border:1px solid #999;background:none;color:#000}}
+main .proforma-filters{flex-wrap:wrap;overflow:visible;white-space:normal}
+main .proforma-filters button{flex:0 0 auto}
+/* All eight order steps stay visible: they wrap to a second row instead of scrolling off the side. */
+main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));overflow:visible}
+
+/* New inquiry: four numbered steps, choices as large tappable options. */
+.lead-step{border:1px solid var(--line);border-radius:12px;padding:14px 18px 6px;margin:0 0 16px}
+.lead-step legend{font-weight:800;font-size:1.05em;padding:0 6px;color:var(--green)}
+.lead-who,.lead-sources{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 12px}
+.lead-who label,.lead-sources label{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-weight:600}
+.lead-who input,.lead-sources input{width:auto;margin:0}
+.lead-who label:has(input:checked),.lead-sources label:has(input:checked){border-color:var(--green);background:#e7f1ec}
+.lead-tag-inquiry{background:#fff4cc;color:#6b4e00}
+.lead-tag-lead,.lead-tag-opportunity{background:#e3f0fd;color:#0d4a85}
+.lead-tag-won{background:#e2f4e6;color:#1d6332}
+.lead-tag-lost{background:#fde8e8;color:#8a2222}
+.purchase-tag-requested{background:#fff4cc;color:#6b4e00}
+.purchase-tag-approved{background:#e3f0fd;color:#0d4a85}
+.purchase-tag-ordered{background:#dff3f1;color:#0b5c55}
+.purchase-tag-closed{background:#e2f4e6;color:#1d6332}
+.purchase-tag-cancelled{background:#fde8e8;color:#8a2222}
+.purchase-supplier{max-width:520px}
+.purchase-supplier span,.document-editor h3{font-weight:800}
+.purchase-more{margin:14px 0}
+
+/* Tasks: urgency colour on every task; late tasks stand out. */
+.urgency-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.urgency-do_now{background:#fde8e8;color:#8a2222}
+.urgency-urgent{background:#fff4cc;color:#6b4e00}
+.urgency-normal{background:#eceff1;color:#37474f}
+.team-task{padding:16px 20px;margin-top:12px}
+.team-task.overdue{border-left:5px solid #c43d3d}
+.team-task.closed{opacity:.75}
+.team-task h3{margin:0}
+.team-task-meta{margin:6px 0 0}
+.team-task-group>h2,.team-task-group>summary{margin-top:26px;font-size:1.15em;font-weight:800}
+.urgency-choice{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:10px}
+.urgency-choice legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
+.urgency-choice label{display:flex;align-items:center;gap:8px;margin:0;padding:9px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:700}
+.urgency-choice input{width:auto;margin:0}
+.urgency-choice label:has(input:checked){outline:2px solid currentColor}
+.check-row{display:flex;align-items:center;gap:8px}
+.check-row input{width:auto}
+
+/* Stock pages: watermark over the page, no text selection, nothing printed. */
+#stockWatermark{position:fixed;inset:0;z-index:30;pointer-events:none;background-repeat:repeat}
+body.stock-protected #content{-webkit-user-select:none;user-select:none}
+body.stock-protected #content input,body.stock-protected #content textarea{-webkit-user-select:text;user-select:text}
+@media print{body.stock-protected main,body.stock-protected #nav,body.stock-protected>header{display:none!important}body.stock-protected::after{content:"Stock pages cannot be printed. Send customers a Pro forma instead.";display:block;padding:40px;font:16px sans-serif}#stockWatermark{display:none}}
+
+/* Travel requests: status tag per trip; the form uses the same step boxes as a new inquiry. */
+.travel-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.travel-tag-waiting{background:#fff4cc;color:#6b4e00}
+.travel-tag-approved{background:#e3f0fd;color:#0d4a85}
+.travel-tag-away{background:#dff3f1;color:#0b5c55}
+.travel-tag-done{background:#e2f4e6;color:#1d6332}
+.travel-tag-closed{background:#fde8e8;color:#8a2222}
+.travel-card.travel-away{border-left:5px solid #1a948a}
+.travel-card h3{margin:0}
+.travel-step{border:1px solid var(--line);border-radius:12px;padding:10px 14px 4px;margin:0 0 12px}
+.travel-step legend{font-weight:800;color:var(--green);padding:0 6px}
+.travel-people{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;max-height:180px;overflow:auto}
+.travel-people label{display:flex;align-items:center;gap:6px;margin:0;padding:7px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer}
+.travel-people input{width:auto;margin:0}
+.travel-people label:has(input:checked){border-color:var(--green);background:#e7f1ec;font-weight:700}
+
+/* Two-step sign-in */
+.two-step-qr{display:block;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+.two-step-on{background:#e2f4e6;color:#1d6332}

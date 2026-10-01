@@ -31,7 +31,7 @@ assert.throws(()=>inventoryImportPlan({...payload,products:[{...payload.products
 assert.throws(()=>inventoryImportPlan({products:[]},[]),/prepared inventory product list/i);
 
 const ui=fs.readFileSync('inventory-operations.js','utf8');
-assert.match(ui,/Prepare Book2 product import/);
+assert.match(ui,/Add product names from a file/);
 assert.match(ui,/Import new product names only/);
 assert.match(ui,/Existing exact-name matches will not be duplicated/);
 assert.match(ui,/inventoryImportPlan/);
