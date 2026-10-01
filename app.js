@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s),esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let client,me,organizations=[],contacts=[],products=[],duplicates=new Map(),selected='',view='contacts',filter='all',search='',page=0,editing=null,busy=false;
+let client,me,organizations=[],contacts=[],products=[],duplicates=new Map(),selected='',view=typeof location!=='undefined'&&/^#\/inventory\/?$/.test(location.hash)?'inventory':'contacts',filter='all',search='',page=0,editing=null,busy=false;
 let orgIndex=new Map(),childrenByParent=new Map();
 let contactIssues=new Map(),accountIssues=new Map(),accountReviewCounts=new Map();
 const normalize=s=>String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
