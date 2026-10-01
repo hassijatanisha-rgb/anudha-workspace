@@ -30,3 +30,18 @@ test('sign-out clear removes service records and invalidates in-flight requests'
  assert.equal(vm.runInContext('serviceLoaded',ctx),false);
  assert.match(readFileSync(new URL('../app.js',import.meta.url),'utf8'),/typeof clearServiceWorkflow==='function'\)clearServiceWorkflow\(\)/);
 });
+test('an older successful request cannot replace the newest service data',async()=>{
+ const {ctx,pending}=fixture(),first=ctx.loadServiceWorkflow();
+ await new Promise(resolve=>setImmediate(resolve));const second=ctx.loadServiceWorkflow();
+ await new Promise(resolve=>setImmediate(resolve));
+ for(const item of pending.slice(7))item.yes({data:[{id:'newest'}],error:null});await second;
+ for(const item of pending.slice(0,7))item.yes({data:[{id:'older'}],error:null});await first;
+ assert.equal(vm.runInContext('serviceCases[0].id',ctx),'newest');
+});
+test('current-account query failure shows unavailable instead of cached service records',async()=>{
+ const {ctx,pending,content}=fixture(),loading=ctx.serviceWorkspace(true);
+ await new Promise(resolve=>setImmediate(resolve));
+ for(const item of pending)item.yes({data:null,error:{message:'Fixture permission denied'}});await loading;
+ assert.equal(content.innerHTML,'SERVICE ERROR');
+ assert.equal(vm.runInContext('serviceLoaded',ctx),false);
+});
