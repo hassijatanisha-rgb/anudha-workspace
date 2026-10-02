@@ -12,7 +12,11 @@ function login(){clear();message('');$('#content').innerHTML=`<form id="login" c
 async function all(table,columns){const out=[];for(let offset=0;;offset+=4000){const batches=await Promise.all([0,1000,2000,3000].map(i=>client.from(table).select(columns).order('id').range(offset+i,offset+i+999)));for(const r of batches){if(r.error)throw r.error;}for(const r of batches){out.push(...r.data);if(r.data.length<1000)return out;}}}
 async function load(){
  message('Loading your workspace…');
- let u;try{u=await client.auth.getUser()}catch(error){u={error:error||{message:'Authentication request failed'}}}
+ let u,authTimer;
+ try{
+  const deadline=new Promise((_,reject)=>{authTimer=setTimeout(()=>reject(Error('Authentication request timed out. Check your connection.')),20000)});
+  u=await Promise.race([client.auth.getUser(),deadline]);
+ }catch(error){u={error:error||{message:'Authentication request failed'}}}finally{clearTimeout(authTimer)}
  if(u.error?.name==='AuthSessionMissingError')return login();
  if(u.error){clear();$('#content').innerHTML='';throw Error(`Could not verify your session. Please reload to retry. ${u.error.message||'Authentication request failed'}`)}
  if(!u.data?.user)return login();
