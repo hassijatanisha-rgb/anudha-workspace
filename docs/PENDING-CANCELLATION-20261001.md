@@ -40,3 +40,9 @@ Merged current main into this isolated review branch without conflict or history
 Full Node suite: 254 passed, 40 skipped, zero failed. Extended the disposable pending database suite to execute the entire real 058 two-step migration after the pending cancellation candidate, with minimal prerequisite table/auth fixtures. All 46 checks pass, including authenticated-role denial and hidden pending rows for an enrolled owner at aal1, unchanged version after denial, continued staff cancellation denial at aal2, and owner cancellation at aal2 with unchanged stock. `git diff --check` passes.
 
 This is selected-chain integration, not a full production restore or Supabase browser acceptance. Automatic handoff triggers are not exercised by this fixture. No migration was applied remotely. PR9 and gated PR7 remain open with no reviews at this check; independent review and required activation are outstanding. Department-head delegation remains unimplemented here.
+
+## 10:49 UTC — pending handoff integration
+
+Extended the fixture with full045 assignment schema/guards and the exact auto_assign_work, auto_close_work, handoff_pending bodies and pending trigger extracted from051. No reimplementation of those bodies. Five new checks pass: creation assigns one open task to the salesperson; denied staff cancellation leaves the task unchanged; owner cancellation closes it while preserving sender and recording owner/version; stale cancellation retry adds no changes; stock remains unchanged. Total51 database checks pass; diff clean.
+
+This supersedes the earlier absence of pending-trigger coverage only. Other051 triggers, production permissions across the entire schema, UI task-refresh and live persistence remain unverified. No application or migration code changed this run. PR7/9 still lack independent reviews; no production activation or merge was attempted.

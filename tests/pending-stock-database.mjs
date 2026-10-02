@@ -116,4 +116,27 @@ await assert.rejects(advance(mfaTarget.id,1,'cancel','Client declined'),/Only th
 await db.exec('reset role');await as(owner);await db.exec('set role authenticated');
 assert.equal((await advance(mfaTarget.id,1,'cancel','Client declined')).status,'cancelled');ok();
 await db.exec('reset role');assert.deepEqual(await lots(),before);ok();
+// Execute the actual pending-specific automatic-handoff bodies with real assignment guards.
+// Other 051 workflow triggers are deliberately outside this fixture's scope.
+await db.exec(readFileSync(new URL('../supabase/migrations/202609300045_work_assignments.sql',import.meta.url),'utf8'));
+const handoffSql=readFileSync(new URL('../supabase/migrations/202610010051_automatic_handoffs.sql',import.meta.url),'utf8');
+for(const name of ['auto_assign_work','auto_close_work','handoff_pending']){
+ const start=handoffSql.indexOf(`create function public.${name}(`);
+ assert.ok(start>=0,`actual ${name} exists`);
+ const end=handoffSql.indexOf('end $$;',start);assert.ok(end>start);
+ await db.exec(handoffSql.slice(start,end+'end $$;'.length));
+}
+const trigger=handoffSql.match(/create trigger pending_stock_requests_handoff[^;]+;/);
+assert.ok(trigger);await db.exec(trigger[0]);
+await as(sales);const taskTarget=await create(id(104));
+const task=async()=>(await db.query("select assignee_user_id,assigned_by,status,closed_by,version from public.work_assignments where record_type='pending' and record_id=$1",[taskTarget.id])).rows;
+const openTask=await task();assert.equal(openTask.length,1);assert.equal(openTask[0].assignee_user_id,sales);assert.equal(openTask[0].status,'open');ok();
+await db.exec('set role authenticated');
+await assert.rejects(advance(taskTarget.id,1,'cancel','Client declined'),/Only the owner can cancel/);
+await db.exec('reset role');assert.deepEqual(await task(),openTask);ok();
+await as(owner);await db.exec('set role authenticated');
+await advance(taskTarget.id,1,'cancel','Client declined');await db.exec('reset role');
+const closedTask=await task();assert.equal(closedTask.length,1);assert.equal(closedTask[0].status,'cancelled');assert.equal(closedTask[0].closed_by,owner);assert.equal(closedTask[0].assigned_by,sales);assert.equal(closedTask[0].version,2);ok();
+await assert.rejects(advance(taskTarget.id,1,'cancel','Client declined'),/changed/);assert.deepEqual(await task(),closedTask);ok();
+assert.deepEqual(await lots(),before);ok();
 console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, owner-only cancellation, salesperson/owner fulfilment, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
