@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 function fixture(result,twoStep=false,throws=false){
  const events=[],nodes=new Map();
- const ctx=vm.createContext({me:{user_id:'previous'},message(){},$:key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'old',hidden:false});return nodes.get(key)},
+ const ctx=vm.createContext({setTimeout,clearTimeout,me:{user_id:'previous'},message(){},$:key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'old',hidden:false});return nodes.get(key)},
   clear(){events.push('clear');ctx.me=null},login(){events.push('login');ctx.me=null},
   twoStepNeeded:async()=>twoStep,showTwoStepPrompt(){events.push('two-step')},
   loadEmployeeNames:async()=>{events.push('load-data');throw Error('fixture authenticated boundary')},
@@ -63,4 +63,24 @@ test('SDK missing-session error still opens login',async()=>{
  const f=fixture({data:{active:true}});
  f.ctx.client.auth.getUser=async()=>({data:{user:null},error:{name:'AuthSessionMissingError',message:'Auth session missing!'}});
  await f.ctx.load();assert.deepEqual(f.events,['login']);
+});
+test('hung auth read times out and late resolution cannot reopen workspace',async()=>{
+ const f=fixture({data:{active:true}});let expire,resolveUser,cleared=false;
+ f.ctx.setTimeout=(fn,delay)=>{assert.equal(delay,20000);expire=fn;return 123};
+ f.ctx.clearTimeout=id=>{assert.equal(id,123);cleared=true};
+ f.ctx.client.auth.getUser=()=>new Promise(resolve=>{resolveUser=resolve});
+ const loading=f.ctx.load();
+ assert.equal(typeof expire,'function','authentication wait must have a deadline');
+ const rejected=assert.rejects(loading,/Could not verify your session.*timed out/);
+ expire();await rejected;
+ assert.equal(cleared,true);assert.deepEqual(f.events,['clear']);assert.equal(f.ctx.me,null);
+ assert.equal(f.nodes.get('#content').innerHTML,'');
+ resolveUser({data:{user:{id:'actor'}}});await Promise.resolve();await Promise.resolve();
+ assert.deepEqual(f.events,['clear']);assert.equal(f.ctx.me,null);
+});
+test('successful auth read removes its deadline before continuing',async()=>{
+ const f=fixture({data:{active:true}});let cleared=false;
+ f.ctx.setTimeout=()=>456;f.ctx.clearTimeout=id=>{assert.equal(id,456);cleared=true};
+ await assert.rejects(f.ctx.load(),/fixture authenticated boundary/);
+ assert.equal(cleared,true);
 });
