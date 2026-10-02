@@ -153,3 +153,45 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Department subtotal rows follow the people. The company total excludes the subtotals. CSV download is available.
 - Live check in an aborted transaction as the real owner: department set to management; 2 staff visible through `staff_departments()`; an invalid department was refused. Nothing remained afterwards.
 - Recorded migrations now: 042–054.
+
+## Migration 055: hardening (applied 1 October)
+
+- Removed direct insert, update, delete and truncate grants from signed-in users on 20 older workflow and inventory tables. No row policy allowed those writes, and every real save goes through the checked server functions, so behaviour is unchanged.
+- Five read policies now check the signed-in user once per query instead of once per row. The rules are the same.
+- Live check: saving a godown through the app's server function still works. A direct insert by a signed-in user is refused with "permission denied". Reads still work. The check ran inside a rolled-back transaction, so nothing was saved.
+
+## Plain interface and How to use (1 October)
+
+- Removed technical and back-end wording from staff screens: Supabase, file names, "immutable snapshot", "source lot", employee IDs shown as codes, and development notes.
+- Staff no longer see Staff, Questions for the owner (formerly Awaiting approval) or Setup progress. Accounting forms appear only for people with accounting access.
+- Help is replaced by How to use: 22 step-by-step guides, searchable and filterable by job. A How to use button at the top of every page opens the guides for that page first, and Walk me through it shows the steps one at a time on the real page.
+- Checked by opening every menu screen as owner and as staff at 1280, 390 and 360 px wide: no errors and no sideways scrolling.
+
+## Migration 056: team tasks (applied 1 October)
+
+- New `team_tasks` and `team_task_events` tables. Anyone on the staff can give a task to a colleague or to themselves. Each task has an urgency (Do now / Urgent / Normal) and a due date and time. Only the person given the task, the person who gave it and the owner can see it. Tasks are closed (done or cancelled), never deleted, and their history can't be changed.
+- Checked on the live database inside a rolled-back transaction: a task was created (TK-000001), could be seen, and was marked done with two history rows. Nothing was saved. The task number counter moved on, so the first real task will be TK-000002.
+
+## Simpler pages (1 October)
+
+- Letterhead: one address line, one phone number (+255 783 523 777) and one email (sales2@ on sales forms, service@ on service reports). No fax or landline list.
+- Purchase requests: the supplier and a list of items only. No currency or price. Prices saved earlier are kept unchanged.
+- Leads: one page instead of Inquiries plus Lead / Opportunity. The new inquiry form has four numbered steps.
+- My tasks shows tasks with urgency and due time, plus order steps handed to the person. Notes & reminders are private; a reminder needs a time.
+- Reports is in the Main menu and has 8 reports in a single list. Stock movements and their download are owner-only.
+- Stock pages: no printing and no copying, and a watermark shows the viewer's name and the time. A browser cannot block screenshots or phone cameras; the watermark makes them traceable.
+- Removed tab bars that repeated the left menu, a duplicate menu item and single-page "Page 1 of 1" controls. Owner tools are hidden from staff.
+
+## Migration 057: travel requests (applied 1 October)
+
+- New `travel_requests` and `travel_request_events` tables. Each request records who is going (one or more employees), where (a client from the list or a typed place), why, who they are meeting, and when they leave and return. The owner approves or declines; afterwards a traveller marks the trip done with how it went. Every active employee can see requests.
+- Checked on the live database inside a rolled-back transaction: TR-000001 was created and approved, then rolled back. The first real request will be TR-000002.
+- Reports has a new Travel report: trips, days away and the number of different places per person.
+
+## Migration 058: two-step sign-in (applied 1 October)
+
+- Staff can turn on two-step sign-in with an authenticator app under My settings. Once it's on, the database refuses everything except their own staff row until the 6-digit code is entered. This is enforced in the shared access checks every page uses, not just on screen. Staff who have not turned it on are unaffected. At the time of applying, nobody had it on.
+- The owner sees who has it on and can press **Reset two-step** on the Staff page if a phone is lost. This goes through the staff-accounts server function (deployed as version 2), which checks the owner first and logs the reset.
+- Two older owner checks (the Questions for the owner page) now use the same shared check.
+- Checked live inside a rolled-back transaction: owner and staff access unchanged.
+- The 8-user test found and fixed a travel form bug: saving failed because a variable named `client` hid the database connection.

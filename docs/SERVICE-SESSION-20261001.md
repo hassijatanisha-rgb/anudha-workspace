@@ -15,3 +15,9 @@ These are isolated JavaScript tests with mocked query results, not live permissi
 Review before merging. No migration or new membership is needed. A frontend rollback may revert these scoped commits but restores the stale-session behavior; prefer fixing forward. Accounting stays paused.
 
 01:39 UTC browser follow-up: `tests/service-session-browser.mjs` passed in actual isolated Chrome with configured PLAYWRIGHT_MODULE/CHROME_EXECUTABLE. Clicking the fixture's Clients/account-switch controls while queries were pending left those screens intact after old responses arrived; the cleared cache stayed empty, and the second simulated account subsequently loaded normally. Query results, account identities and renderer contents are fixtures. This tests the real service loader/render coordinator in a browser, not Supabase authentication/RLS or full service-card UI; live signed-in acceptance remains outstanding. No production code changed in this follow-up.
+
+## 2 October 12:05 UTC integration
+
+Merged current main37c44cb into this review branch. Resolved clear() conflict by retaining every current-main hook (including travel and Tally) plus service invalidation, after employee/lead cleanup. Initial combined suite exposed two strict clear-order assertions and a sidebar fixture configured as sales while invoking the service screen. Retained main's initial cleanup order and corrected that fixture to service view with current-actor cache ownership; no assertion was removed.
+
+Combined suite now259pass/40skip/0fail; focused eight service cases pass. New browser attempt failed before tests: Chrome launch exceeded180000ms. Previous browser result remains historical, not current integration verification. Do not deploy this branch as browser-verified. No SQL/permissions or live records changed. PR11 still needs independent review. Fresh PR7 review is now available; owner activation question sent separately, without activating041.
