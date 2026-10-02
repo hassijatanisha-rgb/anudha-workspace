@@ -113,6 +113,16 @@ const c=await close(id(100),1);assert.equal(c.status,'closed');assert.equal(c.cl
 assert.equal((await open(id(100),'Full count 2026')).status,'closed','retry must not reopen a closed session');ok();
 await assert.rejects(close(id(100),2),/already closed/);ok();
 await as(counter);await assert.rejects(record(id(203),id(100),'New Dakawa','AN-00001','',1,'PCS'),/closed/);ok();
+// A lost-response retry after review and closure returns only the existing accepted row.
+const closedSnapshot=(await db.query('select * from public.stock_count_entries order by id')).rows;
+await db.exec('set role authenticated');
+const replay=await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:' B1 ',expiry:'2028-01-31'});
+assert.equal(replay.status,'accepted');assert.equal(replay.version,2);assert.equal(replay.status_by,owner);ok();
+await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B2',expiry:'2028-01-31'}),/different details/);ok();
+await as(other);await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31'}),/different details/);ok();
+await db.exec('reset role');
+assert.deepEqual((await db.query('select * from public.stock_count_entries order by id')).rows,closedSnapshot);ok();
+assert.equal((await db.query('select status from public.stock_count_sessions where id=$1',[id(100)])).rows[0].status,'closed');ok();
 await as(owner);assert.equal((await open(id(101),'Recount')).status,'open','a new count can start after closing');ok();
 assert.equal((await db.query('select count(*)::int n,sum(loose_units)::int s from public.inventory_lots')).rows[0].s,10,'stock unchanged');ok();
 

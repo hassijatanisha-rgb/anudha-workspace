@@ -51,3 +51,9 @@ the original identifier. Integration with the new main trigger chain is still re
 ## 17:51 UTC migration identifier correction
 
 Fresh main contains `202610010056_team_tasks.sql`, colliding with this unapplied candidate's numeric version. PR12 remains open with no review/comments. Renamed only the candidate to `20261001175113_stock_count_retry_content.sql` and updated its test reference. SQL executable content is unchanged; applied migrations are untouched. This resolves the release filename collision, not database activation or integration acceptance.
+
+## 2 October 11:23 UTC — post-close replay acceptance
+
+Added five sequential database checks on this candidate: authenticated creator's identical normalized replay after owner review and session closure returns the existing accepted version and reviewer; changed batch is rejected; another actor is rejected; the complete entry snapshot is unchanged; the session remains closed. All71 stock-count database checks pass; diff clean. Existing final assertion also confirms operational stock unchanged.
+
+No application or migration code changed. These checks establish post-close replay behavior only, not the concurrently racing close/new-insert invariant described in STOCK-COUNT-CLOSE-RACE-20261001.md. Native multi-connection reproduction and independent review remain required. Nothing deployed or applied to production.
