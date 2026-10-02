@@ -1,6 +1,6 @@
-// Owner-only staff logins without email addresses: create an employee (ID from the name, temporary password)
-// and reset a forgotten password. The service key is used only for the two auth.admin calls; every staff-table
-// change and log entry is made with the owner's own session, so the database records the owner as the actor.
+// Owner-only staff logins without email addresses: create an employee (ID from the name, temporary password),
+// reset a forgotten password, and reset two-step sign-in when a phone is lost. The service key is used only for the
+// auth.admin calls; every staff-table change and log entry is made with the owner's own session, so the database records the owner as the actor.
 // No password is stored or logged; the temporary password is returned once to the owner who asked for it.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -108,6 +108,22 @@ Deno.serve(async (req) => {
       if (updated.error) throw new Error(updated.error.message);
       const logged = await asOwner.rpc('record_staff_account_event', { p_user_id: target, p_action: 'password_reset', p_note: '' });
       return reply(req, 200, { user_id: target, temporary_password: password, warnings: logged.error ? [`History not recorded: ${logged.error.message}`] : [] });
+    }
+    if (body.action === 'reset_two_step') {
+      // Lost phone: remove the person's authenticator so they can sign in with their password and set it up again.
+      const target = String(body.user_id ?? '');
+      if (!UUID.test(target)) return reply(req, 400, { error: 'Choose an employee' });
+      if (target === who.data.user.id) return reply(req, 400, { error: 'Turn your own two-step sign-in off in My settings' });
+      const member = await asOwner.from('staff').select('user_id').eq('user_id', target).maybeSingle();
+      if (member.error || !member.data) return reply(req, 404, { error: 'This person is not on the staff list' });
+      const factors = await admin.auth.admin.mfa.listFactors({ userId: target });
+      if (factors.error) throw new Error(factors.error.message);
+      for (const factor of factors.data?.factors ?? []) {
+        const removed = await admin.auth.admin.mfa.deleteFactor({ userId: target, id: factor.id });
+        if (removed.error) throw new Error(removed.error.message);
+      }
+      const logged = await asOwner.rpc('record_staff_account_event', { p_user_id: target, p_action: 'two_step_reset', p_note: '' });
+      return reply(req, 200, { user_id: target, removed: (factors.data?.factors ?? []).length, warnings: logged.error ? [`History not recorded: ${logged.error.message}`] : [] });
     }
     return reply(req, 400, { error: 'Unknown action' });
   } catch (error) {
