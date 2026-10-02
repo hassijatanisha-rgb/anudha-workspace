@@ -40,3 +40,27 @@ test('confirmed active membership reaches existing data loader',async()=>{
  const data={user_id:'actor',role:'staff',active:true},f=fixture({data,error:null});
  await assert.rejects(f.ctx.load(),/fixture authenticated boundary/);assert.equal(f.ctx.me,data);assert.equal(f.events.includes('sign-out'),false);
 });
+test('returned authentication transport errors clear stale data without querying staff',async()=>{
+ const f=fixture({data:{active:true}});
+ f.ctx.client.auth.getUser=async()=>({data:{user:null},error:{message:'Failed to fetch'}});
+ await assert.rejects(f.ctx.load(),/Could not verify your session.*Failed to fetch/);
+ assert.equal(f.ctx.me,null);assert.equal(f.nodes.get('#content').innerHTML,'');
+ assert.deepEqual(f.events,['clear']);
+});
+test('thrown authentication transport errors clear stale data without querying staff',async()=>{
+ const f=fixture({data:{active:true}});
+ f.ctx.client.auth.getUser=async()=>{throw Error('Network unavailable')};
+ await assert.rejects(f.ctx.load(),/Could not verify your session.*Network unavailable/);
+ assert.equal(f.ctx.me,null);assert.equal(f.nodes.get('#content').innerHTML,'');
+ assert.deepEqual(f.events,['clear']);
+});
+test('confirmed absence of session still opens login without staff query',async()=>{
+ const f=fixture({data:{active:true}});
+ f.ctx.client.auth.getUser=async()=>({data:{user:null},error:null});
+ await f.ctx.load();assert.deepEqual(f.events,['login']);
+});
+test('SDK missing-session error still opens login',async()=>{
+ const f=fixture({data:{active:true}});
+ f.ctx.client.auth.getUser=async()=>({data:{user:null},error:{name:'AuthSessionMissingError',message:'Auth session missing!'}});
+ await f.ctx.load();assert.deepEqual(f.events,['login']);
+});
