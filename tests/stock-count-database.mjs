@@ -1,5 +1,5 @@
 // Disposable PGlite fixture only: run with PGLITE_MODULE pointing to @electric-sql/pglite dist/index.js.
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
 const db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -15,6 +15,8 @@ insert into auth.users values('${owner}'),('${counter}'),('${other}'),('${inacti
 insert into public.staff values('${owner}','owner',true),('${counter}','staff',true),('${other}','staff',true),('${inactive}','staff',false);
 insert into public.inventory_lots values(gen_random_uuid(),10);`);
 await db.exec(readFileSync(new URL('../supabase/migrations/202609300047_stock_count.sql',import.meta.url),'utf8'));
+const retryMigration=new URL('../supabase/migrations/20261001175113_stock_count_retry_content.sql',import.meta.url);
+if(existsSync(retryMigration))await db.exec(readFileSync(retryMigration,'utf8'));
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const load=rows=>db.query('select public.load_count_catalogue($1::jsonb) n',[JSON.stringify(rows)]).then(r=>r.rows[0].n);
 const open=(sid,name)=>db.query('select * from public.open_stock_count($1,$2)',[sid,name]).then(r=>r.rows[0]);
@@ -41,6 +43,12 @@ await as(counter);await assert.rejects(open(id(100),'Full count'),/Only the owne
 await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS'),/closed/);ok();
 await as(owner);const s=await open(id(100),'Full count 2026');assert.equal(s.status,'open');ok();
 assert.equal((await open(id(100),'Full count 2026')).id,id(100),'retry returns the same count');ok();
+await assert.rejects(open(id(100),'Different count'),/different details/);ok();
+await assert.rejects(open(id(100),null),/different details/);ok();
+assert.equal((await open(id(100),'  Full count 2026  ')).name,'Full count 2026');ok();
+await db.exec(`insert into auth.users values('${id(5)}');insert into public.staff values('${id(5)}','owner',true)`);
+await as(id(5));await assert.rejects(open(id(100),'Full count 2026'),/different details/);ok();
+await as(owner);
 await assert.rejects(open(id(101),'Second'),/already running/);ok();
 
 // Counting.
@@ -54,10 +62,28 @@ await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',1,'CRATES
 await assert.rejects(record(id(200),id(100),'New Dakawa','','ab',1,'PCS'),/check constraint|violates/,'unlisted needs a description');ok();
 const e1=await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:' B1 ',expiry:'2028-01-31'});
 assert.equal(e1.status,'recorded');assert.equal(e1.batch,'B1');assert.equal(e1.counted_by,counter);ok();
-assert.equal((await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS')).id,id(200),'lost-response retry returns the saved count');ok();
+assert.equal((await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31'})).id,id(200),'same-content lost-response retry returns the saved count');ok();
+for(const extra of [{batch:'B2',expiry:'2028-01-31'},{batch:'B1',expiry:'2028-02-01'},{batch:'B1',expiry:'2028-01-31',condition:'damaged'},{batch:'B1',expiry:'2028-01-31',notes:'Different shelf'},{}]){
+ await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',extra),/different details/);ok();
+}
 await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',4,'PCS'),/different details/);ok();
 const e2=await record(id(201),id(100),'Keko Manga A','','Unlabelled grey suction pump',1,'PCS',{condition:'damaged'});assert.equal(e2.code,null);assert.equal(e2.unlisted,'Unlabelled grey suction pump');ok();
+await assert.rejects(record(id(201),id(100),'Keko Manga A','','Different pump',1,'PCS',{condition:'damaged'}),/different details/);ok();
+assert.equal((await record(id(201),id(100),'Keko Manga A','','  Unlabelled grey suction pump  ',1,'PCS',{condition:'damaged',notes:'  '})).id,e2.id);ok();
 const e3=await record(id(202),id(100),'Keko Manga A','AN-00002','ignored text',10,'BOX');assert.equal(e3.unlisted,'','listed product ignores the description');ok();
+// Reapplying the function-only migration preserves existing data and grants.
+if(existsSync(retryMigration)){
+ const before=(await db.query('select * from public.stock_count_entries order by id')).rows;
+ await db.exec(readFileSync(retryMigration,'utf8'));
+ assert.deepEqual((await db.query('select * from public.stock_count_entries order by id')).rows,before);ok();
+}
+await db.exec('set role authenticated');
+assert.equal((await record(id(202),id(100),'Keko Manga A','AN-00002','other ignored text',10,'BOX')).id,e3.id);ok();
+await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31',condition:'quarantine'}),/different details/);ok();
+await as(other);
+await assert.rejects(record(id(202),id(100),'Keko Manga A','AN-00002','',10,'BOX'),/different details/);ok();
+await as(counter);await db.exec('reset role');
+assert.equal((await db.query('select count(*)::int n from public.stock_count_entries')).rows[0].n,3);ok();
 
 // Saved counts are immutable; only review moves them on.
 await assert.rejects(db.exec(`update public.stock_count_entries set quantity=99 where id='${id(200)}'`),/cannot be edited/);ok();
@@ -84,8 +110,19 @@ await assert.rejects(db.exec(`update public.stock_count_entries set status='reco
 await as(counter);await assert.rejects(close(id(100),1),/Only the owner/);ok();
 await as(owner);await assert.rejects(close(id(100),5),/changed/);ok();
 const c=await close(id(100),1);assert.equal(c.status,'closed');assert.equal(c.closed_by,owner);ok();
+assert.equal((await open(id(100),'Full count 2026')).status,'closed','retry must not reopen a closed session');ok();
 await assert.rejects(close(id(100),2),/already closed/);ok();
 await as(counter);await assert.rejects(record(id(203),id(100),'New Dakawa','AN-00001','',1,'PCS'),/closed/);ok();
+// A lost-response retry after review and closure returns only the existing accepted row.
+const closedSnapshot=(await db.query('select * from public.stock_count_entries order by id')).rows;
+await db.exec('set role authenticated');
+const replay=await record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:' B1 ',expiry:'2028-01-31'});
+assert.equal(replay.status,'accepted');assert.equal(replay.version,2);assert.equal(replay.status_by,owner);ok();
+await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B2',expiry:'2028-01-31'}),/different details/);ok();
+await as(other);await assert.rejects(record(id(200),id(100),'New Dakawa','AN-00001','',3,'PCS',{batch:'B1',expiry:'2028-01-31'}),/different details/);ok();
+await db.exec('reset role');
+assert.deepEqual((await db.query('select * from public.stock_count_entries order by id')).rows,closedSnapshot);ok();
+assert.equal((await db.query('select status from public.stock_count_sessions where id=$1',[id(100)])).rows[0].status,'closed');ok();
 await as(owner);assert.equal((await open(id(101),'Recount')).status,'open','a new count can start after closing');ok();
 assert.equal((await db.query('select count(*)::int n,sum(loose_units)::int s from public.inventory_lots')).rows[0].s,10,'stock unchanged');ok();
 
