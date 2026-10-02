@@ -9,7 +9,7 @@ const prefix=app.slice(0,app.indexOf('async function all('));
 const loader=app.slice(app.indexOf('async function load()'),app.indexOf('function missingAccount'));
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 try{
- for(const mode of ['returned','thrown','inactive']){
+ for(const mode of ['returned','thrown','inactive','auth-returned','auth-thrown']){
   const page=await browser.newPage();await page.route('**/*',route=>route.abort());
   await page.setContent('<nav id="nav">Old menu</nav><div id="identity">Old user</div><div id="notice" role="status"></div><main id="content">Old client data</main><div id="fields">Old fields</div><button id="check">Check access</button>');
   await page.addScriptTag({content:prefix+'\n'+loader});
@@ -20,7 +20,10 @@ try{
    async function loadEmployeeNames(){window.dataLoads++;throw Error('Unexpected data load')}
    const mode=${JSON.stringify(mode)};
    async function reply(){if(mode==='thrown')throw Error('Network unavailable');if(mode==='inactive')return {data:{active:false},error:null};return {error:{message:'statement timeout'}}}
-   client={auth:{getUser:async()=>({data:{user:{id:'fictional'}}}),signOut:async()=>{window.signouts++}},from:()=>({select:()=>({eq:()=>({maybeSingle:reply,single:reply})})})};
+   client={
+    auth:{getUser:async()=>{if(mode==='auth-thrown')throw Error('Network unavailable');if(mode==='auth-returned')return {data:{user:null},error:{message:'Failed to fetch'}};return {data:{user:{id:'fictional'}}}},signOut:async()=>{window.signouts++}},
+    from:()=>{if(mode.startsWith('auth-'))throw Error('Unexpected staff read');return {select:()=>({eq:()=>({maybeSingle:reply,single:reply})})}}
+   };
    document.querySelector('#check').onclick=async()=>{try{await load()}catch(error){message(error.message,true)}document.querySelector('#check').dataset.finished='true'};
   `});
   await page.getByRole('button',{name:'Check access'}).click();
@@ -36,9 +39,9 @@ try{
   }else{
    assert.equal(await page.evaluate(()=>window.signouts),0);
    assert.equal(await page.locator('#content').textContent(),'');
-   assert.match(await page.locator('#notice').innerText(),/Could not verify staff access.*reload/);
+   assert.match(await page.locator('#notice').innerText(),mode.startsWith('auth-')?/Could not verify your session.*reload/:/Could not verify staff access.*reload/);
   }
   await page.close();
  }
- console.log('PASS: real browser clears stale screen, identity and core data for returned/thrown staff errors without sign-out; inactive member signs out; no network or live account.');
+ console.log('PASS: real browser clears stale screen, identity and core data for returned/thrown staff and authentication errors without sign-out; inactive member signs out; no network or live account.');
 }finally{await browser.close()}
