@@ -32,3 +32,11 @@ the original identifier. Integration with the new main trigger chain is still re
 ## 11:24 UTC identifier correction
 
 Main now includes 055_hardening. The unapplied cancellation fix is renamed to `20261001112436_pending_cancel_owner.sql` to avoid that collision. SQL behavior is unchanged; applied migrations are untouched. PR9 and PR22 review lookup returned open with no comments/reviews this cycle. This is not approval or activation.
+
+## 2 October integration with main 37c44cb
+
+Merged current main into this isolated review branch without conflict or history rewriting. Main's readable workflow labels remain intact; the only pending-stock.js delta is the owner-only Cancel control. No new permissions, stock writes or changes to applied migrations.
+
+Full Node suite: 254 passed, 40 skipped, zero failed. Extended the disposable pending database suite to execute the entire real 058 two-step migration after the pending cancellation candidate, with minimal prerequisite table/auth fixtures. All 46 checks pass, including authenticated-role denial and hidden pending rows for an enrolled owner at aal1, unchanged version after denial, continued staff cancellation denial at aal2, and owner cancellation at aal2 with unchanged stock. `git diff --check` passes.
+
+This is selected-chain integration, not a full production restore or Supabase browser acceptance. Automatic handoff triggers are not exercised by this fixture. No migration was applied remotely. PR9 and gated PR7 remain open with no reviews at this check; independent review and required activation are outstanding. Department-head delegation remains unimplemented here.

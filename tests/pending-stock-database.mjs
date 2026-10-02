@@ -93,4 +93,27 @@ await assert.rejects(db.query('delete from public.pending_stock_requests'),/neve
 assert.deepEqual(await lots(),before);ok();
 const grants=(await db.query(`select has_table_privilege('authenticated','public.pending_stock_requests','insert') ins,has_function_privilege('anon','public.create_pending_stock_request(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text)','execute') anon_create`)).rows[0];
 assert.deepEqual(grants,{ins:false,anon_create:false});ok();
+// Integration with current main's actual 058 access helpers, not permissive MFA stubs.
+await db.exec(`
+create function auth.jwt() returns jsonb language sql as $$select jsonb_build_object('aal',coalesce(nullif(current_setting('test.aal',true),''),'aal1'))$$;
+create table auth.mfa_factors(id uuid primary key default gen_random_uuid(),user_id uuid,factor_type text,status text);
+create table public.staff_account_events(id uuid primary key default gen_random_uuid(),user_id uuid,action text,note text,actor_user_id uuid,constraint staff_account_events_action_check check (action in ('created')));
+create table public.project_approval_questions(id text primary key,version int);
+create table public.project_approval_answers(id uuid primary key,question_id text,question_version int,answer text,answered_by uuid);
+alter table public.project_approval_questions enable row level security;
+alter table public.project_approval_answers enable row level security;
+create policy approval_question_read on public.project_approval_questions for select using (false);
+create policy approval_answer_read on public.project_approval_answers for select using (false);`);
+await db.exec(readFileSync(new URL('../supabase/migrations/202610010058_two_step_sign_in.sql',import.meta.url),'utf8'));
+await as(owner);const mfaTarget=await create(id(103));
+await db.exec(`insert into auth.mfa_factors(user_id,factor_type,status) values('${owner}','totp','verified');set role authenticated;`);
+await assert.rejects(advance(mfaTarget.id,1,'cancel','Client declined'),/Active staff/);ok();
+assert.equal((await db.query('select count(*)::int n from public.pending_stock_requests')).rows[0].n,0);ok();
+await db.exec('reset role');
+assert.equal((await db.query('select version from public.pending_stock_requests where id=$1',[mfaTarget.id])).rows[0].version,1);ok();
+await as(sales);await db.exec("select set_config('test.aal','aal2',false);set role authenticated;");
+await assert.rejects(advance(mfaTarget.id,1,'cancel','Client declined'),/Only the owner can cancel/);ok();
+await db.exec('reset role');await as(owner);await db.exec('set role authenticated');
+assert.equal((await advance(mfaTarget.id,1,'cancel','Client declined')).status,'cancelled');ok();
+await db.exec('reset role');assert.deepEqual(await lots(),before);ok();
 console.log(`PASS: ${checks} pending stock checks — access, validation, six-month closure, identical-retry replay, owner-only cancellation, salesperson/owner fulfilment, owner-only capped extensions, expiry gate, immutable history, no deletes, stock untouched.`);
