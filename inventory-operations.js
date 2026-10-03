@@ -19,6 +19,13 @@ function inventoryProductChoice(product){return `${inventoryProductIdentity(prod
 function inventoryProductChoices(){return inventorySelectableProducts().map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
 function inventoryProductFromChoice(choice){return inventorySelectableProducts().find(product=>inventoryProductChoice(product)===choice)}
 let inventoryLoadGeneration=0;
+function clearInventoryOperations(){
+ inventoryLoadGeneration++;inventoryLoaded=false;inventoryLoadError='';inventorySearch='';inventoryProductId='';inventorySection='stock';
+ inventoryLocations=[];inventoryPacks=[];inventoryLots=[];inventoryTransfers=[];inventoryIssues=[];inventoryMovements=[];inventoryClassifications=[];
+ inventoryLatestPacks=new Map();inventoryLatestClassifications=new Map();inventoryImportPreview=null;inventoryImportFileName='';
+ productDetailReviews=new Map();productReviewLoadError='';
+ if(typeof clearProductMachineLinks==='function')clearProductMachineLinks();
+}
 async function loadInventoryOperations(){
  const actor=me,actorId=me?.user_id,generation=++inventoryLoadGeneration;
  const current=()=>me===actor&&me?.user_id===actorId&&generation===inventoryLoadGeneration;

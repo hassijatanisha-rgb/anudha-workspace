@@ -9,6 +9,7 @@ function machineLinkReviewedProduct(product){
  return review?{...product,source:{...product.source,machine_ids:[...review.machine_ids]}}:product;
 }
 let machineLinkLoadGeneration=0;
+function clearProductMachineLinks(){machineLinkLoadGeneration++;productMachineLinks=new Map();productMachineLinksError='';}
 async function loadProductMachineLinks(){
  const actor=me,actorId=me?.user_id,generation=++machineLinkLoadGeneration;
  const current=()=>me===actor&&me?.user_id===actorId&&generation===machineLinkLoadGeneration;
