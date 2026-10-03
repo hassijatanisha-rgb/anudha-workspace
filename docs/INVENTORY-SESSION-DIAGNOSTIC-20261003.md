@@ -1,5 +1,7 @@
 # Inventory loader session diagnostic
 
+23:01 UTC: RED274afbc six stock/review/catalog render cases reproduced old page writes after account/navigation change. Added actor/ID/view/section checks before opening and after inventory-load awaits. All six pass;full271pass/40skip/0fail after fixtures supplied actual inventory view. Browser integration, async work inside tallyStockScreen itself, and navigation away-and-back generation remain to assess. No database change/deployment; numerical coverage not measured.
+
 22:29 UTC: RED434e4a0 actual app clear retained inventory caches. Added inventory cleanup hook, clearing stock arrays, latest-version indexes, import preview, review and compatibility caches; increments both loader generations. Same-actor pending machine-link response cannot repopulate cleared state. Focused test passes;full265pass/40skip/0fail. Preserved existing clear hook order after a source-shape test caught changed prefix. Renderer-after-await guards and browser integration still pending; review branch only, no deployment or SQL. Numerical coverage not measured.
 
 21:54 UTC: REDec40441 three actual machine-link-loader tests reproduced stale success, error and overlapping-refresh writes (initial missing document fixture corrected before RED). Added actor/generation guard to that dependency. Three focused tests pass. Existing fixture now supplies its signed-in actor; full264pass/40skip/0fail. Auth cache clearing, post-await renderer guards and browser integration remain unfinished. Numerical coverage unmeasured; not deployed.

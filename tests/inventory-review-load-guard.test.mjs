@@ -10,7 +10,7 @@ function fixture(){
   document:{addEventListener(){},querySelectorAll(){return []}},$ :selector=>selector==='#content'?content:null,
   esc:String,client:{from:()=>query,rpc:async(name,args)=>{calls.push({name,args});return {data:{}}}},
   all:async table=>{if(table==='product_detail_reviews')throw Error('Correction connection unavailable');return [];},products:[{id:'p',name:'Raw source identity',source:{}}],
-  me:{role:'owner',user_id:'owner'},organizations:[],syncWorkspaceNavigation(){},message(){},
+  me:{role:'owner',user_id:'owner'},view:'inventory',organizations:[],syncWorkspaceNavigation(){},message(){},
   inventoryAvailableTotals:()=>({cartons:0,loose:0}),crypto:{randomUUID:()=> 'fixture-id'},
   FormData:class{constructor(form){this.fields=form.fields||{}}get(key){return this.fields[key]??''}}
  });
