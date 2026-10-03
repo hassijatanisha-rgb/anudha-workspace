@@ -4,9 +4,12 @@
 // are the way in, not the protection itself.
 
 // Returns true when the session still needs the code. Called by load() before any business data is read.
+// If the check itself fails, sign-in continues: the database still refuses data without the code.
 async function twoStepNeeded(){
- const level=await client.auth.mfa.getAuthenticatorAssuranceLevel();
- return !level.error&&level.data?.nextLevel==='aal2'&&level.data?.currentLevel!=='aal2';
+ try{
+  const level=await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  return !level.error&&level.data?.nextLevel==='aal2'&&level.data?.currentLevel!=='aal2';
+ }catch{return false;}
 }
 async function twoStepFactor(){
  const factors=await client.auth.mfa.listFactors();
