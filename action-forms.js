@@ -28,6 +28,7 @@ actionEditorForm.addEventListener('submit',async e=>{
 
 function actionForm(title,fields,onSubmit){
  if(actionSaving)return actionEditorForm;
+ if(!actionDialog.isConnected)document.body.append(actionDialog);
  actionEditorForm.reset();actionEditorForm.querySelector('#actionTitle').textContent=title;
  actionFields.replaceChildren();
  if(typeof fields==='string')actionFields.innerHTML=fields;else actionFields.append(fields);
