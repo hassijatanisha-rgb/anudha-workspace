@@ -10,6 +10,10 @@ Still required: independent PR11 review, browser/shared-dialog cleanup acceptanc
 
 ## Original diagnostic evidence
 
+Report follow-up full suite:275pass/40skip/0fail; syntax/diff checks pass. Coverage percentage not measured.
+
+08:51 UTC follow-up: report submission now uses the same session guard. RED af3db71 expanded the real callback fixture to action/report variants, reproducing six report failures; GREEN 760dc5e passes all16 mutation checks. Report validation and RPC payload are unchanged. The report renderer and RPC transport remain fixture substitutes; this is not a signed-report database or live permission test. New-case and shared-dialog lifecycle coverage are still outstanding. No production deployment.
+
 Base: 84ded0c, existing PR11 review worktree. No production edits or deployment.
 
 Journey: a save started by one user must not refresh or report its result in a different user's workspace; navigation away must not receive a stale service success notification.
