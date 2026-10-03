@@ -45,32 +45,52 @@ async function loadOrderTiming(panel){
  finally{if(current())button.disabled=false;}
 }
 function deliveryHistory(note){const events=salesDeliveryEvents.filter(event=>event.delivery_note_id===note.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));if(!events.length)return '';return `<details class="workflow-history"><summary>Who changed this order and when</summary>${events.map(event=>`<div><strong>${esc(salesStatus(event.to_status))}</strong><small>${esc(employeeName(event.actor_user_id))} · ${esc(new Date(event.created_at).toLocaleString('en-TZ'))}${event.reference?' · '+esc(event.reference):''}</small></div>`).join('')}</details>`}
+// Lines are loaded only for the Pro formas and delivery notes on screen, 100 parents and 1,000 rows at a time, so
+// the server's per-request row limit can never silently drop items.
+async function salesRowsFor(table,column,ids,order){
+ const out=[];
+ for(let i=0;i<ids.length;i+=100){
+  const chunk=ids.slice(i,i+100);
+  for(let offset=0;;offset+=1000){
+   let query=client.from(table).select('*').in(column,chunk);
+   if(order)query=query.order(order);
+   const result=await query.order('id').range(offset,offset+999);
+   if(result.error)return {error:result.error};
+   out.push(...(result.data||[]));
+   if((result.data||[]).length<1000)break;
+  }
+ }
+ return {data:out};
+}
 async function loadSalesDelivery(){
  const actor=me?.user_id;
  salesLoadError='';
  if(!inventoryLoaded)await loadInventoryOperations();
  const requests=await Promise.all([
   client.from('sales_proformas').select('*').order('created_at',{ascending:false}).limit(200),
-  client.from('sales_proforma_lines').select('*').order('sort_order'),
+  Promise.resolve({data:[]}),
   client.from('sales_proforma_events').select('*').order('created_at',{ascending:false}).limit(500),
   client.from('sales_delivery_notes').select('*,tax_invoice_reference').order('created_at',{ascending:false}).limit(200),
-  client.from('sales_delivery_lines').select('*'),
+  Promise.resolve({data:[]}),
   client.from('sales_delivery_events').select('*').order('created_at',{ascending:false}).limit(1000)
  ]);
  if(me?.user_id!==actor)return;
  const failed=requests.find(result=>result.error);
  if(failed){salesLoaded=false;salesLoadError=failed.error.message||'Sales workflow schema has not been installed.';return;}
  if(salesFocusedProforma&&!requests[0].data?.some(row=>row.id===salesFocusedProforma)){
-  const focus=salesFocusedProforma;
-  const [record,lines]=await Promise.all([
-   client.from('sales_proformas').select('*').eq('id',focus).single(),
-   client.from('sales_proforma_lines').select('*').eq('proforma_id',focus).order('sort_order')
-  ]);
+  const record=await client.from('sales_proformas').select('*').eq('id',salesFocusedProforma).single();
   if(me?.user_id!==actor)return;
-  if(record.error||lines.error||!record.data){salesLoaded=false;salesLoadError=record.error?.message||lines.error?.message||'Saved Pro forma unavailable.';return;}
+  if(record.error||!record.data){salesLoaded=false;salesLoadError=record.error?.message||'Saved Pro forma unavailable.';return;}
   requests[0].data=[record.data,...(requests[0].data||[])];
-  requests[1].data=[...(requests[1].data||[]).filter(row=>row.proforma_id!==focus),...(lines.data||[])];
  }
+ const [proformaLines,deliveryLines]=await Promise.all([
+  salesRowsFor('sales_proforma_lines','proforma_id',(requests[0].data||[]).map(row=>row.id),'sort_order'),
+  salesRowsFor('sales_delivery_lines','delivery_note_id',(requests[3].data||[]).map(row=>row.id))
+ ]);
+ if(me?.user_id!==actor)return;
+ const linesFailed=[proformaLines,deliveryLines].find(result=>result.error);
+ if(linesFailed){salesLoaded=false;salesLoadError=linesFailed.error.message||'Items could not load.';return;}
+ requests[1]=proformaLines;requests[4]=deliveryLines;
  [salesProformas,salesProformaLines,salesProformaEvents,salesDeliveryNotes,salesDeliveryLines,salesDeliveryEvents]=requests.map(result=>result.data||[]);salesLoaded=true;
 }
 function salesHeader(){return `<div class="heading"><div><small>ORDERS</small><h1>${salesSection==='delivery'?'Delivery progress':salesEditing==='new'?'Create Pro forma':'Pro formas'}</h1></div><button id="salesRefresh" type="button">Refresh list</button></div>`}
