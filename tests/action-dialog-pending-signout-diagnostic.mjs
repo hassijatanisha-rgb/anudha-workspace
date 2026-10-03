@@ -25,19 +25,24 @@ try{
  const state=await page.evaluate(()=>{
   me={user_id:'second'};
   window.newSaves=0;
-  actionForm('Second fixture','<input name="example">',async()=>{window.newSaves++});
+  window.newPending=new Promise(resolve=>{window.finishNewSave=resolve});
+  actionForm('Second fixture','<input name="example">',async()=>{window.newSaves++;await window.newPending});
   return {connected:actionDialog.isConnected,open:actionDialog.open,saving:actionSaving};
  });
  assert.deepEqual(state,{connected:true,open:true,saving:false},'old pending save must not block new-account forms');
  assert.equal(await page.locator('[name="example"]').inputValue(),'','old fields cleared');
+ await page.locator('#actionEditor button[type="submit"]').click();
+ await page.waitForFunction(()=>window.newSaves===1);
  await page.evaluate(async outcome=>{
   if(outcome==='resolve')window.finishOldSave();else window.failOldSave(new Error('Old private error'));
   await window.pendingSave.catch(()=>{});
  },outcome);
  assert.equal(await page.locator('#actionEditor').evaluate(el=>el.open),true,'old completion must not close new form');
  assert.equal(await page.locator('#actionError').textContent(),'','old errors must not appear');
- await page.locator('#actionEditor button[type="submit"]').click();
- await page.waitForFunction(()=>window.newSaves===1);
+ assert.equal(await page.locator('#actionEditor button[type="submit"]').isDisabled(),true,'old finally must not reenable pending new save');
+ assert.equal(await page.evaluate(()=>actionSaving),true,'new save remains pending');
+ await page.evaluate(async()=>{window.finishNewSave();await window.newPending});
+ await page.waitForFunction(()=>!actionDialog.open);
  assert.equal(await page.locator('#actionEditor').evaluate(el=>el.open),false,'new save closes its own form');
  await page.close();
  }
