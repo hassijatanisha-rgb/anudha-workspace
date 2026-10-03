@@ -7,27 +7,31 @@ const actionEditorForm=document.createElement('form');
 actionEditorForm.innerHTML='<h2 id="actionTitle"></h2><div id="actionFields"></div><p id="actionError" class="error" role="alert"></p><div class="actions"><button type="submit">Save</button><button type="button" id="actionCancel">Cancel</button></div>';
 actionDialog.append(actionEditorForm);
 document.body.append(actionDialog);
-let actionSubmit=null,actionSaving=false;
+let actionSubmit=null,actionSaving=false,actionGeneration=0;
 const actionFields=actionEditorForm.querySelector('#actionFields');
 const actionError=actionEditorForm.querySelector('#actionError');
 const actionSave=actionEditorForm.querySelector('[type="submit"]');
 const actionCancel=actionEditorForm.querySelector('#actionCancel');
 actionCancel.addEventListener('click',()=>{if(!actionSaving)actionDialog.close()});
 actionDialog.addEventListener('cancel',e=>{if(actionSaving)e.preventDefault()});
-actionDialog.addEventListener('close',()=>{actionSubmit=null});
+actionDialog.addEventListener('close',()=>{if(!actionDialog.open)actionSubmit=null});
 actionEditorForm.addEventListener('submit',async e=>{
  e.preventDefault();if(actionSaving||!actionSubmit)return;
  const values=Object.fromEntries(new FormData(actionEditorForm));
  for(const key of Object.keys(values))if(typeof values[key]==='string')values[key]=values[key].trim();
  for(const control of actionFields.querySelectorAll('[required]'))if(!values[control.name]){actionError.textContent='Complete '+(control.labels?.[0]?.textContent.trim()||'the required field')+'.';control.focus();return;}
  actionSaving=true;actionSave.disabled=true;actionCancel.disabled=true;actionSave.textContent='Saving…';actionError.textContent='';
- try{await actionSubmit(values);actionDialog.close()}
- catch(error){actionError.textContent=error.message||'Could not save. Please retry.'}
- finally{actionSaving=false;actionSave.disabled=false;actionCancel.disabled=false;actionSave.textContent='Save'}
+ const generation=actionGeneration;
+ const current=()=>generation===actionGeneration&&actionDialog.isConnected&&actionDialog.open;
+ try{await actionSubmit(values);if(current())actionDialog.close()}
+ catch(error){if(current())actionError.textContent=error.message||'Could not save. Please retry.'}
+ finally{if(generation===actionGeneration){actionSaving=false;actionSave.disabled=false;actionCancel.disabled=false;actionSave.textContent='Save'}}
 });
 
 function actionForm(title,fields,onSubmit){
+ if(!actionDialog.isConnected){actionGeneration++;actionSaving=false;actionSave.disabled=false;actionCancel.disabled=false;actionSave.textContent='Save';document.body.append(actionDialog)}
  if(actionSaving)return actionEditorForm;
+ actionGeneration++;
  actionEditorForm.reset();actionEditorForm.querySelector('#actionTitle').textContent=title;
  actionFields.replaceChildren();
  if(typeof fields==='string')actionFields.innerHTML=fields;else actionFields.append(fields);
