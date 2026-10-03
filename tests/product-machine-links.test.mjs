@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync,existsSync} from 'node:fs';
 function fixture(){
- const ctx=vm.createContext({document:{addEventListener(){}},all:async()=>[],esc:String});
+ const ctx=vm.createContext({me:{user_id:'fixture'},document:{addEventListener(){}},all:async()=>[],esc:String});
  const path=new URL('../product-machine-links.js',import.meta.url);
  if(existsSync(path))vm.runInContext(readFileSync(path,'utf8'),ctx);
  return ctx;
