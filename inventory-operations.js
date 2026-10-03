@@ -7,8 +7,11 @@ function inventoryProduct(id){const product=products.find(row=>row.id===id);retu
 function inventorySelectableProducts(){return products.filter(p=>!p.deleted_at).map(reviewedCatalogProduct).sort((a,b)=>a.name.localeCompare(b.name))}
 function inventoryLocation(id){return inventoryLocations.find(row=>row.id===id)||{name:'Unknown godown',code:''}}
 function inventoryPack(id){return inventoryPacks.find(row=>row.id===id)||{base_unit:'unit',units_per_carton:0,version:0}}
-function inventoryLatestPack(productId){return inventoryPacks.filter(row=>row.product_id===productId).sort((a,b)=>b.version-a.version)[0]}
-function inventoryClassification(productId){return inventoryClassifications.filter(row=>row.product_id===productId).sort((a,b)=>b.version-a.version)[0]}
+// Latest version per product, rebuilt when inventory loads, so lookups stay instant with thousands of products.
+let inventoryLatestPacks=new Map(),inventoryLatestClassifications=new Map();
+function inventoryLatestBy(rows){const latest=new Map();for(const row of rows)if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);return latest}
+function inventoryLatestPack(productId){return inventoryLatestPacks.get(productId)}
+function inventoryClassification(productId){return inventoryLatestClassifications.get(productId)}
 function inventoryOption(value,label,selected=false){return `<option value="${esc(value)}" ${selected?'selected':''}>${esc(label)}</option>`}
 function inventoryDate(){return new Date().toISOString().slice(0,10)}
 function inventoryProductIdentity(product){const source=product.source||{};return `${product.name} · ${source.company||'Manufacturer needs review'} · ${source.specification||source.model||'Specification needs review'}${product.sku?' · '+product.sku:''}`}
@@ -21,17 +24,18 @@ async function loadInventoryOperations(){
  if(typeof loadProductMachineLinks==='function')await loadProductMachineLinks();
  try{const reviews=await all('product_detail_reviews','*'),latest=new Map();for(const row of reviews){if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);}productDetailReviews=latest;productReviewLoadError='';}catch(error){productReviewLoadError=error.message||'Connection unavailable';}
  const requests=await Promise.all([
-  client.from('inventory_locations').select('*').order('name'),
-  client.from('product_pack_definitions').select('*').order('created_at',{ascending:false}),
-  client.from('inventory_lots').select('*').order('updated_at',{ascending:false}),
+  // Paged loads: these tables can pass the server's 1,000-rows-per-request limit.
+  all('inventory_locations','*').then(data=>({data:data.sort((a,b)=>String(a.name).localeCompare(String(b.name)))}),error=>({error})),
+  all('product_pack_definitions','*').then(data=>({data:data.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))}),error=>({error})),
+  all('inventory_lots','*').then(data=>({data:data.sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)))}),error=>({error})),
   client.from('inventory_transfers').select('*').order('created_at',{ascending:false}).limit(200),
   client.from('inventory_issues').select('*').order('issued_on',{ascending:false}).limit(200),
   client.from('inventory_movements').select('*').order('created_at',{ascending:false}).limit(200),
-  client.from('product_inventory_classifications').select('*').order('created_at',{ascending:false})
+  all('product_inventory_classifications','*').then(data=>({data}),error=>({error}))
  ]);
  const failed=requests.find(result=>result.error);
  if(failed){inventoryLoaded=false;inventoryLoadError=failed.error.message||'Inventory schema has not been installed.';return;}
- [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryMovements,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLoaded=true;
+ [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryMovements,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLatestPacks=inventoryLatestBy(inventoryPacks);inventoryLatestClassifications=inventoryLatestBy(inventoryClassifications);inventoryLoaded=true;
 }
 function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY</small><h1>${({stock:'Stock & availability',transfers:'Move stock',locations:'Godowns & locations',review:'Tally stock review',catalog:'Products'})[inventorySection]||'Stock'}</h1></div><button id="inventoryRefresh" type="button">Refresh list</button></div>`}
 function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory database setup required</h2><p class="warning">The inventory schema has not been installed in Supabase yet. Client sorting stays available, and no fake stock balance will be shown.</p><p class="muted">${esc(inventoryLoadError)}</p><p>An owner must run <code>supabase/migrations/202609210001_inventory_foundation.sql</code> once in the project SQL editor, then refresh this page.</p></section>`}

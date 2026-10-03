@@ -9,7 +9,7 @@ function fixture(){
  const ctx=vm.createContext({
   document:{addEventListener(){},querySelectorAll(){return []}},$ :selector=>selector==='#content'?content:null,
   esc:String,client:{from:()=>query,rpc:async(name,args)=>{calls.push({name,args});return {data:{}}}},
-  all:async()=>{throw Error('Correction connection unavailable')},products:[{id:'p',name:'Raw source identity',source:{}}],
+  all:async table=>{if(table==='product_detail_reviews')throw Error('Correction connection unavailable');return [];},products:[{id:'p',name:'Raw source identity',source:{}}],
   me:{role:'owner',user_id:'owner'},organizations:[],syncWorkspaceNavigation(){},message(){},
   inventoryAvailableTotals:()=>({cartons:0,loose:0}),crypto:{randomUUID:()=> 'fixture-id'},
   FormData:class{constructor(form){this.fields=form.fields||{}}get(key){return this.fields[key]??''}}
@@ -39,7 +39,7 @@ test('stale stock and transfer forms cannot call any RPC after correction loadin
 
 test('stock submissions remain blocked while a correction refresh is pending',async()=>{
  const {ctx,calls}=fixture();let release;
- ctx.all=()=>new Promise(resolve=>{release=resolve});
+ ctx.all=table=>table==='product_detail_reviews'?new Promise(resolve=>{release=resolve}):Promise.resolve([]);
  const pending=ctx.loadInventoryOperations();
  ctx.inventoryWorkspace=async()=>{};
  await assert.rejects(ctx.submitInventoryForm({dataset:{inventoryAction:'request'}}),/Refresh product corrections/);
@@ -49,7 +49,7 @@ test('stock submissions remain blocked while a correction refresh is pending',as
 
 test('a successful retry restores stock and transfer forms and submission',async()=>{
  const {ctx,content,calls}=fixture();await ctx.inventoryWorkspace(true);
- ctx.all=async()=>[{product_id:'p',version:1,name:'Reviewed identity',company:'Maker',specification:'Model'}];
+ ctx.all=async table=>table==='product_detail_reviews'?[{product_id:'p',version:1,name:'Reviewed identity',company:'Maker',specification:'Model'}]:[];
  await ctx.inventoryWorkspace(true);
  assert.match(content.innerHTML,/data-inventory-action="pack"/);
  assert.match(content.innerHTML,/Reviewed identity/);
