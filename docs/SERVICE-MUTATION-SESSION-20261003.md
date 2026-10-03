@@ -10,6 +10,10 @@ Still required: independent PR11 review, browser/shared-dialog cleanup acceptanc
 
 ## Original diagnostic evidence
 
+13:44 UTC integration: main8618384 merged without conflict as87e9cdd, preserving Claude's request-timeout and read-policy updates. Full285pass/40skip/0fail. PR11 still had no reviews at check. No Supabase migration applied by this run.
+
+Isolated Chrome now passes the service loader fixture and new tests/service-action-browser.mjs. The latter executes the actual shared dialog initialization/actionForm plus actual service action callback: normal save closes/notifies; account change/navigation suppress stale results; current RPC error stays in the open dialog. Browser uses fictional identities/RPC responses and no live auth. Sandbox Chrome initially aborted; authorized out-of-sandbox isolated runs passed. This clears the earlier launch blocker for these fixtures, not all browser acceptance. Report/new-job browser coverage, auth-driven dialog clearing before response, visual/a11y baseline, real permissions and deployed verification remain unproven. Verdict: do not ship as fully verified service workflow.
+
 12:40 UTC follow-up: new-case submission is now covered by the actual bindServiceWorkflow handler with disposable DOM/FormData/RPC substitutes. REDef154cc reproduced six additional failures; GREEN2544ea3 guards before send and after RPC/refresh, preserving current errors. All24 mutation checks pass. Full suite283pass/40skip/0fail and syntax/diff checks pass. No browser or Supabase permission proof; shared-dialog lifecycle, retry-ID persistence on new-case creation, and live verification remain separate gaps. No changes to stock, fiscal prerequisites or payloads.
 
 Report follow-up full suite:275pass/40skip/0fail; syntax/diff checks pass. Coverage percentage not measured.
