@@ -18,11 +18,15 @@ function inventoryProductIdentity(product){const source=product.source||{};retur
 function inventoryProductChoice(product){return `${inventoryProductIdentity(product)} · ${product.id}`}
 function inventoryProductChoices(){return inventorySelectableProducts().map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
 function inventoryProductFromChoice(choice){return inventorySelectableProducts().find(product=>inventoryProductChoice(product)===choice)}
+let inventoryLoadGeneration=0;
 async function loadInventoryOperations(){
+ const actor=me,actorId=me?.user_id,generation=++inventoryLoadGeneration;
+ const current=()=>me===actor&&me?.user_id===actorId&&generation===inventoryLoadGeneration;
  inventoryLoadError='';
  productReviewLoadError='Product corrections are loading. Please wait.';
  if(typeof loadProductMachineLinks==='function')await loadProductMachineLinks();
- try{const reviews=await all('product_detail_reviews','*'),latest=new Map();for(const row of reviews){if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);}productDetailReviews=latest;productReviewLoadError='';}catch(error){productReviewLoadError=error.message||'Connection unavailable';}
+ if(!current())return;
+ try{const reviews=await all('product_detail_reviews','*');if(!current())return;const latest=new Map();for(const row of reviews){if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);}productDetailReviews=latest;productReviewLoadError='';}catch(error){if(!current())return;productReviewLoadError=error.message||'Connection unavailable';}
  const requests=await Promise.all([
   // Paged loads: these tables can pass the server's 1,000-rows-per-request limit.
   all('inventory_locations','*').then(data=>({data:data.sort((a,b)=>String(a.name).localeCompare(String(b.name)))}),error=>({error})),
@@ -33,6 +37,7 @@ async function loadInventoryOperations(){
   client.from('inventory_movements').select('*').order('created_at',{ascending:false}).limit(200),
   all('product_inventory_classifications','*').then(data=>({data}),error=>({error}))
  ]);
+ if(!current())return;
  const failed=requests.find(result=>result.error);
  if(failed){inventoryLoaded=false;inventoryLoadError=failed.error.message||'Inventory schema has not been installed.';return;}
  [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryMovements,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLatestPacks=inventoryLatestBy(inventoryPacks);inventoryLatestClassifications=inventoryLatestBy(inventoryClassifications);inventoryLoaded=true;

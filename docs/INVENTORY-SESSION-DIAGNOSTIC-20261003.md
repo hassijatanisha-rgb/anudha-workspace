@@ -1,5 +1,7 @@
 # Inventory loader session diagnostic
 
+20:51 follow-up: isolated fix/inventory-session-20261003 based on main d5dd630; RED7350e67 reproduced failure before production edit. Added actor-object/ID and generation checks after loader awaits, before applying review success/errors or inventory results. Same diagnostic now passes. Full native suite257pass/40skip/0fail; diff clean. Coverage not measured. This is a partial loader fix only: existing cache clearing on auth changes, workspace rendering after awaits, product-machine-links' own side effects, overlapping loads, and browser acceptance remain required before release. No production deployment or SQL changes.
+
 20:18 UTC, base ccc3d01 including main d5dd630. Executed actual inventory-operations.js in Node VM with fictional deferred inventory_locations read. Switch me from first to second user while read is pending, then release old response. Assertion fails: inventoryLocations length1, expected0. Old response populates shared cache. No production data, browser exposure or database authorization bypass demonstrated.
 
 Run: node tests/inventory-session-diagnostic.mjs. Deliberately outside default test glob; reproduced, not fixed/deployed. Next implementation should isolate inventory loading by actor and generation, clear inventory caches on auth cleanup, and guard rendering after awaits. Check product corrections/compatibility loaders too; guarding only final assignment is insufficient. Keep independent inventory fix separate from service PR implementation.
