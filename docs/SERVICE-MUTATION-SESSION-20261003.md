@@ -1,0 +1,14 @@
+# Service mutation session acceptance — RED diagnostic
+
+Base: 84ded0c, existing PR11 review worktree. No production edits or deployment.
+
+Journey: a save started by one user must not refresh or report its result in a different user's workspace; navigation away must not receive a stale service success notification.
+
+Command: `node --test tests/service-mutation-session.mjs`.
+Result: 1 pass, 2 fail. Same-account control passes. After switching accounts, the real openServiceAction callback calls serviceWorkspace under the second actor. After switching to Clients, it still emits “Service job updated: in_progress.”
+
+Initial fixture lacked serviceStatusLabel and failed with ReferenceError; corrected before recording behavioral failures. RPC is deferred and fictional; serviceWorkspace is a spy, not the full renderer. This proves callback dispatch behavior, not unauthorized database access or production data leakage.
+
+Next: capture mutation actor/session and view context, guard before submission and after awaits, cover errors and report/new-case callbacks plus shared dialog cleanup. Preserve concurrent clear hooks. Do not suppress genuine current-session errors or imply an already-sent RPC was cancelled.
+
+Status: reproduced, not fixed, not deployed. Diagnostic intentionally remains outside default `*.test.mjs` glob and must run explicitly; it is not a release pass. Coverage and browser acceptance outstanding.
