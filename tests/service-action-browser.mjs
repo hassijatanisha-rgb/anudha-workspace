@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE,timeout:45000});
 try{
- for(const workflow of ['action','report'])for(const mode of ['success','account-change','navigation','error']){
+ for(const workflow of ['action','report','installation'])for(const mode of ['success','account-change','navigation','error']){
   const page=await browser.newPage();await page.route('**/*',route=>route.abort());
   await page.setContent('<main id="content">Service fixture</main><p id="notice"></p>');
   await page.addScriptTag({content:`
@@ -21,26 +21,42 @@ try{
   await page.addScriptTag({content:readFileSync(new URL('../service-workflow.js',import.meta.url),'utf8')});
   await page.evaluate(workflow=>{
    serviceWorkspace=async()=>{};
-   if(workflow==='report'){
+   if(workflow!=='action'){
     serviceTeam=[{user_id:'engineer',active:true}];
-    openServiceReport({id:'fixture',version:1,case_number:'Fixture',case_type:'service',assigned_user_id:'engineer'});
+    openServiceReport({id:'fixture',version:1,case_number:'Fixture',case_type:workflow==='installation'?'installation':'service',assigned_user_id:'engineer'});
    }else openServiceAction({id:'fixture',version:1,case_number:'Fixture'},'start');
   },workflow);
-  if(workflow==='report'){
+  if(workflow!=='action'){
    await page.getByRole('button',{name:'Save',exact:true}).click();
    assert.equal(await page.evaluate(()=>rpcCount),0,'required fields block empty submission');
    for(const name of ['engineerName','model','serial','location','workCompleted','customerRepresentative','customerReference','anudhaRepresentative','anudhaReference']){
     await page.locator('[name="'+name+'"]').fill('Fixture '+name);
    }
+   if(workflow==='installation'){
+    await page.locator('[name="attendees"]').fill('Fixture trainee');
+    await page.locator('[name="training"]').selectOption('no');
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    assert.match(await page.locator('#actionError').innerText(),/training was completed/);
+    assert.equal(await page.evaluate(()=>rpcCount),0);
+    await page.locator('[name="training"]').selectOption('yes');
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    assert.match(await page.locator('#actionError').innerText(),/Every attendee needs/);
+    assert.equal(await page.evaluate(()=>rpcCount),0);
+    await page.locator('[name="attendees"]').fill('Fixture trainee | 0000000000 | Fixture operator');
+   }
   }else await page.getByLabel('Progress note').fill('Fictional service update');
   await page.getByRole('button',{name:'Save',exact:true}).click();
   await page.waitForFunction(()=>rpcCount===1);
-  if(workflow==='report'){
+  if(workflow!=='action'){
    const sent=await page.evaluate(()=>lastPayload);
    assert.equal(sent.name,'complete_service_report');
    assert.equal(sent.payload.p_actual_engineer_id,'engineer');
    assert.equal(sent.payload.p_customer_signoff_reference,'Fixture customerReference');
-   assert.equal(sent.payload.p_training_completed,false);
+   assert.equal(sent.payload.p_training_completed,workflow==='installation');
+   if(workflow==='installation'){
+    assert.equal(sent.payload.p_qc_training_status,'completed');
+    assert.deepEqual(sent.payload.p_attendees,[{full_name:'Fixture trainee',telephone:'0000000000',designation:'Fixture operator'}]);
+   }
    assert.equal(sent.payload.p_service_charge_minor,0);
   }
   await page.evaluate(mode=>{
@@ -54,12 +70,12 @@ try{
    assert.equal(await page.locator('#actionEditor').evaluate(el=>el.open),true);
   }else{
    assert.equal(await page.locator('#actionEditor').evaluate(el=>el.open),false);
-   const success=workflow==='report'?'Signed report saved. The next maintenance job is now on the service schedule.':'Service job updated: on_site.';
+   const success=workflow!=='action'?'Signed report saved. The next maintenance job is now on the service schedule.':'Service job updated: on_site.';
    assert.equal(await page.locator('#notice').innerText(),mode==='success'?success:'');
    if(mode==='account-change')assert.equal(await page.locator('#content').innerText(),'Second account');
    if(mode==='navigation')assert.equal(await page.locator('#content').innerText(),'Clients');
   }
   await page.close();
  }
- console.log('PASS: eight isolated Chrome action/report dialog cases; required report fields, selected payload fields, current errors and stale account/navigation outcomes verified. No live auth/database.');
+ console.log('PASS: twelve isolated Chrome action/service/installation dialog cases, including training and attendee validation; no live auth/database.');
 }finally{await browser.close();}
