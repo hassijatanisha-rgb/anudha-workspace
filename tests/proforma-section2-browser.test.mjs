@@ -33,8 +33,8 @@ async function fixture(t){
   window.client={from:table=>{
    const query={},filters=[];let bounds=null,limit=null,single=false;
    for(const method of ['select','order'])query[method]=()=>query;
-   query.eq=(key,value)=>{filters.push([key,value]);return query};query.range=(start,end)=>{bounds=[start,end];return query};query.limit=value=>{limit=value;return query};query.single=()=>{single=true;return query};
-   query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[];data=data.filter(row=>filters.every(([key,value])=>row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
+   query.eq=(key,value)=>{filters.push([key,value]);return query};query.in=(key,values)=>{filters.push([key,values,'in']);return query};query.range=(start,end)=>{bounds=[start,end];return query};query.limit=value=>{limit=value;return query};query.single=()=>{single=true;return query};
+   query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[];data=data.filter(row=>filters.every(([key,value,kind])=>kind==='in'?value.includes(row[key]):row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
   },rpc:async(name,args)=>{
    if(name==='accounting_access'){accessChecks++;return {data:accountingAllowed}}
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
