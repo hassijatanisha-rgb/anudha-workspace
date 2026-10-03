@@ -14,10 +14,18 @@ function fixture(mode){
   client:{rpc(...args){calls.push(args);return new Promise((done,fail)=>{resolve=done;reject=fail;});}}});
  vm.runInContext(readFileSync(new URL('../service-workflow.js',import.meta.url),'utf8'),ctx);
  ctx.serviceWorkspace=async()=>{refreshes.push(ctx.me?.user_id);};
- if(mode==='report'){ctx.reportFields=()=>'';ctx.openServiceReport({id:'fictional',version:1,case_type:'service'});}else ctx.openServiceAction({id:'fictional',version:1,case_number:'Fixture'},'start');
+ if(mode==='create'){
+  let handler,task;
+  const form={elements:{namedItem(){return {addEventListener(){}};}},addEventListener(type,callback){if(type==='submit')handler=callback;}};
+  ctx.document={querySelectorAll:()=>[]};ctx.$=selector=>selector==='#newServiceCase'?form:null;
+  ctx.contacts=[];ctx.crypto={randomUUID:()=> 'fictional-id'};
+  ctx.FormData=class{constructor(form){assert.ok(form);return [['assetId','fixture-asset'],['contactId',''],['problem','Fixture repair']];}};
+  ctx.run=callback=>{task=callback();return task;};
+  ctx.bindServiceWorkflow();submit=()=>{handler({preventDefault(){},currentTarget:form});return task;};
+ }else if(mode==='report'){ctx.reportFields=()=>'';ctx.openServiceReport({id:'fictional',version:1,case_type:'service'});}else ctx.openServiceAction({id:'fictional',version:1,case_number:'Fixture'},'start');
  return {ctx,messages,refreshes,calls,submit:()=>submit({note:'Fixture only',serviceCharge:'0',interval:'3'}),finish:(error=null)=>resolve({data:{status:'in_progress'},error}),fail:()=>reject(Error('Fixture transport failure'))};
 }
-for(const mode of ['action','report']){
+for(const mode of ['action','report','create']){
 test(mode+': '+'same-account service mutation reports completion',async()=>{
  const f=fixture(mode),pending=f.submit();f.finish();await pending;
  assert.equal(f.messages.length,1);assert.deepEqual(f.refreshes,['first']);
