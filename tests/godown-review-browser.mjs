@@ -28,10 +28,24 @@ try{
  assert.equal(await page.locator('#tallyFile').count(),0);
  assert.equal(await page.locator('#godownReadiness tbody tr').count(),2);
  assert.ok((await page.locator('#godownReadiness').textContent()).includes('not that stock has been imported'));
+ assert.equal(await page.locator('[data-location-ready="false"]').count(),2);
+ await page.evaluate(()=>{tallyLocationReviews=[{source_godown:'City Printer',version:1,location_id:'loc'}];tallyLocations=[{id:'loc',name:'Verified Warehouse',active:true}];renderTallyStock();});
+ assert.equal(await page.locator('[data-location-ready="true"]').count(),1);
+ assert.equal(await page.locator('[data-location-ready="true"]').textContent(),'Verified Warehouse');
+ await page.evaluate(()=>{tallyLocationReviews.push({source_godown:'City Printer',version:2,location_id:null});renderTallyStock();});
+ assert.equal(await page.locator('[data-location-ready="true"]').count(),0);
+ assert.ok((await page.locator('#godownReadiness').textContent()).includes('Unresolved — do not import'));
  assert.equal(await page.evaluate(()=>window.checklistRuns),1,'search, filters and pagination must reuse the unchanged checklist');
  await page.addScriptTag({content:`let inventorySection='review';async function all(table){return table==='tally_stock_sources'?[{id:'new',godown:'Reloaded godown',product_name:'New source',quantity:1,unit:'PCS'}]:[];}`});
  await page.evaluate(()=>tallyStockScreen());
  assert.equal(await page.evaluate(()=>window.checklistRuns),2,'reloading data after a correction must recalculate');
  assert.match(await page.locator('#godownReadiness').innerText(),/Reloaded godown/);
+ await page.evaluate(()=>{tallyRows.push({id:'blank',godown:'',product_name:'Unplaced item',quantity:1,unit:'PCS'});tallyReadiness=null;renderTallyStock();});
+ const blank=page.locator('#godownReadiness tbody tr').filter({hasText:'Missing godown — needs correction'});
+ assert.equal(await blank.locator('[data-location-ready]').textContent(),'Missing source godown');
+ await page.evaluate(()=>{tallyRows.push({id:'spaces',godown:'   ',product_name:'Whitespace location',quantity:1,unit:'PCS'});tallyReadiness=null;renderTallyStock();});
+ const whitespace=page.locator('#godownReadiness tbody tr[data-source-godown="   "]');
+ assert.equal(await whitespace.locator('td').first().textContent(),'Missing godown — needs correction');
+ assert.equal(await whitespace.locator('[data-location-ready]').textContent(),'Missing source godown');
  console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
 }finally{await browser.close();}
