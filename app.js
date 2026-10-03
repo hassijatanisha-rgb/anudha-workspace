@@ -93,7 +93,7 @@ function timedFetch(url,options={}){
 }
 function friendlyError(e){
  const text=String(e?.message||'');
- if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. Nothing more was saved. Check your connection and try again.';
+ if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. We could not confirm the result. Reconnect and check the record before submitting again.';
  return text||'Something went wrong. Please retry.';
 }
 async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false}}
