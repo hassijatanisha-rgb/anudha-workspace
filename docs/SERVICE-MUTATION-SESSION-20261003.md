@@ -10,6 +10,8 @@ Still required: independent PR11 review, browser/shared-dialog cleanup acceptanc
 
 ## Original diagnostic evidence
 
+12:40 UTC follow-up: new-case submission is now covered by the actual bindServiceWorkflow handler with disposable DOM/FormData/RPC substitutes. REDef154cc reproduced six additional failures; GREEN2544ea3 guards before send and after RPC/refresh, preserving current errors. All24 mutation checks pass. Full suite283pass/40skip/0fail and syntax/diff checks pass. No browser or Supabase permission proof; shared-dialog lifecycle, retry-ID persistence on new-case creation, and live verification remain separate gaps. No changes to stock, fiscal prerequisites or payloads.
+
 Report follow-up full suite:275pass/40skip/0fail; syntax/diff checks pass. Coverage percentage not measured.
 
 08:51 UTC follow-up: report submission now uses the same session guard. RED af3db71 expanded the real callback fixture to action/report variants, reproducing six report failures; GREEN 760dc5e passes all16 mutation checks. Report validation and RPC payload are unchanged. The report renderer and RPC transport remain fixture substitutes; this is not a signed-report database or live permission test. New-case and shared-dialog lifecycle coverage are still outstanding. No production deployment.
