@@ -195,3 +195,9 @@ The files were applied as committed, minus their own `begin;`/`commit;` lines, b
 - Two older owner checks (the Questions for the owner page) now use the same shared check.
 - Checked live inside a rolled-back transaction: owner and staff access unchanged.
 - The 8-user test found and fixed a travel form bug: saving failed because a variable named `client` hid the database connection.
+
+## Migration 059 and freeze protection (applied 3 October)
+
+- **Read rules checked once per request (migration 059, applied).** 32 read rules ran the "is this person active staff" check once for every row read. Since two-step sign-in, that check also looks up the person's authenticator, so a list of about 4,750 Pro formas took about 0.44 s of database time when idle and about 2 s under load. Wrapping the check as `(select …)` runs it once per request: about 5 ms. The rules give the same answers. Checked on the test copy (staff, accounts, owner, owner with two-step with and without the code, not on staff) and live inside a rolled-back transaction (owner and staff see 9,540 clients; an unknown login sees none).
+- **No more frozen screens.** Every server request now has a time limit (45 s; 3 minutes for file uploads). A request that hangs, for example on a phone losing signal, is stopped and staff see "Connection problem: the server did not answer. Check your connection and press Refresh." Before this, the app stayed "working" and ignored every click until reloaded. Tested in a browser with a request that never answers: the app recovered by itself after about 47 s and the menu worked again.
+- **The two-step check can't block sign-in.** If the check itself fails, sign-in continues; the database still refuses data without the code.
