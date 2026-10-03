@@ -1,4 +1,14 @@
-# Service mutation session acceptance — RED diagnostic
+# Service mutation session acceptance
+
+## Action callback fix — local only
+
+RED checkpoint 5ffaff4: expanded executable Node test to eight cases, six behavioral failures and two controls passing. GREEN a13d852: service action forms capture actor identity and a clear-invalidated mutation generation; reject stale submission locally, check context after RPC and refresh, and suppress stale errors/results while preserving current-session errors. An already-sent RPC is not cancelled. No SQL, credentials, access changes or stock writes.
+
+`node --test tests/service-mutation-session.test.mjs tests/service-session.test.mjs tests/service-domain.test.mjs tests/service-workflow-ui.test.mjs tests/service-print-cleanup.test.mjs`: 16 pass. Full `node --test tests/*.test.mjs`: 267 pass, 40 skip, zero failures. Syntax and diff checks pass. The new test is now in the default test glob. Numerical coverage is not measured; these VM/fixture checks do not certify browser sessions or database permissions.
+
+Still required: independent PR11 review, browser/shared-dialog cleanup acceptance, report and new-case callback protection, current-main integration and live verification. Existing loader browser launch failure remains unresolved. No deployment claimed.
+
+## Original diagnostic evidence
 
 Base: 84ded0c, existing PR11 review worktree. No production edits or deployment.
 
