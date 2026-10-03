@@ -33,3 +33,17 @@ test('sign-in asks for the code before loading any data, and only the owner serv
  assert.ok(fn.indexOf("rpc('is_owner')")<fn.indexOf('reset_two_step'),'reset runs only after the owner check');
  assert.match(fn,/mfa\.deleteFactor/);
 });
+test('a failing two-step check never stops sign-in',async()=>{
+ const ctx=vm.createContext({client:{auth:{mfa:{getAuthenticatorAssuranceLevel:async()=>{throw Error('Invalid JWT structure')}}}}});
+ vm.runInContext(source,ctx);assert.equal(await ctx.twoStepNeeded(),false);
+});
+test('every request has a time limit and a timeout reads plainly',()=>{
+ const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+ assert.match(app,/global:\{fetch:timedFetch\}/);
+ const fns=app.split('\n').filter(l=>/^function (requestTimeLimit|friendlyError)/.test(l)||l.startsWith(' if(e?.name')||l.startsWith(' const text')||l.startsWith(' return text'));
+ const ctx=vm.createContext({});vm.runInContext(app.slice(app.indexOf('function requestTimeLimit'),app.indexOf('async function run(')),ctx);
+ assert.equal(ctx.requestTimeLimit('https://x.supabase.co/rest/v1/staff'),45000);assert.equal(ctx.requestTimeLimit('https://x.supabase.co/storage/v1/object/a'),180000);
+ assert.match(ctx.friendlyError({name:'TimeoutError',message:'signal timed out'}),/slow or offline/);
+ assert.match(ctx.friendlyError({message:'TypeError: Failed to fetch'}),/slow or offline/);
+ assert.equal(ctx.friendlyError({message:'Task changed; refresh'}),'Task changed; refresh');
+});

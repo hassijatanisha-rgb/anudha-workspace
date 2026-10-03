@@ -79,7 +79,24 @@ async function addProduct(){
  search='';page=0;await load();message('Product saved.');
 }
 async function staff(){if(me.role!=='owner'){view='contacts';return render()}$('#content').innerHTML=`<h1>Staff</h1><section class="card"><h2>Staff logins</h2><button type="button" id="addEmployee">Add employee</button> <button type="button" id="employeeNameEditor">Set employee name</button><p class="muted">Add employee gives the person a login made from their name and a temporary password. They choose their own password the first time they sign in.</p><details><summary>Turn a login on or off by email</summary><form id="staffForm">${field('email','Staff email address','','email',true)}<label><span>Role</span><select name="role"><option>staff</option><option>owner</option></select></label><label><span>Access</span><select name="active"><option value="true">Active</option><option value="false">Disabled</option></select></label><button type="submit">Save staff access</button></form></details><div id="staffList"></div></section><details class="card"><summary>One-time data import</summary><p class="muted">Only used when the system is first set up. Records already in the system are not duplicated.</p><label><span>Clients, contacts and products file</span><input id="import" type="file" accept="application/json"></label><p id="importStatus"></p><label><span>Setup checklist file</span><input id="checklistImport" type="file" accept="application/json"></label></details>`;$('#employeeNameEditor').onclick=openEmployeeNameEditor;$('#addEmployee').onclick=()=>run(async()=>openStaffOnboarding());const r=await client.from('staff').select('user_id,role,active,phone,department');if(r.error)throw r.error;$('#staffList').innerHTML=staffListHtml(r.data);bindStaffList();if(typeof decorateStaffTwoStep==='function')decorateStaffTwoStep().catch(()=>{});if(typeof renderWorkStepOwners==='function')renderWorkStepOwners($('#staffList').closest('section')).catch(()=>{});$('#checklistImport').onchange=e=>run(async()=>{const rows=JSON.parse(await e.target.files[0].text());const result=await client.rpc('import_checklist',{p_rows:rows});if(result.error)throw result.error;message('Checklist loaded.');});$('#staffForm').onsubmit=e=>{e.preventDefault();run(async()=>{const f=new FormData(e.target);const r=await client.rpc('manage_staff_email',{p_email:f.get('email'),p_role:f.get('role'),p_active:f.get('active')==='true'});if(r.error)throw r.error;await staff();message('Staff membership saved.')})};$('#import').onchange=e=>run(async()=>{const d=JSON.parse(await e.target.files[0].text());if(!Array.isArray(d.organizations)||!Array.isArray(d.contacts)||!Array.isArray(d.products))throw Error('Choose the prepared import file.');if(!confirm(`Import ${d.organizations.length} organisations, ${d.contacts.length} contacts and ${d.products.length} products into this private workspace?`))return;for(const kind of ['organizations','contacts','products'])for(let i=0;i<d[kind].length;i+=250){$('#importStatus').textContent=`Importing ${kind}: ${i} / ${d[kind].length}`;const r=await client.rpc('import_records',{['p_'+kind]:d[kind].slice(i,i+250)});if(r.error)throw Error(`Import stopped at ${kind} row ${i}. Completed batches are safe to retry. ${r.error.message}`)}await load();message('Import complete.');})}
-async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(e.message||'Something went wrong. Please retry.',true)}finally{busy=false}}
+// Every server request gets a time limit, so a lost connection shows a message instead of leaving the app stuck
+// "working" with every button ignored. Uploads and downloads of files get longer.
+function requestTimeLimit(url){return /\/storage\/v1\//.test(String(url))?180000:45000}
+function timedFetch(url,options={}){
+ const limit=AbortSignal.timeout(requestTimeLimit(url));
+ const signal=options.signal&&AbortSignal.any?AbortSignal.any([options.signal,limit]):options.signal||limit;
+ // A stopped request reads as "Connection problem: …" wherever a page shows the error.
+ return fetch(url,{...options,signal}).catch(error=>{
+  if(options.signal?.aborted&&!limit.aborted)throw error;
+  const plain=new Error('the server did not answer. Check your connection and press Refresh.');plain.name='Connection problem';throw plain;
+ });
+}
+function friendlyError(e){
+ const text=String(e?.message||'');
+ if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. Nothing more was saved. Check your connection and try again.';
+ return text||'Something went wrong. Please retry.';
+}
+async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false}}
 $('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};
 $('#closeEditor').onclick=()=>$('#editor').close();
 document.addEventListener('click',e=>{
@@ -109,7 +126,7 @@ document.addEventListener('click',e=>{
  else if(b.id==='ungroupAccount'){const r=await client.rpc('set_organization_parent',{p_id:selected,p_parent_id:null});if(r.error)throw r.error;invalidateLocalApproval(orgIndex.get(selected).parent_id);orgIndex.get(selected).parent_id=null;invalidateLocalApproval(selected);scan();render();message('Branch removed from group.');}
  });
 });
-(async()=>{const cfg=window.ERP_CONFIG;if(!cfg?.url||!cfg?.key)return setup();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(cfg.url))return setup();client=supabase.createClient(cfg.url,cfg.key,{auth:{storage:sessionStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){clear();login()}});await run(load)})();
+(async()=>{const cfg=window.ERP_CONFIG;if(!cfg?.url||!cfg?.key)return setup();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(cfg.url))return setup();client=supabase.createClient(cfg.url,cfg.key,{auth:{storage:sessionStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},global:{fetch:timedFetch}});client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){clear();login()}});await run(load)})();
 
 async function checklist(){
  const r=await client.from('feature_checklist').select('*').order('id');if(r.error)throw r.error;
