@@ -11,6 +11,11 @@ function tallyGodownReview(source,corrections,godown,search){
   rows:scoped.filter(r=>[r.product_name,r.godown,r.unit].join(' ').toLowerCase().includes(needle))};
 }
 let tallyLoadGeneration=0;
+function clearTallyStockReview(){
+ tallyLoadGeneration++;
+ tallyRows=[];tallyCorrections=new Map();tallyReadiness=null;
+ tallySearch='';tallyPage=0;tallyGodown='';
+}
 async function tallyStockScreen(){
  const actor=me,actorId=me?.user_id,generation=++tallyLoadGeneration;
  const current=()=>me===actor&&me?.user_id===actorId&&view==='inventory'&&inventorySection==='review'&&generation===tallyLoadGeneration;

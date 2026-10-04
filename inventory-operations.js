@@ -25,6 +25,7 @@ function clearInventoryOperations(){
  inventoryLatestPacks=new Map();inventoryLatestClassifications=new Map();inventoryImportPreview=null;inventoryImportFileName='';
  productDetailReviews=new Map();productReviewLoadError='';
  if(typeof clearProductMachineLinks==='function')clearProductMachineLinks();
+ if(typeof clearTallyStockReview==='function')clearTallyStockReview();
 }
 async function loadInventoryOperations(){
  const actor=me,actorId=me?.user_id,generation=++inventoryLoadGeneration;
