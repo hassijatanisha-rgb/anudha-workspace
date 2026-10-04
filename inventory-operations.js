@@ -19,7 +19,9 @@ function inventoryProductChoice(product){return `${inventoryProductIdentity(prod
 function inventoryProductChoices(){return inventorySelectableProducts().map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
 function inventoryProductFromChoice(choice){return inventorySelectableProducts().find(product=>inventoryProductChoice(product)===choice)}
 let inventoryLoadGeneration=0;
+let inventoryRenderGeneration=0;
 function clearInventoryOperations(){
+ inventoryRenderGeneration++;
  inventoryLoadGeneration++;inventoryLoaded=false;inventoryLoadError='';inventorySearch='';inventoryProductId='';inventorySection='stock';
  inventoryLocations=[];inventoryPacks=[];inventoryLots=[];inventoryTransfers=[];inventoryIssues=[];inventoryMovements=[];inventoryClassifications=[];
  inventoryLatestPacks=new Map();inventoryLatestClassifications=new Map();inventoryImportPreview=null;inventoryImportFileName='';
@@ -96,8 +98,8 @@ function inventoryTransferCard(t){
 }
 function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='owner'?`<section class="card"><h2>Add godown or Haadi dispatch hub</h2><form data-inventory-action="location"><div class="grid"><label><span>Name</span><input name="name" required maxlength="120" placeholder="Haadi"></label><label><span>Short code</span><input name="code" required maxlength="30" placeholder="HAA"></label><label><span>Type</span><select name="locationType"><option value="godown">Godown · sealed-carton storage</option><option value="dispatch_hub">Dispatch hub · may open cartons</option></select></label></div><button type="submit">Save location</button></form></section>`:''}<section class="card"><h2>Storage locations</h2>${inventoryLocations.map(x=>`<article class="contact"><div class="heading"><div><h3>${esc(x.name)}</h3><p>${esc(x.code)} · ${x.is_dispatch_hub?'Dispatch hub; cartons can be opened here':'Godown; sealed-carton storage'}</p></div><span class="tag">${x.active?'Active':'Inactive'}</span></div></article>`).join('')||'<p class="empty">No godowns have been entered yet.</p>'}</section>`}
 async function inventoryWorkspace(force=false){
- const actor=me,actorId=me?.user_id,section=inventorySection;
- const current=()=>me===actor&&me?.user_id===actorId&&view==='inventory'&&inventorySection===section;
+ const actor=me,actorId=me?.user_id,section=inventorySection,generation=++inventoryRenderGeneration;
+ const current=()=>me===actor&&me?.user_id===actorId&&view==='inventory'&&inventorySection===section&&generation===inventoryRenderGeneration;
  if(!current())return;
  syncWorkspaceNavigation();
  if(inventorySection==='review'){if(!inventoryLoaded||force)await loadInventoryOperations();if(!current())return;await tallyStockScreen();return;}
