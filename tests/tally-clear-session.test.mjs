@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+for(const outcome of ['success','error'])test(`auth clear removes source review and rejects same-actor pending ${outcome}`,async()=>{
+ const content={innerHTML:''};let finish;
+ const delayed=new Promise((resolve,reject)=>{finish=()=>outcome==='success'?resolve([{id:'old',source_id:'old',version:1}]):reject(Error('Old failure'));});
+ const ctx=vm.createContext({me:{user_id:'owner'},view:'inventory',organizations:[],contacts:[],products:[],duplicates:new Map(),clearEmployeeNames(){},$:()=>content,document:{addEventListener(){},querySelectorAll:()=>[]},productDetailReviews:new Map(),productReviewLoadError:'',all:()=>delayed,esc:String,inventoryHeader:()=>'',bindInventoryWorkspace(){}});
+ for(const file of ['inventory-operations.js','tally-stock-review.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
+ vm.runInContext("inventorySection='review';tallyRows=[{id:'old'}];tallyCorrections.set('old',{});tallyReadiness={old:true};tallySearch='old';tallyGodown='old';tallyPage=3;",ctx);
+ ctx.tallyGodownReadiness=()=>({});ctx.renderTallyStock=()=>{content.innerHTML='Old review';};
+ const actor=ctx.me,pending=ctx.tallyStockScreen();
+ vm.runInContext(readFileSync(new URL('../app.js',import.meta.url),'utf8').split('\n').find(line=>line.startsWith('function clear(){')),ctx);
+ ctx.clear();ctx.me=actor;vm.runInContext("inventorySection='review'",ctx);content.innerHTML='New session';finish();await pending;
+ assert.equal(content.innerHTML,'New session');
+ assert.equal(vm.runInContext('tallyRows.length',ctx),0);
+ assert.equal(vm.runInContext('tallyCorrections.size',ctx),0);
+ assert.equal(vm.runInContext('tallyReadiness',ctx),null);
+ assert.equal(vm.runInContext('tallySearch+tallyGodown',ctx),'');
+ assert.equal(vm.runInContext('tallyPage',ctx),0);
+});
