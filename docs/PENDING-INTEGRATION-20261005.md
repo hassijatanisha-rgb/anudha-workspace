@@ -1,5 +1,7 @@
 # Pending expiry + session compatibility
 
+5 October 19:24 UTC: extended actual Chrome renderer/dialog test against combined candidate. Five scenarios pass: prior four plus owner cancellation showing required reason, correct request/version payload, visible server rejection and re-enabled Save. Staff cards have no cancellation control. Fictional denied RPC only; no real cancellation. Browser-QA skill used. This closes the narrow combined cancellation-control/error UX check, not real RLS, success persistence, accessibility or stale mutation callback acceptance. No production code or SQL changed this cycle.
+
 5 October 18:12 UTC: added a disposable audit-failure trigger during cancellation. Combined SQL rolls back the request, its events and automatic handoff when that insert fails; removing the fixture fault permits normal exactly-once cancellation. **67 database checks pass**, including five new rollback assertions; no application/SQL migration changes. Fresh GitHub list still shows PR7/8/9/10/11/33/34 open with no review decision. No approval or production readiness inferred.
 
 5 October 17:30 UTC: locally combined cancellation419d696 and retry3d9a5ab with this candidate. No production migration applied. UI merged without conflict; database test conflict resolved preserving both sets of assertions and assigning the blank-notes fixture a distinct ID105 instead of colliding with cancellation ID102. Existing SQL bodies were not edited.
