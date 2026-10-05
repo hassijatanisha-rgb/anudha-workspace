@@ -44,3 +44,16 @@ test('menu, router, sign-out and Pro forma prefill are wired',()=>{
  assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>\{salesPrefill=null;/);
  const html=read('index.html');assert.ok(html.indexOf('sales-leads.js')>html.indexOf('sales-delivery.js')&&html.indexOf('sales-leads.js')<html.indexOf('app.js'));
 });
+test('loads every open lead but only six months of won and lost ones; search reaches older leads',async()=>{
+ const ctx=load(),calls=[];
+ Object.assign(ctx,{Date,Set,me:{user_id:'a'},salesLoaded:true,view:'leads',renderSearchPreservingPosition:()=>{},$:()=>null});
+ ctx.all=async(table,columns,filter)=>{const q={or(v){calls.push(v);return q;}};filter(q);return [row('1','lead')];};
+ assert.equal(await ctx.loadLeads(),true);
+ assert.match(calls[0],/^stage\.not\.in\.\(won,lost\),updated_at\.gte\.\d{4}-/);
+ let asked='';
+ ctx.client={from:()=>{const q={select:()=>q,or:v=>{asked=v;return q;},order:()=>q,limit:async()=>({data:[row('1','lead'),row('old','lost',{lost_reason:'price'})]})};return q;}};
+ vm.runInContext(`leadSearch='Mus%hi,';renderLeads=()=>{};`,ctx);
+ await ctx.leadSearchOlder('Mus%hi,');
+ assert.match(asked,/^lead_number\.ilike\.\*Mus hi\*,subject\.ilike/,'search text is cleaned before it reaches the filter');
+ assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(leadRows.map(r=>r.id))',ctx)),['1','old'],'older match added once');
+});

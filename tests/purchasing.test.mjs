@@ -44,3 +44,17 @@ test('menu, router, sign-out, pending link and script order are wired',()=>{
  assert.match(read('pending-stock.js'),/typeof startPurchaseFromPending==='function'/);
  assert.ok(html.indexOf('purchasing.js')>html.indexOf('work-assignments.js')&&html.indexOf('purchasing.js')<html.indexOf('app.js'));
 });
+test('loads every open order but only six months of finished ones, items nested per order',async()=>{
+ const ctx=load(),calls=[];
+ ctx.all=async(table,columns,filter)=>{const q={or(v){calls.push([table,columns,v]);return q;}};if(filter)filter(q);else calls.push([table,columns,null]);
+  return table==='purchase_orders'?[{id:'o9',status:'requested',purchase_order_lines:[{purchase_order_id:'o9',line_number:1,product_id:'p1',quantity:3}]}]:[{id:'s1',name:'Fixture Medical',active:true}];};
+ assert.equal(await ctx.loadPurchasing(),true);
+ const orders=calls.find(c=>c[0]==='purchase_orders');
+ assert.equal(orders[1],'*,purchase_order_lines(*)');
+ assert.match(orders[2],/^status\.in\.\(requested,approved,ordered\),updated_at\.gte\.\d{4}-/);
+ const since=new Date(orders[2].split('updated_at.gte.')[1]);
+ assert.ok(Math.abs((Date.now()-since)/864e5-183)<1,'window is six months');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>[o.id,"purchase_order_lines" in o])'),[['o9',false]]);
+ assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
+});
+function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
