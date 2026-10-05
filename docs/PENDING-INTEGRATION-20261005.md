@@ -1,5 +1,9 @@
 # Pending expiry + session compatibility
 
+5 October 17:30 UTC: locally combined cancellation419d696 and retry3d9a5ab with this candidate. No production migration applied. UI merged without conflict; database test conflict resolved preserving both sets of assertions and assigning the blank-notes fixture a distinct ID105 instead of colliding with cancellation ID102. Existing SQL bodies were not edited.
+
+Combined disposable PGlite run `tests/pending-stock-database.mjs`: **62 checks passed**, including content/actor-aware retries, owner-only cancellation, actual migration058 MFA access helpers, actual pending-specific automatic-handoff functions from051 and immutable history; stock fixture unchanged. Native runner: **270 passed, 40 skipped, zero failures**; diff check clean. This uses selected migrations and scaffolded predecessor tables, not a restored production schema or concurrent PostgreSQL connections. Earlier browser acceptance covered the read/session/expiry combination; the newly combined cancellation UI has unit tests, not new browser acceptance. Git-workflow skill preserved original branches and checkpoints. Independent review and explicit production activation gates remain; no deployment.
+
 Local integration candidate only: merge 93b8df1 combines PR34 head167a382 with expiry head1709531 (PR10). Neither source worktree changed. No production deployment, migration or data mutation.
 
 Resolved two pending-stock.js conflict regions by preserving both fixes: cleanup invalidates render/load generations and clears availability day/private filters; loader requests expiry_date, uses company date, and guards all successful/error cache writes by actor and epoch. Reopening after a date change reloads availability; stale errors cannot overwrite a newer render. No cancellation, retry RPC or fiscal behavior changes.
