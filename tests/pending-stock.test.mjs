@@ -78,11 +78,14 @@ test('filters and ordering: overdue first, then arrived, then waiting; closed ap
  assert.deepEqual(ctx.pendingVisibleRows(rows,{filter:'all',search:'syringe',actor:'a',availability:new Map(),today:'2026-09-30'}).length,0);
  assert.deepEqual(ctx.pendingVisibleRows(rows,{filter:'all',search:'blood',actor:'a',availability:new Map(),today:'2026-09-30'}).map(x=>x.row.id).sort(),['arrived','done']);
 });
-test('only the salesperson or owner sees close actions; only the owner can extend',()=>{
+test('salesperson can fulfil; cancellation and extension are owner-only',()=>{
  const ctx=load(),row={id:'r',status:'waiting',salesperson_user_id:'b',extension_count:0,expires_on:'2099-01-01'};
  assert.doesNotMatch(ctx.pendingActions(row),/fulfil|extend/);
  ctx.me={user_id:'b',role:'staff'};assert.match(ctx.pendingActions(row),/fulfil/);assert.doesNotMatch(ctx.pendingActions(row),/extend/);
+ assert.doesNotMatch(ctx.pendingActions(row),/data-pending-action="cancel"/);
  ctx.me={user_id:'o',role:'owner'};assert.match(ctx.pendingActions(row),/extend/);
+ assert.match(ctx.pendingActions(row),/data-pending-action="cancel"/);
+ assert.doesNotMatch(ctx.pendingActions({...row,status:'cancelled'}),/data-pending-action/);
  assert.doesNotMatch(ctx.pendingActions({...row,extension_count:4}),/extend/);
 });
 test('menu, router, sign-out and script order are wired',()=>{

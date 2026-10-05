@@ -43,7 +43,8 @@ function pendingActions(row){
  if(row.status!=='waiting')return `<button type="button" data-pending-history="${esc(row.id)}">History</button>`;
  const mine=row.salesperson_user_id===me?.user_id||me?.role==='owner',buttons=[];
  buttons.push(`<button type="button" data-pending-purchase="${esc(row.id)}">Order from supplier</button>`);
- if(mine)buttons.push(`<button type="button" data-pending-action="fulfil" data-id="${esc(row.id)}">Mark fulfilled</button>`,`<button type="button" data-pending-action="cancel" data-id="${esc(row.id)}">Cancel</button>`);
+ if(mine)buttons.push(`<button type="button" data-pending-action="fulfil" data-id="${esc(row.id)}">Mark fulfilled</button>`);
+ if(me?.role==='owner')buttons.push(`<button type="button" data-pending-action="cancel" data-id="${esc(row.id)}">Cancel</button>`);
  if(me?.role==='owner'&&row.extension_count<4)buttons.push(`<button type="button" data-pending-action="extend" data-id="${esc(row.id)}">Extend</button>`);
  if(pendingDaysLeft(row)<0)buttons.push(`<button type="button" data-pending-action="expire" data-id="${esc(row.id)}">Close as expired</button>`);
  buttons.push(`<button type="button" data-pending-history="${esc(row.id)}">History</button>`);
