@@ -1,5 +1,7 @@
 # Pending stock read/session isolation
 
+5 October 15:02 UTC cycle: `tests/pending-session-browser.mjs` passed four isolated Chrome scenarios using the actual pending renderer and loader: current rows render, navigation stays on Clients, account cleanup rejects old rows, and a failed old refresh cannot overwrite newer successful results. Zero captured page errors; external network blocked, fictional records only. Browser-QA skill used; no visual baseline, accessibility or Web Vitals claim. Independent review and live acceptance remain required.
+
 Local review candidate, not deployed. Base main d5dd630. No SQL, stock changes, accounting, permission changes or RPC-contract changes. Existing pending cancel/retry/expiry work remains on separate branches.
 
 Journeys: changing account or refreshing must not let an old request repaint the workspace, replace current errors, or retain private search text. Current failures must remain visible.
