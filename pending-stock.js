@@ -2,7 +2,8 @@
 // Pending stock orders: quantities a customer still needs once stock arrives. Advisory availability only;
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
-function clearPendingStock(){pendingEpoch++;pendingRows=[];pendingAvailability=new Map();pendingLoaded=false;pendingCreating=false;pendingRequestId=null;}
+let pendingRenderEpoch=0;
+function clearPendingStock(){pendingEpoch++;pendingRenderEpoch++;pendingRows=[];pendingAvailability=new Map();pendingLoaded=false;pendingCreating=false;pendingRequestId=null;pendingFilter='waiting';pendingSearch='';pendingPage=0;pendingLoadError='';pendingAvailabilityError='';}
 function pendingToday(){return new Date().toISOString().slice(0,10);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
 // Saleable pieces per product: sealed cartons × units per carton + loose − reserved, available lots at active locations only.
@@ -51,25 +52,29 @@ function pendingForm(){
  return `<section class="card document-editor"><div class="heading"><div><small>NEW</small><h2>Pending stock order</h2></div><button type="button" id="closePendingForm">Close</button></div><form id="pendingForm"><p class="muted">Use this when a customer wants more than is in stock. It does not reserve stock. You will see here when stock arrives.</p><div class="grid"><label><span>Client</span><select name="organizationId" required><option value="">Choose client / branch</option>${salesOrganizationOptions()}</select></label><label><span>Contact · optional</span><select name="contactId"><option value="">No named contact</option></select></label><label class="wide"><span>Product</span><input name="productChoice" list="pendingProductChoices" required autocomplete="off" placeholder="Type to search products"><datalist id="pendingProductChoices">${salesProductChoices()}</datalist></label><label><span>Quantity still needed (pieces)</span><input name="quantity" type="number" min="1" max="1000000" step="1" required></label><label><span>Pro forma · optional</span><select name="proformaId"><option value="">Not linked</option></select></label><label><span>Salesperson</span><select name="salesperson" required>${leadEmployeeOptions(me?.user_id||'')}</select></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000"></textarea></label></div><p role="alert" id="pendingFormError"></p><div class="actions"><button type="submit">Save pending order</button></div></form></section>`;
 }
 async function loadPendingStock(){
- const epoch=++pendingEpoch,actor=me?.user_id;
+ const epoch=++pendingEpoch,actor=me,actorId=me?.user_id;
+ const current=()=>epoch===pendingEpoch&&me===actor&&me?.user_id===actorId;
  const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
- if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
+ if(!current())return false;
  pendingRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
   const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
-  if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
+  if(!current())return false;
   pendingAvailability=pendingAvailableByProduct(lots,packs,locations);pendingAvailabilityError='';
- }catch(error){if(epoch!==pendingEpoch)return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
+ }catch(error){if(!current())return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
  pendingLoaded=true;pendingLoadError='';return true;
 }
 async function pendingStockWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
+ const actor=me,actorId=me?.user_id,epoch=++pendingRenderEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&view==='pending'&&epoch===pendingRenderEpoch;
+ if(!current())return;
+ syncWorkspaceNavigation();
  if(force||!pendingLoaded){
   $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
-  try{if(!(await loadPendingStock()))return;}catch(error){if(me?.user_id!==actor)return;pendingLoadError=error.message;pendingLoaded=false;}
+  try{if(!(await loadPendingStock()))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  }
- if(view!=='pending'||me?.user_id!==actor)return;
+ if(!current())return;
  renderPendingStock();
 }
 function renderPendingStock(){
