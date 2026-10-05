@@ -2,8 +2,8 @@
 // Pending stock orders: quantities a customer still needs once stock arrives. Advisory availability only;
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
-let pendingRenderEpoch=0,pendingAvailabilityDay='';
-function clearPendingStock(){pendingEpoch++;pendingRenderEpoch++;pendingRows=[];pendingAvailability=new Map();pendingAvailabilityDay='';pendingLoaded=false;pendingCreating=false;pendingRequestId=null;pendingFilter='waiting';pendingSearch='';pendingPage=0;pendingLoadError='';pendingAvailabilityError='';}
+let pendingRenderEpoch=0,pendingSessionEpoch=0,pendingAvailabilityDay='';
+function clearPendingStock(){pendingEpoch++;pendingRenderEpoch++;pendingSessionEpoch++;pendingRows=[];pendingAvailability=new Map();pendingAvailabilityDay='';pendingLoaded=false;pendingCreating=false;pendingRequestId=null;pendingFilter='waiting';pendingSearch='';pendingPage=0;pendingLoadError='';pendingAvailabilityError='';}
 function pendingToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
 // Saleable pieces per product: sealed cartons × units per carton + loose − reserved, available lots at active locations only.
@@ -128,13 +128,18 @@ async function savePendingForm(form){
 }
 function openPendingAction(row,action){
  if(!row)return;
+ const actor=me,actorId=me?.user_id,session=pendingSessionEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&session===pendingSessionEpoch&&view==='pending';
  const titles={fulfil:'Mark pending order fulfilled',cancel:'Cancel pending order',extend:'Extend pending order',expire:'Close pending order as expired'};
  const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(pendingProductLabel(row))} · ${esc(row.quantity)} pcs · ${esc(pendingClientLabel(row))}</p>${action==='extend'?`<label><span>Extend by</span><select name="months" required>${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${n===3?'selected':''}>${n} month${n===1?'':'s'}</option>`).join('')}</select></label><p class="muted">Extensions used: ${row.extension_count} of 4.</p>`:''}<label><span>${action==='fulfil'?'Invoice, Pro forma or delivery reference':action==='cancel'?'Why is it cancelled?':action==='extend'?'Why is it being extended?':'Note · optional'}</span><textarea name="note" maxlength="1000" ${action==='expire'?'':'required minlength="3"'}></textarea></label>`;
  actionForm(titles[action],fields,async values=>{
-  const actor=me?.user_id,result=await client.rpc('advance_pending_stock_request',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||'',p_extend_months:action==='extend'?Number(values.months):null});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the pending order.');
+  if(!current())return;
+  let result;
+  try{result=await client.rpc('advance_pending_stock_request',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||'',p_extend_months:action==='extend'?Number(values.months):null});}
+  catch(error){if(!current())return;throw error;}
+  if(!current())return;
   if(result.error)throw Error(result.error.message);
-  await pendingStockWorkspace(true);message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
+  await pendingStockWorkspace(true);if(current())message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 async function showPendingHistory(id){
