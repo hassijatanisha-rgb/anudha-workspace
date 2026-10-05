@@ -58,3 +58,12 @@ test('loads every open order but only six months of finished ones, items nested 
  assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
 });
 function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
+test('after a step only that order is read again; the rest of the list is kept',async()=>{
+ const ctx=load('owner');let asked=0,full=0;
+ ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]}})};return q;}};
+ vm.runInContext(`purchaseLoaded=true;view='purchasing';purchaseOrders=[{id:'o1',status:'requested'},{id:'o2',status:'requested'}];renderPurchasing=()=>{};purchasingWorkspace=async()=>{globalThis.fullReload=(globalThis.fullReload||0)+1};`,ctx);
+ await ctx.purchaseRefreshOne('o1');
+ assert.equal(asked,1);assert.equal(vmJson(ctx,'globalThis.fullReload||0'),0,'no full reload');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
+ assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
+});

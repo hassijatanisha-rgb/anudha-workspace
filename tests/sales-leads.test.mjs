@@ -57,3 +57,12 @@ test('loads every open lead but only six months of won and lost ones; search rea
  assert.match(asked,/^lead_number\.ilike\.\*Mus hi\*,subject\.ilike/,'search text is cleaned before it reaches the filter');
  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(leadRows.map(r=>r.id))',ctx)),['1','old'],'older match added once');
 });
+test('after a save or step only that lead is read again',async()=>{
+ const ctx=load();let asked=0;
+ Object.assign(ctx,{me:{user_id:'a'}});
+ ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:row('2','won',{proforma_id:'p'})})};return q;}};
+ vm.runInContext(`leadLoaded=true;view='leads';leadRows=[row1,row2];renderLeads=()=>{};`.replace('row1',JSON.stringify(row('1','lead'))).replace('row2',JSON.stringify(row('2','lead'))),ctx);
+ await ctx.leadRefreshOne('2');
+ assert.equal(asked,1);
+ assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(leadRows.map(r=>r.id+":"+r.stage).sort())',ctx)),['1:lead','2:won']);
+});

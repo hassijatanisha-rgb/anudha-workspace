@@ -74,7 +74,7 @@ async function saveLeadForm(form){
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press Save again to retry safely.');
- leadPendingSave=null;leadEditing='';await leadsWorkspace(true);message(`${saved.lead_number} saved.`);
+ leadPendingSave=null;leadEditing='';await leadRefreshOne(saved.id);message(`${saved.lead_number} saved.`);
 }
 // Every open lead is loaded; won and lost leads only from the last six months, so the page stays fast as years
 // of leads build up. Typing in Search also looks up older leads on the server.
@@ -89,6 +89,16 @@ async function leadSearchOlder(text){
  const known=new Set(leadRows.map(r=>r.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
  leadRows=leadRows.concat(extra);const box=$('#leadSearch');if(box)renderSearchPreservingPosition(box,renderLeads);else renderLeads();
+}
+// After a save or a step, only that lead is read again, so the page stays quick however many leads are listed.
+async function leadRefreshOne(id){
+ if(!leadLoaded||!id)return leadsWorkspace(true);
+ const epoch=leadEpoch,actor=me?.user_id;
+ const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();
+ if(result.error)throw Error(result.error.message);
+ if(epoch!==leadEpoch||me?.user_id!==actor)return;
+ leadRows=leadRows.filter(r=>r.id!==id);if(result.data)leadRows.push(result.data);
+ if(view==='leads')renderLeads();
 }
 async function loadLeads(){
  const epoch=++leadEpoch,actor=me?.user_id;
@@ -146,7 +156,7 @@ function openLeadAction(row,action){
   const actor=me?.user_id,result=await client.rpc('advance_sales_lead',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||'',p_proforma_id:values.proforma||null});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the lead.');
   if(result.error)throw Error(result.error.message);
-  await leadsWorkspace(true);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
+  await leadRefreshOne(row.id);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 function startProformaFromLead(row){

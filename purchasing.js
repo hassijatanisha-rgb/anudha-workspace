@@ -80,7 +80,7 @@ async function savePurchaseForm(form){
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchasingWorkspace(true);message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
+ purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchaseRefreshOne(saved.id);message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
 }
 function supplierEditor(row){
  return `<section class="card document-editor"><div class="heading"><div><small>${row?esc(row.supplier_number):'NEW'}</small><h2>${row?'Edit supplier':'New supplier'}</h2></div><button type="button" id="closeSupplierEditor">Close</button></div><form id="supplierForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><div class="grid"><label class="wide"><span>Supplier name</span><input name="name" required minlength="2" maxlength="200" value="${esc(row?.name||'')}"></label><label><span>Country</span><input name="country" maxlength="100" value="${esc(row?.country||'')}"></label><label><span>Contact person</span><input name="contact_name" maxlength="200" value="${esc(row?.contact_name||'')}"></label><label><span>Phone</span><input name="phone" maxlength="60" inputmode="tel" value="${esc(row?.phone||'')}"></label><label><span>Email</span><input name="email" type="email" maxlength="320" value="${esc(row?.email||'')}"></label><label><span>TIN</span><input name="tin" maxlength="60" value="${esc(row?.tin||'')}"></label><label><span>Payment terms</span><input name="payment_terms" maxlength="300" value="${esc(row?.payment_terms||'')}"></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000">${esc(row?.notes||'')}</textarea></label>${row&&me?.role==='owner'?`<label><span>Status</span><select name="active"><option value="true" ${row.active?'selected':''}>Active</option><option value="false" ${row.active?'':'selected'}>Inactive — hide from new orders</option></select></label>`:''}</div><p role="alert" id="supplierFormError"></p><div class="actions"><button type="submit">${row?'Save changes':'Save supplier'}</button></div></form></section>`;
@@ -96,6 +96,17 @@ async function saveSupplierForm(form){
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
  supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
+}
+// After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
+async function purchaseRefreshOne(id){
+ if(!purchaseLoaded||!id)return purchasingWorkspace(true);
+ const epoch=purchaseEpoch,actor=me?.user_id;
+ const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ if(result.error)throw Error(result.error.message);
+ if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
+ purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
+ if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
+ if(view==='purchasing')renderPurchasing();
 }
 async function loadPurchasing(){
  const epoch=++purchaseEpoch,actor=me?.user_id;
@@ -160,7 +171,7 @@ function openPurchaseAction(order,action){
   const actor=me?.user_id,result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the purchase order.');
   if(result.error)throw Error(result.error.message);
-  await purchasingWorkspace(true);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
+  await purchaseRefreshOne(order.id);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 async function showPurchaseHistory(id){
