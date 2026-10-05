@@ -6,7 +6,7 @@ import vm from 'node:vm';
 for(const [file,entry,bindings] of [
  ['sales-delivery.js','salesDeliveryWorkspace()',"salesSection='documents';officialDocumentsScreen=()=>'';bindSalesDelivery=()=>{};"],
  ['service-workflow.js','serviceWorkspace()',"serviceLoaded=true;installationScreen=()=>'';bindServiceWorkflow=()=>{};"],
- ['inventory-operations.js','inventoryWorkspace()',"inventorySection='catalog';inventoryLoaded=true;catalogInventory=()=>{};"]
+ ['inventory-operations.js','inventoryWorkspace()',"view='inventory';inventorySection='catalog';inventoryLoaded=true;catalogInventory=()=>{};"]
 ])test(`${file} synchronizes sidebar when its page opens directly`,async()=>{
  let calls=0;
  const context=vm.createContext({me:{user_id:'fixture'},view:'sales',$:()=>({innerHTML:''}),syncWorkspaceNavigation:()=>calls++});
