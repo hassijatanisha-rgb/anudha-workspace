@@ -1,5 +1,7 @@
 # Inventory/service session integration candidate
 
+5 October 09:27 UTC: permission-review execution recovered. Combined branch 2405db3 passes isolated Chrome inventory navigation/account/same-actor-clear checks, six nested stock-review success/error/navigation/auth checks, and service loader session checks. Fixtures only, no real auth/database. PR33 b406251 and PR11 ccc3d01 freshly confirmed OPEN with no reviews. Browser run is not independent code review or permission to merge. No visual/a11y or production verification claim.
+
 Local compatibility exercise only, not approval or deployment. Combined inventory branch ac35ee7 with service review head ccc3d01, both based on main d5dd630. Original branches and worktrees were left unchanged.
 
 Two merge conflicts resolved manually:
