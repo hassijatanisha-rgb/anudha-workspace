@@ -113,18 +113,25 @@ function bindPendingStock(){
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
 async function savePendingForm(form){
+ const actor=me,actorId=me?.user_id,session=pendingSessionEpoch;
+ const sessionCurrent=()=>!!actor&&me===actor&&me?.user_id===actorId&&session===pendingSessionEpoch&&view==='pending';
+ const formCurrent=()=>sessionCurrent()&&form.isConnected&&$('#pendingForm')===form;
+ if(!formCurrent())return;
  const f=new FormData(form),product=inventoryProductFromChoice(String(f.get('productChoice')||'')),quantity=Number(f.get('quantity'));
  if(!f.get('organizationId'))throw Error('Choose the client.');
  if(!product)throw Error('Choose a product from the list.');
  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)throw Error('Enter a whole quantity of at least 1.');
  // One request ID per form until the server confirms it, so a retry after a lost response cannot duplicate the order.
  pendingRequestId??=crypto.randomUUID();
- const actor=me?.user_id,result=await client.rpc('create_pending_stock_request',{p_id:pendingRequestId,p_organization_id:f.get('organizationId'),p_contact_id:f.get('contactId')||null,p_product_id:product.id,p_quantity:quantity,p_proforma_id:f.get('proformaId')||null,p_lead_id:null,p_salesperson_user_id:f.get('salesperson')||null,p_notes:String(f.get('notes')||'')});
- if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
+ const requestId=pendingRequestId,current=()=>formCurrent()&&pendingRequestId===requestId;
+ let result;
+ try{result=await client.rpc('create_pending_stock_request',{p_id:requestId,p_organization_id:f.get('organizationId'),p_contact_id:f.get('contactId')||null,p_product_id:product.id,p_quantity:quantity,p_proforma_id:f.get('proformaId')||null,p_lead_id:null,p_salesperson_user_id:f.get('salesperson')||null,p_notes:String(f.get('notes')||'')});}
+ catch(error){if(!current())return;throw error;}
+ if(!current())return;
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==pendingRequestId)throw Error('The server did not confirm the save. Press Save again to retry safely.');
- pendingRequestId=null;pendingCreating=false;await pendingStockWorkspace(true);message(`${saved.request_number} saved. It closes on ${saved.expires_on} unless extended.`);
+ if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press Save again to retry safely.');
+ pendingRequestId=null;pendingCreating=false;await pendingStockWorkspace(true);if(sessionCurrent())message(`${saved.request_number} saved. It closes on ${saved.expires_on} unless extended.`);
 }
 function openPendingAction(row,action){
  if(!row)return;
