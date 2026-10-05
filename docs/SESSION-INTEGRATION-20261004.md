@@ -9,3 +9,5 @@ Two merge conflicts resolved manually:
 Validation: native Node `--test tests/*.test.mjs`: 304 passed, 40 skipped, zero failures. `git diff --check` passed. Browser acceptance not rerun because its permission-review blocker remains unresolved. No database migration, stock write, accounting implementation or access change.
 
 Independent review still required for PR11 and PR33 and this combined result. No automatic main merge. This local integration does not certify the full ERP workflow, live authorization, recovery or load readiness.
+
+5 October 08:23 UTC: added executable combined cleanup regression loading actual inventory, compatibility, source-review and service modules in one VM. Actual merged app clear removes both loaded caches; pending service and compatibility results cannot repopulate them even after restoring the same actor object. Focused test passes; full305pass/40skip/0fail, diff clean. No production code change this cycle, and no browser/live authorization claim. Original feature worktrees remain untouched.
