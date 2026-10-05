@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 try{
- for(const scenario of ['current','navigation','session','refresh-error','owner-error']){
+ for(const scenario of ['current','navigation','session','refresh-error','owner-error','owner-stale-success','owner-stale-error']){
   const page=await browser.newPage();const errors=[];
   page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>route.abort());
   await page.setContent('<button id="leave">Clients</button><button id="logout">Change account</button><main id="content"></main>');
@@ -21,7 +21,7 @@ try{
    const fixture=[{id:'request',version:1,request_number:'PS-fixture',product_id:'product',organization_id:'org',salesperson_user_id:'first',quantity:2,status:'waiting',expires_on:'2099-01-01',extension_count:0}];
   `});
   await page.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
-  if(scenario==='owner-error'){
+  if(scenario.startsWith('owner-')){
    await page.addScriptTag({content:readFileSync(new URL('../action-forms.js',import.meta.url),'utf8')});
    await page.evaluate(()=>{me.role='owner'});
   }
@@ -41,12 +41,24 @@ try{
   }else{
    await page.getByRole('heading',{name:'Pending stock orders',exact:true}).waitFor();
    await page.getByRole('heading',{name:'Fictional Blood Bag · 2 pcs',exact:true}).waitFor();
-   if(scenario==='owner-error'){
+   if(scenario.startsWith('owner-')){
+    if(scenario.startsWith('owner-stale'))await page.evaluate(()=>{client.rpc=(name,payload)=>{rpcCalls.push({name,payload});return new Promise(resolve=>{window.finishAction=resolve})}});
     await page.locator('[data-pending-action="cancel"]').click();
     const dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Save',exact:true}).click();
     assert.equal(await page.evaluate(()=>rpcCalls.length),0,'required reason prevents submit');
     await dialog.getByRole('textbox',{name:'Why is it cancelled?'}).fill('Client declined');
     await dialog.getByRole('button',{name:'Save',exact:true}).click();
+    if(scenario.startsWith('owner-stale')){
+     await page.waitForFunction(()=>!!window.finishAction);
+     await page.evaluate(()=>{clearPendingStock();me={user_id:'second',role:'owner'};view='clients';$('#content').textContent='Second account fixture';document.querySelector('#actionEditor').close();document.querySelector('#actionEditor').remove();actionForm('New account form','<input aria-label="New note">',async()=>{});});
+     await page.evaluate(error=>window.finishAction(error?{error:{message:'Old action error'}}:{data:{}}),scenario==='owner-stale-error');
+     await page.waitForFunction(()=>!actionSaving);
+     assert.equal(await page.locator('#content').innerText(),'Second account fixture');
+     assert.equal(await page.getByRole('dialog').isVisible(),true);
+     assert.equal(await page.locator('#actionError').innerText(),'');
+     assert.equal(await page.locator('#actionTitle').innerText(),'New account form');
+     assert.deepEqual(errors,[]);console.log('PASS pending browser: '+scenario);await page.close();continue;
+    }
     await page.waitForFunction(()=>document.querySelector('#actionError').textContent==='Fixture permission denied');
     assert.equal(await dialog.isVisible(),true);
     assert.equal(await dialog.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);

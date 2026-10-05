@@ -1,5 +1,7 @@
 # Inventory/service session integration candidate
 
+5 October 21:53 UTC: merged pending integration f6e7376 into this candidate without conflicts (89327a0), preserving original feature branches. Native328pass/40skip; diff check clean. Extended actual Chrome pending test to seven scenarios, all pass. New cases replace the session and detach/reopen the shared dialog during pending cancellation, then resolve old success/error: next-account form stays open, its error remains empty, and Clients stays unchanged. Uses actual pending callback and corrected action-forms from PR11, fictional RPCs, network blocked. This proves the narrow shared-dialog integration, not server authorization or full workflow. Git-workflow/browser-QA skills used; no visual/accessibility/performance claim. No independent approval, production migration or deployment.
+
 5 October 09:27 UTC: permission-review execution recovered. Combined branch 2405db3 passes isolated Chrome inventory navigation/account/same-actor-clear checks, six nested stock-review success/error/navigation/auth checks, and service loader session checks. Fixtures only, no real auth/database. PR33 b406251 and PR11 ccc3d01 freshly confirmed OPEN with no reviews. Browser run is not independent code review or permission to merge. No visual/a11y or production verification claim.
 
 Local compatibility exercise only, not approval or deployment. Combined inventory branch ac35ee7 with service review head ccc3d01, both based on main d5dd630. Original branches and worktrees were left unchanged.
