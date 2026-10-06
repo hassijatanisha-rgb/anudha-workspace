@@ -58,6 +58,15 @@ const howToTopics=[
   'A posted voucher is never changed. Open **Books of account**, then **Day Book**, and find the voucher.',
   'Press **Reverse**, give the date and the reason, and press **Post reversal**.',
   'Then enter the voucher again correctly under **Enter voucher**.']},
+ {id:'books-invoice',role:'accounts',title:'Make the tax invoice for an accepted Pro forma',screens:['ledger'],steps:[
+  'Once only: open **Books of account**, then **Years & locks**, choose the sales and VAT ledgers and press **Save default ledgers**.',
+  'Open **From orders**. Accepted Pro formas without a tax invoice are listed.',
+  'Check the date and press **Post tax invoice**. The invoice uses the Pro forma\'s own items, prices and VAT, so nothing is typed again.',
+  'For a supplier bill, press **Enter supplier bill** on the purchase order, change the amounts to match the supplier\'s bill, and post it.']},
+ {id:'books-outstanding',role:'accounts',title:'See who owes us and whom we owe',screens:['ledger'],steps:[
+  'Open **Books of account**, then **Receivables & payables**.',
+  'Choose **Customers owe us** or **We owe suppliers**. The oldest overdue amounts are at the top.',
+  'Press **Statement** for any customer or supplier, then **Print statement** to send it.']},
  {id:'books-reports',role:'accounts',title:'See balances, a ledger statement or the Trial Balance',screens:['ledger'],steps:[
   'Open **Books of account**. **Ledgers** lists every group and ledger with its balance. Press **New ledger** to add one.',
   'Press **Statement** on a ledger, or open **Ledger statement**, to see every entry with the running balance.',

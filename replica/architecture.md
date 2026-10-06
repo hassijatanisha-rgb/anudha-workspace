@@ -91,7 +91,8 @@ All calls are Supabase RPCs (`client.rpc(...)`) or RLS reads
 | read `ledger_bill_balances` | Pending bills, due dates | L (RLS) | filters | rows | F02 F04 F13 |
 | read `vouchers` / `voucher_entries` | Day Book, ledger statement | L (RLS) | date range, ledger, page | rows | F10 F13 |
 | `post_sales_invoice(p_id, p_proforma_id, p_date)` (M2) | Builds the invoice from the accepted Pro forma lines server-side, with no client-supplied amounts | L | ids, date | voucher | F01 |
-| `post_purchase_bill(p_id, p_purchase_order_id, ...)` (M2) | Bill from a received purchase order | L | ids, supplier fiscal code, TIN | voucher | F03 |
+| `save_ledger_settings` (M2) | Default sales, purchase and VAT ledgers; how untaxed Pro forma lines are classed | L | version, settings | settings | F01 F03 |
+| purchase bill from a purchase order (M2) | Voucher form pre-filled from the order; `post_voucher` with source `purchase_order` stops a second bill | L | as `post_voucher` | voucher | F03 |
 | `import_tally_masters(jsonb)` (M3) | Groups and ledgers from a Tally XML export | L | ≤ 500 rows | counts | F12 |
 | `import_tally_openings(jsonb)` (M3) | Opening voucher and open bills on the cut-over date | O | rows | voucher | F12 |
 | `compare_tally_trial_balance(jsonb)` (M3) | Tally TB vs ERP TB by ledger | L | Tally TB rows | differences | F12 |
@@ -145,9 +146,10 @@ Jobs:
 
 ## Build order
 
-1. **M1 Vertical slice: ledger core** (designed and tested; ships as a
+1. **M1 Vertical slice: ledger core.** Built: `replica/schema.sql` (block 1)
+   and the Books of account page (`ledger-workspace.js`). It ships as a
    migration once the accountant confirms the groups and the single-company
-   question).
+   question.
    Screens: S01 home, S04 chart, S05 group, S06 ledger, S08 voucher entry
    (payment, receipt, contra, journal), S13 Day Book, S14 ledger statement,
    S15 Trial Balance, S26 edit log (read-only).
@@ -155,7 +157,9 @@ Jobs:
    The slice: the owner opens FY 2026-27, accounts create a bank, a customer
    and an income ledger, post a receipt, and see it in the Day Book and the
    Trial Balance.
-2. **M2 Invoices from the ERP:** S09, S10, S11, S19, plus a party statement.
+2. **M2 Invoices from the ERP** (built; block 2 of `replica/schema.sql`, the
+   From orders and Receivables & payables tabs; partial invoices of a
+   Pro forma and a credit-note picker still to come): S09, S10, S11, S19, plus a party statement.
    `post_sales_invoice` from the accepted Pro forma (replaces the
    `tally-export.js` round trip), `post_purchase_bill` from the purchase
    order, credit/debit notes, receivables and payables with ageing, and a

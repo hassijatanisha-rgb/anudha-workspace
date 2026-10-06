@@ -67,6 +67,28 @@ test('statement running balance and open bills',()=>{
  assert.equal(c.ledgerNotInstalled({code:'PGRST202',message:'Could not find the function public.ledger_staff'}),true);
  assert.equal(c.ledgerNotInstalled({message:'Debits and credits differ by 1'}),false);
 });
+test('ageing buckets, receivables per party and credit limits',()=>{
+ const c=load();
+ assert.equal(c.ledgerAgeBucket('2026-10-06','2026-10-06'),'current');assert.equal(c.ledgerAgeBucket('2026-10-05','2026-10-06'),'d30');
+ assert.equal(c.ledgerAgeBucket('2026-09-06','2026-10-06'),'d30');assert.equal(c.ledgerAgeBucket('2026-09-05','2026-10-06'),'d60');
+ assert.equal(c.ledgerAgeBucket('2026-06-01','2026-10-06'),'older');assert.equal(c.ledgerAgeBucket(null,'2026-10-06'),'current');
+ const ledgers=new Map([['a',{id:'a',name:'Alpha'}],['b',{id:'b',name:'Beta'}]]);
+ const rows=plain(c.ledgerAgeing([{ledger_id:'a',name:'PF-1',due_date:'2026-06-01',balance_minor:500},{ledger_id:'a',name:'ADV',due_date:'2026-10-20',balance_minor:-100},{ledger_id:'b',name:'PF-2',due_date:'2026-10-01',balance_minor:900},{ledger_id:'b',name:'Paid',balance_minor:0},{ledger_id:'x',name:'Other',balance_minor:5}],ledgers,'2026-10-06',1));
+ assert.deepEqual(rows.map(r=>[r.ledger.name,r.total,r.older,r.current,r.d30]),[['Alpha',400,500,-100,0],['Beta',900,0,0,900]],'most overdue first; an advance reduces the total');
+ assert.equal(plain(c.ledgerAgeing([{ledger_id:'a',name:'S',due_date:'2026-10-01',balance_minor:-700}],ledgers,'2026-10-06',-1))[0].total,700,'payables shown positive');
+ assert.equal(c.ledgerCreditWarning({name:'Alpha',credit_limit_minor:100000},90000,20000),'Alpha would owe 1,100.00, over the credit limit of 1,000.00.');
+ assert.equal(c.ledgerCreditWarning({name:'Alpha',credit_limit_minor:100000},90000,10000),'');assert.equal(c.ledgerCreditWarning({name:'Alpha',credit_limit_minor:null},9e9,1),'');
+ const groups=[{id:'ca',code:'current_assets',parent_id:null},{id:'sd',code:'sundry_debtors',parent_id:'ca'},{id:'h',code:null,parent_id:'sd'}];
+ assert.equal(c.ledgerGroupUnder('h','sundry_debtors',groups),true);assert.equal(c.ledgerGroupUnder('ca','sundry_debtors',groups),false);
+});
+test('a purchase order pre-fills a balanced purchase bill with 18% input VAT',()=>{
+ const c=load();
+ const d=plain(c.ledgerPurchaseDraft({po_number:'PO-1',lpo_reference:'LPO-9'},[{quantity:2,unit_price_minor:50000},{quantity:1,unit_price_minor:25000}],{purchase_ledger_id:'p',input_vat_ledger_id:'v'},{id:'s',bill_wise:true},1800));
+ assert.deepEqual(d.lines.map(l=>[l.ledger_id,l.side,l.amount]),[['p','dr','1,250.00'],['v','dr','225.00'],['s','cr','1,475.00']]);
+ assert.equal(d.lines[2].bills[0].kind,'new');assert.equal(d.reference,'LPO-9');assert.equal(d.missingPrices,false);
+ assert.deepEqual(plain(c.ledgerTotals(d.lines)),{debit:147500,credit:147500,difference:0});
+ assert.equal(c.ledgerPurchaseDraft({po_number:'PO-2',lpo_reference:''},[{quantity:1,unit_price_minor:null}],{},null,1800).missingPrices,true);
+});
 test('menu, router, sign-out, help and script order are wired; writes go only through the books functions',()=>{
  const app=read('app.js'),html=read('index.html'),src=read('ledger-workspace.js'),nav=read('workspace-navigation.js');
  assert.match(nav,/\['Books of account','ledger'\]/);assert.match(nav,/data-ledger-only hidden/);assert.match(nav,/rpc\('ledger_staff'\)/);
@@ -74,8 +96,8 @@ test('menu, router, sign-out, help and script order are wired; writes go only th
  assert.match(read('how-to-use.js'),/Correct a voucher that was posted wrongly/);
  const at=name=>html.indexOf(name);assert.ok(at('ledger-domain.js')>0&&at('ledger-domain.js')<at('ledger-workspace.js')&&at('ledger-workspace.js')<at('app.js'));
  assert.doesNotMatch(src,/\)\.(insert|update|upsert|delete)\(/);
- for(const fn of ['post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period'])assert.match(src,new RegExp(`rpc\\('${fn}'`));
+ for(const fn of ['post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','post_sales_invoice','save_ledger_settings'])assert.match(src,new RegExp(`rpc\\('${fn}'`));
  const schema=read('replica/schema.sql');
- for(const fn of ['ledger_staff','ledger_locked_through','post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','trial_balance'])assert.match(schema,new RegExp(`create function public\\.${fn}\\(`),fn);
+ for(const fn of ['post_sales_invoice','save_ledger_settings','ledger_staff','ledger_locked_through','post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','trial_balance'])assert.match(schema,new RegExp(`create function public\\.${fn}\\(`),fn);
  assert.doesNotMatch(src.replace(/\$\{[^}]*\}/g,''),/<[^>]*\son\w+=/i,'no inline handlers (CSP)');
 });

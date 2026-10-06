@@ -121,3 +121,44 @@ function ledgerOpenBills(bills,ledgerId){
 }
 // The database explains every refusal in words; this only recognises "the books are not installed yet".
 function ledgerNotInstalled(error){return /does not exist|Could not find the (table|function)|schema cache|42P01|PGRST20[2-5]/i.test(`${error?.code||''} ${error?.message||''}`);}
+
+// True when the group, or any group above it, has this standard code (for example 'sundry_debtors').
+function ledgerGroupUnder(groupId,code,groups){
+ const byId=new Map(groups.map(g=>[g.id,g])),seen=new Set();
+ for(let g=byId.get(groupId);g&&!seen.has(g.id);g=byId.get(g.parent_id)){if(g.code===code)return true;seen.add(g.id);}
+ return false;
+}
+const ledgerAgeBuckets=[['current','Not yet due'],['d30','1-30 days'],['d60','31-60 days'],['d90','61-90 days'],['older','Over 90 days']];
+function ledgerAgeBucket(dueDate,asOf){
+ if(!dueDate)return 'current';
+ const days=Math.floor((Date.parse(asOf+'T00:00:00Z')-Date.parse(dueDate+'T00:00:00Z'))/86400000);
+ return days<=0?'current':days<=30?'d30':days<=60?'d60':days<=90?'d90':'older';
+}
+// Open bills grouped per party with overdue buckets. sign 1 = receivables (debit balances), -1 = payables (credit).
+// A bill on the other side (an advance) reduces the party's total in its own bucket.
+function ledgerAgeing(bills,ledgers,asOf,sign){
+ const parties=new Map();
+ for(const b of bills){
+  const ledger=ledgers.get(b.ledger_id);if(!ledger||Number(b.balance_minor)===0)continue;
+  if(!parties.has(ledger.id))parties.set(ledger.id,{ledger,bills:[],total:0,current:0,d30:0,d60:0,d90:0,older:0});
+  const p=parties.get(ledger.id),amount=sign*Number(b.balance_minor),bucket=ledgerAgeBucket(b.due_date,asOf);
+  p.bills.push({...b,amount,bucket});p[bucket]+=amount;p.total+=amount;
+ }
+ for(const p of parties.values())p.bills.sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||''))||a.name.localeCompare(b.name));
+ return [...parties.values()].sort((a,b)=>b.older-a.older||b.total-a.total||a.ledger.name.localeCompare(b.ledger.name));
+}
+// Over the limit after this amount? Returns the words to show, or ''.
+function ledgerCreditWarning(ledger,balanceMinor,addMinor){
+ if(ledger?.credit_limit_minor==null)return '';
+ const after=Number(balanceMinor||0)+Number(addMinor||0);
+ return after>Number(ledger.credit_limit_minor)?`${ledger.name} would owe ${ledgerMoney(after)}, over the credit limit of ${ledgerMoney(ledger.credit_limit_minor)}.`:'';
+}
+// Pre-fills a purchase bill from a purchase order: purchases Dr at the order prices with standard VAT, input VAT Dr,
+// the supplier Cr against a new bill. The accountant checks every amount against the supplier's own bill.
+function ledgerPurchaseDraft(order,lines,settings,supplierLedger,rateBp){
+ const net=lines.reduce((s,l)=>s+Number(l.quantity)*Number(l.unit_price_minor||0),0),vat=Math.round(net*rateBp/10000),total=net+vat;
+ const out=[{ledger_id:settings.purchase_ledger_id||'',side:'dr',amount:net?ledgerMoney(net):'',vat_class:'standard',bills:[]}];
+ if(settings.input_vat_ledger_id)out.push({ledger_id:settings.input_vat_ledger_id,side:'dr',amount:vat?ledgerMoney(vat):'',vat_class:'',bills:[]});
+ out.push({ledger_id:supplierLedger?.id||'',side:'cr',amount:total?ledgerMoney(total):'',vat_class:'',bills:supplierLedger?.bill_wise?[{kind:'new',name:'',due_date:'',amount:total?ledgerMoney(total):''}]:[]});
+ return {lines:out,reference:order.lpo_reference||order.po_number,narration:`Purchase order ${order.po_number}`,missingPrices:lines.some(l=>l.unit_price_minor==null)};
+}

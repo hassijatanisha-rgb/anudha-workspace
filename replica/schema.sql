@@ -584,3 +584,99 @@ grant execute on function public.ledger_staff(), public.ledger_locked_through(),
  public.save_ledger(uuid,integer,jsonb), public.post_voucher(uuid,uuid,date,jsonb,text,text,text,jsonb,jsonb),
  public.reverse_voucher(uuid,uuid,date,text), public.trial_balance(date,date) to authenticated;
 commit;
+
+-- Milestone M2: invoices from ERP records. Additive to M1.
+-- A sales invoice is built here from the accepted Pro forma's own lines, so nobody retypes amounts and the total must
+-- equal the Pro forma's. Purchase bills are entered on the voucher form, pre-filled from the purchase order, because
+-- the supplier's bill (not the order) fixes the price and VAT; post_voucher's source check stops a second bill.
+begin;
+
+-- One row: the ledgers a Pro forma invoice posts to, and how its lines without VAT are classed.
+create table public.ledger_settings (
+ id boolean primary key default true check (id),
+ sales_ledger_id uuid references public.ledgers(id) on delete restrict,
+ output_vat_ledger_id uuid references public.ledgers(id) on delete restrict,
+ purchase_ledger_id uuid references public.ledgers(id) on delete restrict,
+ input_vat_ledger_id uuid references public.ledgers(id) on delete restrict,
+ untaxed_vat_class text not null default 'exempt' check (untaxed_vat_class in ('zero','exempt','out_of_scope')),
+ version integer not null default 1 check (version > 0),
+ updated_by uuid references auth.users(id),
+ updated_at timestamptz not null default now()
+);
+insert into public.ledger_settings(id) values (true);
+alter table public.accounting_events drop constraint accounting_events_entity_check;
+alter table public.accounting_events add constraint accounting_events_entity_check check (entity in ('voucher','ledger','account_group','voucher_type','fiscal_year','period_lock','ledger_settings'));
+
+create function public.save_ledger_settings(p_expected_version integer, p_settings jsonb)
+returns public.ledger_settings language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_old public.ledger_settings; v_row public.ledger_settings;
+ v_sales uuid := nullif(p_settings->>'sales_ledger_id','')::uuid; v_out uuid := nullif(p_settings->>'output_vat_ledger_id','')::uuid;
+ v_purchase uuid := nullif(p_settings->>'purchase_ledger_id','')::uuid; v_in uuid := nullif(p_settings->>'input_vat_ledger_id','')::uuid;
+begin
+ if not public.ledger_staff() then raise exception 'Accounting access is required' using errcode='42501'; end if;
+ select * into v_old from public.ledger_settings for update;
+ if v_old.version <> p_expected_version then raise exception 'Default ledgers changed; refresh before saving'; end if;
+ if v_sales is not null and not exists(select 1 from public.ledgers l where l.id=v_sales and public.group_is_under(l.group_id,'sales_accounts')) then raise exception 'The sales ledger must be under Sales Accounts'; end if;
+ if v_purchase is not null and not exists(select 1 from public.ledgers l where l.id=v_purchase and public.group_is_under(l.group_id,'purchase_accounts')) then raise exception 'The purchase ledger must be under Purchase Accounts'; end if;
+ if v_out is not null and not exists(select 1 from public.ledgers where id=v_out and vat_role='output') then raise exception 'Choose an output VAT ledger'; end if;
+ if v_in is not null and not exists(select 1 from public.ledgers where id=v_in and vat_role='input') then raise exception 'Choose an input VAT ledger'; end if;
+ update public.ledger_settings set sales_ledger_id=v_sales,output_vat_ledger_id=v_out,purchase_ledger_id=v_purchase,input_vat_ledger_id=v_in,
+  untaxed_vat_class=coalesce(nullif(p_settings->>'untaxed_vat_class',''),untaxed_vat_class),version=version+1,updated_by=auth.uid(),updated_at=now()
+ returning * into v_row;
+ insert into public.accounting_events(entity,entity_id,action,before_data,after_data,actor_user_id)
+ values('ledger_settings','00000000-0000-0000-0000-000000000000','changed',to_jsonb(v_old),to_jsonb(v_row),auth.uid());
+ return v_row;
+end $$;
+
+-- Posts the tax invoice for an accepted TZS Pro forma: customer Dr (a new bill named after the Pro forma), one sales
+-- line per Pro forma line, output VAT. Same arithmetic as save_sales_proforma; post_voucher repeats every check.
+create function public.post_sales_invoice(p_id uuid, p_proforma_id uuid, p_date date)
+returns public.vouchers language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_pf public.sales_proformas; v_set public.ledger_settings; v_party public.ledgers; v_line record; v_entries jsonb := '[]'; v_type uuid;
+ v_gross bigint; v_discount bigint; v_net bigint; v_tax bigint := 0; v_total bigint := 0; v_rate integer; v_class text; v_n integer := 0;
+begin
+ if not public.ledger_staff() then raise exception 'Accounting access is required' using errcode='42501'; end if;
+ select * into v_pf from public.sales_proformas where id=p_proforma_id;
+ if not found or v_pf.deleted_at is not null then raise exception 'Pro forma not found'; end if;
+ if v_pf.status <> 'accepted' then raise exception 'Only an accepted Pro forma can be invoiced'; end if;
+ if v_pf.currency <> 'TZS' then raise exception 'Only Pro formas in TZS can be invoiced here for now'; end if;
+ select * into v_set from public.ledger_settings;
+ if v_set.sales_ledger_id is null then raise exception 'Choose the default sales ledger under Years & locks first'; end if;
+ select * into v_party from public.ledgers where organization_id=v_pf.organization_id and active;
+ if not found then raise exception 'Create a customer ledger linked to this customer under Ledgers first'; end if;
+ if not v_party.bill_wise then raise exception 'Turn on bills for the ledger %', v_party.name; end if;
+ v_rate := public.vat_rate_on('standard',p_date);
+ for v_line in select * from public.sales_proforma_lines where proforma_id=v_pf.id order by sort_order loop
+  v_n := v_n + 1;
+  v_gross := v_line.quantity::bigint * v_line.unit_price_minor;
+  v_discount := round(v_line.quantity::numeric * v_line.unit_price_minor::numeric * v_line.discount_basis_points::numeric / 10000);
+  v_net := v_gross - v_discount;
+  if v_line.tax_basis_points = 0 then v_class := v_set.untaxed_vat_class;
+  elsif v_line.tax_basis_points = v_rate then v_class := 'standard';
+  else raise exception 'Line % has VAT at %, but the rate on % is %', v_n, trim_scale(v_line.tax_basis_points/100.0)||'%', p_date, trim_scale(v_rate/100.0)||'%'; end if;
+  if v_net > 0 then
+   v_entries := v_entries || jsonb_build_array(jsonb_build_object('ledger_id',v_set.sales_ledger_id,'amount_minor',-v_net,'vat_class',v_class));
+   v_tax := v_tax + round(v_net::numeric * public.vat_rate_on(v_class,p_date) / 10000)::bigint;
+   v_total := v_total + v_net;
+  end if;
+ end loop;
+ if v_n = 0 or v_total = 0 then raise exception 'This Pro forma has nothing to invoice'; end if;
+ if v_tax > 0 then
+  if v_set.output_vat_ledger_id is null then raise exception 'Choose the default output VAT ledger under Years & locks first'; end if;
+  v_entries := v_entries || jsonb_build_array(jsonb_build_object('ledger_id',v_set.output_vat_ledger_id,'amount_minor',-v_tax));
+ end if;
+ if v_total + v_tax <> v_pf.total_minor then raise exception 'Invoice total % does not match the Pro forma total %; check the Pro forma', v_total + v_tax, v_pf.total_minor; end if;
+ v_entries := jsonb_build_array(jsonb_build_object('ledger_id',v_party.id,'amount_minor',v_total + v_tax,
+  'bills',jsonb_build_array(jsonb_build_object('kind','new','name',v_pf.document_number,'amount_minor',v_total + v_tax)))) || v_entries;
+ select id into v_type from public.voucher_types where code='sales';
+ return public.post_voucher(p_id, v_type, p_date, v_entries, 'Pro forma '||v_pf.document_number, coalesce(v_pf.acceptance_reference,''),
+  null, jsonb_build_object('kind','proforma','id',v_pf.id), '{}'::jsonb);
+end $$;
+
+alter table public.ledger_settings enable row level security;
+create policy ledger_settings_read on public.ledger_settings for select to authenticated using ((select public.ledger_staff()));
+revoke all on public.ledger_settings from public, anon, authenticated;
+grant select on public.ledger_settings to authenticated;
+revoke all on function public.save_ledger_settings(integer,jsonb), public.post_sales_invoice(uuid,uuid,date) from public, anon;
+grant execute on function public.save_ledger_settings(integer,jsonb), public.post_sales_invoice(uuid,uuid,date) to authenticated;
+commit;

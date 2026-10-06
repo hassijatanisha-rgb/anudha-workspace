@@ -13,6 +13,8 @@ create function public.inventory_active_staff() returns boolean language sql sta
 create function public.inventory_owner() returns boolean language sql stable security definer set search_path=public as $$select exists(select 1 from public.staff where user_id=auth.uid() and active and role='owner')$$;
 create function public.accounting_access() returns boolean language sql stable security definer set search_path=public as $$select public.inventory_active_staff() and exists(select 1 from public.accounting_members where user_id=auth.uid())$$;
 create table public.organizations(id uuid primary key);create table public.suppliers(id uuid primary key);
+create table public.sales_proformas(id uuid primary key,document_number text,organization_id uuid,status text,currency text,total_minor bigint,acceptance_reference text,deleted_at timestamptz);
+create table public.sales_proforma_lines(id uuid primary key default gen_random_uuid(),proforma_id uuid,sort_order int,quantity int,unit_price_minor bigint,discount_basis_points int,tax_basis_points int);
 insert into auth.users values('${owner}'),('${accounts}'),('${sales}');
 insert into public.staff values('${owner}','owner',true),('${accounts}','staff',true),('${sales}','staff',true);insert into public.accounting_members values('${accounts}');
 insert into public.organizations values('${org}');insert into public.suppliers values('${sup}');
@@ -126,6 +128,36 @@ const tb=await db.query(`select ledger_id, closing_minor::int c from trial_balan
 await ok(Promise.resolve(assert.equal(tb.reduce((s,r)=>s+r.c,0),0)));
 await ok(Promise.resolve(assert.equal(tb.find(r=>r.ledger_id===L.outVat).c,-18000)));
 await ok(Promise.resolve(assert.equal(tb.find(r=>r.ledger_id===L.cust).c,118000)));
+
+// M2: invoice an accepted Pro forma without retyping.
+const pf=id(400),pfDraft=id(401),pfOdd=id(402),pfZero=id(403),org2=id(12);
+await db.exec(`insert into organizations values('${org2}');
+insert into sales_proformas values('${pf}','PF-2026-000012','${org2}','accepted','TZS',1062000,'LPO 77',null),('${pfDraft}','PF-2026-000013','${org2}','draft','TZS',118000,null,null),
+ ('${pfOdd}','PF-2026-000014','${org2}','accepted','TZS',116000,'x',null),('${pfZero}','PF-2026-000015','${org2}','accepted','TZS',50000,'y',null);
+insert into sales_proforma_lines(proforma_id,sort_order,quantity,unit_price_minor,discount_basis_points,tax_basis_points) values
+ ('${pf}',1,2,250000,1000,1800),('${pf}',2,1,450000,0,1800),('${pf}',3,1,0,0,1800),
+ ('${pfDraft}',1,1,100000,0,1800),('${pfOdd}',1,1,100000,0,1600),('${pfZero}',1,1,50000,0,0);`);
+const invoice=(vid,p,date='2026-08-05')=>one('select * from public.post_sales_invoice($1,$2,$3)',[vid,p,date]);
+const settings=(v,body)=>one('select * from public.save_ledger_settings($1,$2::jsonb)',[v,JSON.stringify(body)]);
+await ok(invoice(id(410),pf),/default sales ledger/);
+await ok(settings(1,{sales_ledger_id:L.capital}),/under Sales Accounts/);
+await ok(settings(1,{sales_ledger_id:L.sales,output_vat_ledger_id:L.inVat}),/output VAT ledger/);
+await ok(settings(1,{sales_ledger_id:L.sales,output_vat_ledger_id:L.outVat,purchase_ledger_id:L.purchase,input_vat_ledger_id:L.inVat}));
+await ok(settings(1,{sales_ledger_id:L.sales}),/changed; refresh/);
+await ok(invoice(id(410),pf),/customer ledger linked/);
+await ok(ledger(id(110),{name:'Second Hospital',group_id:G.debtors,organization_id:org2}));
+await ok(invoice(id(410),pf),/Turn on bills/);
+await ok(ledger(id(110),{name:'Second Hospital',group_id:G.debtors,organization_id:org2,bill_wise:true,credit_days:14},1));
+await ok(invoice(id(410),pfDraft),/Only an accepted/);
+await ok(invoice(id(410),pfOdd),/VAT at 16%, but the rate on 2026-08-05 is 18%/);
+const inv=await invoice(id(410),pf);checks++;
+const lines=await db.query(`select amount_minor::int a,vat_class c from voucher_entries where voucher_id=$1 order by line_no`,[inv.id]).then(r=>r.rows);
+// 2 × 2,500.00 less 10% = 4,500.00; 4,500.00; VAT 18% of each; free line skipped.
+await ok(Promise.resolve(assert.deepEqual(lines,[{a:1062000,c:null},{a:-450000,c:'standard'},{a:-450000,c:'standard'},{a:-162000,c:null}])));
+await ok(bill('PF-2026-000012').then(r=>assert.deepEqual(r,{b:1062000,d:'2026-08-19'})));
+await ok(invoice(id(410),pf).then(r=>assert.equal(r.number,inv.number)),undefined);
+await ok(invoice(id(411),pf),/already has a posted voucher/);
+await ok(invoice(id(412),pfZero).then(async r=>assert.equal((await one(`select vat_class from voucher_entries where voucher_id=$1 and line_no=2`,[r.id])).vat_class,'exempt')));
 
 // RLS: accounts read, other staff see nothing, nobody writes directly.
 await db.exec('set role authenticated');
