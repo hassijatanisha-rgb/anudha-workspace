@@ -62,3 +62,16 @@ test('sign-in keeps working if the screens go live before the access list exists
  client.from=()=>({select:()=>({eq:()=>({single:async()=>({error:{message:'JWT expired'}})})})});
  assert.equal((await ctx.loadMyStaffRow('u')).error.message,'JWT expired','other errors are not hidden');
 });
+test('staff list file: validated, heads first, people with a login skipped',()=>{
+ const ctx=load({role:'owner',access:[]});ctx.employeeDirectory=new Map([['u1',{display_name:'Existing Person'}]]);
+ const file=rows=>JSON.stringify({format:'anudha-staff-list-v1',rows});
+ assert.throws(()=>ctx.staffListRows('{}'),/not a staff list/);
+ assert.throws(()=>ctx.staffListRows(file([{full_name:'A B',role:'boss'}])),/role must be/);
+ assert.throws(()=>ctx.staffListRows(file([{full_name:'A B',department:'kitchen'}])),/unknown department/);
+ assert.throws(()=>ctx.staffListRows(file([{full_name:'A B'},{full_name:'a  b'}])),/twice/);
+ const rows=ctx.staffListRows(file([{full_name:'Rep',role:'staff',department:'marketing',access:['leads']},{full_name:'Boss',role:'owner',access:['leads']},{full_name:'Lead',role:'head',department:'marketing',access:['leads'],start:true}]));
+ assert.deepEqual([...rows.map(r=>r.access.length)],[1,0,1],'owners get no list');
+ assert.deepEqual([...ctx.staffListOrder(rows).map(r=>r.name)],['Boss','Lead','Rep']);
+ assert.equal(ctx.staffListExisting('existing person'),true);assert.equal(ctx.staffListExisting('Someone New'),false);
+ assert.match(ctx.departmentLabel('marketing'),/Marketing/);
+});
