@@ -8,7 +8,7 @@ const workspaceGroups=[
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Leads','leads','leads'],['Create Pro forma','sales','new'],['Current orders','sales','proformas'],['Tally invoices','tallyinvoices'],
-  ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
+  ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting'],['Books of account','ledger']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -25,7 +25,9 @@ const workspaceGroups=[
 // Keys are a view, or view:section for one page of a view.
 const ownerOnlyViews=new Set(['staff','approvals','recycle','stockcount:review','inventory:review']);
 async function showAccountingNavigation(){
- const item=document.querySelector('#nav [data-accounting-only]');if(!item)return;
+ const item=document.querySelector('#nav [data-accounting-only]'),books=document.querySelector('#nav [data-ledger-only]');
+ if(books){books.hidden=true;client.rpc('ledger_staff').then(result=>{books.hidden=result?.data!==true},()=>{books.hidden=true});}
+ if(!item)return;
  item.hidden=true;
  try{const result=await client.rpc('accounting_access');item.hidden=result?.data!==true}catch{item.hidden=true}
 }
@@ -33,7 +35,7 @@ function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'?' data-accounting-only hidden':''}${target==='ledger'?' data-ledger-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
@@ -50,6 +52,7 @@ function installWorkspaceNavigation(){
   if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
  if(button.dataset.view==='purchasing'&&typeof openPurchaseSection==='function')openPurchaseSection(section);
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
+ if(button.dataset.view==='ledger'&&typeof openLedgerTab==='function')openLedgerTab(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
    if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    salesSection=section==='new'?'proformas':section||'proformas';

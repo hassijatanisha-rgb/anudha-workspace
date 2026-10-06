@@ -48,6 +48,21 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
+ {id:'books-voucher',role:'accounts',title:'Enter a payment, receipt or journal in the books',screens:['ledger'],steps:[
+  'Open **Books of account** and press **Enter voucher**.',
+  'Choose the voucher type and the date. Type a ledger name on each line and pick it from the list; set Dr or Cr and the amount.',
+  'For a customer or supplier, say which bill the amount belongs to: New bill, Against bill, Advance or On account.',
+  'On a sale or purchase, set the VAT on each line and press **Fill VAT line**.',
+  'When debit and credit are equal, press **Post voucher**. The number is given when it posts.']},
+ {id:'books-correct',role:'accounts',title:'Correct a voucher that was posted wrongly',screens:['ledger'],steps:[
+  'A posted voucher is never changed. Open **Books of account**, then **Day Book**, and find the voucher.',
+  'Press **Reverse**, give the date and the reason, and press **Post reversal**.',
+  'Then enter the voucher again correctly under **Enter voucher**.']},
+ {id:'books-reports',role:'accounts',title:'See balances, a ledger statement or the Trial Balance',screens:['ledger'],steps:[
+  'Open **Books of account**. **Ledgers** lists every group and ledger with its balance. Press **New ledger** to add one.',
+  'Press **Statement** on a ledger, or open **Ledger statement**, to see every entry with the running balance.',
+  'Open **Trial Balance** and choose the dates. Debits must equal credits.',
+  'After filing the VAT return, open **Years & locks** and press **Lock books** for that month.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',
