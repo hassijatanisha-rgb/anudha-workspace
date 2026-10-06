@@ -62,9 +62,9 @@ async function startTwoStepSetup(box){
   settingsWorkspace();message('Two-step sign-in is on. You will need your phone each time you sign in.');
  });};
 }
-// Staff page (owner): who has it on, and a reset for a lost phone.
+// Staff page (owner, or a head for their own department): who has it on, and a reset for a lost phone.
 async function decorateStaffTwoStep(){
- if(me?.role!=='owner')return;
+ if(me?.role!=='owner'&&me?.role!=='head')return;
  const result=await client.rpc('staff_two_step_status');if(result.error)return;
  const on=new Map((result.data||[]).map(r=>[r.user_id,r.enabled]));
  document.querySelectorAll('[data-staff-reset]').forEach(button=>{

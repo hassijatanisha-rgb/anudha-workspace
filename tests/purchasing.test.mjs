@@ -44,3 +44,26 @@ test('menu, router, sign-out, pending link and script order are wired',()=>{
  assert.match(read('pending-stock.js'),/typeof startPurchaseFromPending==='function'/);
  assert.ok(html.indexOf('purchasing.js')>html.indexOf('work-assignments.js')&&html.indexOf('purchasing.js')<html.indexOf('app.js'));
 });
+test('loads every open order but only six months of finished ones, items nested per order',async()=>{
+ const ctx=load(),calls=[];
+ ctx.all=async(table,columns,filter)=>{const q={or(v){calls.push([table,columns,v]);return q;}};if(filter)filter(q);else calls.push([table,columns,null]);
+  return table==='purchase_orders'?[{id:'o9',status:'requested',purchase_order_lines:[{purchase_order_id:'o9',line_number:1,product_id:'p1',quantity:3}]}]:[{id:'s1',name:'Fixture Medical',active:true}];};
+ assert.equal(await ctx.loadPurchasing(),true);
+ const orders=calls.find(c=>c[0]==='purchase_orders');
+ assert.equal(orders[1],'*,purchase_order_lines(*)');
+ assert.match(orders[2],/^status\.in\.\(requested,approved,ordered\),updated_at\.gte\.\d{4}-/);
+ const since=new Date(orders[2].split('updated_at.gte.')[1]);
+ assert.ok(Math.abs((Date.now()-since)/864e5-183)<1,'window is six months');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>[o.id,"purchase_order_lines" in o])'),[['o9',false]]);
+ assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
+});
+function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
+test('after a step only that order is read again; the rest of the list is kept',async()=>{
+ const ctx=load('owner');let asked=0,full=0;
+ ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]}})};return q;}};
+ vm.runInContext(`purchaseLoaded=true;view='purchasing';purchaseOrders=[{id:'o1',status:'requested'},{id:'o2',status:'requested'}];renderPurchasing=()=>{};purchasingWorkspace=async()=>{globalThis.fullReload=(globalThis.fullReload||0)+1};`,ctx);
+ await ctx.purchaseRefreshOne('o1');
+ assert.equal(asked,1);assert.equal(vmJson(ctx,'globalThis.fullReload||0'),0,'no full reload');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
+ assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
+});

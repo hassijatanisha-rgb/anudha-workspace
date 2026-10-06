@@ -1,5 +1,6 @@
-// Owner-only staff logins without email addresses: create an employee (ID from the name, temporary password),
-// reset a forgotten password, and reset two-step sign-in when a phone is lost. The service key is used only for the
+// Staff logins without email addresses: create an employee (ID from the name, temporary password), reset a forgotten
+// password, and reset two-step sign-in when a phone is lost. The owner can do this for anyone; a department head only
+// for staff in their own department, who join that department with areas the head has (checked by the database). The service key is used only for the
 // auth.admin calls; every staff-table change and log entry is made with the owner's own session, so the database records the owner as the actor.
 // No password is stored or logged; the temporary password is returned once to the owner who asked for it.
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -7,6 +8,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const DOMAIN = 'staff.anudha.com';
 const ALLOWED_ORIGINS = ['https://hassijatanisha-rgb.github.io'];
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const AREAS = ['leads', 'proformas', 'deliveries', 'service', 'purchasing', 'stock', 'stock_count', 'travel', 'reports'];
+const DEPARTMENTS = ['', 'sales', 'accounts', 'stores', 'service', 'management'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cors(req: Request) {
@@ -55,7 +58,14 @@ Deno.serve(async (req) => {
   const who = await asOwner.auth.getUser();
   if (who.error || !who.data.user) return reply(req, 401, { error: 'Sign in again' });
   const owner = await asOwner.rpc('is_owner');
-  if (owner.error || owner.data !== true) return reply(req, 403, { error: 'Only an active owner can manage staff logins' });
+  const isOwner = !owner.error && owner.data === true;
+  const head = isOwner ? null : await asOwner.rpc('is_department_head');
+  if (!isOwner && (head?.error || head?.data !== true)) return reply(req, 403, { error: 'Only the owner or a department head can manage staff logins' });
+  // A head may reset only people they manage; the database decides (same rule as its own staff functions).
+  const mayManage = async (target: string) => {
+    const allowed = await asOwner.rpc('can_manage_staff', { p_user_id: target });
+    return !allowed.error && allowed.data === true;
+  };
   const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 
   let body: Record<string, unknown>;
@@ -64,9 +74,14 @@ Deno.serve(async (req) => {
   try {
     if (body.action === 'create') {
       const fullName = String(body.full_name ?? '').trim().replace(/\s+/g, ' ');
-      const role = body.role === 'owner' ? 'owner' : body.role === 'staff' ? 'staff' : '';
+      // A head always creates staff in their own department; only the owner chooses role and department.
+      const role = !isOwner ? 'staff' : ['owner', 'head', 'staff'].includes(String(body.role)) ? String(body.role) : '';
+      const department = isOwner ? String(body.department ?? '') : '';
+      const access = Array.isArray(body.access) ? [...new Set(body.access.map(String))] : [];
       if (fullName.length < 2 || fullName.length > 120) return reply(req, 400, { error: 'Enter the employee’s full name' });
-      if (!role) return reply(req, 400, { error: 'Choose Staff or Owner' });
+      if (!role) return reply(req, 400, { error: 'Choose Staff, Department head or Owner' });
+      if (!DEPARTMENTS.includes(department)) return reply(req, 400, { error: 'Choose a department from the list' });
+      if (access.some((area) => !AREAS.includes(area))) return reply(req, 400, { error: 'Choose areas from the list' });
       const phone = normalPhone(body.phone);
       const password = temporaryPassword();
       let userId = '', employeeId = '';
@@ -80,12 +95,16 @@ Deno.serve(async (req) => {
         userId = created.data.user.id; employeeId = id; break;
       }
       if (!userId) return reply(req, 409, { error: 'No free employee ID for this name; add a middle name or initial' });
-      const access = await asOwner.rpc('manage_staff', { p_user_id: userId, p_role: role, p_active: true });
-      if (access.error) {
+      const enabled = isOwner
+        ? await asOwner.rpc('manage_staff', { p_user_id: userId, p_role: role, p_active: true })
+        : await asOwner.rpc('add_department_staff', { p_user_id: userId, p_access: access });
+      if (enabled.error) {
         await admin.auth.admin.deleteUser(userId);
-        throw new Error(`Access could not be enabled, so the login was removed again: ${access.error.message}`);
+        throw new Error(`Access could not be enabled, so the login was removed again: ${enabled.error.message}`);
       }
       const warnings: string[] = [];
+      if (isOwner && department) { const saved = await asOwner.rpc('set_staff_department', { p_user_id: userId, p_department: department }); if (saved.error) warnings.push(`Department not saved: ${saved.error.message}`); }
+      if (isOwner && role !== 'owner') { const saved = await asOwner.rpc('set_staff_access', { p_user_id: userId, p_access: access }); if (saved.error) warnings.push(`Access not saved: ${saved.error.message}`); }
       const named = await asOwner.rpc('set_staff_display_name', { p_user_id: userId, p_expected_version: 0, p_display_name: fullName });
       if (named.error) warnings.push(`Name not saved: ${named.error.message}`);
       if (phone) { const saved = await asOwner.rpc('set_staff_phone', { p_user_id: userId, p_phone: phone }); if (saved.error) warnings.push(`Phone not saved: ${saved.error.message}`); }
@@ -100,6 +119,7 @@ Deno.serve(async (req) => {
       if (target === who.data.user.id) return reply(req, 400, { error: 'Use Change password for your own login' });
       const member = await asOwner.from('staff').select('user_id').eq('user_id', target).maybeSingle();
       if (member.error || !member.data) return reply(req, 404, { error: 'This person is not on the staff list' });
+      if (!(await mayManage(target))) return reply(req, 403, { error: 'You can only manage people in your own department' });
       const existing = await admin.auth.admin.getUserById(target);
       if (existing.error || !existing.data.user) return reply(req, 404, { error: 'Login not found' });
       const password = temporaryPassword();
@@ -116,6 +136,7 @@ Deno.serve(async (req) => {
       if (target === who.data.user.id) return reply(req, 400, { error: 'Turn your own two-step sign-in off in My settings' });
       const member = await asOwner.from('staff').select('user_id').eq('user_id', target).maybeSingle();
       if (member.error || !member.data) return reply(req, 404, { error: 'This person is not on the staff list' });
+      if (!(await mayManage(target))) return reply(req, 403, { error: 'You can only manage people in your own department' });
       const factors = await admin.auth.admin.mfa.listFactors({ userId: target });
       if (factors.error) throw new Error(factors.error.message);
       for (const factor of factors.data?.factors ?? []) {

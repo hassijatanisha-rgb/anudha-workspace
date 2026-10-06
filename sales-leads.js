@@ -74,11 +74,36 @@ async function saveLeadForm(form){
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press Save again to retry safely.');
- leadPendingSave=null;leadEditing='';await leadsWorkspace(true);message(`${saved.lead_number} saved.`);
+ leadPendingSave=null;leadEditing='';await leadRefreshOne(saved.id);message(`${saved.lead_number} saved.`);
+}
+// Every open lead is loaded; won and lost leads only from the last six months, so the page stays fast as years
+// of leads build up. Typing in Search also looks up older leads on the server.
+const leadRecentDays=183,leadColumns='id,lead_number,stage,source,organization_id,contact_id,caller_name,caller_phone,caller_organization,subject,details,estimated_value_minor,currency,owner_user_id,next_action,next_action_on,lost_reason,proforma_id,version,created_by,created_at,updated_at';
+let leadSearchTimer=0;
+function leadSearchTerm(text){return String(text||'').replace(/[^\p{L}\p{N}@.+\- ]/gu,' ').trim().replace(/\s+/g,' ');}
+async function leadSearchOlder(text){
+ const term=leadSearchTerm(text),epoch=leadEpoch,actor=me?.user_id;if(term.length<3)return;
+ const like=`*${term}*`;
+ const result=await client.from('sales_leads').select(leadColumns).or(['lead_number','subject','caller_name','caller_phone','caller_organization'].map(c=>`${c}.ilike.${like}`).join(',')).order('updated_at',{ascending:false}).limit(50);
+ if(result.error||epoch!==leadEpoch||me?.user_id!==actor||view!=='leads'||leadSearch!==text)return;
+ const known=new Set(leadRows.map(r=>r.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
+ if(!extra.length)return;
+ leadRows=leadRows.concat(extra);const box=$('#leadSearch');if(box)renderSearchPreservingPosition(box,renderLeads);else renderLeads();
+}
+// After a save or a step, only that lead is read again, so the page stays quick however many leads are listed.
+async function leadRefreshOne(id){
+ if(!leadLoaded||!id)return leadsWorkspace(true);
+ const epoch=leadEpoch,actor=me?.user_id;
+ const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();
+ if(result.error)throw Error(result.error.message);
+ if(epoch!==leadEpoch||me?.user_id!==actor)return;
+ leadRows=leadRows.filter(r=>r.id!==id);if(result.data)leadRows.push(result.data);
+ if(view==='leads')renderLeads();
 }
 async function loadLeads(){
  const epoch=++leadEpoch,actor=me?.user_id;
- const [rows,proformas]=await Promise.all([all('sales_leads','id,lead_number,stage,source,organization_id,contact_id,caller_name,caller_phone,caller_organization,subject,details,estimated_value_minor,currency,owner_user_id,next_action,next_action_on,lost_reason,proforma_id,version,created_by,created_at,updated_at'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
+ const since=new Date(Date.now()-leadRecentDays*864e5).toISOString();
+ const [rows,proformas]=await Promise.all([all('sales_leads',leadColumns,q=>q.or(`stage.not.in.(won,lost),updated_at.gte.${since}`)),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
  if(epoch!==leadEpoch||me?.user_id!==actor)return false;
  leadRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;leadLoaded=true;leadLoadError='';return true;
 }
@@ -89,6 +114,7 @@ async function leadsWorkspace(force=false){
   try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
  }
  if(view!=='leads'||me?.user_id!==actor)return;
+ if(leadFocusId&&!leadRows.some(r=>r.id===leadFocusId)){const older=await client.from('sales_leads').select(leadColumns).eq('id',leadFocusId).maybeSingle();if(view!=='leads'||me?.user_id!==actor)return;if(older.data)leadRows=leadRows.concat(older.data);}
  if(leadFocusId){const row=leadRows.find(r=>r.id===leadFocusId);leadFocusId='';if(row){leadFilter='all';leadSearch=row.lead_number;}}
  renderLeads();
 }
@@ -97,7 +123,7 @@ function renderLeads(){
  const pages=Math.max(1,Math.ceil(rows.length/20));leadPage=Math.min(Math.max(leadPage,0),pages-1);
  const editing=leadEditing==='new'?null:leadRows.find(row=>row.id===leadEditing);
  const count=key=>leadRows.filter(row=>leadMatchesFilter(row,key,me?.user_id)).length;
- $('#content').innerHTML=`<section class="leads-workspace"><div class="heading"><div><small>ORDERS</small><h1>Leads</h1><p class="muted">Record every call, message or walk-in here, then follow it up until it becomes a Pro forma. Late follow-ups are at the top.</p></div><div class="actions"><button type="button" id="leadRefresh">Refresh</button><button type="button" id="newLead" class="primary-action">+ New inquiry</button></div></div>${leadLoadError?`<p class="notice error" role="alert">Leads could not load: ${esc(leadLoadError)}. Nothing was changed.</p>`:''}${leadEditing?leadEditor(editing):''}<div class="tabs" role="group" aria-label="Show leads">${leadFilters.map(([key,label])=>{const n=key==='all'?0:count(key);return `<button type="button" data-lead-filter="${key}" class="${leadFilter===key?'active':''}" aria-pressed="${leadFilter===key}">${label}${n?` · ${n}`:''}</button>`}).join('')}</div><label class="search"><span>Search</span><input id="leadSearch" type="search" placeholder="Name, phone, client, product or LD number" value="${esc(leadSearch)}"></label>${rows.slice(leadPage*20,leadPage*20+20).map(leadCard).join('')||`<p class="muted">${leadRows.length?'No leads here.':'No leads yet. Press + New inquiry to record one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="leadPrev" ${leadPage===0?'disabled':''}>Previous</button><span>Page ${leadPage+1} of ${pages}</span><button type="button" id="leadNext" ${leadPage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
+ $('#content').innerHTML=`<section class="leads-workspace"><div class="heading"><div><small>ORDERS</small><h1>Leads</h1><p class="muted">Record every call, message or walk-in here, then follow it up until it becomes a Pro forma. Late follow-ups are at the top.</p></div><div class="actions"><button type="button" id="leadRefresh">Refresh</button><button type="button" id="newLead" class="primary-action">+ New inquiry</button></div></div>${leadLoadError?`<p class="notice error" role="alert">Leads could not load: ${esc(leadLoadError)}. Nothing was changed.</p>`:''}${leadEditing?leadEditor(editing):''}<div class="tabs" role="group" aria-label="Show leads">${leadFilters.map(([key,label])=>{const n=key==='all'?0:count(key);return `<button type="button" data-lead-filter="${key}" class="${leadFilter===key?'active':''}" aria-pressed="${leadFilter===key}">${label}${n?` · ${n}`:''}</button>`}).join('')}</div>${['won','lost','all'].includes(leadFilter)?'<p class="muted">Showing closed leads from the last 6 months. Search finds older ones.</p>':''}<label class="search"><span>Search</span><input id="leadSearch" type="search" placeholder="Name, phone, client, product or LD number" value="${esc(leadSearch)}"></label>${rows.slice(leadPage*20,leadPage*20+20).map(leadCard).join('')||`<p class="muted">${leadRows.length?'No leads here.':'No leads yet. Press + New inquiry to record one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="leadPrev" ${leadPage===0?'disabled':''}>Previous</button><span>Page ${leadPage+1} of ${pages}</span><button type="button" id="leadNext" ${leadPage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
  bindLeads();
 }
 function bindLeads(){
@@ -111,7 +137,7 @@ function bindLeads(){
   form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#leadFormError').textContent='';
    run(async()=>{try{await saveLeadForm(form)}catch(error){if($('#leadFormError'))$('#leadFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
  }
- $('#leadSearch').oninput=event=>{leadSearch=event.target.value;leadPage=0;renderSearchPreservingPosition(event.target,renderLeads);};
+ $('#leadSearch').oninput=event=>{leadSearch=event.target.value;leadPage=0;renderSearchPreservingPosition(event.target,renderLeads);clearTimeout(leadSearchTimer);const text=leadSearch;leadSearchTimer=setTimeout(()=>leadSearchOlder(text).catch(()=>{}),400);};
  if($('#leadPrev')){$('#leadPrev').onclick=()=>{leadPage--;renderLeads();};$('#leadNext').onclick=()=>{leadPage++;renderLeads();};}
  document.querySelectorAll('[data-lead-filter]').forEach(button=>button.onclick=()=>{leadFilter=button.dataset.leadFilter;leadPage=0;renderLeads();});
  document.querySelectorAll('[data-lead-edit]').forEach(button=>button.onclick=()=>{leadEditing=button.dataset.leadEdit;renderLeads();$('#leadForm')?.scrollIntoView({block:'start'});});
@@ -130,7 +156,7 @@ function openLeadAction(row,action){
   const actor=me?.user_id,result=await client.rpc('advance_sales_lead',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||'',p_proforma_id:values.proforma||null});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the lead.');
   if(result.error)throw Error(result.error.message);
-  await leadsWorkspace(true);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
+  await leadRefreshOne(row.id);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 function startProformaFromLead(row){
