@@ -26,7 +26,7 @@ Receivables and payables outstanding by party,receivables payables,must,yes,no,S
 Ageing buckets (0-30 31-60 61-90 90+),receivables payables,must,yes,no,S19 source 5
 Credit limit warning on sales invoice,receivables payables,should,yes,no,
 Party statement of account print,receivables payables,must,yes,no,S14 print
-VAT 18% standard plus zero-rated exempt and out-of-scope classes,tax,must,partial,no,Tally Tanzania localisation unconfirmed; rates effective-dated
+VAT at 18% on every taxable line plus zero-rated exempt and out-of-scope classes,tax,must,partial,no,18% confirmed by Anudha 2026-10-06; no reduced rate; rate effective-dated as data
 Input VAT only with supplier fiscal receipt verification code and TIN,tax,must,no,no,source 15; otherwise post to cost
 Monthly VAT return summary with exception list,tax,must,yes,no,S23; export for TRA portal
 Fiscalise each sales invoice through TRA VFD with receipt number and QR,tax,must,no,no,source 13; needs TRA registration and certification

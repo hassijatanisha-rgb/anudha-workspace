@@ -224,7 +224,8 @@ BillRef        id, ledger_id, name (bill number), due_date, kind (new|against|ad
 CostCategory / CostCentre / CostAllocation (entry_id, cost_centre_id, amount_minor)
                evidence: S12, S24                    confidence: medium
 
-TaxRate        id, name, rate_bp (1800 = 18%), class, effective_from      confidence: high
+TaxRate        id, name, rate_bp (1800 = 18%, the only taxable rate), class, effective_from
+               confidence: high (18% confirmed by Anudha)
 BankStatementLine  id, ledger_id, date, amount_minor, description, bank_ref, matched_entry_id
                plus bank_date on VoucherEntry for manual BRS
                evidence: S20, source 6               confidence: medium
@@ -286,10 +287,11 @@ Hard parts:
    gap-free numbering per voucher type and year, and locked periods.
 2. **TRA fiscalisation (VFD).** It needs TRA registration, tokens, a receipt
    per sale, a daily Z report, offline/retry with idempotency, and the 2025/26
-   pre-clearance e-invoicing change still to come. Confirm the current return
-   due date and B2C rate rules with the accountant. Sources disagree on 20th
-   vs 25th, and a 16% rate applies to some electronically paid B2C sales from
-   1 Sep 2025.
+   pre-clearance e-invoicing change still to come. **VAT rate: 18% on every
+   taxable line (confirmed by Anudha, 2026-10-06).** No reduced rate is built.
+   The rate lives in an effective-dated tax table so a future change is data,
+   not code. Still to confirm with the accountant: the return due date
+   (sources say 20th or 25th).
 3. **Cut-over from Tally.** Opening balances and open bills must tie to
    Tally's Trial Balance to the shilling, followed by a parallel run of at
    least one full VAT month before Tally is switched off.
