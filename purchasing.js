@@ -3,6 +3,7 @@
 // Writes go through save_supplier / save_purchase_request / advance_purchase_order only. No stock changes here.
 let purchaseSection='orders',purchaseFilter='requested',purchaseSearch='',purchasePage=0,purchaseLoaded=false,purchaseLoadError='',purchaseEpoch=0;
 let purchaseRenderEpoch=0;
+const purchaseRefreshRequests=new Map();
 let purchaseOrders=[],purchaseLines=[],suppliers=[],purchaseEditing='',supplierEditing='',purchasePrefill=null,purchasePendingSave=null,supplierPendingSave=null;
 const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · order now',ordered:'Ordered · waiting for goods',closed:'Goods arrived',cancelled:'Cancelled'};
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
@@ -23,7 +24,7 @@ async function purchaseSearchOlder(text){
  purchaseOrders=purchaseOrders.concat(extra.map(({purchase_order_lines:items,...order})=>order));purchaseLines=purchaseLines.concat(extra.flatMap(r=>r.purchase_order_lines||[]));
  const box=$('#purchaseSearch');if(box)renderSearchPreservingPosition(box,renderPurchasing);else renderPurchasing();
 }
-function clearPurchasing(){purchaseEpoch++;purchaseRenderEpoch++;purchaseLoaded=false;purchaseLoadError='';purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
+function clearPurchasing(){purchaseEpoch++;purchaseRenderEpoch++;purchaseRefreshRequests.clear();purchaseLoaded=false;purchaseLoadError='';purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
 function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';}
 function purchaseToday(){return new Date().toISOString().slice(0,10);}
 function purchaseOverdue(order,today=purchaseToday()){return order.status==='ordered'&&!!order.expected_on&&order.expected_on<today;}
@@ -104,16 +105,19 @@ async function saveSupplierForm(form){
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
- const epoch=purchaseEpoch,actor=me,actorId=me?.user_id;
- const current=()=>!!actor&&epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId;
- if(!current())return;
- let result;
- try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();}catch(error){if(!current())return;throw error;}
- if(!current())return;
- if(result.error)throw Error(result.error.message);
- purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
- if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
- if(view==='purchasing')renderPurchasing();
+ const epoch=purchaseEpoch,actor=me,actorId=me?.user_id,request={};
+ if(!actor)return;
+ purchaseRefreshRequests.set(id,request);
+ const current=()=>epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId&&purchaseRefreshRequests.get(id)===request;
+ try{
+  let result;
+  try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();}catch(error){if(!current())return;throw error;}
+  if(!current())return;
+  if(result.error)throw Error(result.error.message);
+  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
+  if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
+  if(view==='purchasing')renderPurchasing();
+ }finally{if(purchaseRefreshRequests.get(id)===request)purchaseRefreshRequests.delete(id);}
 }
 async function loadPurchasing(){
  const epoch=++purchaseEpoch,actor=me,actorId=me?.user_id;
