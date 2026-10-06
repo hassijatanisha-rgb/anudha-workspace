@@ -1,0 +1,47 @@
+feature,area,priority,original,clone,notes
+Sign up and create a business,onboarding,must,yes,no,phone-number OTP first; email optional
+Invite team members with roles,team,must,yes,partial,Anudha ERP has Supabase staff login and roles
+Client directory with search,clients,must,yes,partial,Anudha client groups/branches/contacts
+Client properties with address and landmark,clients,must,yes,partial,Dar addresses are landmark-based; add GPS pin
+Capture a work request,requests,must,yes,no,
+Quote builder with line items and tax,quotes,must,yes,partial,Anudha pro forma draft/revision
+Send quote by link,quotes,must,yes,no,share via WhatsApp/SMS not email-first
+Customer approves quote online,client hub,must,yes,partial,Anudha has acceptance proof; needs public link
+Convert approved quote to job,jobs,must,yes,no,
+Schedule calendar with technician assignment,schedule,must,yes,partial,Anudha HOD assignment; needs calendar view
+Technician mobile view of today's visits,mobile,must,yes,partial,Anudha work-assignments
+Service checklist / job form,mobile,must,yes,yes,Anudha immutable service reports
+Customer signature on completion,mobile,must,yes,yes,Anudha signed proof
+Photos on visit,mobile,must,yes,partial,private file storage pending in Anudha
+Create invoice from job,invoicing,must,yes,partial,Anudha tax invoice
+Record payment (cash/bank/mobile money),invoicing,must,yes,no,
+Recurring maintenance jobs,jobs,must,yes,yes,Anudha maintenance schedule
+Printable PDF quote/invoice/report,documents,must,yes,yes,Anudha one-page PDFs
+Automated visit reminders,notifications,should,yes,no,SMS/WhatsApp
+Invoice follow-up reminders,notifications,should,yes,no,
+Quote follow-up reminders,notifications,should,yes,no,
+Customer self-service portal (request work and view history),client hub,should,yes,no,
+Pay invoice online from link,client hub,should,yes,no,via mobile-money aggregator
+Online booking form,requests,should,yes,no,
+Two-way SMS with clients,notifications,should,yes,no,
+Reports: revenue and aged receivables,reports,should,yes,partial,Anudha reports.js
+Job costing (labour plus parts),jobs,should,yes,no,
+Timesheets,team,should,yes,no,
+Expenses on jobs,jobs,should,yes,no,
+Batch invoicing,invoicing,should,yes,no,
+GPS tracking of technicians,mobile,could,yes,no,
+Map view of the day's visits,schedule,could,yes,no,
+Optional line items in quotes,quotes,could,yes,no,
+Tips on payment,client hub,could,yes,no,
+Route optimisation,schedule,could,yes,no,
+Custom fields,settings,could,yes,no,
+QuickBooks/Xero sync,integrations,could,yes,skip,not used by Dar SMEs; Tally export exists in Anudha instead
+Jobber Capital financing,integrations,could,yes,skip,partner financing deal not a feature
+App marketplace,integrations,could,yes,skip,their partner network
+M-Pesa / Mixx by Yas / Airtel Money STK push collection,payments,must,no,no,DAR ADDITION: the main reason to buy
+TRA fiscal receipt (EFD number now; VFD later),compliance,must,no,partial,DAR ADDITION: Anudha has TIN/VRN handling and Tally invoices
+Swahili and English interface,i18n,must,no,no,DAR ADDITION
+WhatsApp as the default send channel,notifications,must,no,no,DAR ADDITION
+Offline technician app with sync,mobile,should,no,no,DAR ADDITION: patchy data on site
+Flat business price in TZS (not per user),pricing,must,no,no,DAR ADDITION: answers top Jobber complaint (price per user)
+Spare parts / stock used on visit,inventory,should,no,partial,DAR ADDITION: Anudha godown inventory
