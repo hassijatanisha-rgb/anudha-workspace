@@ -43,3 +43,13 @@ test('database: website submissions only through the service role; staff need Le
  assert.match(fn,/if \(text\(body\.website, 200\)\) return reply\(req, 400/,'hidden field stops bots');
  assert.doesNotMatch(fn,/from\('customer_requests'\)/,'the function never reads the table directly');
 });
+test('Instagram auto-reply: signed calls only, one reply per person per post, links to quote and WhatsApp',()=>{
+ const fn=readFileSync(new URL('../supabase/functions/instagram-auto-reply/index.ts',import.meta.url),'utf8');
+ assert.ok(fn.indexOf('validSignature(raw')<fn.indexOf('JSON.parse(raw)'),'signature is checked before reading the call');
+ assert.match(fn,/recipient: \{ comment_id: commentId \}/,'private reply to the comment, as Instagram allows');
+ assert.match(fn,/commenter_id\.eq\.\$\{commenterId\},media_id\.eq\.\$\{mediaId\},status\.eq\.sent/,'once per person per post');
+ assert.match(fn,/commenterId === env\('IG_USER_ID'\)/,'never replies to our own comments');
+ assert.match(fn,/Request a quote on our website: \$\{quoteUrl\}/);assert.match(fn,/WhatsApp: \$\{whatsappUrl\}/);
+ const sql=readFileSync(new URL('../supabase/migrations/202610060063_instagram_auto_replies.sql',import.meta.url),'utf8');
+ assert.match(sql,/revoke all on public\.instagram_auto_replies from public, anon, authenticated/);
+});
