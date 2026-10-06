@@ -1,11 +1,9 @@
--- Restrict manual pending cancellation to existing owners; no new memberships or stock changes.
--- Department-head delegation is not configured by this migration.
+-- Only the owner or a department head can cancel a pending request; no new memberships or stock changes.
 -- Rollback: reviewed forward function replacement; restoring 043 would reopen staff cancellation.
--- Unapplied candidate uses a full UTC timestamp; applied 055_hardening remains unchanged.
 begin;
 create or replace function public.advance_pending_stock_request(p_id uuid, p_expected_version integer, p_action text, p_note text default '', p_extend_months integer default null)
 returns public.pending_stock_requests language plpgsql security definer set search_path=public,pg_temp as $$
-declare v_row public.pending_stock_requests; v_new public.pending_stock_requests; v_note text := trim(coalesce(p_note,'')); v_owner boolean := public.inventory_owner();
+declare v_row public.pending_stock_requests; v_new public.pending_stock_requests; v_note text := trim(coalesce(p_note,'')); v_owner boolean := public.inventory_owner(); v_head boolean := public.is_department_head();
 begin
  if not public.inventory_active_staff() then raise exception 'Active staff access is required'; end if;
  if p_id is null or p_expected_version is null or p_action is null then raise exception 'Request, expected version and action are required'; end if;
@@ -15,9 +13,9 @@ begin
  if not found then raise exception 'Pending request not found'; end if;
  if v_row.version <> p_expected_version then raise exception 'Pending request changed; refresh and compare'; end if;
  if v_row.status <> 'waiting' then raise exception 'This pending request is already closed'; end if;
- if p_action='cancel' and not v_owner then raise exception 'Only the owner can cancel a pending request'; end if;
+ if p_action='cancel' and not (v_owner or v_head) then raise exception 'Only the owner or a department head can cancel a pending request'; end if;
  if p_action in ('fulfil','cancel') then
-  if not v_owner and v_row.salesperson_user_id <> auth.uid() then raise exception 'Only the salesperson or the owner can close this request'; end if;
+  if p_action='fulfil' and not v_owner and v_row.salesperson_user_id <> auth.uid() then raise exception 'Only the salesperson or the owner can close this request'; end if;
   if length(v_note) < 3 then raise exception 'Enter the invoice, delivery or cancellation reference'; end if;
   update public.pending_stock_requests set status=case when p_action='fulfil' then 'fulfilled' else 'cancelled' end,close_note=v_note,closed_by=auth.uid(),closed_at=now(),version=version+1,updated_at=now()
   where id=p_id returning * into v_new;

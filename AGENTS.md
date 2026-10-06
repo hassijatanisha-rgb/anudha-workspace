@@ -38,7 +38,7 @@ Lanes in the same wave touch separate files, so they can run at the same time. D
 
 ### Wave 1: run all three at once
 
-- **Lane A: ship `verify/session-integration-20261004`.** It already contains the pending, service and inventory session fixes from 7 other branches. Branch `codex/ship-session-fixes` from `main` and merge that branch in. Rename `20261001095315_pending_retry_content.sql` to `202610060064_pending_retry_content.sql` and `20261001112436_pending_cancel_owner.sql` to `202610060065_pending_cancel_owner.sql`. Delete the docs-only evidence files the branch added under `docs/` unless staff need them. Open the pull request.
+- **Lane A: done by Claude** in branch `claude/dreamy-mayer-sopnj3` (migrations 0064 and 0065; department heads can cancel pending requests too).
 - **Lane B: ship `fix/stock-count-retry-20261001`.** Rename its migration to `202610060066_stock_count_retry_content.sql`. It only touches the migration and its tests. Open the pull request.
 - **Lane C: decide on `test/stock-timing-acceptance-20261001` and `release/inventory-live-20260929`.** No code changes. For each one, say in a pull request comment or to the user whether it is still needed. If `godown-mapping-activation` or `main` already replaced it, close it and delete the branch.
 
