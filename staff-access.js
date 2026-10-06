@@ -27,7 +27,8 @@ const departmentLabels=[['','Choose'],['sales','Sales'],['accounts','Accounts'],
 const roleLabels={owner:'Owner',head:'Department head',staff:'Staff'};
 function departmentLabel(key){return departmentLabels.find(([k])=>k===key)?.[1]||'No department'}
 function isHead(){return me?.role==='head'}
-function hasArea(area,person=me){return !area||person?.role==='owner'||(person?.access||[]).includes(area)}
+// area may be a list: any one of them is enough.
+function hasArea(area,person=me){if(Array.isArray(area))return area.some(a=>hasArea(a,person));return !area||person?.role==='owner'||(person?.access||[]).includes(area)}
 // Areas the signed-in person may hand out.
 function grantableAreas(){return accessAreas.filter(([key])=>hasArea(key))}
 function canManagePerson(row){
@@ -45,6 +46,7 @@ function viewArea(target,section){
  if(target==='stockcount')return section==='review'?null:'stock_count';
  if(target==='reports')return 'reports';
  if(target==='travel')return 'travel';
+ if(target==='requests')return section==='complaints'?['leads','service']:'leads';
  return null;
 }
 function applyAccessNavigation(){
@@ -54,12 +56,12 @@ function applyAccessNavigation(){
   if(area)button.hidden=!hasArea(area);
  });
 }
-function currentSection(){return view==='sales'?(salesEditing==='new'?'new':salesSection):view==='inventory'?inventorySection:view==='stockcount'&&typeof countTab!=='undefined'?countTab:null}
+function currentSection(){return view==='sales'?(salesEditing==='new'?'new':salesSection):view==='inventory'?inventorySection:view==='stockcount'&&typeof countTab!=='undefined'?countTab:view==='requests'&&typeof requestSection!=='undefined'?requestSection:null}
 // Shown instead of a screen the person has no access to (for example a link from a task).
 function accessBlocked(){
  const area=viewArea(view,currentSection());
  if(!area||hasArea(area))return false;
- const label=accessAreas.find(([key])=>key===area)?.[1]||area;
+ const first=Array.isArray(area)?area[0]:area,label=accessAreas.find(([key])=>key===first)?.[1]||first;
  $('#content').innerHTML=`<section class="card"><h1>${esc(label)}</h1><p>You do not have access to this part yet. Ask your department head to tick <strong>${esc(label)}</strong> for you on the Staff page.</p></section>`;
  return true;
 }
