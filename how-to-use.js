@@ -133,6 +133,7 @@ const howToTopics=[
   'Choose the **Department**. The usual parts for that department are ticked; change the ticks under **What this person can use**.',
   'Give the person their login and temporary password. They choose their own password the first time.',
   'To change what someone can use later, press **Change access** next to their name. Press **Switch off** when someone leaves.',
+  'Accounts staff who prepare accounting forms also need **Give accounting access** next to their name.',
   'Under **Who does each step**, choose who receives each step of an order automatically.']},
  {id:'staff-head',role:'everyone',head:true,title:'Add your team (department heads)',screens:['staff'],steps:[
   'Open **Staff**. Your department is at the top; other departments are listed below for reference.',

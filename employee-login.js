@@ -99,7 +99,7 @@ function staffListHtml(rows){
   const access=`${esc(accessSummary(x))}${manage&&x.role!=='owner'?` <button type="button" data-staff-access="${id}">Change access</button>`:''}`;
   const login=`${x.active?'Active':'Switched off'}${manage&&x.role!=='owner'?` <button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}">${x.active?'Switch off':'Switch on'}</button>`:''}`;
   const actions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" data-staff-reset="${id}">Reset password</button><button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}">Phone</button>`:'';
-  return `<tr><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
+  return `<tr data-staff-row="${id}"><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
 }
 function bindStaffList(rows=[]){
  const row=id=>rows.find(r=>r.user_id===id),reload=()=>staff();
