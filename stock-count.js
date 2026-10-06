@@ -2,7 +2,7 @@
 // Temporary physical stock count. Staff count what is on the shelf per godown against the consolidated product list;
 // the owner reviews. Counts never change stock here: accepted counts are exported for the opening-stock import.
 // Turn the screen off once stock is complete with ERP_CONFIG.stockCountEnabled=false.
-const countGodowns=['City Printer Godown','City Printer Godown 2','City Printer Godown 04','Keko Manga A','New Dakawa','New Dakawa Godown A','RK Chudasama No.7','RK Chudasama No.8','Other location'];
+const countGodowns=['Haadi','Main store','City Printer Godown','City Printer Godown 2','City Printer Godown 04','Keko Manga A','New Dakawa','New Dakawa Godown A','RK Chudasama No.7','RK Chudasama No.8','Other location'];
 const countUnits=['PCS','BOX','PKT','DOZ','SET','KIT','BOTTLE','ROLL','PAIR','BAG','GALLON','SHEET','CARTON','LITRE','KG','TUBE'];
 const countConditions={good:'Good',damaged:'Damaged',expired:'Expired',quarantine:'Set aside / check'};
 const countStatuses={recorded:'Waiting for review',accepted:'Accepted',rejected:'Rejected',void:'Voided'};

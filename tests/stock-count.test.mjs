@@ -45,7 +45,7 @@ test('temporary screen can be switched off in config and is wired into the app',
  assert.match(app,/view==='stockcount'\)return stockCountWorkspace\(\)/);assert.match(app,/typeof clearStockCount==='function'\)clearStockCount\(\)/);
  assert.ok(html.indexOf('stock-count.js')>html.indexOf('purchasing.js')&&html.indexOf('stock-count.js')<html.indexOf('app.js'));
  assert.match(read('config.js'),/stockCountEnabled:true/);
- const sql=read('supabase/migrations/202609300047_stock_count.sql'),godowns=[...read('stock-count.js').match(/const countGodowns=\[(.*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]);
+ const sql=read('supabase/migrations/202610060065_count_godowns_haadi_main.sql'),godowns=[...read('stock-count.js').match(/const countGodowns=\[(.*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]);
  for(const g of godowns)assert.ok(sql.includes(`'${g}'`),g+' allowed by the database');
  assert.doesNotMatch(read('stock-count.js'),/from\('(inventory_lots|inventory_movements|products)'\)\.(insert|update|delete)/,'the count never writes stock');
 });
