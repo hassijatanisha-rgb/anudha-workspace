@@ -12,6 +12,11 @@ const howToTopics=[
   'Use the menu on the left to move between pages.',
   'Open **My tasks** every morning. Tasks and order steps given to you are there, most urgent first.',
   'Stuck? Press **How to use** at the top of any page to see the guide for that page.']},
+ {id:'dashboard',role:'everyone',title:'See the day at a glance on the Dashboard',screens:['dashboard'],steps:[
+  'The **Dashboard** opens first after you sign in. Open counts everything still open now. Overdues and Due Today count lead follow-ups, tasks, order steps and service visits.',
+  'Periodic counts what came in during the chosen days (Yesterday at first). Result counts what was finished (Today at first). Change the days with the Show list above each column; Custom range lets you pick two dates.',
+  'Press a card to open its list. Cards that are not buttons have no single list to open.',
+  'You only see cards for the parts of the software you can use. The Dashboard shows counts only, never amounts.']},
  {id:'todo',role:'everyone',title:'Do your tasks and give tasks to others',screens:['personal:task'],steps:[
   'Open **My tasks**. Tasks given to you are under To do: red is Do now, yellow is Urgent, grey is Normal. Late tasks have a red edge.',
   'When you finish a task, press **Mark done**.',
