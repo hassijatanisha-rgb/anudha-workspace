@@ -10,16 +10,24 @@ function tallyGodownReview(source,corrections,godown,search){
   missingQuantity:scoped.filter(r=>r.quantity===null||r.quantity===undefined||r.quantity==='').length,
   rows:scoped.filter(r=>[r.product_name,r.godown,r.unit].join(' ').toLowerCase().includes(needle))};
 }
+let tallyLoadGeneration=0;
+function clearTallyStockReview(){
+ tallyLoadGeneration++;
+ tallyRows=[];tallyCorrections=new Map();tallyReadiness=null;
+ tallySearch='';tallyPage=0;tallyGodown='';
+}
 async function tallyStockScreen(){
- const actor=me?.user_id;
+ const actor=me,actorId=me?.user_id,generation=++tallyLoadGeneration;
+ const current=()=>me===actor&&me?.user_id===actorId&&view==='inventory'&&inventorySection==='review'&&generation===tallyLoadGeneration;
+ if(!current())return;
  $('#content').innerHTML='<p role="status">Loading Tally stock review…</p>';
  try{
   const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
-  if(me?.user_id!==actor||inventorySection!=='review')return;
+  if(!current())return;
   tallyRows=rows;tallyCorrections=new Map();for(const r of corrections)if((tallyCorrections.get(r.source_id)?.version||0)<r.version)tallyCorrections.set(r.source_id,r);
   tallyReadiness=tallyGodownReadiness(tallyRows,tallyRowReview);
   renderTallyStock();
- }catch(error){if(me?.user_id===actor&&inventorySection==='review'){$('#content').innerHTML=inventoryHeader()+`<p role="alert">Stock review could not load: ${esc(error.message)}. No stock was changed.</p>`;bindInventoryWorkspace();}}
+ }catch(error){if(current()){$('#content').innerHTML=inventoryHeader()+`<p role="alert">Stock review could not load: ${esc(error.message)}. No stock was changed.</p>`;bindInventoryWorkspace();}}
 }
 function tallyRowReview(row){
  const correction=tallyCorrections.get(row.id),product=products.find(p=>p.id===correction?.product_id&&!p.deleted_at);

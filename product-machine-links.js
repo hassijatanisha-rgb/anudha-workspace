@@ -8,12 +8,17 @@ function machineLinkReviewedProduct(product){
  const review=productMachineLinks.get(product.id);
  return review?{...product,source:{...product.source,machine_ids:[...review.machine_ids]}}:product;
 }
+let machineLinkLoadGeneration=0;
+function clearProductMachineLinks(){machineLinkLoadGeneration++;productMachineLinks=new Map();productMachineLinksError='';}
 async function loadProductMachineLinks(){
+ const actor=me,actorId=me?.user_id,generation=++machineLinkLoadGeneration;
+ const current=()=>me===actor&&me?.user_id===actorId&&generation===machineLinkLoadGeneration;
  try{
   const rows=await all('product_machine_link_reviews','*'),latest=new Map();
+  if(!current())return;
   for(const row of rows)if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);
   productMachineLinks=latest;productMachineLinksError='';
- }catch(error){productMachineLinksError=error.message||'Connection unavailable';}
+ }catch(error){if(current())productMachineLinksError=error.message||'Connection unavailable';}
 }
 async function openProductMachineLinks(id){
  if(me?.role!=='owner')throw Error('Owner access is required to change machine links.');

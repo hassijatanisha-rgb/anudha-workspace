@@ -19,6 +19,41 @@ test('available pieces count cartons, loose and reservations only at active avai
  const totals=ctx.pendingAvailableByProduct(lots,packs,locations);
  assert.equal(totals.get('p1'),22);assert.equal(totals.has('p2'),false,'unknown pack sizes and impossible reservations are not counted');
 });
+test('expired, expires-today and malformed lots do not announce stock arrival',()=>{
+ const ctx=load(),base={product_id:'p1',location_id:'main',pack_definition_id:'box10',sealed_cartons:1,loose_units:0,reserved_units:0,stock_status:'available'};
+ const packs=[{id:'box10',units_per_carton:10}],locations=[{id:'main',active:true}],today='2026-10-01';
+ const lots=['2026-09-30','2026-10-01','2026-02-30','not-a-date','2026-10-02'].map(expiry_date=>({...base,expiry_date}));
+ const available=ctx.pendingAvailableByProduct(lots,packs,locations,today);
+ assert.equal(available.get('p1'),10,'only the unexpired valid lot is saleable');
+ assert.equal(ctx.pendingStockState({status:'waiting',quantity:20,expires_on:'2027-01-01'},available.get('p1'),today).key,'partial');
+ assert.equal(ctx.pendingAvailableByProduct([{...base,expiry_date:null}],packs,locations,today).get('p1'),10,'optional expiry is unchanged');
+});
+test('pending dates use the company timezone at the UTC midnight boundary',()=>{
+ const ctx=load();
+ assert.equal(ctx.pendingToday(new Date('2026-09-30T22:00:00Z')),'2026-10-01');
+ assert.equal(ctx.pendingToday(new Date('2026-09-30T20:59:59Z')),'2026-09-30');
+});
+test('availability loader requests expiry dates from the database',async()=>{
+ const ctx=load(),queries=[];
+ ctx.salesLoaded=true;
+ ctx.all=async(name,columns)=>{queries.push({name,columns});return [];};
+ assert.equal(await ctx.loadPendingStock(),true);
+ assert.ok(queries.find(q=>q.name==='inventory_lots').columns.split(',').includes('expiry_date'));
+});
+test('rendering after midnight stops using yesterday availability',()=>{
+ const ctx=load(),content={innerHTML:''};ctx.$=()=>content;ctx.bindPendingStock=()=>{};ctx.salesProformas=[];
+ vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);pendingRows=[{id:'r',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:20,expires_on:'2099-01-01'}];`,ctx);
+ ctx.renderPendingStock();
+ assert.doesNotMatch(content.innerHTML,/Stock has arrived for|Stock arrived: 50/);
+ assert.match(content.innerHTML,/previous day.*Refresh/);
+ assert.match(content.innerHTML,/Stock check unavailable/);
+});
+test('reopening pending orders after midnight forces a fresh load',async()=>{
+ const ctx=load();let loads=0;ctx.$=()=>({innerHTML:''});ctx.syncWorkspaceNavigation=()=>{};ctx.renderPendingStock=()=>{};ctx.view='pending';
+ ctx.loadPendingStock=async()=>{loads++;return true;};
+ vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingLoaded=true;`,ctx);
+ await ctx.pendingStockWorkspace();assert.equal(loads,1);
+});
 test('state labels: arrived, partial, waiting, due and unknown availability',()=>{
  const ctx=load(),waiting={status:'waiting',quantity:10,expires_on:'2027-03-30'},today='2026-09-30';
  assert.equal(ctx.pendingStockState(waiting,12,today).key,'arrived');
@@ -43,11 +78,14 @@ test('filters and ordering: overdue first, then arrived, then waiting; closed ap
  assert.deepEqual(ctx.pendingVisibleRows(rows,{filter:'all',search:'syringe',actor:'a',availability:new Map(),today:'2026-09-30'}).length,0);
  assert.deepEqual(ctx.pendingVisibleRows(rows,{filter:'all',search:'blood',actor:'a',availability:new Map(),today:'2026-09-30'}).map(x=>x.row.id).sort(),['arrived','done']);
 });
-test('only the salesperson or owner sees close actions; only the owner can extend',()=>{
+test('salesperson can fulfil; cancellation and extension are owner-only',()=>{
  const ctx=load(),row={id:'r',status:'waiting',salesperson_user_id:'b',extension_count:0,expires_on:'2099-01-01'};
  assert.doesNotMatch(ctx.pendingActions(row),/fulfil|extend/);
  ctx.me={user_id:'b',role:'staff'};assert.match(ctx.pendingActions(row),/fulfil/);assert.doesNotMatch(ctx.pendingActions(row),/extend/);
+ assert.doesNotMatch(ctx.pendingActions(row),/data-pending-action="cancel"/);
  ctx.me={user_id:'o',role:'owner'};assert.match(ctx.pendingActions(row),/extend/);
+ assert.match(ctx.pendingActions(row),/data-pending-action="cancel"/);
+ assert.doesNotMatch(ctx.pendingActions({...row,status:'cancelled'}),/data-pending-action/);
  assert.doesNotMatch(ctx.pendingActions({...row,extension_count:4}),/extend/);
 });
 test('menu, router, sign-out and script order are wired',()=>{
