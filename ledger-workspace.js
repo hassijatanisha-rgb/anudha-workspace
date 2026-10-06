@@ -8,7 +8,7 @@ let ledgerGroups=[],ledgerLedgers=[],ledgerTypes=[],ledgerYears=[],ledgerRates={
 let ledgerForm=null,ledgerBillsCache=new Map(),ledgerReversalIds=new Map(),ledgerReversing='';
 let ledgerDayFrom='',ledgerDayTo='',ledgerDayPage=0,ledgerStatementId='',ledgerStatementFrom='',ledgerStatementTo='',ledgerTbFrom='',ledgerTbTo='';
 let ledgerEditing=null,ledgerSuppliers=null,ledgerYearId='',ledgerSettings=null,ledgerBalanceCache=new Map(),ledgerInvoiceIds=new Map(),ledgerOrderSearch='';
-const ledgerTabs=[['voucher','Enter voucher'],['orders','From orders'],['outstanding','Receivables & payables'],['daybook','Day Book'],['accounts','Ledgers'],['statement','Ledger statement'],['tb','Trial Balance'],['setup','Years & locks']];
+const ledgerTabs=[['voucher','Enter voucher'],['orders','From orders'],['outstanding','Receivables & payables'],['daybook','Day Book'],['accounts','Ledgers'],['statement','Ledger statement'],['tb','Trial Balance'],['statements','P&L and Balance Sheet'],['bank','Bank reconciliation'],['setup','Years & locks']];
 const ledgerVatClasses=[['','No VAT'],['standard','Standard rate'],['zero','Zero-rated'],['exempt','Exempt'],['out_of_scope','Outside VAT']];
 const ledgerBillKinds=[['new','New bill'],['against','Against bill'],['advance','Advance'],['on_account','On account']];
 function clearLedger(){ledgerEpoch++;ledgerLoaded=false;ledgerLoadError='';ledgerNotReady=false;ledgerGroups=[];ledgerLedgers=[];ledgerTypes=[];ledgerYears=[];ledgerRates={};ledgerForm=null;ledgerBillsCache=new Map();ledgerReversalIds=new Map();ledgerEditing=null;ledgerSuppliers=null;ledgerSettings=null;ledgerBalanceCache=new Map();ledgerInvoiceIds=new Map();}
@@ -51,7 +51,7 @@ async function ledgerWorkspace(force=false){
  $('#ledgerRefresh').onclick=()=>run(()=>ledgerWorkspace(true));
  document.querySelectorAll('[data-ledger-tab]').forEach(b=>b.onclick=()=>run(async()=>{openLedgerTab(b.dataset.ledgerTab);await ledgerWorkspace();}));
  if(!ledgerLoaded)return;
- const page=ledgerTab==='orders'?ledgerOrdersPage:ledgerTab==='outstanding'?ledgerOutstandingPage:ledgerTab==='daybook'?ledgerDayBook:ledgerTab==='accounts'?ledgerAccounts:ledgerTab==='statement'?ledgerStatementPage:ledgerTab==='tb'?ledgerTrialBalance:ledgerTab==='setup'?ledgerSetup:ledgerVoucherPage;
+ const page=ledgerTab==='bank'?ledgerBankPage:ledgerTab==='statements'?ledgerStatementsPage:ledgerTab==='orders'?ledgerOrdersPage:ledgerTab==='outstanding'?ledgerOutstandingPage:ledgerTab==='daybook'?ledgerDayBook:ledgerTab==='accounts'?ledgerAccounts:ledgerTab==='statement'?ledgerStatementPage:ledgerTab==='tb'?ledgerTrialBalance:ledgerTab==='setup'?ledgerSetup:ledgerVoucherPage;
  try{await page();}catch(error){if(ledgerNotReady)return ledgerWorkspace();if($('#ledgerPage'))$('#ledgerPage').innerHTML=`<p class="notice error" role="alert">${esc(error.message)}</p>`;}
 }
 const ledgerStillHere=(actor,tab)=>view==='ledger'&&me?.user_id===actor&&ledgerTab===tab&&$('#ledgerPage');
@@ -318,12 +318,12 @@ async function ledgerSetup(){
  const what=e=>{const d=e.after_data||{};return e.entity==='voucher'?`${e.action==='reversed'?'Reversed':'Posted'} ${esc(ledgerTypeById(d.voucher_type_id)?.name||'voucher')} ${esc(d.number||'')}`:e.entity==='period_lock'?`Books locked through ${esc(d.through_date||'')}: ${esc(d.reason||'')}`:`${e.action==='created'?'Created':'Changed'} ${esc(e.entity.replace('_',' '))} ${esc(d.name||'')}`;};
  $('#ledgerPage').innerHTML=`<section class="card"><h2>Financial years</h2><table><thead><tr><th>Year</th><th>From</th><th>To</th></tr></thead><tbody>${ledgerYears.map(y=>`<tr><td>${esc(y.name)}</td><td>${esc(y.starts_on)}</td><td>${esc(y.ends_on)}</td></tr>`).join('')||'<tr><td colspan="3">No financial year yet. The owner opens the first one.</td></tr>'}</tbody></table>
   ${ledgerIsOwner?`<form id="ledgerYearForm" class="actions ledger-filter"><label><span>Name</span><input name="name" placeholder="FY 2026-27" maxlength="40" required></label><label><span>First day</span><input type="date" name="starts_on" required></label><label><span>Last day</span><input type="date" name="ends_on" required></label><button type="submit">Open financial year</button></form>`:''}</section>
-  ${ledgerSettingsCard()}
+  ${ledgerSettingsCard()}${ledgerCloseCard()}
   <section class="card"><h2>Lock the books</h2><p>${ledgerLockedThrough?`Books are locked through <strong>${esc(ledgerLockedThrough)}</strong>. Nothing can be posted on or before that date.`:'No month is locked yet.'} Lock a month after its VAT return is filed.${ledgerIsOwner?'':' Only the owner can reopen a locked month.'}</p>
   <form id="ledgerLockForm" class="actions ledger-filter"><label><span>Lock through</span><input type="date" name="through" required></label><label><span>Reason</span><input name="reason" maxlength="500" minlength="5" placeholder="September VAT return filed" required></label><button type="submit">Lock books</button></form></section>
   <section class="card"><h2>Change log</h2><p class="muted">The latest 50 changes. Nothing here can be edited or deleted.</p><table><thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead><tbody>${log.map(e=>`<tr><td>${esc(new Date(e.recorded_at).toLocaleString('en-GB',{timeZone:'Africa/Dar_es_Salaam'}))}</td><td>${esc(typeof employeeName==='function'?employeeName(e.actor_user_id):'')}</td><td>${what(e)}</td></tr>`).join('')||'<tr><td colspan="3">No changes yet.</td></tr>'}</tbody></table></section>`;
  const yf=$('#ledgerYearForm');if(yf)yf.onsubmit=e=>{e.preventDefault();run(async()=>{ledgerYearId=ledgerYearId||crypto.randomUUID();const saved=ledgerFail(await client.rpc('save_fiscal_year',{p_id:ledgerYearId,p_name:yf.name.value.trim(),p_starts_on:yf.starts_on.value,p_ends_on:yf.ends_on.value}),'Year not opened');ledgerYearId='';ledgerYears=[saved,...ledgerYears.filter(y=>y.id!==saved.id)].sort((a,b)=>b.starts_on.localeCompare(a.starts_on));message(`${saved.name} opened.`);await ledgerSetup();});};
- bindLedgerSettings();
+ bindLedgerSettings();bindLedgerClose();
  const lf=$('#ledgerLockForm');lf.onsubmit=e=>{e.preventDefault();run(async()=>{const through=lf.through.value;if(ledgerLockedThrough&&through<ledgerLockedThrough&&!ledgerIsOwner)throw Error('Only the owner can reopen a locked month.');if(!confirm(`Lock the books through ${through}? Nothing can then be posted on or before that date.`))return;const saved=ledgerFail(await client.rpc('lock_ledger_period',{p_through_date:through,p_reason:lf.reason.value.trim()}),'Books not locked');ledgerLockedThrough=saved.through_date;message(`Books locked through ${saved.through_date}.`);await ledgerWorkspace();});};
 }
 
@@ -410,4 +410,111 @@ function bindLedgerSettings(){
   ledgerSettings=ledgerFail(await client.rpc('save_ledger_settings',{p_expected_version:ledgerSettings?.version||1,p_settings:body}),'Default ledgers not saved');
   message('Default ledgers saved.');await ledgerSetup();
  });};
+}
+
+// Bank reconciliation ---------------------------------------------------------------------------------------------------
+let ledgerBankId='',ledgerBankTo='',ledgerBankProposed=new Map(),ledgerBankImportId='';
+const ledgerBankLedgers=()=>ledgerLedgers.filter(l=>l.active&&(ledgerGroupUnder(l.group_id,'bank_accounts',ledgerGroups)||ledgerGroupUnder(l.group_id,'bank_od',ledgerGroups))).sort((a,b)=>a.name.localeCompare(b.name));
+async function ledgerBankPage(){
+ const actor=me?.user_id,banks=ledgerBankLedgers();
+ if(!ledgerBankTo)ledgerBankTo=ledgerToday();
+ if(!banks.some(b=>b.id===ledgerBankId))ledgerBankId=banks[0]?.id||'';
+ if(!ledgerBankId){$('#ledgerPage').innerHTML='<p>Create a ledger under Bank Accounts first.</p>';return;}
+ const book=[];
+ for(let i=0;;i+=1000){const r=await client.rpc('bank_book',{p_ledger_id:ledgerBankId,p_to:ledgerBankTo}).range(i,i+999);const data=ledgerFail(r,'Bank book could not load')||[];book.push(...data.map(e=>({...e,amount_minor:Number(e.amount_minor)})));if(data.length<1000)break;}
+ const lr=await client.from('bank_statement_lines').select('*').eq('ledger_id',ledgerBankId).lte('line_date',ledgerBankTo).order('line_date').limit(5000);
+ if(!ledgerStillHere(actor,'bank'))return;
+ const lines=(ledgerFail(lr,'Statement lines could not load')||[]).map(l=>({...l,amount_minor:Number(l.amount_minor)}));
+ const used=new Set(book.map(e=>e.bank_date&&e.statement_line_id).filter(Boolean)),freeLines=lines.filter(l=>!used.has(l.id));
+ const proposedLines=new Set([...ledgerBankProposed.values()].map(p=>p.statement_line_id)),missing=freeLines.filter(l=>!proposedLines.has(l.id));
+ const brs=ledgerBrs(book,ledgerBankTo),open=book.filter(e=>!e.bank_date),cleared=book.filter(e=>e.bank_date).slice(-30).reverse();
+ const typeName=id=>ledgerTypeById(id)?.name||'';
+ $('#ledgerPage').innerHTML=`<form id="ledgerBankFilter" class="actions ledger-filter"><label><span>Bank</span><select name="bank">${banks.map(b=>`<option value="${esc(b.id)}" ${b.id===ledgerBankId?'selected':''}>${esc(b.name)}</option>`).join('')}</select></label><label><span>On</span><input type="date" name="to" value="${esc(ledgerBankTo)}"></label><button type="submit">Show</button></form>
+  <section class="card"><h2>Reconciliation on ${esc(ledgerBankTo)}</h2><table class="ledger-brs"><tbody>
+   <tr><td>Balance in our books</td><td class="number">${ledgerBalanceText(brs.book)}</td></tr>
+   <tr><td>Less: deposits the bank has not yet credited</td><td class="number">${ledgerMoney(brs.deposits)}</td></tr>
+   <tr><td>Add: payments the bank has not yet paid out</td><td class="number">${ledgerMoney(-brs.payments)}</td></tr></tbody>
+   <tfoot><tr><th>The bank statement should show</th><th class="number">${ledgerBalanceText(brs.bank)}</th></tr></tfoot></table>
+   <p class="muted">Compare this with the closing balance on the bank statement for ${esc(ledgerBankTo)}. If they differ, an entry is missing or has the wrong bank date.</p></section>
+  <section class="card"><h2>Import a bank statement</h2><p class="muted">Download the statement from the bank as CSV. Lines already imported are skipped, so the same file can be imported again.</p>
+   <div class="actions"><input type="file" id="ledgerBankFile" accept=".csv,text/csv" aria-label="Bank statement CSV file"><button type="button" id="ledgerBankImport">Import statement</button></div></section>
+  <section class="card"><div class="heading"><h2>Not yet cleared by the bank · ${open.length}</h2><div class="actions"><button type="button" id="ledgerBankMatch" ${freeLines.length&&open.length?'':'disabled'}>Match with statement</button><button type="button" id="ledgerBankSave">Save bank dates</button></div></div>
+   <p class="muted">Type the date each entry appears on the bank statement, or press Match with statement. Nothing is saved until you press Save bank dates.</p>
+   <table><thead><tr><th>Date</th><th>Voucher</th><th>Narration</th><th class="number">Deposit</th><th class="number">Payment</th><th>Bank date</th></tr></thead><tbody>${open.map(e=>{const p=ledgerBankProposed.get(e.entry_id);return `<tr data-bank-entry="${esc(e.entry_id)}" data-line="${esc(p?.statement_line_id||'')}"><td>${esc(e.voucher_date)}</td><td>${esc(typeName(e.voucher_type_id))} ${esc(e.number)}</td><td>${esc(e.narration||e.reference||'')}</td><td class="number">${e.amount_minor>0?ledgerMoney(e.amount_minor):''}</td><td class="number">${e.amount_minor<0?ledgerMoney(-e.amount_minor):''}</td><td><input type="date" value="${esc(p?.bank_date||'')}" aria-label="Bank date for ${esc(typeName(e.voucher_type_id))} ${esc(e.number)}">${p?' <small>from statement</small>':''}</td></tr>`;}).join('')||'<tr><td colspan="6">Every entry is cleared.</td></tr>'}</tbody></table></section>
+  <section class="card"><h2>On the statement but not in our books · ${missing.length}</h2><p class="muted">Bank charges, interest or transfers nobody has entered yet. Enter a voucher for each, then match again.</p>
+   <table><thead><tr><th>Date</th><th>Description</th><th class="number">In</th><th class="number">Out</th><th></th></tr></thead><tbody>${missing.slice(0,200).map(l=>`<tr><td>${esc(l.line_date)}</td><td>${esc(l.description)}${l.bank_ref?` <small>${esc(l.bank_ref)}</small>`:''}</td><td class="number">${l.amount_minor>0?ledgerMoney(l.amount_minor):''}</td><td class="number">${l.amount_minor<0?ledgerMoney(-l.amount_minor):''}</td><td><button type="button" data-bank-voucher="${esc(l.id)}">Enter voucher</button></td></tr>`).join('')||'<tr><td colspan="5">Nothing outstanding.</td></tr>'}</tbody></table></section>
+  <section class="card"><h2>Recently cleared</h2><table><thead><tr><th>Date</th><th>Voucher</th><th class="number">Amount</th><th>Bank date</th><th></th></tr></thead><tbody>${cleared.map(e=>`<tr><td>${esc(e.voucher_date)}</td><td>${esc(typeName(e.voucher_type_id))} ${esc(e.number)}</td><td class="number">${ledgerBalanceText(e.amount_minor)}</td><td>${esc(e.bank_date)}</td><td><button type="button" data-bank-undo="${esc(e.entry_id)}">Undo</button></td></tr>`).join('')||'<tr><td colspan="5">Nothing cleared yet.</td></tr>'}</tbody></table></section>`;
+ $('#ledgerBankFilter').onsubmit=e=>{e.preventDefault();ledgerBankId=e.target.bank.value;ledgerBankTo=e.target.to.value;ledgerBankProposed=new Map();run(()=>ledgerBankPage());};
+ $('#ledgerBankMatch').onclick=()=>run(async()=>{const found=ledgerAutoMatch(open,freeLines);ledgerBankProposed=new Map(found.map(m=>[m.entry_id,m]));message(found.length?`${found.length} entr${found.length===1?'y':'ies'} matched with the statement. Check them, then press Save bank dates.`:'No entries match the statement by amount within 7 days.');await ledgerBankPage();});
+ $('#ledgerBankSave').onclick=()=>run(async()=>{
+  const rows=[...document.querySelectorAll('[data-bank-entry]')].map(r=>({entry_id:r.dataset.bankEntry,bank_date:r.querySelector('input').value,statement_line_id:r.dataset.line||null})).filter(r=>r.bank_date)
+   .map(r=>{const p=ledgerBankProposed.get(r.entry_id);return p&&p.bank_date===r.bank_date?r:{...r,statement_line_id:null};});
+  if(!rows.length)throw Error('Type a bank date for at least one entry, or press Match with statement.');
+  const n=ledgerFail(await client.rpc('record_bank_dates',{p_rows:rows}),'Bank dates not saved');ledgerBankProposed=new Map();message(`${n} bank date${n===1?'':'s'} saved.`);await ledgerBankPage();
+ });
+ $('#ledgerBankImport').onclick=()=>run(async()=>{
+  const file=$('#ledgerBankFile').files[0];if(!file)throw Error('Choose the statement file first.');
+  const parsed=ledgerStatementFromCsv(await file.text());if(!parsed.lines.length)throw Error('No statement lines with a date and an amount were found in this file.');
+  ledgerBankImportId=ledgerBankImportId||crypto.randomUUID();let added=0,already=0;
+  for(let i=0;i<parsed.lines.length;i+=2000){const r=ledgerFail(await client.rpc('import_bank_statement',{p_import_id:i?crypto.randomUUID():ledgerBankImportId,p_ledger_id:ledgerBankId,p_file_name:file.name,p_lines:parsed.lines.slice(i,i+2000)}),'Statement not imported');added+=r.new;already+=r.already;}
+  ledgerBankImportId='';message(`Statement imported: ${added} new line${added===1?'':'s'}${already?`, ${already} already here`:''}${parsed.skipped.length?`; rows skipped (no date or amount): ${parsed.skipped.slice(0,10).join(', ')}`:''}.`);await ledgerBankPage();
+ });
+ document.querySelectorAll('[data-bank-undo]').forEach(b=>b.onclick=()=>run(async()=>{ledgerFail(await client.rpc('record_bank_dates',{p_rows:[{entry_id:b.dataset.bankUndo,bank_date:null}]}),'Not undone');message('Bank date removed.');await ledgerBankPage();}));
+ document.querySelectorAll('[data-bank-voucher]').forEach(b=>b.onclick=()=>run(async()=>{
+  const l=missing.find(x=>x.id===b.dataset.bankVoucher),type=ledgerTypes.find(t=>t.base_type===(l.amount_minor>0?'receipt':'payment'));
+  ledgerForm={...ledgerNewForm(),type_id:type?.id||'',date:l.line_date,reference:l.bank_ref,narration:l.description,source_label:`From the bank statement of ${l.line_date}.`,
+   lines:[{ledger_id:ledgerBankId,side:l.amount_minor>0?'dr':'cr',amount:ledgerMoney(Math.abs(l.amount_minor)),vat_class:'',bills:[]},{ledger_id:'',side:l.amount_minor>0?'cr':'dr',amount:ledgerMoney(Math.abs(l.amount_minor)),vat_class:'',bills:[]}]};
+  openLedgerTab('voucher');await ledgerWorkspace();
+ }));
+}
+
+// Profit & Loss and Balance Sheet ---------------------------------------------------------------------------------------
+let ledgerStatementKind='pl';
+function ledgerStatementRows(parts,sign){
+ return parts.map(p=>`<tr class="ledger-group-row"><td><details><summary><strong>${esc(p.node.group.name)}</strong></summary><table>${ledgerTreeRows([p.node]).filter(r=>r.kind==='ledger').map(r=>`<tr><td>${esc(r.ledger.name)}</td><td class="number">${ledgerMoney(sign(r))}</td></tr>`).join('')}</table></details></td><td class="number">${ledgerMoney(p.amount)}</td></tr>`).join('');
+}
+async function ledgerStatementsPage(){
+ const actor=me?.user_id,pl=ledgerStatementKind==='pl',balances=await ledgerBalances(pl?ledgerTbFrom:'1900-01-01',ledgerTbTo);
+ if(!ledgerStillHere(actor,'statements'))return;
+ const head=`<div class="tabs" role="group" aria-label="Statement"><button type="button" data-statement-kind="pl" class="${pl?'active':''}" aria-pressed="${pl}">Profit &amp; Loss</button><button type="button" data-statement-kind="bs" class="${pl?'':'active'}" aria-pressed="${!pl}">Balance Sheet</button></div>
+  <form id="ledgerStatementsFilter" class="actions ledger-filter">${pl?`<label><span>From</span><input type="date" name="from" value="${esc(ledgerTbFrom)}"></label>`:''}<label><span>${pl?'To':'As at'}</span><input type="date" name="to" value="${esc(ledgerTbTo)}"></label><button type="submit">Show</button><button type="button" id="ledgerStatementsPrint">Print</button></form>`;
+ let body;
+ if(pl){
+  const r=ledgerProfitAndLoss(ledgerGroups,ledgerLedgers,balances),inc=x=>-(x.closing-x.opening),exp=x=>x.closing-x.opening;
+  body=`<h2>Profit &amp; Loss · ${esc(ledgerTbFrom)} to ${esc(ledgerTbTo)}</h2><table class="ledger-statement-table"><tbody>
+   ${ledgerStatementRows(r.directIncome,inc)}<tr><td colspan="2"><small>Less</small></td></tr>${ledgerStatementRows(r.directExpense,exp)}
+   <tr class="ledger-total"><th>Gross ${r.gross<0?'loss':'profit'}</th><th class="number">${ledgerMoney(Math.abs(r.gross))}</th></tr>
+   ${ledgerStatementRows(r.indirectIncome,inc)}${r.indirectExpense.length?'<tr><td colspan="2"><small>Less</small></td></tr>':''}${ledgerStatementRows(r.indirectExpense,exp)}
+   </tbody><tfoot><tr class="ledger-total"><th>Net ${r.net<0?'loss':'profit'}</th><th class="number">${ledgerMoney(Math.abs(r.net))}</th></tr></tfoot></table>
+   <p class="muted">Closing stock is not added here. Post the stock value at the end of the period to Stock-in-Hand by journal.</p>`;
+ }else{
+  const r=ledgerBalanceSheet(ledgerGroups,ledgerLedgers,balances);
+  body=`<h2>Balance Sheet as at ${esc(ledgerTbTo)}</h2>${r.balanced?'':`<p class="notice error">Assets and liabilities differ by ${ledgerMoney(Math.abs(r.totalAssets-r.totalLiabilities))}. Tell the system administrator.</p>`}
+   <div class="ledger-bs"><table class="ledger-statement-table"><thead><tr><th>Liabilities</th><th class="number">TZS</th></tr></thead><tbody>${ledgerStatementRows(r.liabilities,x=>-x.closing)}
+    <tr class="ledger-group-row"><td><strong>Profit &amp; Loss A/c</strong><br><small>Profit not yet closed to reserves</small></td><td class="number">${ledgerMoney(r.profit)}</td></tr></tbody><tfoot><tr class="ledger-total"><th>Total</th><th class="number">${ledgerMoney(r.totalLiabilities)}</th></tr></tfoot></table>
+   <table class="ledger-statement-table"><thead><tr><th>Assets</th><th class="number">TZS</th></tr></thead><tbody>${ledgerStatementRows(r.assets,x=>x.closing)}</tbody><tfoot><tr class="ledger-total"><th>Total</th><th class="number">${ledgerMoney(r.totalAssets)}</th></tr></tfoot></table></div>`;
+ }
+ $('#ledgerPage').innerHTML=head+body;
+ document.querySelectorAll('[data-statement-kind]').forEach(b=>b.onclick=()=>run(()=>{ledgerStatementKind=b.dataset.statementKind;return ledgerStatementsPage();}));
+ $('#ledgerStatementsFilter').onsubmit=e=>{e.preventDefault();if(e.target.from)ledgerTbFrom=e.target.from.value;ledgerTbTo=e.target.to.value;run(()=>ledgerStatementsPage());};
+ $('#ledgerStatementsPrint').onclick=()=>{document.querySelectorAll('.ledger-statement-table details').forEach(d=>d.open=true);window.print();};
+}
+
+// Year-end close (owner) ------------------------------------------------------------------------------------------------
+let ledgerCloseIds=new Map();
+function ledgerCloseCard(){
+ if(!ledgerYears.length)return '';
+ const capital=ledgerLedgers.filter(l=>l.active&&ledgerGroupUnder(l.group_id,'capital_account',ledgerGroups)).sort((a,b)=>a.name.localeCompare(b.name));
+ return `<section class="card"><h2>Close a financial year</h2><p class="muted">Moves the year's profit or loss to the ledger you choose and locks the year. It cannot be undone; close each year once its accounts are final.</p>
+  <table><thead><tr><th>Year</th><th>State</th><th></th></tr></thead><tbody>${[...ledgerYears].reverse().map(y=>`<tr><td>${esc(y.name)}</td><td>${y.closed_at?`Closed ${esc(String(y.closed_at).slice(0,10))}`:'Open'}</td><td>${y.closed_at||!ledgerIsOwner?'':`<form class="ledger-invoice" data-close-year="${esc(y.id)}"><select name="retained" aria-label="Ledger for the profit of ${esc(y.name)}"><option value="">Profit goes to…</option>${capital.map(l=>`<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('')}</select><button type="submit">Close ${esc(y.name)}</button></form>`}</td></tr>`).join('')}</tbody></table>${ledgerIsOwner?'':'<p class="muted">Only the owner can close a year.</p>'}</section>`;
+}
+function bindLedgerClose(){
+ document.querySelectorAll('[data-close-year]').forEach(form=>form.onsubmit=e=>{e.preventDefault();run(async()=>{
+  const year=ledgerYears.find(y=>y.id===form.dataset.closeYear);
+  if(!form.retained.value)throw Error('Choose the ledger the profit goes to, for example Retained earnings under Reserves & Surplus.');
+  if(!confirm(`Close ${year.name}? Its profit or loss moves to ${ledgerById(form.retained.value)?.name}, and nothing more can be posted up to ${year.ends_on}.`))return;
+  if(!ledgerCloseIds.has(year.id))ledgerCloseIds.set(year.id,crypto.randomUUID());
+  const saved=ledgerFail(await client.rpc('close_fiscal_year',{p_voucher_id:ledgerCloseIds.get(year.id),p_year_id:year.id,p_retained_ledger_id:form.retained.value}),'Year not closed');
+  ledgerCloseIds.delete(year.id);ledgerYears=ledgerYears.map(y=>y.id===saved.id?saved:y);message(`${saved.name} closed.`);await ledgerWorkspace(true);
+ });});
 }

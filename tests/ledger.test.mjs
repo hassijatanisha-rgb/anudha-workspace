@@ -89,6 +89,42 @@ test('a purchase order pre-fills a balanced purchase bill with 18% input VAT',()
  assert.deepEqual(plain(c.ledgerTotals(d.lines)),{debit:147500,credit:147500,difference:0});
  assert.equal(c.ledgerPurchaseDraft({po_number:'PO-2',lpo_reference:''},[{quantity:1,unit_price_minor:null}],{},null,1800).missingPrices,true);
 });
+test('bank statements are read from common CSV layouts',()=>{
+ const c=load();
+ assert.equal(c.ledgerParseDate('21/07/2026'),'2026-07-21');assert.equal(c.ledgerParseDate('2026-07-21'),'2026-07-21');assert.equal(c.ledgerParseDate('21-Jul-2026'),'2026-07-21');
+ assert.equal(c.ledgerParseDate('21.07.26'),'2026-07-21');assert.equal(c.ledgerParseDate('07/21/2026','mdy'),'2026-07-21');assert.equal(c.ledgerParseDate('31/02/2026'),null);
+ assert.equal(c.ledgerParseSignedMinor('1,234.50'),123450);assert.equal(c.ledgerParseSignedMinor('(1,234.50)'),-123450);assert.equal(c.ledgerParseSignedMinor('1,234.50 DR'),-123450);
+ assert.equal(c.ledgerParseSignedMinor(''),0);assert.equal(c.ledgerParseSignedMinor('abc'),null);
+ const split=plain(c.ledgerStatementFromCsv('CRDB Bank statement\nAccount,0150\nTransaction Date,Value Date,Details,Reference,Debit,Credit,Balance\n21/07/2026,21/07/2026,"Cheque deposit, Test Hospital",CHQ 0001,,"500,000.00","1,000,000.00"\n31/07/2026,31/07/2026,Bank charges,,"1,500.00",,"998,500.00"\nOpening balance,,,,,,\n'));
+ assert.deepEqual(split.lines,[{line_date:'2026-07-21',amount_minor:50000000,description:'Cheque deposit, Test Hospital',bank_ref:'CHQ 0001'},{line_date:'2026-07-31',amount_minor:-150000,description:'Bank charges',bank_ref:''}]);
+ assert.deepEqual(split.skipped,[6]);
+ const signed=plain(c.ledgerStatementFromCsv('Date;Narration;Amount;Dr/Cr\n2026-07-21;Deposit;500.00;CR\n2026-07-22;Charges;15.00;DR\n'));
+ assert.deepEqual(signed.lines.map(l=>l.amount_minor),[50000,-1500]);
+ assert.throws(()=>c.ledgerStatementFromCsv('hello\nworld'),/No header row/);
+});
+test('auto-match pairs each statement line with one book entry by amount, reference and date',()=>{
+ const c=load();
+ const entries=[{entry_id:'e1',amount_minor:50000,voucher_date:'2026-07-20',reference:'CHQ 0001',number:'5'},{entry_id:'e2',amount_minor:50000,voucher_date:'2026-07-21',reference:'',number:'6'},
+  {entry_id:'e3',amount_minor:-1500,voucher_date:'2026-07-01',reference:'',number:'7'},{entry_id:'e4',amount_minor:900,voucher_date:'2026-07-21',bank_date:'2026-07-21'}];
+ const lines=[{id:'l1',line_date:'2026-07-21',amount_minor:50000,description:'Cheque deposit',bank_ref:'CHQ 0001'},{id:'l2',line_date:'2026-07-22',amount_minor:50000,description:'Cash',bank_ref:''},
+  {id:'l3',line_date:'2026-07-31',amount_minor:-1500,description:'Charges',bank_ref:''},{id:'l4',line_date:'2026-07-21',amount_minor:900,description:'x',bank_ref:''}];
+ assert.deepEqual(plain(c.ledgerAutoMatch(entries,lines)),[{entry_id:'e1',statement_line_id:'l1',bank_date:'2026-07-21'},{entry_id:'e2',statement_line_id:'l2',bank_date:'2026-07-22'}],'the reference wins over the nearer date; 30 days apart is too far; cleared entries are left alone');
+ const brs=plain(c.ledgerBrs([{voucher_date:'2026-07-01',amount_minor:1000,bank_date:'2026-07-01'},{voucher_date:'2026-07-30',amount_minor:500},{voucher_date:'2026-07-30',amount_minor:-200,bank_date:'2026-08-02'},{voucher_date:'2026-08-05',amount_minor:7}],'2026-07-31'));
+ assert.deepEqual(brs,{book:1300,deposits:500,payments:-200,bank:1000});
+});
+test('Profit & Loss and Balance Sheet follow the group natures',()=>{
+ const c=load();
+ const groups=[{id:'sales',name:'Sales Accounts',nature:'income',affects_gross_profit:true,parent_id:null,sort:100},{id:'purch',name:'Purchase Accounts',nature:'expense',affects_gross_profit:true,parent_id:null,sort:130},
+  {id:'ind',name:'Indirect Expenses',nature:'expense',affects_gross_profit:false,parent_id:null,sort:150},{id:'oi',name:'Indirect Incomes',nature:'income',affects_gross_profit:false,parent_id:null,sort:120},
+  {id:'cap',name:'Capital Account',nature:'liability',parent_id:null,sort:10},{id:'ca',name:'Current Assets',nature:'asset',parent_id:null,sort:80}];
+ const ledgers=[{id:'s',name:'Sales',group_id:'sales'},{id:'p',name:'Purchases',group_id:'purch'},{id:'r',name:'Rent',group_id:'ind'},{id:'i',name:'Interest',group_id:'oi'},{id:'k',name:'Capital',group_id:'cap'},{id:'b',name:'Bank',group_id:'ca'}];
+ const bal=new Map([['s',{opening:-100,debit:0,credit:1000,closing:-1100}],['p',{opening:0,debit:600,credit:0,closing:600}],['r',{opening:0,debit:150,credit:0,closing:150}],['i',{opening:0,debit:0,credit:50,closing:-50}],
+  ['k',{opening:-500,debit:0,credit:0,closing:-500}],['b',{opening:600,debit:1050,credit:750,closing:900}]]);
+ const pl=plain(c.ledgerProfitAndLoss(groups,ledgers,bal));
+ assert.equal(pl.gross,400,'sales 1,000 in the period less purchases 600');assert.equal(pl.net,300,'less rent 150 plus interest 50');
+ const bs=plain(c.ledgerBalanceSheet(groups,ledgers,bal));
+ assert.equal(bs.profit,400,'all unclosed profit to date, including the 100 before the period');assert.equal(bs.totalAssets,900);assert.equal(bs.totalLiabilities,900);assert.equal(bs.balanced,true);
+});
 test('menu, router, sign-out, help and script order are wired; writes go only through the books functions',()=>{
  const app=read('app.js'),html=read('index.html'),src=read('ledger-workspace.js'),nav=read('workspace-navigation.js');
  assert.match(nav,/\['Books of account','ledger'\]/);assert.match(nav,/data-ledger-only hidden/);assert.match(nav,/rpc\('ledger_staff'\)/);
@@ -96,8 +132,8 @@ test('menu, router, sign-out, help and script order are wired; writes go only th
  assert.match(read('how-to-use.js'),/Correct a voucher that was posted wrongly/);
  const at=name=>html.indexOf(name);assert.ok(at('ledger-domain.js')>0&&at('ledger-domain.js')<at('ledger-workspace.js')&&at('ledger-workspace.js')<at('app.js'));
  assert.doesNotMatch(src,/\)\.(insert|update|upsert|delete)\(/);
- for(const fn of ['post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','post_sales_invoice','save_ledger_settings'])assert.match(src,new RegExp(`rpc\\('${fn}'`));
+ for(const fn of ['post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','post_sales_invoice','save_ledger_settings','import_bank_statement','record_bank_dates','close_fiscal_year'])assert.match(src,new RegExp(`rpc\\('${fn}'`));
  const schema=read('replica/schema.sql');
- for(const fn of ['post_sales_invoice','save_ledger_settings','ledger_staff','ledger_locked_through','post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','trial_balance'])assert.match(schema,new RegExp(`create function public\\.${fn}\\(`),fn);
+ for(const fn of ['import_bank_statement','record_bank_dates','bank_book','close_fiscal_year','post_sales_invoice','save_ledger_settings','ledger_staff','ledger_locked_through','post_voucher','reverse_voucher','save_ledger','save_account_group','save_fiscal_year','lock_ledger_period','trial_balance'])assert.match(schema,new RegExp(`create function public\\.${fn}\\(`),fn);
  assert.doesNotMatch(src.replace(/\$\{[^}]*\}/g,''),/<[^>]*\son\w+=/i,'no inline handlers (CSP)');
 });

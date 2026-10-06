@@ -171,8 +171,10 @@ Jobs:
 4. **M4 VAT and TRA VFD:** S23, `fiscal_receipts`, `vfd_daily_reports`, the
    `tra-vfd` jobs and `vat_return`. **Gate:** TRA registration and approval
    of the integration (LEG-032).
-5. **M5 Banking:** S18, S20, bank dates, statement CSV import and matching.
-6. **M6 Statements and close:** S16 P&L, S17 Balance Sheet, S21 cash flow,
+5. **M5 Banking** (built; block 3 of `replica/schema.sql` and the Bank
+   reconciliation tab): S18, S20, bank dates, statement CSV import and matching.
+6. **M6 Statements and close** (P&L, Balance Sheet and year close built;
+   cash flow, exceptions and Excel export still to come): S16 P&L, S17 Balance Sheet, S21 cash flow,
    S27 exceptions, S30 year close, Excel/PDF export.
    **Gate for switching Tally off:** one full VAT month in parallel with
    matching TB, VAT return and receivables, plus accountant sign-off

@@ -3,7 +3,7 @@ Company settings: name TIN VRN base currency TZS books-from date,setup,must,yes,
 Financial years with start and end dates,setup,must,yes,yes,S02 S30
 Predefined primary groups and sub-groups (28),chart of accounts,must,yes,yes,S04 S05; confirm names against Anudha's Tally company
 User-created groups under any group,chart of accounts,must,yes,yes,S05
-Group nature drives Balance Sheet or P&L placement,chart of accounts,must,yes,partial,direct vs indirect splits gross and net profit
+Group nature drives Balance Sheet or P&L placement,chart of accounts,must,yes,yes,direct vs indirect splits gross and net profit
 Ledgers under groups with opening balance Dr or Cr,chart of accounts,must,yes,yes,S06
 Predefined Cash and Profit & Loss ledgers that cannot be deleted,chart of accounts,must,yes,partial,source 1
 Link party ledgers to ERP customers and suppliers,chart of accounts,must,partial,yes,reuse tally_ledger_names mappings; Tally has no ERP link
@@ -36,15 +36,15 @@ Withholding tax deducted by customers and on supplier payments,tax,should,unknow
 Day Book,reports,must,yes,yes,S13
 Ledger statement with running balance and drill-down,reports,must,yes,yes,S14
 Trial Balance (condensed and detailed),reports,must,yes,partial,S15
-Profit & Loss with gross and net profit,reports,must,yes,no,S16
-Balance Sheet,reports,must,yes,no,S17
-Cash book and bank book,reports,must,yes,no,S18
+Profit & Loss with gross and net profit,reports,must,yes,yes,S16
+Balance Sheet,reports,must,yes,yes,S17
+Cash book and bank book,reports,must,yes,partial,S18
 Drill from any report total to the vouchers behind it,reports,must,yes,partial,
-Export reports to Excel and PDF,reports,should,yes,no,
+Export reports to Excel and PDF,reports,should,yes,partial,
 Cash flow and funds flow,reports,should,yes,no,S21
 Ratio analysis,reports,could,yes,no,S22
-Bank reconciliation by bank date,banking,must,yes,no,S20
-Import bank statement CSV and auto-match,banking,should,yes,no,S20; Tally supports many banks' formats
+Bank reconciliation by bank date,banking,must,yes,yes,S20
+Import bank statement CSV and auto-match,banking,should,yes,yes,S20; Tally supports many banks' formats
 Cheque printing and payment advice,banking,could,yes,no,S32
 Post-dated cheques and vouchers,banking,should,yes,no,S27
 Cost centres and categories with allocation on P&L lines,cost control,should,yes,no,S12 S24; branch or department
@@ -55,7 +55,7 @@ Interest on overdue bills,finance,could,yes,no,S29
 Accounting rights per role and voucher type enforced in the database,security,must,yes,partial,accounting_memberships + departments
 Edit log of every create reverse and master change,security,must,yes,yes,S26; append-only events
 Period lock so closed months cannot be posted,security,must,yes,yes,S30
-Year-end close and carry forward of balances,close,must,yes,no,S30
+Year-end close and carry forward of balances,close,must,yes,yes,S30
 Reversing journal auto-reversed next period,vouchers,should,yes,no,
 Optional (unposted) and memorandum vouchers,vouchers,could,yes,no,S27
 Import Tally masters (groups ledgers) from XML,migration,must,yes,no,S31 F12

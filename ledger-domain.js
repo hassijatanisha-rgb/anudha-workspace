@@ -162,3 +162,105 @@ function ledgerPurchaseDraft(order,lines,settings,supplierLedger,rateBp){
  out.push({ledger_id:supplierLedger?.id||'',side:'cr',amount:total?ledgerMoney(total):'',vat_class:'',bills:supplierLedger?.bill_wise?[{kind:'new',name:'',due_date:'',amount:total?ledgerMoney(total):''}]:[]});
  return {lines:out,reference:order.lpo_reference||order.po_number,narration:`Purchase order ${order.po_number}`,missingPrices:lines.some(l=>l.unit_price_minor==null)};
 }
+
+// Bank statements -------------------------------------------------------------------------------------------------------
+// CSV rows, with quoted fields, CRLF and either comma or semicolon separators.
+function ledgerCsvRows(text){
+ const src=String(text||'').replace(/^﻿/,''),first=src.split(/\r?\n/).find(l=>l.trim())||'';
+ const sep=(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?';':',',rows=[];let row=[],cell='',quoted=false;
+ for(let i=0;i<src.length;i++){
+  const ch=src[i];
+  if(quoted){if(ch==='"'&&src[i+1]==='"'){cell+='"';i++;}else if(ch==='"')quoted=false;else cell+=ch;}
+  else if(ch==='"')quoted=true;else if(ch===sep){row.push(cell);cell='';}
+  else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&src[i+1]==='\n')i++;row.push(cell);if(row.some(c=>c.trim()))rows.push(row.map(c=>c.trim()));row=[];cell='';}
+  else cell+=ch;
+ }
+ row.push(cell);if(row.some(c=>c.trim()))rows.push(row.map(c=>c.trim()));
+ return rows;
+}
+const ledgerMonths={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+// "21/07/2026", "2026-07-21", "21-Jul-2026", "21.07.26" → "2026-07-21". order 'dmy' (Tanzanian banks) or 'mdy'.
+function ledgerParseDate(text,order='dmy'){
+ const t=String(text||'').trim().split(/[ T]/)[0];let m;
+ if((m=t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/)))return ledgerIsoDate(+m[1],+m[2],+m[3]);
+ if((m=t.match(/^(\d{1,2})[-/. ]([A-Za-z]{3})[A-Za-z]*[-/. ,]+(\d{2,4})$/)))return ledgerIsoDate(ledgerYear(m[3]),ledgerMonths[m[2].toLowerCase()],+m[1]);
+ if((m=t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/)))return order==='mdy'?ledgerIsoDate(ledgerYear(m[3]),+m[1],+m[2]):ledgerIsoDate(ledgerYear(m[3]),+m[2],+m[1]);
+ return null;
+}
+function ledgerYear(y){return y.length===2?2000+Number(y):Number(y);}
+function ledgerIsoDate(y,m,d){
+ if(!y||!m||!d)return null;const date=new Date(Date.UTC(y,m-1,d));
+ return date.getUTCFullYear()===y&&date.getUTCMonth()===m-1&&date.getUTCDate()===d?`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`:null;
+}
+// "1,234.50", "(1,234.50)", "-1234.5", "1,234.50 DR", "TZS 1,234.50" → signed cents. Blank → 0.
+function ledgerParseSignedMinor(text){
+ let t=String(text||'').trim();if(!t)return 0;
+ let sign=1;if(/^\(.*\)$/.test(t)){sign=-1;t=t.slice(1,-1);}if(/\bDR\b|-$/i.test(t))sign=-1;
+ t=t.replace(/\b(CR|DR|TZS|TSH|USD)\b/gi,'').replace(/[\s,]/g,'');if(t.startsWith('-')){sign=-sign;t=t.slice(1);}t=t.replace(/-$/,'');
+ if(!/^\d+(\.\d{1,2})?$/.test(t))return null;
+ return sign*ledgerParseMinor(t);
+}
+// Reads a bank's CSV export. Finds the header row and the date, description, reference and amount columns by name.
+// Withdrawals become negative and deposits positive, like the bank ledger (money in the bank is a debit).
+function ledgerStatementFromCsv(text){
+ const rows=ledgerCsvRows(text);
+ const at=rows.findIndex(r=>r.some(c=>/date/i.test(c))&&r.some(c=>/amount|debit|credit|withdraw|deposit|paid/i.test(c)));
+ if(at<0)throw Error('No header row with a date and an amount column was found. Export the statement as CSV from the bank.');
+ const header=rows[at].map(h=>h.toLowerCase());
+ const kind=header.findIndex(h=>/^(dr\/cr|cr\/dr|d\/c|c\/d|debit\/credit|credit\/debit|type|dr ?cr)$/.test(h));
+ const pick=(...lists)=>{for(const words of lists){const i=header.findIndex((h,j)=>j!==kind&&words.some(w=>h===w||h.includes(w)));if(i>=0)return i;}return -1;};
+ const col={kind,date:pick(['transaction date','posting date','trans date','txn date'],['date']),text:pick(['description','narration','details','particulars','remarks','memo']),
+  ref:pick(['reference','ref','cheque','chq','document']),debit:pick(['debit','withdrawal','paid out','money out']),credit:pick(['credit','deposit','paid in','money in']),amount:pick(['amount'])};
+ if(col.date<0||(col.amount<0&&(col.debit<0||col.credit<0)))throw Error('The date or amount columns could not be found in the statement.');
+ const body=rows.slice(at+1),raw=body.map(r=>r[col.date]||'');
+ const order=raw.some(d=>{const m=d.match(/^(\d{1,2})[-/.](\d{1,2})[-/.]/);return m&&+m[2]>12;})?'mdy':'dmy';
+ const lines=[],skipped=[];
+ body.forEach((r,i)=>{
+  const date=ledgerParseDate(r[col.date],order);
+  let amount;
+  if(col.debit>=0&&col.credit>=0){const c=ledgerParseSignedMinor(r[col.credit]),d=ledgerParseSignedMinor(r[col.debit]);amount=c==null||d==null?null:Math.abs(c)-Math.abs(d);}
+  else{amount=ledgerParseSignedMinor(r[col.amount]);if(amount!=null&&col.kind>=0&&/^\s*d/i.test(r[col.kind]||''))amount=-Math.abs(amount);else if(amount!=null&&col.kind>=0&&/^\s*c/i.test(r[col.kind]||''))amount=Math.abs(amount);}
+  if(!date||amount==null||amount===0){skipped.push(at+i+2);return;}
+  lines.push({line_date:date,amount_minor:amount,description:(col.text>=0?r[col.text]:'').slice(0,500),bank_ref:(col.ref>=0&&col.ref!==col.text?r[col.ref]:'').slice(0,120)});
+ });
+ return {lines,skipped,order};
+}
+// Proposes one statement line per book entry: same amount, within `days` of the voucher date, a matching cheque or
+// reference number first, then the nearest date. Nothing is saved until the accountant confirms.
+function ledgerAutoMatch(entries,lines,days=7){
+ const open=entries.filter(e=>!e.bank_date),used=new Set(),matches=[],dayOf=d=>Date.parse(d+'T00:00:00Z')/86400000;
+ const refHit=(e,l)=>{const words=[e.reference,e.number].filter(x=>String(x||'').trim().length>=3).map(x=>String(x).toLowerCase());const text=`${l.description} ${l.bank_ref}`.toLowerCase();return words.some(w=>text.includes(w));};
+ for(const line of [...lines].sort((a,b)=>a.line_date.localeCompare(b.line_date))){
+  const candidates=open.filter(e=>!used.has(e.entry_id)&&Number(e.amount_minor)===Number(line.amount_minor)&&Math.abs(dayOf(line.line_date)-dayOf(e.voucher_date))<=days)
+   .sort((a,b)=>Number(refHit(b,line))-Number(refHit(a,line))||Math.abs(dayOf(line.line_date)-dayOf(a.voucher_date))-Math.abs(dayOf(line.line_date)-dayOf(b.voucher_date)));
+  if(candidates[0]){used.add(candidates[0].entry_id);matches.push({entry_id:candidates[0].entry_id,statement_line_id:line.id,bank_date:line.line_date});}
+ }
+ return matches;
+}
+// Bank reconciliation statement on a date: balance in the books, entries the bank has not yet cleared, and the
+// balance the bank should show.
+function ledgerBrs(entries,asOf){
+ let book=0,deposits=0,payments=0;
+ for(const e of entries){if(e.voucher_date>asOf)continue;const a=Number(e.amount_minor);book+=a;if(!e.bank_date||e.bank_date>asOf){if(a>0)deposits+=a;else payments+=a;}}
+ return {book,deposits,payments,bank:book-deposits-payments};
+}
+
+// Financial statements ---------------------------------------------------------------------------------------------------
+// Profit & Loss for a period from Trial Balance rows: movement = closing - opening. Income is shown positive.
+function ledgerProfitAndLoss(groups,ledgers,balances){
+ const tree=ledgerTree(groups,ledgers,balances,false),part=(nature,direct)=>tree.filter(n=>n.group.nature===nature&&!!n.group.affects_gross_profit===direct)
+  .map(n=>({node:n,amount:(nature==='income'?-1:1)*(n.closing-n.opening)})).filter(p=>p.amount!==0);
+ const sum=list=>list.reduce((s,p)=>s+p.amount,0);
+ const s={directIncome:part('income',true),directExpense:part('expense',true),indirectIncome:part('income',false),indirectExpense:part('expense',false)};
+ const gross=sum(s.directIncome)-sum(s.directExpense);
+ return {...s,gross,net:gross+sum(s.indirectIncome)-sum(s.indirectExpense)};
+}
+// Balance Sheet on a date. The profit not yet closed to reserves is shown on the liabilities side.
+function ledgerBalanceSheet(groups,ledgers,balances){
+ const tree=ledgerTree(groups,ledgers,balances,false);
+ const liabilities=tree.filter(n=>n.group.nature==='liability').map(n=>({node:n,amount:-n.closing})).filter(p=>p.amount!==0);
+ const assets=tree.filter(n=>n.group.nature==='asset').map(n=>({node:n,amount:n.closing})).filter(p=>p.amount!==0);
+ const profit=-tree.filter(n=>n.group.nature==='income'||n.group.nature==='expense').reduce((s,n)=>s+n.closing,0);
+ const totalLiabilities=liabilities.reduce((s,p)=>s+p.amount,0)+profit,totalAssets=assets.reduce((s,p)=>s+p.amount,0);
+ return {liabilities,assets,profit,totalLiabilities,totalAssets,balanced:totalLiabilities===totalAssets};
+}

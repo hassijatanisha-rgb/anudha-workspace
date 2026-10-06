@@ -67,6 +67,17 @@ const howToTopics=[
   'Open **Books of account**, then **Receivables & payables**.',
   'Choose **Customers owe us** or **We owe suppliers**. The oldest overdue amounts are at the top.',
   'Press **Statement** for any customer or supplier, then **Print statement** to send it.']},
+ {id:'books-bank',role:'accounts',title:'Reconcile a bank account with its statement',screens:['ledger'],steps:[
+  'Download the statement from the bank as a CSV file.',
+  'Open **Books of account**, then **Bank reconciliation**. Choose the bank and the statement date and press **Show**.',
+  'Choose the file and press **Import statement**. Importing the same file twice does no harm.',
+  'Press **Match with statement**, check the bank dates it fills in, and press **Save bank dates**.',
+  'For bank charges or interest that are not in the books yet, press **Enter voucher** on that line and post it.',
+  'The figure The bank statement should show must equal the closing balance on the statement.']},
+ {id:'books-statements',role:'accounts',title:'Print the Profit & Loss and Balance Sheet, and close the year',screens:['ledger'],steps:[
+  'Open **Books of account**, then **P&L and Balance Sheet**. Choose the dates and press **Show**, then **Print**.',
+  'Press **Balance Sheet** for the position on a date. It must balance.',
+  'When the year\'s accounts are final, the owner opens **Years & locks**, chooses where the profit goes and presses Close for that year. This locks the year.']},
  {id:'books-reports',role:'accounts',title:'See balances, a ledger statement or the Trial Balance',screens:['ledger'],steps:[
   'Open **Books of account**. **Ledgers** lists every group and ledger with its balance. Press **New ledger** to add one.',
   'Press **Statement** on a ledger, or open **Ledger statement**, to see every entry with the running balance.',

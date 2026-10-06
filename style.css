@@ -104,3 +104,4 @@ body>header .brand{flex-wrap:wrap;row-gap:2px}body>header .brand span{white-spac
 .ledger-ageing details ul{margin:6px 0 0;padding-left:18px;font-size:.9em}.ledger-invoice{display:flex;gap:6px;flex-wrap:wrap}.ledger-invoice input{max-width:160px}
 @media print{body>header,#nav,#notice,.ledger-workspace>.heading,.ledger-workspace>.tabs,.ledger-filter,#ledgerPrint{display:none!important}.ledger-workspace table{display:table}}
 .ledger-ageing summary small{margin-left:6px}
+.ledger-brs{max-width:640px}.ledger-total th{border-top:2px solid var(--line)}.ledger-statement-table details table{margin:6px 0 0}.ledger-statement-table details td{border:0;padding:2px 8px;font-weight:400}.ledger-bs{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:900px){.ledger-bs{grid-template-columns:1fr}}

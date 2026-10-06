@@ -159,6 +159,50 @@ await ok(invoice(id(410),pf).then(r=>assert.equal(r.number,inv.number)),undefine
 await ok(invoice(id(411),pf),/already has a posted voucher/);
 await ok(invoice(id(412),pfZero).then(async r=>assert.equal((await one(`select vat_class from voucher_entries where voucher_id=$1 and line_no=2`,[r.id])).vat_class,'exempt')));
 
+// M5: bank statement import and reconciliation.
+const importStmt=(iid,ledgerId,lines)=>one('select public.import_bank_statement($1,$2,$3,$4::jsonb) r',[iid,ledgerId,'july.csv',JSON.stringify(lines)]).then(r=>r.r);
+const stmt=[{line_date:'2026-07-21',amount_minor:80000,description:'Deposit',bank_ref:'CHQ1'},{line_date:'2026-07-21',amount_minor:80000,description:'Deposit',bank_ref:'CHQ1'},{line_date:'2026-07-31',amount_minor:-1500,description:'Charges'}];
+await ok(importStmt(id(500),L.cust,stmt),/Bank Accounts or Bank OD/);
+await ok(importStmt(id(500),L.bank,stmt).then(r=>assert.deepEqual({...r},{new:3,already:0,repeated:false})));
+await ok(importStmt(id(501),L.bank,stmt).then(r=>assert.deepEqual({...r},{new:0,already:3,repeated:false})),undefined);
+await ok(importStmt(id(500),L.bank,stmt).then(r=>assert.equal(r.repeated,true)));
+const book=await db.query(`select * from public.bank_book($1,'2026-07-31')`,[L.bank]).then(r=>r.rows);
+const lines80=await db.query(`select id from bank_statement_lines where amount_minor=80000 order by line_key`).then(r=>r.rows.map(x=>x.id));
+const chargeLine=(await one(`select id from bank_statement_lines where amount_minor=-1500`)).id;
+const e80=book.filter(b=>Number(b.amount_minor)===80000).map(b=>b.entry_id);
+await ok(Promise.resolve(assert.ok(e80.length===1&&lines80.length===2)));
+const rec=rows=>one('select public.record_bank_dates($1::jsonb) n',[JSON.stringify(rows)]).then(r=>r.n);
+await ok(rec([{entry_id:e80[0],bank_date:'2026-07-21',statement_line_id:chargeLine}]),/different bank or amount/);
+await ok(rec([{entry_id:e80[0],bank_date:'2026-07-21',statement_line_id:lines80[0]}]).then(n=>assert.equal(n,1)));
+const opening=book.find(b=>Number(b.amount_minor)===500000).entry_id;
+await ok(rec([{entry_id:opening,bank_date:'2026-07-01',statement_line_id:lines80[0]}]),/different bank or amount/);
+await ok(post(id(505),T.receipt,'2026-07-21',[{ledger_id:L.bank,amount_minor:80000},{ledger_id:L.capital,amount_minor:-80000}]));
+const second=(await one(`select e.id from voucher_entries e where e.voucher_id=$1 and e.ledger_id=$2`,[id(505),L.bank])).id;
+await ok(rec([{entry_id:second,bank_date:'2026-07-21',statement_line_id:lines80[0]}]),/already clears another entry/);
+await ok(rec([{entry_id:second,bank_date:'2026-07-21',statement_line_id:lines80[1]}]),undefined);
+await ok(rec([{entry_id:book.find(b=>Number(b.amount_minor)===-50000)?.entry_id||opening,bank_date:null}]));
+await ok(one(`select bank_date::text d from public.bank_book($1,'2026-07-31') where entry_id=$2`,[L.bank,e80[0]]).then(r=>assert.equal(r.d,'2026-07-21')));
+await ok(rec([{entry_id:e80[0],bank_date:null}]).then(()=>one(`select bank_date from public.bank_book($1,'2026-07-31') where entry_id=$2`,[L.bank,e80[0]])).then(r=>assert.equal(r.bank_date,null)),undefined);
+await ok(rec([{entry_id:id(999),bank_date:'2026-07-01'}]),/bank ledger entries/);
+await ok(db.exec(`delete from bank_reconciliations`),/never changed or deleted/);
+
+// M6: year-end close moves every income and expense balance to reserves and locks the year.
+await ok(ledger(id(120),{name:'Retained earnings',group_id:'a0000000-0000-4000-8000-000000000016'}));
+const close=(vid,ledgerId)=>one('select * from public.close_fiscal_year($1,$2,$3)',[vid,id(50),ledgerId]);
+await ok(close(id(510),id(120)),/Only the owner/);
+await as(owner);
+await ok(close(id(510),L.sales),/Capital Account/);
+const before=await db.query(`select sum(e.amount_minor)::bigint p from voucher_entries e join ledgers l on l.id=e.ledger_id join account_groups g on g.id=l.group_id where g.nature in ('income','expense')`).then(r=>Number(r.rows[0].p));
+const closed=await close(id(510),id(120));checks++;
+await ok(Promise.resolve(assert.ok(closed.closed_at&&closed.closing_voucher_id)));
+const after=await db.query(`select ledger_id, closing_minor::bigint c from trial_balance('2026-07-01','2027-06-30')`).then(r=>new Map(r.rows.map(x=>[x.ledger_id,Number(x.c)])));
+await ok(Promise.resolve(assert.equal(after.get(L.sales)||0,0)));
+await ok(Promise.resolve(assert.equal(after.get(id(120)),before,'profit (credit) lands in retained earnings')));
+await ok(one('select public.ledger_locked_through()::text d').then(r=>assert.equal(r.d,'2027-06-30')));
+await ok(close(id(511),id(120)),/already closed/);
+await as(accounts);
+await ok(post(id(512),T.receipt,'2027-06-30',[{ledger_id:L.bank,amount_minor:100},{ledger_id:L.capital,amount_minor:-100}]),/locked through 2027-06-30/);
+
 // RLS: accounts read, other staff see nothing, nobody writes directly.
 await db.exec('set role authenticated');
 await ok(one('select count(*)::int n from vouchers').then(r=>assert.ok(r.n>5)));

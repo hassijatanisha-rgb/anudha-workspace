@@ -680,3 +680,163 @@ grant select on public.ledger_settings to authenticated;
 revoke all on function public.save_ledger_settings(integer,jsonb), public.post_sales_invoice(uuid,uuid,date) from public, anon;
 grant execute on function public.save_ledger_settings(integer,jsonb), public.post_sales_invoice(uuid,uuid,date) to authenticated;
 commit;
+
+-- Milestones M5 and M6: bank reconciliation and year-end close. Additive to M1 and M2.
+begin;
+
+-- Bank statement lines as the bank sent them. Deposits are positive (our debit on the bank ledger), withdrawals negative.
+create table public.bank_statement_imports (
+ id uuid primary key,
+ ledger_id uuid not null references public.ledgers(id) on delete restrict,
+ file_name text not null default '' check (length(file_name) <= 200),
+ line_count integer not null check (line_count between 0 and 5000),
+ imported_by uuid not null references auth.users(id),
+ imported_at timestamptz not null default now()
+);
+create index bank_statement_imports_ledger on public.bank_statement_imports(ledger_id, imported_at desc);
+create table public.bank_statement_lines (
+ id uuid primary key default gen_random_uuid(),
+ import_id uuid not null references public.bank_statement_imports(id) on delete restrict,
+ ledger_id uuid not null references public.ledgers(id) on delete restrict,
+ line_date date not null,
+ amount_minor bigint not null check (amount_minor <> 0),
+ description text not null default '' check (length(description) <= 500),
+ bank_ref text not null default '' check (length(bank_ref) <= 120),
+ line_key text not null check (length(line_key) = 32),
+ unique (ledger_id, line_key)
+);
+create index bank_statement_lines_ledger on public.bank_statement_lines(ledger_id, line_date);
+create index bank_statement_lines_import on public.bank_statement_lines(import_id);
+
+-- Append-only: the latest row for an entry is its state. A row with no bank date clears an earlier reconciliation.
+create table public.bank_reconciliations (
+ id uuid primary key default gen_random_uuid(),
+ entry_id uuid not null references public.voucher_entries(id) on delete restrict,
+ bank_date date,
+ statement_line_id uuid references public.bank_statement_lines(id) on delete restrict,
+ recorded_by uuid not null references auth.users(id),
+ recorded_at timestamptz not null default clock_timestamp(),
+ check (bank_date is not null or statement_line_id is null)
+);
+create index bank_reconciliations_entry on public.bank_reconciliations(entry_id, recorded_at desc);
+create index bank_reconciliations_line on public.bank_reconciliations(statement_line_id);
+do $$ declare t text; begin
+ foreach t in array array['bank_statement_imports','bank_statement_lines','bank_reconciliations'] loop
+  execute format('create trigger %I before update or delete on public.%I for each row execute function public.deny_ledger_mutation()', t||'_immutable', t);
+  execute format('create trigger %I before truncate on public.%I for each statement execute function public.deny_ledger_mutation()', t||'_no_truncate', t);
+  execute format('alter table public.%I enable row level security', t);
+  execute format('create policy %I on public.%I for select to authenticated using ((select public.ledger_staff()))', t||'_read', t);
+  execute format('revoke all on public.%I from public, anon, authenticated', t);
+  execute format('grant select on public.%I to authenticated', t);
+ end loop;
+end $$;
+
+create function public.is_bank_ledger(p_ledger_id uuid) returns boolean
+language sql stable security definer set search_path=public,pg_temp as $$
+ select exists(select 1 from public.ledgers l where l.id=p_ledger_id and (public.group_is_under(l.group_id,'bank_accounts') or public.group_is_under(l.group_id,'bank_od'))) $$;
+
+-- Up to 2,000 lines per call. A line already imported for this bank (same date, amount, text, reference and position
+-- among identical lines) is skipped, so the same statement can be uploaded twice safely.
+create function public.import_bank_statement(p_import_id uuid, p_ledger_id uuid, p_file_name text, p_lines jsonb)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_line jsonb; v_new integer := 0; v_seen integer := 0; v_key text; v_n integer; v_counts jsonb := '{}'; v_base text;
+begin
+ if not public.ledger_staff() then raise exception 'Accounting access is required' using errcode='42501'; end if;
+ if not public.is_bank_ledger(p_ledger_id) then raise exception 'Choose a ledger under Bank Accounts or Bank OD A/c'; end if;
+ if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) not between 1 and 2000 then raise exception 'Send between 1 and 2,000 statement lines at a time'; end if;
+ if exists(select 1 from public.bank_statement_imports where id=p_import_id) then
+  return jsonb_build_object('new',0,'already',jsonb_array_length(p_lines),'repeated',true); end if;
+ perform pg_advisory_xact_lock(hashtextextended('bank-import:'||p_ledger_id::text,0));
+ insert into public.bank_statement_imports(id,ledger_id,file_name,line_count,imported_by) values(p_import_id,p_ledger_id,left(coalesce(p_file_name,''),200),jsonb_array_length(p_lines),auth.uid());
+ for v_line in select value from jsonb_array_elements(p_lines) loop
+  if (v_line->>'line_date') is null or coalesce((v_line->>'amount_minor')::bigint,0) = 0 then raise exception 'Every statement line needs a date and a non-zero amount'; end if;
+  v_base := md5(jsonb_build_array(v_line->>'line_date',(v_line->>'amount_minor')::bigint,trim(coalesce(v_line->>'description','')),trim(coalesce(v_line->>'bank_ref','')))::text);
+  v_n := coalesce((v_counts->>v_base)::integer,0) + 1; v_counts := v_counts || jsonb_build_object(v_base,v_n);
+  v_key := md5(v_base||':'||v_n);
+  insert into public.bank_statement_lines(import_id,ledger_id,line_date,amount_minor,description,bank_ref,line_key)
+  values(p_import_id,p_ledger_id,(v_line->>'line_date')::date,(v_line->>'amount_minor')::bigint,left(trim(coalesce(v_line->>'description','')),500),left(trim(coalesce(v_line->>'bank_ref','')),120),v_key)
+  on conflict (ledger_id,line_key) do nothing;
+  if found then v_new := v_new + 1; else v_seen := v_seen + 1; end if;
+ end loop;
+ return jsonb_build_object('new',v_new,'already',v_seen,'repeated',false);
+end $$;
+
+-- p_rows: [{entry_id, bank_date (null clears), statement_line_id?}]. A statement line clears one book entry at most,
+-- with the same amount on the same bank ledger.
+create function public.record_bank_dates(p_rows jsonb)
+returns integer language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_row jsonb; v_entry public.voucher_entries; v_line public.bank_statement_lines; v_line_id uuid; v_n integer := 0;
+begin
+ if not public.ledger_staff() then raise exception 'Accounting access is required' using errcode='42501'; end if;
+ if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) not between 1 and 1000 then raise exception 'Send between 1 and 1,000 bank dates at a time'; end if;
+ for v_row in select value from jsonb_array_elements(p_rows) loop
+  select * into v_entry from public.voucher_entries where id=(v_row->>'entry_id')::uuid;
+  if not found or not public.is_bank_ledger(v_entry.ledger_id) then raise exception 'Bank dates can only be set on bank ledger entries'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('bank-rec:'||v_entry.ledger_id::text,0));
+  v_line_id := nullif(v_row->>'statement_line_id','')::uuid;
+  if v_line_id is not null then
+   select * into v_line from public.bank_statement_lines where id=v_line_id;
+   if not found or v_line.ledger_id <> v_entry.ledger_id or v_line.amount_minor <> v_entry.amount_minor then raise exception 'That statement line is for a different bank or amount'; end if;
+   if exists(select 1 from (select distinct on (r.entry_id) r.entry_id, r.statement_line_id from public.bank_reconciliations r
+     join public.voucher_entries e on e.id=r.entry_id where e.ledger_id=v_entry.ledger_id order by r.entry_id, r.recorded_at desc, r.id desc) cur
+     where cur.statement_line_id=v_line_id and cur.entry_id<>v_entry.id) then raise exception 'That statement line already clears another entry'; end if;
+  end if;
+  insert into public.bank_reconciliations(entry_id,bank_date,statement_line_id,recorded_by)
+  values(v_entry.id,nullif(v_row->>'bank_date','')::date,v_line_id,auth.uid());
+  v_n := v_n + 1;
+ end loop;
+ return v_n;
+end $$;
+
+-- Every entry on a bank ledger up to a date, with its current bank date. Read by the reconciliation screen.
+create function public.bank_book(p_ledger_id uuid, p_to date)
+returns table(entry_id uuid, voucher_id uuid, voucher_date date, number text, voucher_type_id uuid, narration text, reference text,
+ amount_minor bigint, bank_date date, statement_line_id uuid)
+language sql stable security invoker set search_path=public,pg_temp as $$
+ select e.id, v.id, v.voucher_date, v.number, v.voucher_type_id, v.narration, v.reference, e.amount_minor, cur.bank_date, cur.statement_line_id
+ from public.voucher_entries e join public.vouchers v on v.id=e.voucher_id
+ left join lateral (select r.bank_date, r.statement_line_id from public.bank_reconciliations r where r.entry_id=e.id order by r.recorded_at desc, r.id desc limit 1) cur on true
+ where e.ledger_id=p_ledger_id and v.voucher_date<=p_to
+ order by v.voucher_date, v.created_at, e.line_no $$;
+
+-- Year-end close (owner): one Journal dated the last day of the year moves every income and expense balance to the
+-- chosen capital or reserves ledger, then the books are locked through that day. Run once per year.
+alter table public.fiscal_years add column closed_at timestamptz, add column closed_by uuid references auth.users(id),
+ add column closing_voucher_id uuid references public.vouchers(id);
+create function public.close_fiscal_year(p_voucher_id uuid, p_year_id uuid, p_retained_ledger_id uuid)
+returns public.fiscal_years language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_year public.fiscal_years; v_lock date; v_entries jsonb; v_total bigint; v_voucher public.vouchers; v_row public.fiscal_years;
+begin
+ if not public.inventory_owner() then raise exception 'Only the owner can close a financial year' using errcode='42501'; end if;
+ select * into v_year from public.fiscal_years where id=p_year_id for update;
+ if not found then raise exception 'Financial year not found'; end if;
+ if v_year.closed_at is not null then raise exception '% is already closed', v_year.name; end if;
+ if not exists(select 1 from public.ledgers l where l.id=p_retained_ledger_id and (public.group_is_under(l.group_id,'capital_account'))) then
+  raise exception 'Choose a ledger under Capital Account (for example Reserves & Surplus) for the year''s profit'; end if;
+ if exists(select 1 from public.fiscal_years where ends_on < v_year.starts_on and closed_at is null) then raise exception 'Close the earlier financial year first'; end if;
+ perform pg_advisory_xact_lock(hashtextextended('ledger-period-lock',0));
+ v_lock := public.ledger_locked_through();
+ select coalesce(jsonb_agg(jsonb_build_object('ledger_id',b.ledger_id,'amount_minor',-b.balance) order by b.ledger_id),'[]'), coalesce(sum(b.balance),0)
+ into v_entries, v_total
+ from (select e.ledger_id, sum(e.amount_minor)::bigint balance from public.voucher_entries e join public.vouchers v on v.id=e.voucher_id
+       join public.ledgers l on l.id=e.ledger_id join public.account_groups g on g.id=l.group_id
+       where v.voucher_date<=v_year.ends_on and g.nature in ('income','expense') group by e.ledger_id having sum(e.amount_minor)<>0) b;
+ if jsonb_array_length(v_entries) > 0 then
+  -- The closing journal is dated inside the year; reopen just that day if needed, then restore the later lock.
+  if v_lock is not null and v_lock >= v_year.ends_on then
+   insert into public.ledger_period_locks(through_date,reason,locked_by) values(v_year.ends_on - 1,'Year-end close of '||v_year.name,auth.uid()); end if;
+  v_entries := v_entries || jsonb_build_array(jsonb_build_object('ledger_id',p_retained_ledger_id,'amount_minor',v_total));
+  if jsonb_array_length(v_entries) > 500 then raise exception 'More than 499 income and expense ledgers; close in parts'; end if;
+  v_voucher := public.post_voucher(p_voucher_id,(select id from public.voucher_types where code='journal'),v_year.ends_on,v_entries,'Year-end close of '||v_year.name,'',null,'{}'::jsonb,'{}'::jsonb);
+ end if;
+ insert into public.ledger_period_locks(through_date,reason,locked_by) values(greatest(v_year.ends_on,coalesce(v_lock,v_year.ends_on)),'Year-end close of '||v_year.name,auth.uid());
+ update public.fiscal_years set closed_at=now(),closed_by=auth.uid(),closing_voucher_id=v_voucher.id where id=v_year.id returning * into v_row;
+ insert into public.accounting_events(entity,entity_id,action,before_data,after_data,actor_user_id) values('fiscal_year',v_row.id,'changed',to_jsonb(v_year),to_jsonb(v_row),auth.uid());
+ return v_row;
+end $$;
+
+revoke all on function public.is_bank_ledger(uuid), public.import_bank_statement(uuid,uuid,text,jsonb), public.record_bank_dates(jsonb),
+ public.bank_book(uuid,date), public.close_fiscal_year(uuid,uuid,uuid) from public, anon;
+grant execute on function public.is_bank_ledger(uuid), public.import_bank_statement(uuid,uuid,text,jsonb), public.record_bank_dates(jsonb),
+ public.bank_book(uuid,date), public.close_fiscal_year(uuid,uuid,uuid) to authenticated;
+commit;
