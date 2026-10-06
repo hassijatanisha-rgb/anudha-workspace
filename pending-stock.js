@@ -3,6 +3,7 @@
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
 let pendingRenderEpoch=0,pendingSessionEpoch=0,pendingAvailabilityDay='';
+const pendingHistoryReads=new WeakMap();
 function clearPendingStock(){pendingEpoch++;pendingRenderEpoch++;pendingSessionEpoch++;pendingRows=[];pendingAvailability=new Map();pendingAvailabilityDay='';pendingLoaded=false;pendingCreating=false;pendingRequestId=null;pendingFilter='waiting';pendingSearch='';pendingPage=0;pendingLoadError='';pendingAvailabilityError='';}
 function pendingToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
@@ -150,10 +151,16 @@ function openPendingAction(row,action){
  });
 }
 async function showPendingHistory(id){
- const output=document.querySelector(`[data-pending-history-output="${CSS.escape(id)}"]`),actor=me?.user_id;if(!output)return;
+ const output=document.querySelector(`[data-pending-history-output="${CSS.escape(id)}"]`),actor=me,actorId=me?.user_id,session=pendingSessionEpoch;
+ const token={};
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&session===pendingSessionEpoch&&view==='pending'&&output?.isConnected&&pendingHistoryReads.get(output)===token;
+ if(output)pendingHistoryReads.set(output,token);
+ if(!output||!current())return;
  output.textContent='Loading history…';
- const result=await client.from('pending_stock_events').select('action,from_status,to_status,note,expires_on,actor_user_id,created_at').eq('request_id',id).order('created_at').limit(200);
- if(me?.user_id!==actor||!output.isConnected)return;
+ let result;
+ try{result=await client.from('pending_stock_events').select('action,from_status,to_status,note,expires_on,actor_user_id,created_at').eq('request_id',id).order('created_at').limit(200);}
+ catch(error){if(current())output.textContent=`History could not load: ${error.message}`;return;}
+ if(!current())return;
  if(result.error){output.textContent=`History could not load: ${result.error.message}`;return;}
  output.innerHTML=`<ol class="lead-history">${(result.data||[]).map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(event.action)} · closes ${esc(event.expires_on)}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
 }
