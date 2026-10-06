@@ -7,6 +7,19 @@ let purchaseOrders=[],purchaseLines=[],suppliers=[],purchaseEditing='',supplierE
 const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · order now',ordered:'Ordered · waiting for goods',closed:'Goods arrived',cancelled:'Cancelled'};
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
 const purchaseFilters=[['requested','Needs owner approval'],['approved','Approved · order now'],['ordered','Ordered · waiting for goods'],['finished','Arrived or cancelled'],['all','All']];
+const purchaseRecentDays=183;
+let purchaseSearchTimer=0;
+// Older orders are looked up on the server by PO or LPO number while typing in Search.
+async function purchaseSearchOlder(text){
+ const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
+ const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
+ const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
+ if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
+ const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
+ if(!extra.length)return;
+ purchaseOrders=purchaseOrders.concat(extra.map(({purchase_order_lines:items,...order})=>order));purchaseLines=purchaseLines.concat(extra.flatMap(r=>r.purchase_order_lines||[]));
+ const box=$('#purchaseSearch');if(box)renderSearchPreservingPosition(box,renderPurchasing);else renderPurchasing();
+}
 function clearPurchasing(){purchaseEpoch++;purchaseRenderEpoch++;purchaseLoaded=false;purchaseLoadError='';purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
 function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';}
 function purchaseToday(){return new Date().toISOString().slice(0,10);}
@@ -68,7 +81,7 @@ async function savePurchaseForm(form){
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchasingWorkspace(true);message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
+ purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchaseRefreshOne(saved.id);message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
 }
 function supplierEditor(row){
  return `<section class="card document-editor"><div class="heading"><div><small>${row?esc(row.supplier_number):'NEW'}</small><h2>${row?'Edit supplier':'New supplier'}</h2></div><button type="button" id="closeSupplierEditor">Close</button></div><form id="supplierForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><div class="grid"><label class="wide"><span>Supplier name</span><input name="name" required minlength="2" maxlength="200" value="${esc(row?.name||'')}"></label><label><span>Country</span><input name="country" maxlength="100" value="${esc(row?.country||'')}"></label><label><span>Contact person</span><input name="contact_name" maxlength="200" value="${esc(row?.contact_name||'')}"></label><label><span>Phone</span><input name="phone" maxlength="60" inputmode="tel" value="${esc(row?.phone||'')}"></label><label><span>Email</span><input name="email" type="email" maxlength="320" value="${esc(row?.email||'')}"></label><label><span>TIN</span><input name="tin" maxlength="60" value="${esc(row?.tin||'')}"></label><label><span>Payment terms</span><input name="payment_terms" maxlength="300" value="${esc(row?.payment_terms||'')}"></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000">${esc(row?.notes||'')}</textarea></label>${row&&me?.role==='owner'?`<label><span>Status</span><select name="active"><option value="true" ${row.active?'selected':''}>Active</option><option value="false" ${row.active?'':'selected'}>Inactive — hide from new orders</option></select></label>`:''}</div><p role="alert" id="supplierFormError"></p><div class="actions"><button type="submit">${row?'Save changes':'Save supplier'}</button></div></form></section>`;
@@ -85,9 +98,24 @@ async function saveSupplierForm(form){
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
  supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
 }
+// After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
+async function purchaseRefreshOne(id){
+ if(!purchaseLoaded||!id)return purchasingWorkspace(true);
+ const epoch=purchaseEpoch,actor=me?.user_id;
+ const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ if(result.error)throw Error(result.error.message);
+ if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
+ purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
+ if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
+ if(view==='purchasing')renderPurchasing();
+}
 async function loadPurchasing(){
  const epoch=++purchaseEpoch,actor=me,actorId=me?.user_id;
- const [orders,lines,supplierRows]=await Promise.all([all('purchase_orders','*'),all('purchase_order_lines','*'),all('suppliers','*')]);
+ // Every open order is loaded; arrived and cancelled ones only from the last six months, with their items in the
+ // same request (items are nested per order, so the 1,000-row page limit applies to orders only).
+ const since=new Date(Date.now()-purchaseRecentDays*864e5).toISOString();
+ const [rows,supplierRows]=await Promise.all([all('purchase_orders','*,purchase_order_lines(*)',q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
+ const orders=rows.map(({purchase_order_lines:items,...order})=>order),lines=rows.flatMap(row=>row.purchase_order_lines||[]);
  if(epoch!==purchaseEpoch||me!==actor||me?.user_id!==actorId)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;
 }
@@ -109,7 +137,7 @@ function renderPurchasing(){
  const pages=Math.max(1,Math.ceil(rows.length/20));purchasePage=Math.min(Math.max(purchasePage,0),pages-1);
  const counts={requested:purchaseOrders.filter(o=>o.status==='requested').length,approved:purchaseOrders.filter(o=>o.status==='approved').length,ordered:purchaseOrders.filter(o=>o.status==='ordered').length,overdue:purchaseOrders.filter(o=>purchaseOverdue(o)).length};
  const editingOrder=purchaseEditing&&purchaseEditing!=='new'?purchaseOrders.find(o=>o.id===purchaseEditing):null,editingSupplier=supplierEditing&&supplierEditing!=='new'?suppliers.find(s=>s.id===supplierEditing):null;
- $('#content').innerHTML=`<section class="purchasing-workspace"><div class="heading"><div><small>ORDERS</small><h1>${ordersSection?'Purchasing':'Suppliers'}</h1><p class="muted">${ordersSection?'Choose the supplier and list the items. The owner approves, then the order is placed.':'Everyone we buy from. The same supplier cannot be entered twice.'}</p></div><div class="actions"><button type="button" id="purchaseRefresh">Refresh</button><button type="button" id="${ordersSection?'newPurchase':'newSupplier'}">${ordersSection?'New purchase request':'New supplier'}</button></div></div>${purchaseLoadError?`<p class="notice error" role="alert">Purchasing could not load: ${esc(purchaseLoadError)}. Nothing was changed.</p>`:''}${ordersSection&&purchaseEditing?purchaseEditor(editingOrder):''}${!ordersSection&&supplierEditing?supplierEditor(editingSupplier):''}${ordersSection?`<div class="tabs" role="group" aria-label="Filter purchase orders">${purchaseFilters.map(([key,label])=>`<button type="button" data-purchase-filter="${key}" class="${purchaseFilter===key?'active':''}" aria-pressed="${purchaseFilter===key}">${label}${counts[key]?` · ${counts[key]}`:''}</button>`).join('')}</div>`:''}<label class="search"><span>Search</span><input id="purchaseSearch" type="search" placeholder="${ordersSection?'Supplier, product, PO or LPO number':'Name, contact, phone, email or TIN'}" value="${esc(purchaseSearch)}"></label>${rows.slice(purchasePage*20,purchasePage*20+20).map(row=>ordersSection?purchaseCard(row):supplierCard(row)).join('')||`<p class="muted">${ordersSection?'No purchase orders here.':'No suppliers yet. Press New supplier to add one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="purchasePrev" ${purchasePage===0?'disabled':''}>Previous</button><span>Page ${purchasePage+1} of ${pages}</span><button type="button" id="purchaseNext" ${purchasePage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
+ $('#content').innerHTML=`<section class="purchasing-workspace"><div class="heading"><div><small>ORDERS</small><h1>${ordersSection?'Purchasing':'Suppliers'}</h1><p class="muted">${ordersSection?'Choose the supplier and list the items. The owner approves, then the order is placed.':'Everyone we buy from. The same supplier cannot be entered twice.'}</p></div><div class="actions"><button type="button" id="purchaseRefresh">Refresh</button><button type="button" id="${ordersSection?'newPurchase':'newSupplier'}">${ordersSection?'New purchase request':'New supplier'}</button></div></div>${purchaseLoadError?`<p class="notice error" role="alert">Purchasing could not load: ${esc(purchaseLoadError)}. Nothing was changed.</p>`:''}${ordersSection&&purchaseEditing?purchaseEditor(editingOrder):''}${!ordersSection&&supplierEditing?supplierEditor(editingSupplier):''}${ordersSection?`<div class="tabs" role="group" aria-label="Filter purchase orders">${purchaseFilters.map(([key,label])=>`<button type="button" data-purchase-filter="${key}" class="${purchaseFilter===key?'active':''}" aria-pressed="${purchaseFilter===key}">${label}${counts[key]?` · ${counts[key]}`:''}</button>`).join('')}</div>${['finished','all'].includes(purchaseFilter)?'<p class="muted">Showing arrived and cancelled orders from the last 6 months. Search by PO or LPO number finds older ones.</p>':''}`:''}<label class="search"><span>Search</span><input id="purchaseSearch" type="search" placeholder="${ordersSection?'Supplier, product, PO or LPO number':'Name, contact, phone, email or TIN'}" value="${esc(purchaseSearch)}"></label>${rows.slice(purchasePage*20,purchasePage*20+20).map(row=>ordersSection?purchaseCard(row):supplierCard(row)).join('')||`<p class="muted">${ordersSection?'No purchase orders here.':'No suppliers yet. Press New supplier to add one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="purchasePrev" ${purchasePage===0?'disabled':''}>Previous</button><span>Page ${purchasePage+1} of ${pages}</span><button type="button" id="purchaseNext" ${purchasePage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
  bindPurchasing();
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
@@ -130,7 +158,7 @@ function bindPurchasing(){
  const supplierForm=$('#supplierForm');
  if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#supplierFormError').textContent='';
   run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
- $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);};
+ $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});
  document.querySelectorAll('[data-purchase-edit]').forEach(button=>button.onclick=()=>{purchaseEditing=button.dataset.purchaseEdit;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
@@ -147,7 +175,7 @@ function openPurchaseAction(order,action){
   const actor=me?.user_id,result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the purchase order.');
   if(result.error)throw Error(result.error.message);
-  await purchasingWorkspace(true);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
+  await purchaseRefreshOne(order.id);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 async function showPurchaseHistory(id){

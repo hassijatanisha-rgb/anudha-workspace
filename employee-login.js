@@ -48,19 +48,23 @@ function bindPasswordNotice(section,dialog,password){
  section.querySelector('[data-copy-password]').onclick=async event=>{try{await navigator.clipboard.writeText(password);event.target.textContent='Copied';}catch{event.target.textContent='Select and copy it';}};
 }
 function openStaffOnboarding(){
- if(me?.role!=='owner')throw Error('Only the owner can add employees.');
- const actor=me.user_id,current=()=>me?.user_id===actor&&me?.role==='owner'&&dialog.isConnected;
+ if(me?.role!=='owner'&&me?.role!=='head')throw Error('Only the owner or a department head can add employees.');
+ const owner=me.role==='owner',actor=me.user_id,role0=me.role,current=()=>me?.user_id===actor&&me?.role===role0&&dialog.isConnected;
  const dialog=document.createElement('dialog');dialog.className='staff-onboarding';dialog.setAttribute('aria-label','Add employee');
- dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label><label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
+ dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label>${owner?`<label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="head">Department head — manages their department's staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><label><span>Department</span><select name="department">${departmentLabels.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:`<p>Department: <strong>${esc(departmentLabel(me.department))}</strong></p>`}<div data-access>${accessCheckboxes(startingAccess(owner?'':me.department))}</div><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.showModal();
  const form=dialog.querySelector('form'),alert=form.querySelector('[role="alert"]'),done=dialog.querySelector('[data-step="done"]');
+ // New accounts start with their department's usual areas; owners need no list.
+ const refreshAccess=()=>{const role=form.elements.role?.value||'staff',box=form.querySelector('[data-access]');box.hidden=role==='owner';if(owner)box.innerHTML=accessCheckboxes(startingAccess(form.elements.department.value));};
+ form.elements.department?.addEventListener('change',refreshAccess);form.elements.role?.addEventListener('change',refreshAccess);
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;
-  const fullName=form.elements.fullName.value.trim().replace(/\s+/g,' '),phone=form.elements.phone.value.trim(),role=form.elements.role.value;
+  const fullName=form.elements.fullName.value.trim().replace(/\s+/g,' '),phone=form.elements.phone.value.trim(),role=owner?form.elements.role.value:'staff',department=owner?form.elements.department.value:me.department,access=role==='owner'?[]:checkedAreas(form);
+  if(owner&&role==='head'&&!department){alert.textContent='Choose the department this head will manage.';return;}
   if(phone&&!/^\+[0-9][0-9\s()-]{7,20}$/.test(phone)){alert.textContent='Enter the phone with country code, for example +255712345678, or leave it empty.';return;}
   button.disabled=true;alert.textContent='Creating the login…';
   try{
-   const created=await staffAccountsCall({action:'create',full_name:fullName,phone,role});if(!current())return;
+   const created=await staffAccountsCall({action:'create',full_name:fullName,phone,role,department,access});if(!current())return;
    form.hidden=true;done.hidden=false;done.innerHTML=staffPasswordNotice(created.full_name,created.employee_id,created.temporary_password,created.warnings||[]);
    bindPasswordNotice(done,dialog,created.temporary_password);
    await loadEmployeeNames();if(view==='staff')await staff();
@@ -68,7 +72,7 @@ function openStaffOnboarding(){
  };
 }
 function openStaffPasswordReset(userId,name){
- if(me?.role!=='owner')throw Error('Only the owner can reset passwords.');
+ if(me?.role!=='owner'&&me?.role!=='head')throw Error('Only the owner or a department head can reset passwords.');
  const dialog=document.createElement('dialog');dialog.className='staff-onboarding';dialog.setAttribute('aria-label','Reset password');
  dialog.innerHTML=`<form><h2>Reset password for ${esc(name)}</h2><p>Their current password stops working now. You get a temporary password to give them, and they must choose a new one when they sign in.</p><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit" class="danger">Reset password</button></div></form><section data-step="done" hidden></section>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.showModal();
@@ -86,13 +90,25 @@ function openStaffPhone(userId,name,phone){
  });
 }
 function staffListHtml(rows){
- const sorted=[...rows].sort((a,b)=>Number(b.active)-Number(a.active)||employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
- return `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Department</th><th>Phone</th><th>Access</th><th></th></tr></thead><tbody>${sorted.map(x=>`<tr><td>${esc(employeeName(x.user_id))}</td><td>${esc(x.role==='owner'?'Owner':'Staff')}</td><td><select data-staff-department="${esc(x.user_id)}" aria-label="Department for ${esc(employeeName(x.user_id))}">${[['','Choose'],['sales','Sales'],['accounts','Accounts'],['stores','Stores & delivery'],['service','Service'],['management','Management']].map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select></td><td>${esc(x.phone||'—')}</td><td>${x.active?'Active':'Disabled'}</td><td><div class="actions">${x.user_id===me?.user_id?'<span class="muted">You · use Change password</span>':`<button type="button" data-staff-reset="${esc(x.user_id)}">Reset password</button>`}<button type="button" data-staff-phone="${esc(x.user_id)}" data-phone="${esc(x.phone||'')}">Phone</button></div></td></tr>`).join('')}</tbody></table></div>`;
+ const owner=me?.role==='owner',sorted=[...rows].sort((a,b)=>Number(b.active)-Number(a.active)||employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
+ if(!sorted.length)return '<p class="muted">Nobody here yet.</p>';
+ return `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Department</th><th>Can use</th><th>Phone</th><th>Login</th><th></th></tr></thead><tbody>${sorted.map(x=>{
+  const self=x.user_id===me?.user_id,manage=canManagePerson(x)&&!self,id=esc(x.user_id),name=esc(employeeName(x.user_id));
+  const role=owner&&!self?`<select data-staff-role="${id}" aria-label="Role for ${name}">${Object.entries(roleLabels).map(([v,l])=>`<option value="${v}" ${x.role===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(roleLabels[x.role]||x.role);
+  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(departmentLabel(x.department));
+  const access=`${esc(accessSummary(x))}${manage&&x.role!=='owner'?` <button type="button" data-staff-access="${id}">Change access</button>`:''}`;
+  const login=`${x.active?'Active':'Switched off'}${manage&&x.role!=='owner'?` <button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}">${x.active?'Switch off':'Switch on'}</button>`:''}`;
+  const actions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" data-staff-reset="${id}">Reset password</button><button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}">Phone</button>`:'';
+  return `<tr data-staff-row="${id}"><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
 }
-function bindStaffList(){
+function bindStaffList(rows=[]){
+ const row=id=>rows.find(r=>r.user_id===id),reload=()=>staff();
  document.querySelectorAll('[data-staff-reset]').forEach(button=>button.onclick=()=>run(async()=>openStaffPasswordReset(button.dataset.staffReset,employeeName(button.dataset.staffReset))));
  document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>run(async()=>{const r=await client.rpc('set_staff_department',{p_user_id:select.dataset.staffDepartment,p_department:select.value});if(r.error)throw Error(r.error.message);message(`Department saved for ${employeeName(select.dataset.staffDepartment)}.`);}));
  document.querySelectorAll('[data-staff-phone]').forEach(button=>button.onclick=()=>openStaffPhone(button.dataset.staffPhone,employeeName(button.dataset.staffPhone),button.dataset.phone));
+ document.querySelectorAll('[data-staff-access]').forEach(button=>button.onclick=()=>run(async()=>openStaffAccess(row(button.dataset.staffAccess),reload)));
+ document.querySelectorAll('[data-staff-active]').forEach(button=>button.onclick=()=>run(()=>setStaffActive(row(button.dataset.staffActive),button.dataset.active==='true',reload)));
+ document.querySelectorAll('[data-staff-role]').forEach(select=>select.onchange=()=>run(()=>setStaffRole(row(select.dataset.staffRole),select.value,reload).catch(error=>{select.value=row(select.dataset.staffRole)?.role||'staff';throw error;})));
 }
 // required: first sign-in with a temporary password; the dialog cannot be dismissed until a new password is saved.
 function requirePasswordChange(user){if(user?.user_metadata?.must_change_password&&!document.querySelector('dialog.change-password'))openChangePassword({required:true});}

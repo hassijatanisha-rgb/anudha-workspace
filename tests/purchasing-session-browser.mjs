@@ -18,14 +18,14 @@ try{
   `});
   await page.addScriptTag({content:readFileSync(new URL('../purchasing.js',import.meta.url),'utf8')});
   await page.evaluate(()=>{window.first=purchasingWorkspace(true)});
-  await page.waitForFunction(()=>reads.length===3);
+  await page.waitForFunction(()=>reads.length===2);
   if(scenario==='navigation')await page.getByRole('button',{name:'Clients',exact:true}).click();
   if(scenario==='replacement')await page.evaluate(()=>{me={user_id:'first',role:'staff'};document.querySelector('#content').textContent='New session'});
   if(scenario==='clear')await page.evaluate(()=>{clearPurchasing();document.querySelector('#content').textContent='Cleared session'});
   if(scenario==='overlap'){
    await page.evaluate(()=>{window.second=purchasingWorkspace(true)});
-   await page.evaluate(async()=>{reads.slice(3).forEach(r=>r.resolve([]));await window.second;reads[0].reject(Error('Obsolete failure'));reads[1].resolve([]);reads[2].resolve([]);await window.first});
-  }else await page.evaluate(async scenario=>{if(scenario==='clear'){reads[0].reject(Error('Old error'));reads[1].resolve([]);reads[2].resolve([])}else reads.forEach(r=>r.resolve([]));await window.first},scenario);
+   await page.evaluate(async()=>{reads.slice(2).forEach(r=>r.resolve([]));await window.second;reads[0].reject(Error('Obsolete failure'));reads[1].resolve([]);await window.first});
+  }else await page.evaluate(async scenario=>{if(scenario==='clear'){reads[0].reject(Error('Old error'));reads[1].resolve([])}else reads.forEach(r=>r.resolve([]));await window.first},scenario);
   if(['current','overlap'].includes(scenario)){
    await page.getByRole('heading',{name:'Purchasing',exact:true}).waitFor();
    assert.equal(await page.getByRole('alert').count(),0);

@@ -4,7 +4,7 @@ let reportTab='work',reportPeriod='this_week',reportFrom='',reportTo='',reportEp
 const reportActivityColumns=[['inquiries','Inquiries recorded'],['qualified','Passed to sales'],['won','Leads won'],['lost','Leads lost'],['proformas','Pro formas created'],['sent','Pro formas sent'],['accepted','Pro formas accepted'],['delivered','Deliveries signed'],['serviceReports','Service reports completed'],['pendingCreated','Pending orders recorded'],['pendingFulfilled','Pending orders fulfilled'],['stepsDone','Handed-over steps done']];
 const reportMovementLabels={opening_balance:'Opening balance',opening_adjustment:'Opening correction',transfer_dispatch:'Sent to another godown',transfer_receipt:'Received from another godown',quarantine_receipt:'Received into quarantine',break_pack:'Carton opened',consumer_issue:'Issued to customer',consumer_return:'Returned by customer'};
 function clearReports(){reportEpoch++;reportRows=[];reportColumns=[];}
-const reportDepartments={sales:'Sales',accounts:'Accounts',stores:'Stores & delivery',service:'Service',management:'Management','':'No department'};
+const reportDepartments={sales:'Sales',accounts:'Accounts',stores:'Stores & delivery',service:'Service',marketing:'Marketing',management:'Management','':'No department'};
 function reportHours(ms){if(ms==null)return '—';const hours=ms/3600000;return hours<48?`${hours.toFixed(1)} h`:`${(hours/24).toFixed(1)} days`;}
 // Work done per person in the period, plus what is open and overdue right now. A step counts as finished when its
 // holder marked it done or it moved on to the next person; cancelled steps are not counted. Department rows are
@@ -20,9 +20,7 @@ function reportWork({finished=[],open=[],delays=[],departments=new Map(),now=Dat
  return {people:rows.sort((a,b)=>order.indexOf(a.department)-order.indexOf(b.department)||b.overdue_now-a.overdue_now||String(a.actor).localeCompare(String(b.actor))),
   departments:[...dept.values()].map(d=>({...d,avgMs:d.finished?d.stepMs/d.finished:null})).sort((a,b)=>order.indexOf(a.department)-order.indexOf(b.department))};
 }
-async function reportFetchOpenWork(){
- const out=[];for(let offset=0;;offset+=1000){const r=await client.from('work_assignments').select('id,assignee_user_id,status,created_at,due_on').eq('status','open').order('id').range(offset,offset+999);if(r.error)throw Error(r.error.message);out.push(...(r.data||[]));if((r.data||[]).length<1000)return out;}
-}
+async function reportFetchOpenWork(){return all('work_assignments','id,assignee_user_id,status,created_at,due_on',q=>q.eq('status','open'));}
 function reportIsoDate(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 // Returns [from, to) as local dates. Weeks start on Monday.
 function reportRange(period,today=new Date(),from='',to=''){
@@ -103,13 +101,14 @@ function reportTravel(trips){
 function reportProductName(id){if(!id)return 'Unknown product';const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
 function reportLocationName(id){return (typeof inventoryLocations!=='undefined'?inventoryLocations:[]).find(l=>l.id===id)?.name||reportLocationNames.get(id)||'Unknown location';}
 let reportLocationNames=new Map();
-async function reportFetchRange(table,columns,column,from,to){
- const out=[];
- for(let offset=0;offset<50000;offset+=1000){
-  // Local midnight in the user's timezone (Dar es Salaam is UTC+3), sent as an exact instant.
-  const result=await client.from(table).select(columns).gte(column,new Date(`${from}T00:00:00`).toISOString()).lt(column,new Date(`${to}T00:00:00`).toISOString()).order(column).order('id').range(offset,offset+999);
-  if(result.error)throw Error(`${table}: ${result.error.message}`);
-  out.push(...(result.data||[]));if((result.data||[]).length<1000)return out;
+async function reportFetchRange(table,columns,column,from,to,filter){
+ // Local midnight in the user's timezone (Dar es Salaam is UTC+3), sent as an exact instant. Four pages are asked
+ // for at a time so a busy month loads in a few round trips.
+ const since=new Date(`${from}T00:00:00`).toISOString(),until=new Date(`${to}T00:00:00`).toISOString(),out=[];
+ for(let offset=0;offset<50000;offset+=4000){
+  const pages=await Promise.all([0,1000,2000,3000].map(i=>{let query=client.from(table).select(columns).gte(column,since).lt(column,until);if(filter)query=filter(query);return query.order(column).order('id').range(offset+i,offset+i+999);}));
+  for(const result of pages)if(result.error)throw Error(`${table}: ${result.error.message}`);
+  for(const result of pages){out.push(...(result.data||[]));if((result.data||[]).length<1000)return out;}
  }
  throw Error('This period has more than 50,000 records. Choose a shorter period.');
 }
@@ -124,14 +123,13 @@ async function reportsWorkspace(){
  const [from,to]=range;
  try{
   if(reportTab==='work'){
-   const [finished,open,delayRows,depts]=await Promise.all([reportFetchRange('work_assignments','id,assignee_user_id,status,created_at,closed_at','closed_at',from,to),reportFetchOpenWork(),reportFetchRange('work_delays','assignment_id,recorded_at','recorded_at',from,to),client.rpc('staff_departments')]);
+   const [finished,open,delayRows,depts]=await Promise.all([reportFetchRange('work_assignments','id,assignee_user_id,status,created_at,closed_at','closed_at',from,to),reportFetchOpenWork(),reportFetchRange('work_delays','id,assignment_id,recorded_at,work_assignments(assignee_user_id)','recorded_at',from,to),client.rpc('staff_departments')]);
    if(depts.error)throw Error(depts.error.message);
-   const ids=[...new Set(delayRows.map(d=>d.assignment_id))],holders=new Map();
-   for(let i=0;i<ids.length;i+=100){const r=await client.from('work_assignments').select('id,assignee_user_id').in('id',ids.slice(i,i+100));if(r.error)throw Error(r.error.message);for(const a of r.data||[])holders.set(a.id,a.assignee_user_id);}
-   const openIds=open.map(o=>o.id),latest=new Map();
-   for(let i=0;i<openIds.length;i+=100){const r=await client.from('work_delays').select('assignment_id,expected_on,recorded_at').in('assignment_id',openIds.slice(i,i+100));if(r.error)throw Error(r.error.message);for(const d of r.data||[])if(!latest.has(d.assignment_id)||latest.get(d.assignment_id).recorded_at<d.recorded_at)latest.set(d.assignment_id,d);}
+   // Latest expected date for each open step, in one paged request (steps that are still open only).
+   const openDelays=await all('work_delays','id,assignment_id,expected_on,recorded_at,work_assignments!inner(status)',q=>q.eq('work_assignments.status','open')),latest=new Map();
+   for(const d of openDelays)if(!latest.has(d.assignment_id)||latest.get(d.assignment_id).recorded_at<d.recorded_at)latest.set(d.assignment_id,d);
    if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
-   const result=reportWork({finished,open,delays:delayRows.map(d=>({...d,assignee_user_id:holders.get(d.assignment_id)})),departments:new Map((depts.data||[]).map(d=>[d.user_id,d.department])),overdue:row=>typeof workAgeLevel==='function'&&workAgeLevel(row,latest.get(row.id))==='red'});
+   const result=reportWork({finished,open,delays:delayRows.map(d=>({...d,assignee_user_id:d.work_assignments?.assignee_user_id})),departments:new Map((depts.data||[]).map(d=>[d.user_id,d.department])),overdue:row=>typeof workAgeLevel==='function'&&workAgeLevel(row,latest.get(row.id))==='red'});
    reportRows=[...result.people.map(p=>({employee:employeeName(p.actor),department:reportDepartments[p.department],finished:p.finished,avg:reportHours(p.avgMs),open_now:p.open_now,overdue_now:p.overdue_now,longest:reportHours(p.longestMs),delays:p.delays})),
     ...result.departments.map(d=>({_subtotal:true,employee:`All ${reportDepartments[d.department]} (${d.people})`,department:reportDepartments[d.department],finished:d.finished,avg:reportHours(d.avgMs),open_now:d.open_now,overdue_now:d.overdue_now,longest:reportHours(d.longestMs),delays:d.delays}))];
    reportColumns=[['employee','Employee'],['department','Department'],['finished','Steps finished'],['avg','Average time per step'],['open_now','Open now'],['overdue_now','Overdue now'],['longest','Longest waiting now'],['delays','Delays reported']];

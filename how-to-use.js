@@ -2,7 +2,8 @@
 
 // How to use: task guides written for staff. **Bold** marks a button or menu item; tests check each one exists on
 // a screen. screens lists the views (view or view:section) a guide belongs to, so the How to use button can open the
-// guides for the screen the person is on. owner:true guides are shown only to the owner.
+// guides for the screen the person is on. owner:true guides are shown only to the owner; head:true guides to the owner
+// and department heads.
 const howToRoles=[['all','All'],['everyone','Everyone'],['sales','Sales'],['accounts','Accounts'],['stores','Packing & delivery'],['service','Service'],['owner','Owner']];
 const howToTopics=[
  {id:'start',role:'everyone',title:'Sign in and find your way around',screens:['contacts'],steps:[
@@ -108,6 +109,12 @@ const howToTopics=[
   'Press **+ Note** for something to keep, for example: fill out the service form for Aga Khan.',
   'Press **+ Reminder** for something with a time, for example: call Dr Mushi at 10:00. Tick Done when it is done.',
   'Open **My calendar** for meetings. Green entries are company events everyone can see.']},
+ {id:'website-requests',role:'sales',title:'Answer a website inquiry or complaint',screens:['requests:inquiries','requests:complaints'],steps:[
+  'Open **Website inquiries** or **Complaints**. New requests are at the top, marked New.',
+  'Press **Take it** so everyone knows you are handling it, or **Give to…** to pass it to a colleague.',
+  'If the request shows it was not confirmed automatically, press **Send confirmation on WhatsApp** and send the message that opens.',
+  'Call or WhatsApp the customer. For an inquiry, press **Open lead** and follow it up in Leads.',
+  'When it is sorted out, press **Mark resolved** and write what was done. The customer can check the progress with their request number.']},
  {id:'travel',role:'everyone',title:'Ask to travel to a client or meeting',screens:['travel'],steps:[
   'Open **Travel requests** and press **+ New travel request**.',
   'Tick everyone who is going, choose the client (or type another place), the reason and who you are meeting.',
@@ -119,19 +126,28 @@ const howToTopics=[
   'Choose the week or month and press **Show report**.',
   'The report shows each person’s finished steps, average time per step and anything overdue.',
   'Press **Download CSV** to open it in Excel.']},
- {id:'staff',role:'owner',owner:true,title:'Add a staff member',screens:['staff'],steps:[
+ {id:'staff',role:'owner',owner:true,title:'Add a staff member or department head',screens:['staff'],steps:[
   'Open **Staff** and press **Add employee**.',
-  'Type the full name and a temporary password. The login is made from the name, for example jagroop.',
+  'Type the full name. The login is made from the name, for example jagroop.hassija, and a temporary password is shown once.',
+  'Choose the **Role**: Staff, or **Department head** for someone who will add and manage their own team.',
+  'Choose the **Department**. The usual parts for that department are ticked; change the ticks under **What this person can use**.',
   'Give the person their login and temporary password. They choose their own password the first time.',
-  'Set their **Department** so reports group them correctly.',
-  'If someone forgets their password, press **Reset password** next to their name.',
+  'To change what someone can use later, press **Change access** next to their name. Press **Switch off** when someone leaves.',
+  'Accounts staff who prepare accounting forms also need **Give accounting access** next to their name.',
   'Under **Who does each step**, choose who receives each step of an order automatically.']},
+ {id:'staff-head',role:'everyone',head:true,title:'Add your team (department heads)',screens:['staff'],steps:[
+  'Open **Staff**. Your department is at the top; other departments are listed below for reference.',
+  'Press **+ Add employee** and type the person’s full name. They join your department.',
+  'Under **What this person can use**, tick the parts they need. Greyed-out parts are ones you do not have yourself; ask the owner.',
+  'Press **Create login**. Give them the login and temporary password shown; they choose their own password at first sign-in.',
+  'Press **Change access** next to a name to change what they can use, or **Reset password** if they forget it.',
+  'When someone leaves, press **Switch off**. Their records stay and nobody can sign in with their login.']},
  {id:'two-step',role:'everyone',title:'Turn on two-step sign-in',screens:['settings'],steps:[
   'Install Google Authenticator or Microsoft Authenticator on your phone.',
   'Open **My settings** and, under **Two-step sign-in**, press **Turn on**.',
   'In the app, add an account and scan the picture. Type the 6 numbers it shows and press **Confirm**.',
   'From now on, after your password you type the 6 numbers from the app.',
-  'Lost your phone? Ask the owner to press **Reset two-step** next to your name on the Staff page.']},
+  'Lost your phone? Ask your department head or the owner to press **Reset two-step** next to your name on the Staff page.']},
  {id:'text',role:'everyone',title:'Make the text bigger',screens:['settings'],steps:[
   'Open **My settings**.',
   'Under **Text size**, choose a larger size. It is saved on this computer or phone.']},
@@ -148,7 +164,7 @@ function howToScreenKey(){
  const section=sections[view];return section?`${view}:${section}`:view;
 }
 function howToForScreen(topic,key){const base=String(key).split(':')[0];return topic.screens.includes(key)||topic.screens.includes(base)}
-function howToVisible(topic){return !topic.owner||me?.role==='owner'}
+function howToVisible(topic){if(topic.head)return me?.role==='owner'||me?.role==='head';return !topic.owner||me?.role==='owner'}
 function howToMatches(topic,query,role){
  if(role&&role!=='all'&&topic.role!==role)return false;
  const words=String(query||'').toLowerCase().split(/\s+/).filter(Boolean);
