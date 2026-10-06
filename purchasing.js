@@ -12,9 +12,12 @@ let purchaseSearchTimer=0;
 // Older orders are looked up on the server by PO or LPO number while typing in Search.
 async function purchaseSearchOlder(text){
  const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
- const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
- if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
+ const epoch=purchaseEpoch,actor=me,actorId=me?.user_id,like=`*${term}*`;
+ const current=()=>!!actor&&epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId&&view==='purchasing'&&purchaseSearch===text;
+ if(!current())return;
+ let result;
+ try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);}catch(error){if(!current())return;throw error;}
+ if(!current()||result.error)return;
  const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
  purchaseOrders=purchaseOrders.concat(extra.map(({purchase_order_lines:items,...order})=>order));purchaseLines=purchaseLines.concat(extra.flatMap(r=>r.purchase_order_lines||[]));
@@ -101,10 +104,13 @@ async function saveSupplierForm(form){
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
- const epoch=purchaseEpoch,actor=me?.user_id;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ const epoch=purchaseEpoch,actor=me,actorId=me?.user_id;
+ const current=()=>!!actor&&epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId;
+ if(!current())return;
+ let result;
+ try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();}catch(error){if(!current())return;throw error;}
+ if(!current())return;
  if(result.error)throw Error(result.error.message);
- if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
  if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
  if(view==='purchasing')renderPurchasing();
