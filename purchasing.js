@@ -2,11 +2,12 @@
 // Suppliers and purchase orders: request → owner approval → ordered (LPO) → closed, or cancelled.
 // Writes go through save_supplier / save_purchase_request / advance_purchase_order only. No stock changes here.
 let purchaseSection='orders',purchaseFilter='requested',purchaseSearch='',purchasePage=0,purchaseLoaded=false,purchaseLoadError='',purchaseEpoch=0;
+let purchaseRenderEpoch=0;
 let purchaseOrders=[],purchaseLines=[],suppliers=[],purchaseEditing='',supplierEditing='',purchasePrefill=null,purchasePendingSave=null,supplierPendingSave=null;
 const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · order now',ordered:'Ordered · waiting for goods',closed:'Goods arrived',cancelled:'Cancelled'};
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
 const purchaseFilters=[['requested','Needs owner approval'],['approved','Approved · order now'],['ordered','Ordered · waiting for goods'],['finished','Arrived or cancelled'],['all','All']];
-function clearPurchasing(){purchaseEpoch++;purchaseLoaded=false;purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
+function clearPurchasing(){purchaseEpoch++;purchaseRenderEpoch++;purchaseLoaded=false;purchaseLoadError='';purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
 function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';}
 function purchaseToday(){return new Date().toISOString().slice(0,10);}
 function purchaseOverdue(order,today=purchaseToday()){return order.status==='ordered'&&!!order.expected_on&&order.expected_on<today;}
@@ -85,18 +86,21 @@ async function saveSupplierForm(form){
  supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
 }
 async function loadPurchasing(){
- const epoch=++purchaseEpoch,actor=me?.user_id;
+ const epoch=++purchaseEpoch,actor=me,actorId=me?.user_id;
  const [orders,lines,supplierRows]=await Promise.all([all('purchase_orders','*'),all('purchase_order_lines','*'),all('suppliers','*')]);
- if(epoch!==purchaseEpoch||me?.user_id!==actor)return false;
+ if(epoch!==purchaseEpoch||me!==actor||me?.user_id!==actorId)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;
 }
 async function purchasingWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
+ const actor=me,actorId=me?.user_id,epoch=++purchaseRenderEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&view==='purchasing'&&epoch===purchaseRenderEpoch;
+ if(!current())return;
+ syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
   $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
-  try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
+  try{if(!(await loadPurchasing()))return;}catch(error){if(!current())return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
- if(view!=='purchasing'||me?.user_id!==actor)return;
+ if(!current())return;
  renderPurchasing();
 }
 function renderPurchasing(){
