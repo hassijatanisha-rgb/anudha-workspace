@@ -7,7 +7,7 @@ const workspaceGroups=[
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Create Pro forma','sales','new'],['Current orders','sales','proformas'],['Tally invoices','tallyinvoices'],
+  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Create Pro forma','sales','new'],['Current orders','sales','proformas'],['Tally invoices','tallyinvoices'],
   ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Service',tone:'service',items:[
@@ -56,6 +56,7 @@ function installWorkspaceNavigation(){
    salesEditing=section==='new'?'new':'';
   }
   if(button.dataset.view==='service')serviceSection=section||'installations';
+  if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
   if(button.dataset.view==='inventory')inventorySection=section||'stock';
  },true);
 }
@@ -63,7 +64,7 @@ function syncWorkspaceNavigation(){
  if(typeof applyStockProtection==='function')applyStockProtection();
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');

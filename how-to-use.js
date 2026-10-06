@@ -109,6 +109,12 @@ const howToTopics=[
   'Press **+ Note** for something to keep, for example: fill out the service form for Aga Khan.',
   'Press **+ Reminder** for something with a time, for example: call Dr Mushi at 10:00. Tick Done when it is done.',
   'Open **My calendar** for meetings. Green entries are company events everyone can see.']},
+ {id:'website-requests',role:'sales',title:'Answer a website inquiry or complaint',screens:['requests:inquiries','requests:complaints'],steps:[
+  'Open **Website inquiries** or **Complaints**. New requests are at the top, marked New.',
+  'Press **Take it** so everyone knows you are handling it, or **Give to…** to pass it to a colleague.',
+  'If the request shows it was not confirmed automatically, press **Send confirmation on WhatsApp** and send the message that opens.',
+  'Call or WhatsApp the customer. For an inquiry, press **Open lead** and follow it up in Leads.',
+  'When it is sorted out, press **Mark resolved** and write what was done. The customer can check the progress with their request number.']},
  {id:'travel',role:'everyone',title:'Ask to travel to a client or meeting',screens:['travel'],steps:[
   'Open **Travel requests** and press **+ New travel request**.',
   'Tick everyone who is going, choose the client (or type another place), the reason and who you are meeting.',
