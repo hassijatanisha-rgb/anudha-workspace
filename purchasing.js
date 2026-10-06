@@ -178,14 +178,21 @@ function bindPurchasing(){
 }
 function openPurchaseAction(order,action){
  if(!order)return;
+ const actor=me,actorId=me?.user_id,epoch=purchaseEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseEpoch&&view==='purchasing';
+ if(!current())return;
  const titles={approve:'Approve purchase',order:'Place order with supplier',close:'Goods arrived — close purchase order',cancel:'Cancel purchase order'};
  const supplier=purchaseSupplier(order.supplier_id);
  const fields=`<p><strong>${esc(order.po_number)}</strong> · ${esc(supplier?.name||'Supplier not chosen')}</p>${action==='order'?(supplier?`<label><span>LPO number sent to the supplier</span><input name="lpo" required minlength="2" maxlength="120"></label><label><span>Expected arrival · optional</span><input name="expected" type="date" min="${purchaseToday()}" value="${esc(order.expected_on&&order.expected_on>=purchaseToday()?order.expected_on:'')}"></label>`:'<p class="notice">Choose the supplier first: ask the requester or owner to cancel and re-request, or edit before approval.</p>'):''}${action==='approve'?'<p>Approving lets staff place this order with the supplier.</p>':''}<label><span>${action==='close'?'Supplier delivery note or receipt reference':action==='cancel'?'Why is it cancelled?':'Note · optional'}</span><textarea name="note" maxlength="1000" ${['close','cancel'].includes(action)?'required minlength="3"':''}></textarea></label>${action==='close'?'<p class="muted">Closing records that the goods arrived. Enter the received quantities into stock in Inventory.</p>':''}`;
  actionForm(titles[action],fields,async values=>{
-  const actor=me?.user_id,result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the purchase order.');
+  if(!current())return;
+  let result;
+  try{result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});}catch(error){if(!current())return;throw error;}
+  if(!current())return;
   if(result.error)throw Error(result.error.message);
-  await purchaseRefreshOne(order.id);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
+  await purchaseRefreshOne(order.id);
+  if(!current())return;
+  message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 async function showPurchaseHistory(id){
