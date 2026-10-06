@@ -4,7 +4,7 @@ let reportTab='work',reportPeriod='this_week',reportFrom='',reportTo='',reportEp
 const reportActivityColumns=[['inquiries','Inquiries recorded'],['qualified','Passed to sales'],['won','Leads won'],['lost','Leads lost'],['proformas','Pro formas created'],['sent','Pro formas sent'],['accepted','Pro formas accepted'],['delivered','Deliveries signed'],['serviceReports','Service reports completed'],['pendingCreated','Pending orders recorded'],['pendingFulfilled','Pending orders fulfilled'],['stepsDone','Handed-over steps done']];
 const reportMovementLabels={opening_balance:'Opening balance',opening_adjustment:'Opening correction',transfer_dispatch:'Sent to another godown',transfer_receipt:'Received from another godown',quarantine_receipt:'Received into quarantine',break_pack:'Carton opened',consumer_issue:'Issued to customer',consumer_return:'Returned by customer'};
 function clearReports(){reportEpoch++;reportRows=[];reportColumns=[];}
-const reportDepartments={sales:'Sales',accounts:'Accounts',stores:'Stores & delivery',service:'Service',management:'Management','':'No department'};
+const reportDepartments={sales:'Sales',accounts:'Accounts',stores:'Stores & delivery',service:'Service',marketing:'Marketing',management:'Management','':'No department'};
 function reportHours(ms){if(ms==null)return '—';const hours=ms/3600000;return hours<48?`${hours.toFixed(1)} h`:`${(hours/24).toFixed(1)} days`;}
 // Work done per person in the period, plus what is open and overdue right now. A step counts as finished when its
 // holder marked it done or it moved on to the next person; cancelled steps are not counted. Department rows are

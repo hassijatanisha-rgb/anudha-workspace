@@ -9,7 +9,7 @@ const DOMAIN = 'staff.anudha.com';
 const ALLOWED_ORIGINS = ['https://hassijatanisha-rgb.github.io'];
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const AREAS = ['leads', 'proformas', 'deliveries', 'service', 'purchasing', 'stock', 'stock_count', 'travel', 'reports'];
-const DEPARTMENTS = ['', 'sales', 'accounts', 'stores', 'service', 'management'];
+const DEPARTMENTS = ['', 'sales', 'accounts', 'stores', 'service', 'marketing', 'management'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cors(req: Request) {
