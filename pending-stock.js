@@ -85,6 +85,7 @@ async function pendingStockWorkspace(force=false){
  renderPendingStock();
 }
 function renderPendingStock(){
+ const draftEditor=pendingCreating?$('#pendingForm')?.closest('.document-editor'):null;
  if(pendingAvailabilityDay&&pendingAvailabilityDay!==pendingToday()){
   pendingAvailability=new Map();pendingAvailabilityError='Stock check is from a previous day. Press Refresh to check current availability';
  }
@@ -93,12 +94,14 @@ function renderPendingStock(){
  const pages=Math.max(1,Math.ceil(rows.length/20));pendingPage=Math.min(Math.max(pendingPage,0),pages-1);
  const mineArrived=pendingVisibleRows(pendingRows,{filter:'arrived',search:'',actor:me?.user_id,availability}).filter(({row})=>row.salesperson_user_id===me?.user_id).length;
  $('#content').innerHTML=`<section class="pending-workspace"><div class="heading"><div><small>ORDERS</small><h1>Pending stock orders</h1><p class="muted">Customer quantities waiting for stock. Requests close after six months unless the owner extends them.</p></div><div class="actions"><button type="button" id="pendingRefresh">Refresh</button><button type="button" id="newPending">New pending order</button></div></div>${pendingLoadError?`<p class="notice error" role="alert">Pending orders could not load: ${esc(pendingLoadError)}. Nothing was changed.</p>`:''}${pendingAvailabilityError?`<p class="notice error" role="alert">Stock levels could not be checked: ${esc(pendingAvailabilityError)}. Requests are still listed.</p>`:''}${mineArrived?`<p class="notice" role="status"><strong>Stock has arrived for ${mineArrived} of your pending order${mineArrived===1?'':'s'}.</strong> Call the customer to reconfirm, then create the Pro forma or invoice.</p>`:''}${pendingCreating?pendingForm():''}<div class="tabs" role="group" aria-label="Filter pending orders">${[['waiting','Waiting'],['arrived','Stock arrived'],['mine','Mine'],['due','Closing soon'],['closed','Closed'],['all','All']].map(([key,label])=>`<button type="button" data-pending-filter="${key}" class="${pendingFilter===key?'active':''}" aria-pressed="${pendingFilter===key}">${label}</button>`).join('')}</div><label class="search"><span>Search</span><input id="pendingSearch" type="search" placeholder="Client, product, salesperson or PS number" value="${esc(pendingSearch)}"></label>${rows.slice(pendingPage*20,pendingPage*20+20).map(pendingCard).join('')||'<p class="muted">No pending orders match this filter.</p>'}${pages>1?`<div class="actions"><button type="button" id="pendingPrev" ${pendingPage===0?'disabled':''}>Previous</button><span>Page ${pendingPage+1} of ${pages}</span><button type="button" id="pendingNext" ${pendingPage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
+ // Keep the actual form node: unsaved values and in-flight request identity survive list filtering.
+ if(draftEditor)$('#pendingForm')?.closest('.document-editor')?.replaceWith(draftEditor);
  bindPendingStock();
 }
 function bindPendingStock(){
  $('#pendingRefresh').onclick=()=>run(()=>pendingStockWorkspace(true));
- $('#newPending').onclick=()=>{pendingCreating=true;pendingRequestId=null;renderPendingStock();$('#pendingForm [name="organizationId"]')?.focus();};
- $('#closePendingForm')?.addEventListener('click',()=>{pendingCreating=false;pendingRequestId=null;renderPendingStock();});
+ $('#newPending').onclick=()=>{if(!$('#pendingForm')){pendingCreating=true;pendingRequestId=null;renderPendingStock();}$('#pendingForm [name="organizationId"]')?.focus();};
+ if($('#closePendingForm'))$('#closePendingForm').onclick=()=>{pendingCreating=false;pendingRequestId=null;renderPendingStock();};
  const form=$('#pendingForm');
  if(form){
   form.elements.organizationId.onchange=event=>{const org=event.target.value;form.elements.contactId.innerHTML='<option value="">No named contact</option>'+salesContactOptions(org);form.elements.proformaId.innerHTML='<option value="">Not linked</option>'+salesProformas.filter(p=>p.organization_id===org&&!p.deleted_at).map(p=>inventoryOption(p.id,p.document_number)).join('');};

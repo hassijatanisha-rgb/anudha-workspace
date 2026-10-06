@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 try{
- for(const scenario of ['retry','replace-success','replace-error']){
+ for(const scenario of ['draft-filter','inflight-filter','retry','replace-success','replace-error']){
   const page=await browser.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',route=>route.request().url()==='https://erp-fixture.test/'?route.fulfill({contentType:'text/html',body:'<main id="content"></main>'}):route.abort());
@@ -25,6 +25,7 @@ try{
    const client={rpc:(name,payload)=>{calls.push({name,payload});return new Promise((resolve,reject)=>{window.reply=resolve;window.fail=reject})}};
   `});
   await page.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
+  await page.addScriptTag({content:readFileSync(new URL('../search-state.js',import.meta.url),'utf8')});
   await page.evaluate(()=>pendingStockWorkspace());
   await page.locator('#newPending').click();
   await page.getByRole('button',{name:'Save pending order',exact:true}).click();
@@ -32,11 +33,37 @@ try{
   await page.locator('[name="organizationId"]').selectOption('org');
   await page.locator('[name="productChoice"]').fill('Fixture Product');
   await page.locator('[name="quantity"]').fill('2');
+  if(scenario==='draft-filter'){
+   await page.locator('[name="notes"]').fill('Keep this draft');
+   await page.evaluate(()=>{window.originalForm=document.querySelector('#pendingForm')});
+   await page.locator('[data-pending-filter="all"]').click();
+   assert.equal(await page.locator('[name="notes"]').inputValue(),'Keep this draft');
+   assert.equal(await page.evaluate(()=>document.querySelector('#pendingForm')===window.originalForm),true,'keep in-flight form identity');
+   assert.equal(await page.locator('[name="quantity"]').inputValue(),'2');
+   await page.locator('#pendingSearch').pressSequentially('bags');
+   await page.locator('#pendingSearch').press('ArrowLeft');
+   await page.locator('#pendingSearch').pressSequentially('X');
+   assert.equal(await page.locator('#pendingSearch').inputValue(),'bagXs');
+   assert.equal(await page.evaluate(()=>document.activeElement.id),'pendingSearch');
+   assert.equal(await page.locator('[name="notes"]').inputValue(),'Keep this draft');
+   assert.deepEqual(errors,[]);console.log('PASS pending create browser: '+scenario);await page.close();continue;
+  }
   await page.getByRole('button',{name:'Save pending order',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Save pending order',exact:true}).isDisabled(),true);
   await page.evaluate(()=>document.querySelector('#pendingForm').dispatchEvent(new Event('submit',{cancelable:true})));
   assert.equal(await page.evaluate(()=>calls.length),1,'double submit blocked');
-  if(scenario==='retry'){
+  if(scenario==='inflight-filter'){
+   const before=await page.evaluate(()=>calls[0].payload.p_id);
+   await page.locator('[data-pending-filter="all"]').click();
+   await page.locator('#newPending').click();
+   await page.locator('#pendingSearch').pressSequentially('fixture');
+   assert.equal(await page.getByRole('button',{name:'Save pending order',exact:true}).isDisabled(),true);
+   assert.equal(await page.evaluate(()=>pendingRequestId),before);
+   await page.evaluate(async()=>{reply({data:{id:calls[0].payload.p_id,request_number:'PS-fixture',expires_on:'2027-04-06'}});await window.action});
+   assert.equal(await page.locator('#pendingForm').count(),0);
+   assert.equal(await page.evaluate(()=>messages.length),1);
+   assert.equal(await page.evaluate(()=>calls.length),1);
+  }else if(scenario==='retry'){
    await page.evaluate(async()=>{fail(Error('Fixture connection lost'));await window.action});
    assert.equal(await page.locator('#pendingFormError').innerText(),'Fixture connection lost');
    assert.equal(await page.getByRole('button',{name:'Save pending order',exact:true}).isEnabled(),true);
