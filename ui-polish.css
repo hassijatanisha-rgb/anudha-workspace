@@ -182,6 +182,9 @@ main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr)
 .team-task.closed{opacity:.75}
 .team-task h3{margin:0}
 .team-task-meta{margin:6px 0 0}
+.moved-tag{background:#e8eefc;color:#23408e}
+.team-task-moves{margin-top:8px}
+.team-task-moves ol{margin:6px 0 0;padding-left:20px}
 .team-task-group>h2,.team-task-group>summary{margin-top:26px;font-size:1.15em;font-weight:800}
 .urgency-choice{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:10px}
 .urgency-choice legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
