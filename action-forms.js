@@ -38,7 +38,7 @@ function actionForm(title,fields,onSubmit){
 }
 
 function openOrganizationForm(o=null){
- if(me?.role!=='owner')throw Error('Owner access is required to edit accounts.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const id=o?.id||crypto.randomUUID();
  return actionForm(o?'Edit account':'Add account',
   field('name','Account name',o?.name||'','text',true)+field('location','Location',o?.location||'','text',true)+field('type','Organisation type',o?.type||'','text',true),
@@ -51,10 +51,10 @@ function openOrganizationForm(o=null){
 }
 
 function openProductForm(p=null){
- if(!p&&me?.role!=='owner')throw Error('Owner access is required to add products.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const id=p?.id||crypto.randomUUID();
  return actionForm(p?'Edit product':'Add product',field('name','Product name',p?.name||'','text',true)+field('sku','Stock code · optional',p?.sku||''),async values=>{
-  const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('import_records',{p_products:[{id,name:values.name,sku:values.sku,source:{origin:'manual'}}]});
+  const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('add_product',{p_id:id,p_name:values.name,p_sku:values.sku,p_source:{origin:'manual'}});
   if(r.error)throw r.error;
   if(p){const row=Array.isArray(r.data)?r.data[0]:r.data;const index=products.findIndex(x=>x.id===id);if(index>=0)products[index]=row;render()}
   else{const saved=await client.from('products').select('*').eq('id',id).single();if(saved.error)throw saved.error;products.push(saved.data);search='';page=0;render()}
@@ -63,10 +63,12 @@ function openProductForm(p=null){
 }
 
 function openIncorrectForm(c){
+ if(!canEditRecords())throw Error(recordsLockedText);
  return actionForm('Flag contact as incorrect',`<p>${esc([c.first_name,c.last_name].filter(Boolean).join(' '))} will move to Incorrect for review. The record is retained.</p><label><span>Reason</span><textarea name="reason" required maxlength="2000">${esc(c.reason||'')}</textarea></label>`,async values=>save({...c,status:'incorrect',reason:values.reason}));
 }
 
 function openMatchForm(p){
+ if(!canEditRecords())throw Error(recordsLockedText);
  const candidates=products.filter(x=>x.id!==p.id&&normalize(x.name)===normalize(p.name));
  const current=products.find(x=>x.id===p.match_id);
  const options=candidates.map(x=>`<option value="${esc(x.id)}" ${x.id===p.match_id?'selected':''}>${esc(x.name)} · ${esc(x.sku||'No stock code')} · ${esc(x.source?.source_file||'Manual entry')} ${esc(x.source?.source_row?'row '+x.source.source_row:'')} · ${esc(x.id.slice(0,8))}</option>`).join('');
@@ -80,7 +82,7 @@ function openMatchForm(p){
 }
 
 function openBranchForm(parent,initialBranch=null){
- if(me?.role!=='owner')throw Error('Owner access is required to link branches.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  if(!parent||parent.parent_id)throw Error('Choose a main account before linking a branch.');
  const parents=new Set(organizations.map(x=>x.parent_id).filter(Boolean));const eligible=organizations.filter(x=>x.id!==parent.id&&!x.parent_id&&!parents.has(x.id));
  const form=actionForm('Link existing branch',`<p>Main account: <strong>${esc(parent.name)}</strong> · ${esc(parent.location||'Location missing')}</p><label><span>Find a branch</span><input name="branch_search" type="search" placeholder="Account name, location or type"></label><label><span>Existing branch account</span><select name="branch_id" required></select></label><p id="branchRelationship" class="warning" aria-live="polite"></p><p class="muted">Check ownership and location before saving. Contacts and source records stay separate.</p>`,async values=>{

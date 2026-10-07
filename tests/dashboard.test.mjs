@@ -189,7 +189,7 @@ test('migration 067: one security invoker read, fixed search path, signed-in sta
 });
 test('migration 070: team counts check who is asking, heads see their own department, next number in sequence',()=>{
  const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort();
- assert.equal(files.at(-1),'202610070070_team_task_counts.sql');assert.match(files.at(-2),/^\d{8}0069_/);
+ const at=files.indexOf('202610070070_team_task_counts.sql');assert.ok(at>0);assert.match(files[at-1],/^\d{8}0069_/);
  const sql=read('supabase/migrations/202610070070_team_task_counts.sql');
  assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);assert.match(sql,/^-- Rollback:/m);
  assert.match(sql,/me\.user_id=\(select auth\.uid\(\)\)/);

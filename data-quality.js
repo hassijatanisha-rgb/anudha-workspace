@@ -25,7 +25,7 @@ function contactQuality(issues,duplicateHits){const all=[...issues,...(duplicate
 // Owner: apply the consolidated product list file to the ERP products (and the stock count list) in batches of 500.
 let productListApplying=false;
 async function applyProductListFile(file){
- if(me?.role!=='owner')throw Error('Only the owner can apply the product list.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  if(productListApplying)throw Error('The product list is already being applied. Wait for it to finish.');
  const rows=countCatalogueRows(await file.text()),actor=me?.user_id,total={rows:0,created:0,reviewed:0,classified:0,kept_manual:0};
  productListApplying=true;

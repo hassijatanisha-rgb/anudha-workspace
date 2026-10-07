@@ -16,12 +16,12 @@ async function loadProductMachineLinks(){
  }catch(error){productMachineLinksError=error.message||'Connection unavailable';}
 }
 async function openProductMachineLinks(id){
- if(me?.role!=='owner')throw Error('Owner access is required to change machine links.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const actor=me.user_id,product=catalogRows().find(p=>p.id===id);
  if(!product||!['reagents','consumables','spares'].includes(catalogCategoryOf(product)))throw Error('Choose a reagent, consumable or spare.');
  const response=await client.from('product_machine_link_reviews').select('*').eq('product_id',id).order('version',{ascending:false}).limit(1);
  if(response.error)throw Error(`Machine links could not be loaded: ${response.error.message}`);
- if(me?.user_id!==actor||me?.role!=='owner')throw Error('Login changed; reopen machine links.');
+ if(me?.user_id!==actor||!canEditRecords())throw Error('Login changed; reopen machine links.');
  const review=response.data?.[0],selected=new Set(review?.machine_ids||machineLinkImportedIds(product));
  const machines=catalogRows().filter(p=>p.id!==id&&catalogCategoryOf(p)==='machines');
  const choices=[...machines];
@@ -36,7 +36,7 @@ async function openProductMachineLinks(id){
  const form=dialog.querySelector('form'),requestId=crypto.randomUUID();
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
-  if(me?.user_id!==actor||me?.role!=='owner'){alert.textContent='Login changed. Close and reopen this form.';return;}
+  if(me?.user_id!==actor||!canEditRecords()){alert.textContent='Login changed. Close and reopen this form.';return;}
   if(button.disabled)return;button.disabled=true;alert.textContent='';
   const data=new FormData(form),ids=data.getAll('machineId');
   try{

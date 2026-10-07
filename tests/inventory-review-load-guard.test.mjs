@@ -14,6 +14,7 @@ function fixture(){
   inventoryAvailableTotals:()=>({cartons:0,loose:0}),crypto:{randomUUID:()=> 'fixture-id'},
   FormData:class{constructor(form){this.fields=form.fields||{}}get(key){return this.fields[key]??''}}
  });
+ vm.runInContext(readFileSync(new URL('../staff-access.js',import.meta.url),'utf8'),ctx);
  for(const file of ['product-review-ui.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx,{filename:file});
  return {ctx,content,calls};
 }

@@ -1,9 +1,9 @@
 'use strict';
 async function openProductMappingDecision(row,onSaved,isCurrent=()=>true){
  if(!isCurrent())return;
- if(me?.role!=='owner')throw Error('Owner access is required to save mapping decisions.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const actor=me.user_id,response=await client.from('product_source_mapping_reviews').select('*').eq('source_key',row.sourceKey).order('version',{ascending:false}).limit(1);
- if(me?.user_id!==actor||me?.role!=='owner')throw Error('Login changed. Reopen the mapping review.');
+ if(me?.user_id!==actor||!canEditRecords())throw Error('Login changed. Reopen the mapping review.');
  if(!isCurrent())return;
  if(response.error)throw Error(`Saved mappings unavailable: ${response.error.message}`);
  const previous=response.data?.[0],canLink=row.match.status==='exact'&&row.match.productIds.length===1;
@@ -12,14 +12,14 @@ async function openProductMappingDecision(row,onSaved,isCurrent=()=>true){
  const requestId=crypto.randomUUID(),form=dialog.querySelector('form');
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
-  if(me?.user_id!==actor||me?.role!=='owner'){alert.textContent='Login changed. Close and reopen this review.';return;}
+  if(me?.user_id!==actor||!canEditRecords()){alert.textContent='Login changed. Close and reopen this review.';return;}
   if(!isCurrent()){alert.textContent='Preview changed. Close and reopen this review.';return;}
   if(button.disabled)return;button.disabled=true;alert.textContent='';
   const data=new FormData(form),decision=data.get('decision');
   try{
    if(decision==='linked'&&!canLink)throw Error('Resolve product identity before confirming a link.');
    const result=await client.rpc('save_product_source_mapping_review',{p_id:requestId,p_source_key:row.sourceKey,p_expected_version:previous?.version||0,p_product_id:decision==='linked'?row.match.productIds[0]:null,p_decision:decision,p_snapshot:{original:row.original,corrected:row.corrected,editedLocally:row.editedLocally,editedAt:row.editedAt},p_reason:data.get('reason').trim()});
-   if(me?.user_id!==actor||me?.role!=='owner'||!dialog.isConnected){dialog.close();return;}
+   if(me?.user_id!==actor||!canEditRecords()||!dialog.isConnected){dialog.close();return;}
    if(result.error)throw result.error;
    const saved=Array.isArray(result.data)?result.data[0]:result.data;
    if(saved?.source_key!==row.sourceKey||!saved.version||saved.decision!==decision)throw Error('Server did not confirm the saved decision');

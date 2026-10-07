@@ -1,11 +1,11 @@
 'use strict';
 function openProductMappingPreview(){
- if(me?.role!=='owner')throw Error('Owner access is required to review private stock mappings.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const actor=me.user_id,dialog=document.createElement('dialog');dialog.className='product-review-editor';
  let report=null,page=0,generation=0;
  dialog.innerHTML='<h2>Preview corrected stock mapping</h2><p>Export ERP mapping JSON from the existing product workbench, then choose it here. Previewing does not save anything. You can explicitly review and save individual identity decisions. Stock is not imported or changed.</p><label>Corrected mapping JSON<input type="file" accept=".json,application/json"></label><p role="status" data-mapping-status></p><div data-mapping-results></div><button type="button" data-mapping-close>Close preview</button>';
  const status=dialog.querySelector('[data-mapping-status]'),results=dialog.querySelector('[data-mapping-results]');
- const sameActor=()=>me?.user_id===actor&&me?.role==='owner';
+ const sameActor=()=>me?.user_id===actor&&canEditRecords();
  function render(){
   if(!sameActor()){report=null;results.innerHTML='';status.textContent='Login changed. Close and reopen this preview.';return;}
   const pages=Math.max(1,Math.ceil(report.rows.length/50));page=Math.max(0,Math.min(page,pages-1));
