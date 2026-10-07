@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {build} from '../scripts/build-bundle.mjs';
+import vm from 'node:vm';
+import {build,joinScripts} from '../scripts/build-bundle.mjs';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n');
 
 test('served page and bundles are built from the current sources',()=>{
@@ -24,4 +25,20 @@ test('bundles hold every source file once, in page order',()=>{
  assert.ok(js.startsWith("'use strict';"),'every page script runs in strict mode');
  let at=0;for(const f of scripts){const i=js.indexOf(`\n;// ${f}\n`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}
  at=0;for(const f of styles){const i=css.indexOf(`/* ${f} */`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}
+});
+
+// Separate scripts: a later file's let/const did not exist yet, so typeof gave 'undefined'. In one script it exists
+// uninitialised and an unguarded typeof throws, which would stop every file after it.
+test('joined scripts answer typeof of a later file like separate scripts did',()=>{
+ const files=[
+  {name:'early.js',text:"'use strict';\nvar seen=[typeof later,typeof later2,typeof laterFn];\nfunction check(){return typeof later}\nvar size=()=>typeof later.size,named=()=>typeof laterName;"},
+  {name:'late.js',text:"'use strict';\nlet later=new Map(),later2=[1,2];\nconst laterName='x';\nfunction laterFn(){}\nvar after=check();"},
+ ];
+ const js=joinScripts(files),ctx=vm.createContext({});vm.runInContext(js,ctx);
+ assert.deepEqual([...vm.runInContext('seen',ctx)],['undefined','undefined','function'],'a function is hoisted, as in any one script');
+ assert.equal(vm.runInContext('after',ctx),'object');
+ assert.equal(vm.runInContext('named()',ctx),'string');
+ assert.equal(vm.runInContext('size()',ctx),'number');
+ assert.match(js,/typeof later\.size/,'typeof of a property is left as written');
+ assert.throws(()=>vm.runInContext(files.map(f=>f.text.replace("'use strict';",'')).join('\n;'),vm.createContext({})),/initialization/,'plain joining would throw');
 });
