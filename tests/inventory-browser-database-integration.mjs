@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 const {PGlite}=await import(process.env.PGLITE_MODULE||'/private/tmp/anudha-db-tests.aRoaJU/package/dist/index.js');
 const {chromium}=await import(pathToFileURL(resolve(dirname(process.execPath),'../node_modules/playwright/index.mjs')).href);
 const main=new URL('../',import.meta.url);
+const employeeCount=process.env.TWENTY_EMPLOYEES==='1'?20:2;
 const id=n=>`00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 const db=new PGlite();let browser;const evidence=[];let tail=Promise.resolve();
 // Each bridge captures its actor outside browser control. All transactions are
@@ -55,6 +56,10 @@ try{
  insert into product_pack_definitions(id,product_id,version,base_unit,units_per_carton,reason,created_by) values('${id(21)}','${id(10)}',1,'KIT',10,'Fictional seed','${id(1)}');
  insert into inventory_lots(id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units) values('${id(22)}','${id(10)}','${id(20)}','${id(21)}',3,4);
  insert into inventory_movements(id,lot_id,movement_type,sealed_carton_change,loose_unit_change,base_unit_change,reason,actor_user_id) values('${id(23)}','${id(22)}','opening_balance',3,4,34,'Fictional seed','${id(1)}');`);
+ for(let n=2;n<employeeCount;n++){
+  await db.query('insert into auth.users values($1)',[id(1000+n)]);
+  await db.query("insert into staff values($1,true,'staff')",[id(1000+n)]);
+ }
  const before=await snapshot(),products=before.products;
  browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
  const ownerContext=await browser.newContext(),staffContext=await browser.newContext();
@@ -118,6 +123,22 @@ try{
  assert.deepEqual(await snapshot(),before);
  assert.equal((await db.query('select auth.uid() actor')).rows[0].actor,null);
  evidence.push('Both stale-version RPCs rejected; interleaved owner/staff requests retained fixed actors and reset transaction-local auth.');
+ if(employeeCount===20){
+  const extra=[];
+  for(let n=2;n<20;n++)extra.push(await setup(await browser.newContext(),id(1000+n),'staff'));
+  // All20 browser contexts remain alive; the shared database still serializes transactions.
+  await Promise.all([owner,staff,...extra].map(async(page,index)=>{
+   const rows=await page.evaluate(()=>all('product_source_mapping_reviews'));
+   assert.equal(rows.length,1);assert.equal(rows[0].id,mapping.id);
+   if(index===0)return;
+   await page.evaluate(()=>{me.role='owner'});
+   const denied=await page.evaluate(args=>client.rpc('save_product_source_mapping_review',args),mappingArgs);
+   assert.match(denied.error.message,/Owner/i);
+  }));
+  assert.equal((await db.query('select count(*)::int n from product_source_mapping_reviews')).rows[0].n,1);
+  assert.deepEqual(await snapshot(),before);
+  evidence.push('20 simultaneously open isolated browser contexts read the persisted mapping; all19 staff contexts rejected spoofed-owner writes. Database transactions serialized; identities supplied by fixed test bridges, not real sign-in.');
+ }
  evidence.push('Complete snapshots unchanged: 3 products, seeded lot (3 cartons + 4 loose units), opening movement, locations, packs, transfers and issues.');
- console.log(JSON.stringify({status:'PASS',checks:evidence,scope:'Actual main browser forms + SQL 001/002/017/032/033; disposable PGlite; two isolated contexts; all browser network aborted. Serialized one-connection test, not live Supabase auth or parallel PostgreSQL.'},null,2));
+ console.log(JSON.stringify({status:'PASS',checks:evidence,scope:`Actual local browser forms + SQL 001/002/017/032/033; disposable PGlite; ${employeeCount} isolated contexts; all browser network aborted. Serialized one-connection test, not live Supabase auth or parallel PostgreSQL.`},null,2));
 }finally{if(browser)await browser.close();await db.close()}
