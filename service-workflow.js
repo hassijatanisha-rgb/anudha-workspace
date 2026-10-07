@@ -6,7 +6,8 @@ function serviceCase(id){return serviceCases.find(row=>row.id===id)}
 function serviceAsset(id){return serviceAssets.find(row=>row.id===id)||{model:'',serial_number:'',installation_location:''}}
 function serviceReport(caseId){return serviceReports.find(row=>row.case_id===caseId)}
 function serviceTeamLabel(id){return id?employeeName(id):'Not assigned'}
-function serviceTeamOptions(selected=''){return serviceTeam.filter(row=>row.active).map(row=>inventoryOption(row.user_id,serviceTeamLabel(row.user_id),row.user_id===selected)).join('')}
+// Only people who can open Service jobs can be given one; anyone else could not see the job they were given.
+function serviceTeamOptions(selected=''){return serviceTeam.filter(row=>row.active&&(row.role==='owner'||!Array.isArray(row.access)||row.access.includes('service'))).map(row=>inventoryOption(row.user_id,serviceTeamLabel(row.user_id),row.user_id===selected)).join('')}
 function serviceDate(offset=0){const date=new Date();date.setDate(date.getDate()+offset);return date.toISOString().slice(0,10)}
 function serviceMoney(minor,currency){return new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS',maximumFractionDigits:2}).format(Number(minor||0)/100)}
 async function loadServiceWorkflow(){
@@ -18,7 +19,7 @@ async function loadServiceWorkflow(){
   client.from('service_reports').select('*').order('created_at',{ascending:false}).limit(1000),
   client.from('service_report_accessories').select('*').order('sort_order').limit(5000),
   client.from('service_training_attendees').select('*').order('sort_order').limit(5000),
-  client.from('staff').select('user_id,role,active').order('role')
+  client.from('staff').select('user_id,role,active,access').order('role')
  ]);
  const failed=requests.find(result=>result.error);
  if(failed){serviceLoaded=false;serviceLoadError=failed.error.message||'Service workflow schema has not been installed.';return;}

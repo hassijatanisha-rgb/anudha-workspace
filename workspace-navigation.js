@@ -74,7 +74,7 @@ function syncWorkspaceNavigation(){
   const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
-  if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
  });
 }
 installWorkspaceNavigation();

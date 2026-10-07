@@ -2858,7 +2858,8 @@ function serviceCase(id){return serviceCases.find(row=>row.id===id)}
 function serviceAsset(id){return serviceAssets.find(row=>row.id===id)||{model:'',serial_number:'',installation_location:''}}
 function serviceReport(caseId){return serviceReports.find(row=>row.case_id===caseId)}
 function serviceTeamLabel(id){return id?employeeName(id):'Not assigned'}
-function serviceTeamOptions(selected=''){return serviceTeam.filter(row=>row.active).map(row=>inventoryOption(row.user_id,serviceTeamLabel(row.user_id),row.user_id===selected)).join('')}
+// Only people who can open Service jobs can be given one; anyone else could not see the job they were given.
+function serviceTeamOptions(selected=''){return serviceTeam.filter(row=>row.active&&(row.role==='owner'||!Array.isArray(row.access)||row.access.includes('service'))).map(row=>inventoryOption(row.user_id,serviceTeamLabel(row.user_id),row.user_id===selected)).join('')}
 function serviceDate(offset=0){const date=new Date();date.setDate(date.getDate()+offset);return date.toISOString().slice(0,10)}
 function serviceMoney(minor,currency){return new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS',maximumFractionDigits:2}).format(Number(minor||0)/100)}
 async function loadServiceWorkflow(){
@@ -2870,7 +2871,7 @@ async function loadServiceWorkflow(){
   client.from('service_reports').select('*').order('created_at',{ascending:false}).limit(1000),
   client.from('service_report_accessories').select('*').order('sort_order').limit(5000),
   client.from('service_training_attendees').select('*').order('sort_order').limit(5000),
-  client.from('staff').select('user_id,role,active').order('role')
+  client.from('staff').select('user_id,role,active,access').order('role')
  ]);
  const failed=requests.find(result=>result.error);
  if(failed){serviceLoaded=false;serviceLoadError=failed.error.message||'Service workflow schema has not been installed.';return;}
@@ -3749,7 +3750,7 @@ function syncWorkspaceNavigation(){
   const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
-  if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
  });
 }
 installWorkspaceNavigation();
@@ -4784,7 +4785,7 @@ document.addEventListener('DOMContentLoaded',()=>lookupScan());
 // The phone or browser Back button goes to the previous ERP page instead of leaving the ERP (which meant signing in
 // again). Each menu choice is recorded as #/go/<view>/<section>; going Back presses that menu choice again.
 // Client and branch pages keep their own #/clients… addresses (client-profile-pages.js).
-let navReplaying=false;
+let navReplaying=false,navReplayPending=false;
 function navHash(button){return `#/go/${button.dataset.view}${button.dataset.workspaceSection?'/'+button.dataset.workspaceSection:''}`;}
 function navButtonFor(hash){
  const m=String(hash||'').match(/^#\/go\/([a-z]+)(?:\/([a-z-]+))?$/);
@@ -4794,8 +4795,8 @@ function navButtonFor(hash){
 }
 function navReplay(hash,tries=0){
  const button=navButtonFor(hash);
- if(!button||button.hidden||(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'||!me||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy)){if(tries<40)setTimeout(()=>navReplay(hash,tries+1),150);return;}
- navReplaying=true;try{button.click();}finally{navReplaying=false;}
+ if(!button||button.hidden||(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'||!me||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy)){navReplayPending=tries<40;if(tries<40)setTimeout(()=>navReplay(hash,tries+1),150);return;}
+ navReplayPending=false;navReplaying=true;try{button.click();}finally{navReplaying=false;}
 }
 document.addEventListener('click',event=>{
  const button=event.target.closest?.('#nav [data-view]');
@@ -4803,6 +4804,13 @@ document.addEventListener('click',event=>{
  const hash=navHash(button);
  if(location.hash!==hash)history.pushState({erp:1},'',hash);
 },true);
+// A page opened by a button rather than the menu (Create Pro forma on a lead, Order from supplier, Open on My tasks)
+// is recorded too, so Back returns to the page the button was on. Called when the menu highlights the open page.
+function navRecordOpenPage(button){
+ if(!button||navReplaying||navReplayPending||/^#\/(clients|client|branch)\b/.test(location.hash))return;
+ const hash=navHash(button);if(location.hash===hash)return;
+ if(/^#\/go\//.test(location.hash))history.pushState({erp:1},'',hash);else history.replaceState(history.state,'',hash);
+}
 window.addEventListener('popstate',()=>{
  if(/^#\/(clients|client|branch)\b/.test(location.hash))return;
  navReplay(location.hash);

@@ -17,3 +17,30 @@ test('Record tax invoice still works where the stock-reservation function (migra
  const src=fn('sales-delivery.js','openDeliveryAction');
  assert.match(src,/create_tax_invoice_and_reserve_stock[^;]*;if\(taxInvoiceReservationMissing\(result\.error\)\)result=await client\.rpc\('advance_sales_delivery',\{[^}]*p_action:'tax_invoice'[^}]*p_proof_reference:values\.proof\}\)/);
 });
+
+test('A page opened by a button (Create Pro forma on a lead) is recorded, so Back returns to the lead list',()=>{
+ const pushed=[],replaced=[];const location={hash:''};
+ const ctx=vm.createContext({location,history:{state:null,pushState:(s,t,h)=>{pushed.push(h);location.hash=h},replaceState:(s,t,h)=>{replaced.push(h);location.hash=h}},
+  document:{addEventListener(){},querySelectorAll:()=>[],querySelector:()=>null},window:{addEventListener(){}},setTimeout});
+ vm.runInContext(read('nav-history.js'),ctx);location.hash='#/go/leads/leads';
+ const button=(view,section)=>({dataset:{view,workspaceSection:section}});
+ ctx.navRecordOpenPage(button('sales','new'));
+ assert.deepEqual(pushed,['#/go/sales/new']);
+ ctx.navRecordOpenPage(button('sales','new'));
+ assert.equal(pushed.length,1,'the same page is not recorded twice');
+ location.hash='';ctx.navRecordOpenPage(button('dashboard'));
+ assert.deepEqual(replaced,['#/go/dashboard'],'the first page replaces the empty address instead of adding a Back step');
+ location.hash='#/clients/x';ctx.navRecordOpenPage(button('contacts'));
+ assert.equal(location.hash,'#/clients/x','client pages keep their own address');
+ assert.match(read('workspace-navigation.js'),/if\(active\)\{button\.setAttribute\('aria-current','page'\);if\(typeof navRecordOpenPage==='function'\)navRecordOpenPage\(button\);\}/);
+});
+
+test('Assign engineer lists only people who can open Service jobs',()=>{
+ const ctx=vm.createContext({serviceTeam:[
+  {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},
+  {user_id:'c',role:'owner',active:true,access:[]},{user_id:'d',role:'head',active:false,access:['service']},{user_id:'e',role:'head',active:true,access:['service','stock']}],
+  inventoryOption:(id,label)=>`<option value="${id}">${label}</option>`,serviceTeamLabel:id=>id});
+ vm.runInContext(fn('service-workflow.js','serviceTeamOptions'),ctx);
+ assert.deepEqual([...ctx.serviceTeamOptions().matchAll(/value="(\w)"/g)].map(m=>m[1]),['a','c','e']);
+ assert.match(read('service-workflow.js'),/from\('staff'\)\.select\('user_id,role,active,access'\)/);
+});
