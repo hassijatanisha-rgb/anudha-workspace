@@ -75,3 +75,35 @@ test('staff list file: validated, heads first, people with a login skipped',()=>
  assert.equal(ctx.staffListExisting('existing person'),true);assert.equal(ctx.staffListExisting('Someone New'),false);
  assert.match(ctx.departmentLabel('marketing'),/Marketing/);
 });
+test('Clients & items data: the owner gives it per person; heads never tick it; nobody gets it from a template',()=>{
+ const owner=load({role:'owner',access:[]});
+ assert.ok(vm.runInContext('accessAreas',owner).some(([key,label])=>key==='records'&&label==='Clients & items data'));
+ assert.equal(owner.canEditRecords(),true,'the owner always can');assert.equal(owner.recordsLockedNote(),'');
+ assert.match(owner.accessCheckboxes([]),/value="records"\s*>/,'the owner can tick it');
+ for(const [dept,areas] of Object.entries(vm.runInContext('departmentAccess',owner)))assert.ok(!areas.includes('records'),`${dept||'no department'} template`);
+ assert.ok(!owner.startingAccess('management').includes('records'));
+ const withIt=load({...head,access:[...head.access,'records']});
+ assert.equal(withIt.canEditRecords(),true);
+ assert.match(withIt.accessCheckboxes(['records']),/value="records" checked\s+disabled/,'a head who has it still cannot give it');
+ assert.match(withIt.accessCheckboxes([]),/only the owner can give or remove it/);
+ const form={querySelectorAll:()=>[{value:'leads'},{value:'records'}]};
+ assert.deepEqual([...withIt.checkedAreas(form)],['leads'],'records is never sent by a head');
+ const staff=load({user_id:'s',role:'staff',access:['leads']});
+ assert.equal(staff.canEditRecords(),false);assert.match(staff.recordsLockedNote(),/Only people with Clients (&amp;|&#38;) items data access can change this\. Ask the owner\./);
+});
+test('migration 071: records guard on every client and item save, owner-only granting, nobody added',()=>{
+ const sql=readFileSync(new URL('../supabase/migrations/202610070071_clients_items_records_access.sql',import.meta.url),'utf8');
+ assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);assert.match(sql,/^-- Rollback:/m);
+ assert.match(sql,/'reports','records'\]::text\[\]\n\$\$;/,'listed in staff_access_areas');
+ assert.match(sql,/add constraint staff_access_check\s+check \(access <@ array\[[^\]]*'records'\]/);
+ assert.doesNotMatch(sql,/update public\.staff set access=(?!v_access )/,'nobody gets it automatically');
+ assert.match(sql,/Only the owner can give or remove Clients & items data access/);
+ assert.match(sql,/if 'records'=any\(v_access\) then raise exception 'Only the owner can give Clients & items data access'/);
+ for(const fn of ['save_organization','approve_organization','set_organization_parent','save_contact','restore_contact','archive_record','restore_record','import_records','save_product','set_product_match','set_product_archived','apply_product_list','save_pack_definition','save_product_detail_review','save_product_inventory_classification','save_product_machine_link_review','save_product_source_mapping_review'])
+  assert.match(sql,new RegExp(`'public\\.${fn}\\(`),fn);
+ for(const fn of ['save_sales_lead','save_sales_proforma','complete_service_report','record_tally_export','submit_customer_request'])
+  assert.doesNotMatch(sql,new RegExp(`public\\.${fn}\\(`),`${fn} keeps working without records`);
+ assert.match(sql,/perform public\.require_access\(''records''\);/);
+ const fn=readFileSync(new URL('../supabase/functions/staff-accounts/index.ts',import.meta.url),'utf8');
+ assert.match(fn,/const AREAS = \[[^\]]*'records'\]/);
+});

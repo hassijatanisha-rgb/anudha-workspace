@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync,existsSync} from 'node:fs';
-const ctx=vm.createContext({esc:s=>String(s??'').replaceAll('<','&lt;').replaceAll('"','&quot;'),catalogProductIssues:()=>['Missing specification'],catalogCategoryOf:()=> 'machines',catalogLabel:()=> 'Machines'});
+const ctx=vm.createContext({esc:s=>String(s??'').replaceAll('<','&lt;').replaceAll('"','&quot;'),catalogProductIssues:()=>['Missing specification'],catalogCategoryOf:()=> 'machines',catalogLabel:()=> 'Machines',canEditRecords:()=>true});
 const file=new URL('../product-workbench.js',import.meta.url);
 if(existsSync(file))vm.runInContext(readFileSync(file,'utf8'),ctx);
 test('Workbench uses existing product IDs and correction and stock actions',()=>{
@@ -15,4 +15,11 @@ test('No price or hidden source data is rendered by the workbench',()=>{
 });
 test('Empty shared catalog shows an honest empty state',()=>{
  assert.match(ctx.productWorkbenchTable([]),/No products match/);
+});
+test('Name / code edit is shown only to people with Clients & items data access',()=>{
+ const row=[{id:'p',name:'P',source:{}}];
+ assert.match(ctx.productWorkbenchTable(row),/data-product-edit="p"/);
+ ctx.canEditRecords=()=>false;
+ try{const html=ctx.productWorkbenchTable(row);assert.doesNotMatch(html,/data-product-edit/);assert.match(html,/data-product-review="p"/,'viewing details stays');}
+ finally{ctx.canEditRecords=()=>true;}
 });

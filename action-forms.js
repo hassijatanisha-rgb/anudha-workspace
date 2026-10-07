@@ -51,6 +51,7 @@ function openOrganizationForm(o=null){
 }
 
 function openProductForm(p=null){
+ if(!canEditRecords())throw Error(recordsLockedText);
  if(!p&&me?.role!=='owner')throw Error('Owner access is required to add products.');
  const id=p?.id||crypto.randomUUID();
  return actionForm(p?'Edit product':'Add product',field('name','Product name',p?.name||'','text',true)+field('sku','Stock code · optional',p?.sku||''),async values=>{
@@ -63,10 +64,12 @@ function openProductForm(p=null){
 }
 
 function openIncorrectForm(c){
+ if(!canEditRecords())throw Error(recordsLockedText);
  return actionForm('Flag contact as incorrect',`<p>${esc([c.first_name,c.last_name].filter(Boolean).join(' '))} will move to Incorrect for review. The record is retained.</p><label><span>Reason</span><textarea name="reason" required maxlength="2000">${esc(c.reason||'')}</textarea></label>`,async values=>save({...c,status:'incorrect',reason:values.reason}));
 }
 
 function openMatchForm(p){
+ if(!canEditRecords())throw Error(recordsLockedText);
  const candidates=products.filter(x=>x.id!==p.id&&normalize(x.name)===normalize(p.name));
  const current=products.find(x=>x.id===p.match_id);
  const options=candidates.map(x=>`<option value="${esc(x.id)}" ${x.id===p.match_id?'selected':''}>${esc(x.name)} · ${esc(x.sku||'No stock code')} · ${esc(x.source?.source_file||'Manual entry')} ${esc(x.source?.source_row?'row '+x.source.source_row:'')} · ${esc(x.id.slice(0,8))}</option>`).join('');

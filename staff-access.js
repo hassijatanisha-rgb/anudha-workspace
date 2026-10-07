@@ -12,7 +12,8 @@ const accessAreas=[
  ['stock','Stock & availability','Stock levels, moving stock, godowns'],
  ['stock_count','Stock counts','Counting stock'],
  ['travel','Travel requests','Request and see trips'],
- ['reports','Reports','Work and activity reports']
+ ['reports','Reports','Work and activity reports'],
+ ['records','Clients & items data','Add, change or delete clients, contacts and products (owner gives this)']
 ];
 // Starting ticks for a new account in each department; the head or owner changes them before saving.
 const departmentAccess={
@@ -21,7 +22,7 @@ const departmentAccess={
  stores:['deliveries','purchasing','stock','stock_count','travel'],
  service:['service','deliveries','stock','travel','reports'],
  marketing:['leads','proformas','stock','travel','reports'],
- management:accessAreas.map(([key])=>key),
+ management:accessAreas.map(([key])=>key).filter(key=>key!=='records'),
  '':['travel']
 };
 const departmentLabels=[['','Choose'],['sales','Sales'],['accounts','Accounts'],['stores','Stores & delivery'],['service','Service'],['marketing','Marketing'],['management','Management']];
@@ -30,8 +31,13 @@ function departmentLabel(key){return departmentLabels.find(([k])=>k===key)?.[1]|
 function isHead(){return me?.role==='head'}
 // area may be a list: any one of them is enough.
 function hasArea(area,person=me){if(Array.isArray(area))return area.some(a=>hasArea(a,person));return !area||person?.role==='owner'||(person?.access||[]).includes(area)}
-// Areas the signed-in person may hand out.
-function grantableAreas(){return accessAreas.filter(([key])=>hasArea(key))}
+// Areas the signed-in person may hand out. Clients & items data is given and removed by the owner only (migration 071).
+function canGrantArea(key){return key==='records'?me?.role==='owner':hasArea(key)}
+function grantableAreas(){return accessAreas.filter(([key])=>canGrantArea(key))}
+// Adding, changing or deleting clients, contacts and products. Everyone else still uses them in leads, quotes and orders.
+const recordsLockedText='Only people with Clients & items data access can change this. Ask the owner.';
+function canEditRecords(){return hasArea('records')}
+function recordsLockedNote(){return canEditRecords()?'':`<p class="muted records-locked">${esc(recordsLockedText)}</p>`}
 function canManagePerson(row){
  if(!row||!me)return false;
  if(me.role==='owner')return true;
@@ -73,15 +79,17 @@ function accessSummary(row){
 }
 // Checkbox list. Only areas the signed-in person has can be ticked; others are shown greyed out with the reason.
 function accessCheckboxes(selected){
- return `<fieldset class="access-areas"><legend>What this person can use</legend><p class="muted">Everyone always has My tasks, notes and reminders, calendar, client accounts, product search and How to use.</p>${accessAreas.map(([key,label,hint])=>{const allowed=hasArea(key);return `<label class="access-area${allowed?'':' muted'}"><input type="checkbox" name="access" value="${key}" ${selected.includes(key)?'checked':''} ${allowed?'':'disabled'}> <span><strong>${esc(label)}</strong> · ${esc(hint)}${allowed?'':' · only someone who has it can give it'}</span></label>`}).join('')}</fieldset>`;
+ return `<fieldset class="access-areas"><legend>What this person can use</legend><p class="muted">Everyone always has My tasks, notes and reminders, calendar, client accounts, product search and How to use.</p>${accessAreas.map(([key,label,hint])=>{const allowed=canGrantArea(key);return `<label class="access-area${allowed?'':' muted'}"><input type="checkbox" name="access" value="${key}" ${selected.includes(key)?'checked':''} ${allowed?'':'disabled'}> <span><strong>${esc(label)}</strong> · ${esc(hint)}${allowed?'':key==='records'?' · only the owner can give or remove it':' · only someone who has it can give it'}</span></label>`}).join('')}</fieldset>`;
 }
-function checkedAreas(form){return [...form.querySelectorAll('[name="access"]:checked')].map(input=>input.value).filter(key=>hasArea(key))}
-function startingAccess(department){return (departmentAccess[department]||departmentAccess['']).filter(key=>hasArea(key))}
+function checkedAreas(form){return [...form.querySelectorAll('[name="access"]:checked')].map(input=>input.value).filter(key=>canGrantArea(key))}
+function startingAccess(department){return (departmentAccess[department]||departmentAccess['']).filter(key=>canGrantArea(key))}
 function openStaffAccess(row,onSaved){
  if(!canManagePerson(row)||row.role==='owner')throw Error('You can only change access for people in your own department.');
  const name=employeeName(row.user_id);
  actionForm(`Access for ${name}`,accessCheckboxes(row.access||[]),async()=>{
   const actor=me?.user_id,areas=checkedAreas(actionEditorForm);
+  // Only the owner changes Clients & items data; a head's save keeps whatever the owner set.
+  if(!canGrantArea('records')&&(row.access||[]).includes('records'))areas.push('records');
   const result=await client.rpc('set_staff_access',{p_user_id:row.user_id,p_access:areas});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
