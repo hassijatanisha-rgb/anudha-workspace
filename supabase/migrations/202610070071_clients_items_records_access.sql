@@ -114,6 +114,28 @@ begin
  end loop;
 end $do$;
 
+-- Add one product (the "+ Add product" button). Same rules and defaults as one product sent through import_records,
+-- which stays owner-only for bulk imports: the name is checked by the products table (1 to 500 characters once
+-- trimmed), the stock code defaults to '' and the source to '{}'; import_records has no duplicate-name check, so
+-- neither does this (exact-name duplicates are reviewed with "Review match"). A retry with the same id and name
+-- returns the saved product; the same id with a different name is refused.
+create function public.add_product(p_id uuid, p_name text, p_sku text default '', p_source jsonb default '{}'::jsonb)
+returns public.products language plpgsql security definer set search_path to 'pg_catalog', 'public' as $$
+declare result public.products;
+begin
+ perform public.require_access('records');
+ if p_id is null then raise exception 'Product id is required'; end if;
+ insert into public.products(id,name,sku,source) values(p_id,p_name,coalesce(p_sku,''),coalesce(p_source,'{}'))
+ on conflict(id) do nothing returning * into result;
+ if result.id is null then
+  select * into result from public.products where id=p_id;
+  if result.name is distinct from p_name then raise exception 'This product id is already used by another product; reload and try again'; end if;
+ end if;
+ return result;
+end $$;
+revoke all on function public.add_product(uuid,text,text,jsonb) from public, anon;
+grant execute on function public.add_product(uuid,text,text,jsonb) to authenticated, service_role;
+
 -- The chosen people do the client and item work the owner did alone until now: in these functions the owner check
 -- becomes the "records" check (the owner still passes). Bulk import (import_records) stays owner-only, and so does
 -- every other owner-only step. Only that one line changes in each function.

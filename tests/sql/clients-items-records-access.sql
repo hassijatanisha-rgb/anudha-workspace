@@ -76,6 +76,7 @@ select pg_temp.fails('without records: restore deleted client refused','select p
 select pg_temp.fails('without records: machine links refused','select public.save_product_machine_link_review(gen_random_uuid(),''00000000-0000-4000-8000-0000000000b6'',0,''{}'',''Checked the manual'')','Clients & items data');
 select pg_temp.fails('without records: source mapping refused','select public.save_product_source_mapping_review(gen_random_uuid(),''fixture-key'',0,null,''unresolved'',''{}''::jsonb,''Checked the file'')','Clients & items data');
 select pg_temp.fails('without records: product list refused','select public.apply_product_list(''[{"code":"AN-99991","product":"Fixture Listed","category":"Spare"}]'')','Clients & items data');
+select pg_temp.fails('without records: add one product refused','select public.add_product(gen_random_uuid(),''Fixture Single Product'',''FX-9'',''{"origin":"manual"}'')','Clients & items data');
 select pg_temp.fails('without records: product delete refused','select public.set_product_archived(''00000000-0000-4000-8000-0000000000b3'',true)','Clients & items data');
 -- ... and keeps working with them exactly as before.
 select pg_temp.equals('without records: lead for an existing client with a typed-in caller','select caller_name from public.save_sales_lead(gen_random_uuid(),0,jsonb_build_object(''subject'',''Probe price'',''organization_id'',''00000000-0000-4000-8000-0000000000b1'',''caller_name'',''Dr Fixture Caller'',''caller_phone'',''0755000333''))','Dr Fixture Caller');
@@ -107,6 +108,13 @@ select pg_temp.fails('with records: source mapping reaches its own checks','sele
 select pg_temp.equals('with records: product list','select (public.apply_product_list(''[{"code":"AN-99991","product":"Fixture Listed","category":"Spare"}]'')->>''rows'')','1');
 select pg_temp.check('with records: delete a product','select public.set_product_archived(''00000000-0000-4000-8000-0000000000b4'',true)');
 select pg_temp.check('with records: restore the product','select public.set_product_archived(''00000000-0000-4000-8000-0000000000b4'',false)');
+-- One product at a time, with the same rules as one product through import_records.
+select pg_temp.equals('with records: add one product','select name||''|''||sku||''|''||(source->>''origin'')||''|''||match_status||''|''||revision from public.add_product(''00000000-0000-4000-8000-0000000000c4'',''Fixture Single Product'',''FX-9'',''{"origin":"manual"}'')','Fixture Single Product|FX-9|manual|unreviewed|1');
+select pg_temp.equals('with records: a retry returns the saved product','select (select id::text from public.add_product(''00000000-0000-4000-8000-0000000000c4'',''Fixture Single Product'',''FX-9'',''{"origin":"manual"}''))||''|''||(select count(*) from public.products where id=''00000000-0000-4000-8000-0000000000c4'')','00000000-0000-4000-8000-0000000000c4|1');
+select pg_temp.fails('with records: the same id with another name is refused','select public.add_product(''00000000-0000-4000-8000-0000000000c4'',''Fixture Other Product'')','already used');
+select pg_temp.equals('with records: defaults match import_records','select sku||''|''||source::text from public.add_product(''00000000-0000-4000-8000-0000000000c5'',''Fixture Default Product'',null,null)','|{}');
+select pg_temp.check('with records: an exact-name duplicate is allowed, as in import_records','select public.add_product(gen_random_uuid(),''Fixture Single Product'')');
+select pg_temp.fails('with records: a blank name is refused, as in import_records','select public.add_product(gen_random_uuid(),''   '')','products_name_check');
 -- Still owner-only: bulk import, and deleting or restoring Pro formas.
 select pg_temp.fails('with records: bulk import stays owner-only','select public.import_records(''[]'',''[]'',''[{"id":"00000000-0000-4000-8000-0000000000c1","name":"Fixture Import"}]'')','Owner access required');
 select pg_temp.as_user('a9');
@@ -119,6 +127,9 @@ select pg_temp.check('owner: add contact','select public.save_contact(gen_random
 select pg_temp.check('owner: edit product','select public.save_product(''00000000-0000-4000-8000-0000000000b4'',pg_temp.rev(''products'',''b4''),''Fixture Records Probe'',''FX-2A'')');
 select pg_temp.check('owner: pack definition','select public.save_pack_definition(gen_random_uuid(),''00000000-0000-4000-8000-0000000000b3'',0,''piece'',10,''Checked the box'')');
 select pg_temp.check('owner: product detail review','select public.save_product_detail_review(gen_random_uuid(),''00000000-0000-4000-8000-0000000000b3'',0,''Fixture Records Probe'','''','''',''unknown'',null,null,''Checked the box'')');
+select pg_temp.check('owner: import an exact-name duplicate (no duplicate check there either)','select public.import_records(''[]'',''[]'',''[{"id":"00000000-0000-4000-8000-0000000000c6","name":"Fixture Single Product"}]'')');
+select pg_temp.fails('owner: import refuses a blank name the same way','select public.import_records(''[]'',''[]'',''[{"id":"00000000-0000-4000-8000-0000000000c7","name":"   "}]'')','products_name_check');
+select pg_temp.check('owner: add one product','select public.add_product(gen_random_uuid(),''Fixture Owner Product'')');
 select pg_temp.check('owner: import a product','select public.import_records(''[]'',''[]'',''[{"id":"00000000-0000-4000-8000-0000000000c1","name":"Fixture Import"}]'')');
 select pg_temp.check('owner: delete product','select public.set_product_archived(''00000000-0000-4000-8000-0000000000c1'',true)');
 select pg_temp.check('owner: delete organization','select public.archive_record(''organization'',''00000000-0000-4000-8000-0000000000c2'')');

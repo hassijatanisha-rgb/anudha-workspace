@@ -117,12 +117,15 @@ test('migration 071: the chosen people take over the owner-only client and item 
  assert.doesNotMatch(widen,/import_records|set_draft_proforma_archived/,'bulk import and Pro formas stay owner-only');
  assert.match(sql,/case when tg_table_name=''products'' then public\.has_access\(''records''\) else public\.inventory_owner\(\) end/,'Pro forma archiving keeps the owner check');
  assert.match(sql,/guard_client_archive_owner\(\)'::regprocedure/);
+ assert.match(sql,/create function public\.add_product\(p_id uuid, p_name text, p_sku text default '', p_source jsonb default '\{\}'::jsonb\)[\s\S]*?\nbegin\n perform public\.require_access\('records'\);/,'one product for records holders');
 });
 test('screens: client and item buttons follow Clients & items data; import and Pro forma deletion stay owner-only',()=>{
  const read=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
  const app=read('app.js'),profiles=read('client-profile-pages.js'),forms=read('action-forms.js'),recycle=read('recycle-bin.js'),admin=read('admin-records.js'),inv=read('inventory-operations.js');
  assert.match(app,/canEditRecords\(\)\?'<button id="newOrg">\+ Account<\/button>':''/);
- assert.match(app,/me\.role==='owner'\?'<button id="newProduct">\+ Add product<\/button>'/,'adding a product uses bulk import, still owner-only');
+ assert.match(app,/canEditRecords\(\)\?'<button id="newProduct">\+ Add product<\/button>'/,'one product at a time for records holders');
+ assert.match(read('action-forms.js'),/client\.rpc\('add_product',\{p_id:id,p_name:values\.name,p_sku:values\.sku,p_source:\{origin:'manual'\}\}\)/);
+ assert.doesNotMatch(app+read('action-forms.js'),/rpc\('import_records',\{p_products:\[/,'the Add product button no longer uses bulk import');
  assert.match(app,/item\.dataset\.view==='recycle'&&canEditRecords\(\)/,'Deleted items menu for records holders');
  assert.match(profiles,/canEditRecords\(\)\?'<button class="primary-action" id="newOrg">\+ Add client<\/button>'/);
  assert.doesNotMatch(profiles+recycle+forms.slice(0,forms.indexOf('function openProductForm')),/role!=='owner'|role==='owner'/);

@@ -52,10 +52,9 @@ function openOrganizationForm(o=null){
 
 function openProductForm(p=null){
  if(!canEditRecords())throw Error(recordsLockedText);
- if(!p&&me?.role!=='owner')throw Error('Owner access is required to add products.');
  const id=p?.id||crypto.randomUUID();
  return actionForm(p?'Edit product':'Add product',field('name','Product name',p?.name||'','text',true)+field('sku','Stock code · optional',p?.sku||''),async values=>{
-  const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('import_records',{p_products:[{id,name:values.name,sku:values.sku,source:{origin:'manual'}}]});
+  const r=p?await client.rpc('save_product',{p_id:id,p_revision:p.revision,p_name:values.name,p_sku:values.sku}):await client.rpc('add_product',{p_id:id,p_name:values.name,p_sku:values.sku,p_source:{origin:'manual'}});
   if(r.error)throw r.error;
   if(p){const row=Array.isArray(r.data)?r.data[0]:r.data;const index=products.findIndex(x=>x.id===id);if(index>=0)products[index]=row;render()}
   else{const saved=await client.from('products').select('*').eq('id',id).single();if(saved.error)throw saved.error;products.push(saved.data);search='';page=0;render()}
