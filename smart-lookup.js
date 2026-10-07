@@ -55,7 +55,7 @@ function lookupPick(box,row){
  const source=box._lookupSource,input=box.querySelector('input.lookup-input');
  if(source.tagName==='SELECT'){source.value=row.value;input.value=row.label;}
  else{source.value=row.value;}
- input.setCustomValidity('');lookupClose(box);
+ input.setCustomValidity('');lookupClose(box);box._lookupHold=false;
  source.dispatchEvent(new Event('input',{bubbles:true}));source.dispatchEvent(new Event('change',{bubbles:true}));
 }
 // Show what the hidden <select> holds now (pages set .value or rebuild options without telling anyone).
@@ -77,7 +77,9 @@ function lookupAttach(source){
  let input;
  if(isSelect){
   input=document.createElement('input');input.type='search';input.autocomplete='off';input.className='lookup-input';
-  if(source.required){input.required=true;source.required=false;source.dataset.lookupRequired='1';}
+  // The <select> stays the required field (forms check it by name); when the browser flags it, the message is
+  // shown on the search box instead of the hidden list.
+  source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity('Choose one from the list');input.reportValidity();});
   input.setAttribute('aria-label',source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
   source.classList.add('lookup-source');source.tabIndex=-1;source.setAttribute('aria-hidden','true');
   source.parentNode.insertBefore(box,source);box.append(input,source);
@@ -98,13 +100,15 @@ function lookupAttach(source){
   else if(e.key==='Enter'&&!list.hidden&&box._lookupRows?.length){e.preventDefault();lookupPick(box,box._lookupRows[box._lookupActive]);}
   else if(e.key==='Escape'&&!list.hidden){e.preventDefault();lookupClose(box);}
  });
- input.addEventListener('blur',()=>setTimeout(()=>{
-  lookupClose(box);
-  if(isSelect){
-   if(source.value===''&&input.value.trim()){const only=lookupRank(lookupOptionsOf(source),input.value,2);if(only.total===1)lookupPick(box,only.rows[0]);else input.setCustomValidity('Choose one from the list');}
-   lookupSync(box);
-  }
- },150));
+ // Leaving the box never picks for the person; typed text that is not a choice is flagged instead. While a finger
+ // or mouse is on the list (scrolling on a phone blurs the box), the list stays open.
+ const leave=()=>{
+  lookupClose(box);box._lookupHold=false;
+  if(isSelect){if(source.value===''&&input.value.trim())input.setCustomValidity('Choose one from the list');lookupSync(box);}
+ };
+ box._lookupLeave=leave;
+ input.addEventListener('blur',()=>setTimeout(()=>{if(box._lookupHold||document.activeElement===input)return;leave();},150));
+ list.addEventListener('pointerdown',()=>{box._lookupHold=true;});
  list.addEventListener('mousedown',e=>e.preventDefault());
  list.addEventListener('click',e=>{const li=e.target.closest('li[data-i]');if(li)lookupPick(box,box._lookupRows[Number(li.dataset.i)]);});
  if(isSelect){
@@ -121,12 +125,8 @@ function lookupScan(root=document){
 }
 // Datalists are often rebuilt after the input: refresh options when the list grows.
 document.addEventListener('focusin',e=>{const box=e.target.closest?.('.lookup');if(box&&box._lookupSource.dataset.lookupList&&!box._lookupSource._lookupList?.isConnected)box._lookupSource._lookupList=document.getElementById(box._lookupSource.dataset.lookupList);});
-// Before a form submits, a required lookup with nothing chosen points at the search box, not a hidden field.
-document.addEventListener('submit',e=>{
- for(const source of e.target.querySelectorAll?.('select[data-lookup-required]')||[]){
-  if(source.value===''){const input=source._lookupBox?.querySelector('input.lookup-input');if(input){input.setCustomValidity('Choose one from the list');input.reportValidity();}e.preventDefault();e.stopImmediatePropagation();return;}
- }
-},true);
+// A tap anywhere outside an open list closes it.
+document.addEventListener('pointerdown',e=>{document.querySelectorAll('.lookup').forEach(box=>{if(!box.contains(e.target)&&!box.querySelector('.lookup-list').hidden&&document.activeElement!==box.querySelector('input.lookup-input'))box._lookupLeave?.();else if(!box.contains(e.target))box._lookupHold=false;});},true);
 let lookupQueued=false;
 new MutationObserver(()=>{if(lookupQueued)return;lookupQueued=true;requestAnimationFrame(()=>{lookupQueued=false;lookupScan();});}).observe(document.documentElement,{childList:true,subtree:true});
 document.addEventListener('DOMContentLoaded',()=>lookupScan());
