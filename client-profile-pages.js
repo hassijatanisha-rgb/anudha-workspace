@@ -12,6 +12,8 @@ function goProfile(kind='clients',id=''){
  if(location.hash===hash){selected=id;render()}else location.hash=hash;
 }
 window.addEventListener('hashchange',()=>{
+ // Other pages' addresses (#/go/…, set by nav-history.js) are not client pages.
+ if(!/^#\/(clients|client|branch)\b/.test(location.hash))return;
  const route=readProfileRoute();view='contacts';selected=route.id;filter='all';page=0;profileTab='contacts';if(me)render();
 });
 document.addEventListener('click',event=>{

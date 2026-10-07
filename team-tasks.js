@@ -14,11 +14,13 @@ function teamTaskCard(row){
  const buttons=[];
  if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Mark done</button>`);
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
- return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)}">${esc(teamTaskUrgencyLabel(row.urgency))}</span><h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}${row.close_note?' · '+esc(row.close_note):''}`}</p>${buttons.length?`<div class="actions">${buttons.join('')}</div>`:''}</article>`;
+ return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)}">${esc(teamTaskUrgencyLabel(row.urgency))}</span><h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}`}</p>${!open&&row.close_note?`<p class="team-task-result"><small>Result</small>${esc(row.close_note)}</p>`:''}${buttons.length?`<div class="actions">${buttons.join('')}</div>`:''}</article>`;
 }
 async function loadTeamTasks(){
  const actor=me?.user_id,since=new Date(Date.now()-30*86400000).toISOString();
- const result=await client.from('team_tasks').select('*').or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(500);
+ // Only tasks given to or by this person are shown; the owner can read everyone's, so filter here or a busy
+ // company's tasks would push the person's own past the row limit.
+ const result=await client.from('team_tasks').select('*').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
  if(me?.user_id!==actor)return null;
  if(result.error)throw Error(result.error.message);
  return result.data||[];
@@ -67,7 +69,11 @@ function openTeamTaskEditor(row){
 }
 function openTeamTaskClose(row,action){
  if(!row)return;
- const fields=`<p><strong>${esc(row.title)}</strong></p><label><span>${action==='done'?'Note · optional':'Why is it cancelled?'}</span><textarea name="note" maxlength="1000"${action==='cancel'?' required minlength="3"':''}></textarea></label>`;
+ // Done needs a short result so the person who gave the task can see what happened. Follow-up work (a quote, a
+ // lead, a complaint) is opened on its own page; the note only records the outcome.
+ const fields=action==='done'
+  ?`<p><strong>${esc(row.title)}</strong></p><label><span>What did you do? What was the result?</span><textarea name="note" maxlength="1000" required minlength="5" rows="4" placeholder="For example: Called Nisha. Interested in 2 ultrasound machines. Made Pro forma for her."></textarea></label><p class="muted">If the client wants a quote, has a complaint or is a new opportunity, also open it under Pro formas, Complaints or Leads so someone follows it up.</p>`
+  :`<p><strong>${esc(row.title)}</strong></p><label><span>Why is it cancelled?</span><textarea name="note" maxlength="1000" required minlength="3"></textarea></label>`;
  actionForm(action==='done'?'Mark task done':'Cancel task',fields,async values=>{
   const actor=me?.user_id,result=await client.rpc('close_team_task',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the task.');

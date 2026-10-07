@@ -7,7 +7,7 @@ const workspaceGroups=[
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Create Pro forma','sales','new'],['Current orders','sales','proformas'],['Tally invoices','tallyinvoices'],
+  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
   ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Service',tone:'service',items:[
