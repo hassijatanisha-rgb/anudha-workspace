@@ -80,6 +80,7 @@ async function savePurchaseForm(form){
  const sessionCurrent=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseSessionEpoch&&view==='purchasing';
  const current=()=>sessionCurrent()&&form.isConnected&&$('#purchaseForm')===form;
  if(!current())return;
+ if(form.dataset.savedId)throw Error('This request is already saved. Use Refresh to load it before making further changes.');
  const values=purchaseFormValues(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),key=JSON.stringify(values);
  // An uncertain write must be reconciled with its original content, never retried as a new order.
  if(!id&&purchasePendingSave?.uncertain&&purchasePendingSave.key!==key)throw Error('The previous save is unconfirmed. Restore the original details and retry, or refresh and check the saved request before editing it.');
@@ -91,7 +92,10 @@ async function savePurchaseForm(form){
  if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
  const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
  if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
- purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchaseRefreshOne(saved.id);if(sessionCurrent())message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
+ form.dataset.savedId=saved.id;
+ purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';
+ try{await purchaseRefreshOne(saved.id)}catch(error){if(!current())return;throw Error('This request is already saved, but the list could not refresh. Use Refresh before making further changes.');}
+ if(sessionCurrent())message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
 }
 function supplierEditor(row){
  return `<section class="card document-editor"><div class="heading"><div><small>${row?esc(row.supplier_number):'NEW'}</small><h2>${row?'Edit supplier':'New supplier'}</h2></div><button type="button" id="closeSupplierEditor">Close</button></div><form id="supplierForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><div class="grid"><label class="wide"><span>Supplier name</span><input name="name" required minlength="2" maxlength="200" value="${esc(row?.name||'')}"></label><label><span>Country</span><input name="country" maxlength="100" value="${esc(row?.country||'')}"></label><label><span>Contact person</span><input name="contact_name" maxlength="200" value="${esc(row?.contact_name||'')}"></label><label><span>Phone</span><input name="phone" maxlength="60" inputmode="tel" value="${esc(row?.phone||'')}"></label><label><span>Email</span><input name="email" type="email" maxlength="320" value="${esc(row?.email||'')}"></label><label><span>TIN</span><input name="tin" maxlength="60" value="${esc(row?.tin||'')}"></label><label><span>Payment terms</span><input name="payment_terms" maxlength="300" value="${esc(row?.payment_terms||'')}"></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000">${esc(row?.notes||'')}</textarea></label>${row&&me?.role==='owner'?`<label><span>Status</span><select name="active"><option value="true" ${row.active?'selected':''}>Active</option><option value="false" ${row.active?'':'selected'}>Inactive — hide from new orders</option></select></label>`:''}</div><p role="alert" id="supplierFormError"></p><div class="actions"><button type="submit">${row?'Save changes':'Save supplier'}</button></div></form></section>`;
@@ -101,6 +105,7 @@ async function saveSupplierForm(form){
  const sessionCurrent=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseSessionEpoch&&view==='purchasing';
  const current=()=>sessionCurrent()&&form.isConnected&&$('#supplierForm')===form;
  if(!current())return;
+ if(form.dataset.savedId)throw Error('This supplier is already saved. Use Refresh to load it before making further changes.');
  const f=new FormData(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),existing=suppliers.find(s=>s.id===id);
  const fields={name:String(f.get('name')||'').trim(),country:f.get('country')||'',contact_name:f.get('contact_name')||'',phone:f.get('phone')||'',email:String(f.get('email')||'').trim(),tin:f.get('tin')||'',payment_terms:f.get('payment_terms')||'',notes:f.get('notes')||'',active:f.has('active')?f.get('active')==='true':(existing?.active??true)};
  if(fields.name.length<2)throw Error('Enter the supplier name.');
@@ -114,6 +119,7 @@ async function saveSupplierForm(form){
  if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
  const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
  if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
+ form.dataset.savedId=saved.id;
  supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);if(sessionCurrent())message(`${saved.name} saved.`);
 }
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
@@ -176,12 +182,12 @@ function bindPurchasing(){
  if(form){
   $('#addPurchaseLine').onclick=()=>$('#purchaseLines').insertAdjacentHTML('beforeend',purchaseLineRow());
   $('#purchaseLines').addEventListener('click',event=>{const remove=event.target.closest('[data-remove-purchase-line]');if(!remove)return;if(form.querySelectorAll('[data-purchase-line]').length>1)remove.closest('tr').remove();else $('#purchaseFormError').textContent='A purchase request needs at least one item.';});
-  form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#purchaseFormError').textContent='';
-   run(async()=>{try{await savePurchaseForm(form)}catch(error){if($('#purchaseFormError'))$('#purchaseFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+  form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;const actor=me,epoch=purchaseSessionEpoch;button.disabled=true;$('#purchaseFormError').textContent='';
+   run(async()=>{try{await savePurchaseForm(form)}catch(error){if(me!==actor||purchaseSessionEpoch!==epoch||view!=='purchasing'||!form.isConnected||$('#purchaseForm')!==form)return;if($('#purchaseFormError'))$('#purchaseFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
  }
  const supplierForm=$('#supplierForm');
- if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#supplierFormError').textContent='';
-  run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+ if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;const actor=me,epoch=purchaseSessionEpoch;button.disabled=true;$('#supplierFormError').textContent='';
+  run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if(me!==actor||purchaseSessionEpoch!==epoch||view!=='purchasing'||!supplierForm.isConnected||$('#supplierForm')!==supplierForm)return;if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
  $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});

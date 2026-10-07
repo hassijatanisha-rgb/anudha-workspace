@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 try{
- for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement','uncertain-transport','uncertain-response']){
+ for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement','uncertain-transport','uncertain-response',...(kind==='purchase'?['refresh-error-replacement','refresh-error-same-form']:[])]){
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent('<main id="content"></main>');
   await page.addScriptTag({content:`
-   let me={user_id:'first',role:'owner'},view='purchasing',calls=[],messages=[],failures=[],products=[{id:'product',name:'Fixture product'}],seq=0,settled=0;
+   let me={user_id:'first',role:'owner'},view='purchasing',calls=[],messages=[],failures=[],refreshCalls=[],deferRefresh=false,products=[{id:'product',name:'Fixture product'}],seq=0,settled=0;
    crypto.randomUUID=()=> 'fixture-'+(++seq);
    const $=s=>document.querySelector(s),esc=s=>String(s??'');
    function message(s){messages.push(s)}function syncWorkspaceNavigation(){}
@@ -17,7 +17,7 @@ try{
    function salesProductChoices(){return '<option value="Fixture product"></option>'}
    function inventoryProductFromChoice(value){return products.find(p=>p.name===value)}
    function all(){return Promise.resolve([])}
-   const query={select(){return this},eq(){return this},maybeSingle(){return Promise.resolve({data:null})}};
+   const query={select(){return this},eq(){return this},maybeSingle(){return deferRefresh?new Promise((resolve,reject)=>refreshCalls.push({resolve,reject})):Promise.resolve({data:null})}};
    const client={from:()=>query,rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
   `});
   await page.addScriptTag({content:readFileSync(new URL('../purchasing.js',import.meta.url),'utf8')});
@@ -27,7 +27,24 @@ try{
   else await form.locator('[name="name"]').fill('Fixture supplier');
   await form.locator('[type="submit"]').click();await page.waitForFunction(()=>calls.length===1);
   assert.equal(await form.locator('[type="submit"]').isDisabled(),true);
-  if(scenario==='retry'){
+  if(scenario==='refresh-error-same-form'){
+   await page.evaluate(()=>{deferRefresh=true;calls[0].resolve({data:{id:calls[0].args.p_id,po_number:'PO123',version:1}})});
+   await page.waitForFunction(()=>refreshCalls.length===1);
+   await page.evaluate(()=>refreshCalls[0].reject(Error('Refresh unavailable')));
+   await page.waitForFunction(()=>settled===1);
+   await form.locator('[type="submit"]').click();
+   assert.equal(await page.evaluate(()=>calls.length),1,'confirmed save must not send another create after refresh failure');
+   await form.getByRole('alert').filter({hasText:'already saved'}).waitFor();
+  }else if(scenario==='refresh-error-replacement'){
+   await page.evaluate(()=>{deferRefresh=true;calls[0].resolve({data:{id:calls[0].args.p_id,po_number:'PO123',version:1}})});
+   await page.waitForFunction(()=>refreshCalls.length===1);
+   await page.locator('#newPurchase').click();await form.locator('[name="productChoice"]').fill('Keep replacement');
+   await page.evaluate(()=>refreshCalls[0].reject(Error('Old refresh failed')));
+   await page.waitForFunction(()=>settled===1);
+   assert.equal(await form.locator('[name="productChoice"]').inputValue(),'Keep replacement');
+   assert.equal(await form.getByRole('alert').textContent(),'');
+   assert.deepEqual(await page.evaluate(()=>failures),[]);
+  }else if(scenario==='retry'){
    await page.evaluate(()=>calls[0].reject(Error('Response lost')));
    await form.getByRole('alert').filter({hasText:'Response lost'}).waitFor();
    await form.locator('[type="submit"]').click();await page.waitForFunction(()=>calls.length===2);

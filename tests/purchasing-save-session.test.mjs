@@ -23,6 +23,11 @@ for(const [kind,field] of [['purchase','notes'],['supplier','name'],['supplier',
  });
 }
 for(const kind of ['purchase','supplier']){
+ test(`${kind} confirmed form cannot resubmit while awaiting list recovery`,async()=>{
+  const f=fixture(kind);f.form.dataset={id:'',version:'0'};
+  const first=f.save();f.calls[0].resolve({data:{id:f.calls[0].args.p_id,name:'Fixture',po_number:'PO123'}});await first;
+  await assert.rejects(f.save(),/already saved/);assert.equal(f.calls.length,1);
+ });
  for(const code of ['', 'P0001','40003','08007'])test(`${kind} returned ${code||'network'} error distinguishes uncertain save from database rejection`,async()=>{
   const f=fixture(kind);f.form.dataset={id:'',version:'0'};
   const first=f.save();f.calls[0].resolve({error:{code,message:'Save failed'}});await assert.rejects(first,/Save failed/);
