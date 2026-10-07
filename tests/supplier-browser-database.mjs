@@ -25,6 +25,11 @@ try{
   const result=tail.then(()=>db.transaction(async tx=>{
    await tx.exec('set local role authenticated');await tx.query("select set_config('test.actor',$1,true)",[actor]);
    if(request.kind==='read')return {data:(await tx.query('select * from suppliers order by supplier_number')).rows};
+   if(request.kind==='orders')return {orders:(await tx.query('select * from purchase_orders')).rows,lines:(await tx.query('select * from purchase_order_lines')).rows};
+   if(request.name==='save_purchase_request'){
+    const a=request.args;
+    return {data:(await tx.query('select * from save_purchase_request($1,$2,$3,$4,$5,$6,$7::jsonb)',[a.p_id,a.p_expected_version,a.p_supplier_id,a.p_currency,a.p_expected_on,a.p_notes,JSON.stringify(a.p_lines)])).rows[0]};
+   }
    assert.equal(request.name,'save_supplier');const a=request.args;submittedIds.push(a.p_id);
    return {data:(await tx.query('select * from save_supplier($1,$2,$3::jsonb)',[a.p_id,a.p_expected_version,JSON.stringify(a.p_fields)])).rows[0]};
   }));tail=result.catch(()=>{});return result.then(value=>{
@@ -95,6 +100,80 @@ try{
  await page.evaluate(async()=>{supplierEditing=null;await purchasingWorkspace()});
  await page.locator('[data-supplier-edit]').click();
  assert.equal(await page.locator('[name="phone"]').inputValue(),'SECOND-EMPLOYEE');
+ // Extend into actual purchase editor/save code. Catalogue helpers and loader are fixture adapters.
+ const productId='00000000-0000-4000-8000-000000000200';
+ await db.query('insert into products(id) values($1)',[productId]);
+ await page.addScriptTag({content:`
+ function inventoryOption(id,label,selected){return '<option value="'+id+'" '+(selected?'selected':'')+'>'+label+'</option>'}
+ function inventoryProductChoice(p){return p.name}
+ function inventoryProductFromChoice(choice){return products.find(p=>p.name===choice)}
+ function salesProductChoices(){return products.map(p=>'<option value="'+p.name+'"></option>').join('')}
+ function employeeName(){return 'Fictional employee'}
+ `});
+ await page.evaluate(id=>{
+  products=[{id,name:'Fictional test consumable'}];failures=[];settled=0;
+  purchaseRefreshOne=async()=>{const r=await supplierBridge({kind:'orders'});if(r.error)throw Error(r.error.message);purchaseOrders=r.orders;purchaseLines=r.lines;renderPurchasing()};
+  supplierEditing='';purchaseSection='orders';purchaseEditing='new';renderPurchasing();
+ },productId);
+ await page.locator('[name="supplierId"]').selectOption(updated.id);
+ await page.locator('[name="productChoice"]').fill('Fictional test consumable');
+ await page.locator('[name="quantity"]').fill('7');
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===1);
+ assert.deepEqual(await page.evaluate(()=>failures),[]);
+ const order=(await db.query('select * from purchase_orders')).rows;
+ assert.equal(order.length,1);assert.equal(order[0].requested_by,actor);assert.equal(order[0].status,'requested');
+ assert.equal((await db.query('select * from purchase_order_lines')).rows[0].quantity,7);
+ await page.locator('[data-purchase-edit]').click();
+ assert.equal(await page.locator('[name="quantity"]').inputValue(),'7');
+ await page.locator('[name="quantity"]').fill('9');
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===2);
+ assert.deepEqual(await page.evaluate(()=>failures),[]);
+ assert.equal((await db.query('select * from purchase_orders')).rows[0].version,2);
+ assert.equal((await db.query('select * from purchase_order_lines')).rows[0].quantity,9);
+ // Product invalidated after the form opened: RPC must roll back header, lines and event.
+ await page.locator('[data-purchase-edit]').click();
+ const beforeRejected={
+  orders:(await db.query('select * from purchase_orders')).rows,
+  lines:(await db.query('select * from purchase_order_lines')).rows,
+  events:(await db.query('select * from purchase_order_events order by id')).rows
+ };
+ await db.query('update products set deleted_at=now() where id=$1',[productId]);
+ await page.locator('[name="quantity"]').fill('11');
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===3);
+ assert.match(await page.locator('#purchaseFormError').textContent(),/needs an active product/);
+ assert.equal(await page.locator('#purchaseForm button[type="submit"]').isEnabled(),true);
+ assert.equal(await page.locator('[name="quantity"]').inputValue(),'11');
+ assert.deepEqual({
+  orders:(await db.query('select * from purchase_orders')).rows,
+  lines:(await db.query('select * from purchase_order_lines')).rows,
+  events:(await db.query('select * from purchase_order_events order by id')).rows
+ },beforeRejected);
+ await db.query('update products set deleted_at=null where id=$1',[productId]);
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===4);
+ assert.equal((await db.query('select * from purchase_orders')).rows[0].version,3);
+ assert.equal((await db.query('select * from purchase_order_lines')).rows[0].quantity,11);
+ assert.equal((await db.query('select * from purchase_order_events')).rows.length,beforeRejected.events.length+1);
+ // Session still looks active in the browser, but server-side membership has been revoked.
+ await page.locator('[data-purchase-edit]').click();
+ const beforeRevocation={orders:(await db.query('select * from purchase_orders')).rows,lines:(await db.query('select * from purchase_order_lines')).rows,events:(await db.query('select * from purchase_order_events order by id')).rows};
+ await db.query('update staff set active=false where user_id=$1',[actor]);
+ await page.locator('[name="quantity"]').fill('13');
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===5);
+ assert.match(await page.locator('#purchaseFormError').textContent(),/Active staff access is required/);
+ assert.equal(await page.locator('#purchaseForm button[type="submit"]').isEnabled(),true);
+ assert.deepEqual({orders:(await db.query('select * from purchase_orders')).rows,lines:(await db.query('select * from purchase_order_lines')).rows,events:(await db.query('select * from purchase_order_events order by id')).rows},beforeRevocation);
+ const deniedRead=await page.evaluate(()=>supplierBridge({kind:'orders'}));
+ assert.deepEqual(deniedRead.orders,[]);assert.deepEqual(deniedRead.lines,[]);
+ await db.query('update staff set active=true where user_id=$1',[actor]);
+ // A newer save makes the still-open form stale; it must not overwrite the newer quantity.
+ await db.transaction(async tx=>{
+  await tx.exec('set local role authenticated');await tx.query("select set_config('test.actor',$1,true)",[actor]);
+  await tx.query('select * from save_purchase_request($1,$2,$3,$4,$5,$6,$7::jsonb)',[order[0].id,3,updated.id,'TZS',null,'',JSON.stringify([{product_id:productId,quantity:15}])]);
+ });
+ await page.locator('#purchaseForm button[type="submit"]').click();await page.waitForFunction(()=>settled===6);
+ assert.match(await page.locator('#purchaseFormError').textContent(),/Purchase request changed; refresh and compare/);
+ assert.equal((await db.query('select * from purchase_orders')).rows[0].version,4);
+ assert.equal((await db.query('select * from purchase_order_lines')).rows[0].quantity,15);
  assert.deepEqual(errors,[]);
- console.log('PASS supplier create/reopen/edit, second-actor read/write, stale form rejection and refresh. No outbound traffic. Loader stubbed; not real auth, full purchasing, concurrency or production acceptance.');
+ console.log('PASS supplier retry/stale recovery and purchase create/edit/SQL rollback/retry. No outbound traffic. Loaders stubbed; not real auth, full purchasing, concurrency or production acceptance.');
 }finally{if(browser)await browser.close();await db.close()}
