@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 try{
- for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement']){
+ for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement','uncertain-transport','uncertain-response']){
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent('<main id="content"></main>');
   await page.addScriptTag({content:`
    let me={user_id:'first',role:'owner'},view='purchasing',calls=[],messages=[],failures=[],products=[{id:'product',name:'Fixture product'}],seq=0,settled=0;
@@ -35,6 +35,20 @@ try{
    await page.evaluate(()=>calls[1].resolve({data:{id:calls[1].args.p_id,name:'Fixture supplier',po_number:'PO123'}}));
    await page.waitForFunction(()=>messages.length===1);
    assert.equal(await form.count(),0);
+  }else if(scenario.startsWith('uncertain-')){
+   await page.evaluate(scenario=>scenario==='uncertain-transport'?calls[0].reject(Error('Response lost')):calls[0].resolve({error:{code:'',message:'Response lost'}}),scenario);
+   await page.waitForFunction(()=>settled===1);
+   const field=form.locator(kind==='purchase'?'[name="quantity"]':'[name="phone"]'),original=await field.inputValue();
+   await field.fill(kind==='purchase'?'7':'12345');await form.locator('[type="submit"]').click();
+   await form.getByRole('alert').filter({hasText:'The previous save is unconfirmed'}).waitFor();
+   await page.waitForFunction(()=>settled===2);
+   assert.equal(await page.evaluate(()=>calls.length),1);assert.equal(await page.evaluate(()=>messages.length),0);
+   assert.equal(await form.locator('[type="submit"]').isDisabled(),false);
+   await field.fill(original);await form.locator('[type="submit"]').click();await page.waitForFunction(()=>calls.length===2);
+   assert.equal(await page.evaluate(()=>JSON.stringify(calls[0].args)===JSON.stringify(calls[1].args)),true);
+   await page.evaluate(()=>calls[1].resolve({data:{id:calls[1].args.p_id,name:'Fixture supplier',po_number:'PO123'}}));
+   await page.waitForFunction(()=>settled===3);
+   assert.equal(await page.evaluate(()=>messages.length),1);assert.equal(await form.count(),0);
   }else{
    await page.locator(kind==='purchase'?'#closePurchaseEditor':'#closeSupplierEditor').click();
    await page.locator(kind==='purchase'?'#newPurchase':'#newSupplier').click();

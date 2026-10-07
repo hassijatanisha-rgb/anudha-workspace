@@ -3,13 +3,35 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function fixture(kind){
- const form={dataset:{id:'record',version:'1'},isConnected:true},calls=[],messages=[];let sequence=0;
- const context=vm.createContext({me:{user_id:'first'},view:'purchasing',activeForm:form,$:()=>context.activeForm,crypto:{randomUUID:()=>`fixture-${++sequence}`},message:s=>messages.push(s),FormData:class{get(k){return k==='name'?'Fixture supplier':''}has(){return false}},client:{rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))}});
+ const form={dataset:{id:'record',version:'1'},isConnected:true,fields:{name:'Fixture supplier'}},calls=[],messages=[];let sequence=0;
+ const context=vm.createContext({me:{user_id:'first'},view:'purchasing',activeForm:form,$:()=>context.activeForm,crypto:{randomUUID:()=>`fixture-${++sequence}`},message:s=>messages.push(s),FormData:class{get(k){return form.fields[k]||''}has(){return false}},client:{rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))}});
  vm.runInContext(readFileSync(new URL('../purchasing.js',import.meta.url),'utf8'),context);
  vm.runInContext("purchaseFormValues=()=>({lines:[],notes:''});purchaseRefreshOne=async()=>{};purchasingWorkspace=async()=>{}",context);
  return {context,form,calls,messages,get:code=>vm.runInContext(code,context),save:()=>kind==='purchase'?context.savePurchaseForm(form):context.saveSupplierForm(form)};
 }
+for(const [kind,field] of [['purchase','notes'],['supplier','name'],['supplier','phone']]){
+ test(`${kind} changed ${field} after uncertain save cannot send a different request`,async()=>{
+  const f=fixture(kind);f.form.dataset={id:'',version:'0'};
+  const first=f.save();f.calls[0].reject(Error('Response lost'));await assert.rejects(first,/Response lost/);
+  const originalId=f.calls[0].args.p_id;
+  if(kind==='purchase')f.get("purchaseFormValues=()=>({lines:[],notes:'Changed'})");else f.form.fields[field]='Changed';
+  const retry=f.save();
+  if(f.calls[1])f.calls[1].resolve({data:{id:f.calls[1].args.p_id,name:'Fixture',po_number:'PO123'}});
+  await assert.rejects(retry,/previous save is unconfirmed/i);
+  assert.equal(f.calls.length,1);assert.equal(f.messages.length,0);
+  assert.equal(f.get(kind==='purchase'?'purchasePendingSave.id':'supplierPendingSave.id'),originalId);
+ });
+}
 for(const kind of ['purchase','supplier']){
+ for(const code of ['', 'P0001','40003','08007'])test(`${kind} returned ${code||'network'} error distinguishes uncertain save from database rejection`,async()=>{
+  const f=fixture(kind);f.form.dataset={id:'',version:'0'};
+  const first=f.save();f.calls[0].resolve({error:{code,message:'Save failed'}});await assert.rejects(first,/Save failed/);
+  if(kind==='purchase')f.get("purchaseFormValues=()=>({lines:[],notes:'Corrected'})");else f.form.fields.phone='Corrected';
+  const retry=f.save();
+  if(f.calls[1])f.calls[1].resolve({data:{id:f.calls[1].args.p_id,name:'Fixture',po_number:'PO123'}});
+  if(code==='P0001'){await retry;assert.equal(f.calls.length,2);assert.equal(f.messages.length,1)}
+  else{await assert.rejects(retry,/previous save is unconfirmed/i);assert.equal(f.calls.length,1)}
+ });
  test(`${kind} current save confirms once`,async()=>{const f=fixture(kind),p=f.save();f.calls[0].resolve({data:{id:'record',name:'Fixture',po_number:'PO123'}});await p;assert.equal(f.messages.length,1)});
  test(`${kind} replacement form cannot receive old success`,async()=>{const f=fixture(kind),p=f.save();f.context.activeForm={};f.form.isConnected=false;f.calls[0].resolve({data:{id:'record',name:'Fixture',po_number:'PO123'}});await p;assert.equal(f.messages.length,0)});
  test(`${kind} same-ID session replacement cannot receive success`,async()=>{const f=fixture(kind),p=f.save();f.context.me={user_id:'first'};f.calls[0].resolve({data:{id:'record',name:'Fixture',po_number:'PO123'}});await p;assert.equal(f.messages.length,0)});

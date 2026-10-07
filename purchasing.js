@@ -81,15 +81,16 @@ async function savePurchaseForm(form){
  const current=()=>sessionCurrent()&&form.isConnected&&$('#purchaseForm')===form;
  if(!current())return;
  const values=purchaseFormValues(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),key=JSON.stringify(values);
- // One request ID per unchanged form until the server confirms it, so a retry cannot create a duplicate order.
+ // An uncertain write must be reconciled with its original content, never retried as a new order.
+ if(!id&&purchasePendingSave?.uncertain&&purchasePendingSave.key!==key)throw Error('The previous save is unconfirmed. Restore the original details and retry, or refresh and check the saved request before editing it.');
  if(!id&&purchasePendingSave?.key!==key)purchasePendingSave={key,id:crypto.randomUUID()};
- const requestId=id||purchasePendingSave.id;
+ const requestId=id||purchasePendingSave.id,pending=id?null:purchasePendingSave;
  let result;
- try{result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});}catch(error){if(!current())return;throw error;}
+ try{result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}
  if(!current())return;
- if(result.error)throw Error(result.error.message);
- const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
+ if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
+ const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
+ if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
  purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchaseRefreshOne(saved.id);if(sessionCurrent())message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
 }
 function supplierEditor(row){
@@ -103,14 +104,16 @@ async function saveSupplierForm(form){
  const f=new FormData(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),existing=suppliers.find(s=>s.id===id);
  const fields={name:String(f.get('name')||'').trim(),country:f.get('country')||'',contact_name:f.get('contact_name')||'',phone:f.get('phone')||'',email:String(f.get('email')||'').trim(),tin:f.get('tin')||'',payment_terms:f.get('payment_terms')||'',notes:f.get('notes')||'',active:f.has('active')?f.get('active')==='true':(existing?.active??true)};
  if(fields.name.length<2)throw Error('Enter the supplier name.');
- if(!id&&supplierPendingSave?.name!==fields.name)supplierPendingSave={name:fields.name,id:crypto.randomUUID()};
- const requestId=id||supplierPendingSave.id;
+ const key=JSON.stringify(fields);
+ if(!id&&supplierPendingSave?.uncertain&&supplierPendingSave.key!==key)throw Error('The previous save is unconfirmed. Restore the original details and retry, or refresh and check the saved supplier before editing it.');
+ if(!id&&supplierPendingSave?.key!==key)supplierPendingSave={key,id:crypto.randomUUID()};
+ const requestId=id||supplierPendingSave.id,pending=id?null:supplierPendingSave;
  let result;
- try{result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});}catch(error){if(!current())return;throw error;}
+ try{result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}
  if(!current())return;
- if(result.error)throw Error(result.error.message);
- const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
+ if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
+ const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
+ if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
  supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);if(sessionCurrent())message(`${saved.name} saved.`);
 }
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
