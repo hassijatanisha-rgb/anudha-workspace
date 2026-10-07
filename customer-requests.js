@@ -65,7 +65,7 @@ function renderCustomerRequests(){
  ${rows.map(requestCard).join('')||`<p class="muted">${requestRows.length?'Nothing here.':'No requests yet. They appear here as soon as someone sends one from the website.'}</p>`}</section>`;
  $('#requestRefresh').onclick=()=>run(()=>customerRequestsWorkspace(true));
  document.querySelectorAll('[data-request-filter]').forEach(button=>button.onclick=()=>{requestFilter=button.dataset.requestFilter;renderCustomerRequests();});
- $('#requestSearch').oninput=event=>{requestSearch=event.target.value;renderSearchPreservingPosition(event.target,renderCustomerRequests);};
+ $('#requestSearch').oninput=event=>{requestSearch=event.target.value;renderSearchPreservingPosition(event.target,renderCustomerRequests,150);};
  document.querySelectorAll('[data-request-action]').forEach(button=>button.onclick=()=>openRequestAction(requestRows.find(row=>row.id===button.dataset.id),button.dataset.requestAction));
  document.querySelectorAll('[data-request-lead]').forEach(button=>button.onclick=()=>{if(typeof focusLead==='function'){focusLead(button.dataset.requestLead);render();}});
 }

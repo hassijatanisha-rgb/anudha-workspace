@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(role='staff',user='a'){
  const ctx=vm.createContext({me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date});
- vm.runInContext(readFileSync(new URL('../purchasing.js',import.meta.url),'utf8'),ctx);
+ for(const file of ['row-index.js','purchasing.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  vm.runInContext(`suppliers=[{id:'s1',name:'Fixture Medical',active:true}];purchaseLines=[{purchase_order_id:'o1',line_number:1,product_id:'p1',quantity:10,unit_price_minor:500},{purchase_order_id:'o1',line_number:2,product_id:'p2',quantity:2,unit_price_minor:1000},{purchase_order_id:'o2',line_number:1,product_id:'p2',quantity:5,unit_price_minor:null}];`,ctx);
  return ctx;
 }

@@ -10,7 +10,9 @@ function teamTaskOverdue(row,now=Date.now()){return row.status==='open'&&Date.pa
 function teamTaskOrder(rows){return [...rows].sort((a,b)=>Number(a.status!=='open')-Number(b.status!=='open')||(teamTaskRank[a.urgency]??3)-(teamTaskRank[b.urgency]??3)||Date.parse(a.due_at)-Date.parse(b.due_at)||String(a.id).localeCompare(String(b.id)))}
 function teamTaskUrgencyLabel(key){return teamTaskUrgency.find(([value])=>value===key)?.[1]||key}
 function teamTaskDue(row){return teamTaskTime(row.due_at)}
-function teamTaskTime(value){return new Date(value).toLocaleString(undefined,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+// One formatter for every card: toLocaleString with options builds a new one on each call, which was most of the page.
+const teamTaskTimeFormat=new Intl.DateTimeFormat(undefined,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+function teamTaskTime(value){const date=new Date(value);return isNaN(date)?date.toLocaleString():teamTaskTimeFormat.format(date)}
 function teamTaskCanMove(row){return row.status==='open'&&row.assignee_user_id===me?.user_id&&(row.reschedule_count||0)<teamTaskMoveLimit}
 function teamTaskHistory(moves){return moves.length?`<details class="team-task-moves"><summary>Reschedule history · ${moves.length}</summary><ol>${moves.map(e=>`<li>${esc(teamTaskTime(e.old_due_at))} → <strong>${esc(teamTaskTime(e.new_due_at))}</strong> · ${esc(e.note)} <small class="muted">${esc(employeeName(e.actor_user_id))}, ${esc(new Date(e.created_at).toLocaleString())}</small></li>`).join('')}</ol></details>`:''}
 function teamTaskCard(row){

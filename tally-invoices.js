@@ -132,7 +132,7 @@ function bindTallyInvoices(){
  $('#tallyInvoiceRefresh').onclick=()=>run(()=>tallyInvoicesWorkspace(true));
  const file=$('#tallyInvoiceFile');if(file)file.onchange=()=>{const chosen=file.files[0];if(chosen)run(async()=>{const summary=await importTallyInvoiceFile(chosen);await tallyInvoicesWorkspace(true);message(summary);});};
  document.querySelectorAll('[data-tally-invoice-filter]').forEach(b=>b.onclick=()=>{tallyInvoiceFilter=b.dataset.tallyInvoiceFilter;tallyInvoicePage=0;renderTallyInvoices();});
- $('#tallyInvoiceSearch').oninput=e=>{tallyInvoiceSearch=e.target.value;tallyInvoicePage=0;renderSearchPreservingPosition(e.target,renderTallyInvoices);};
+ $('#tallyInvoiceSearch').oninput=e=>{tallyInvoiceSearch=e.target.value;tallyInvoicePage=0;renderSearchPreservingPosition(e.target,renderTallyInvoices,150);};
  if($('#tallyInvoicePrev'))$('#tallyInvoicePrev').onclick=()=>{tallyInvoicePage--;renderTallyInvoices();};if($('#tallyInvoiceNext'))$('#tallyInvoiceNext').onclick=()=>{tallyInvoicePage++;renderTallyInvoices();};
  document.querySelectorAll('[data-tally-invoice-action]').forEach(b=>b.onclick=()=>openTallyInvoiceAction(tallyInvoices.find(r=>r.id===b.dataset.id),b.dataset.tallyInvoiceAction));
 }

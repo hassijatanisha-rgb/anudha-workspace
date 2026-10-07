@@ -26,7 +26,7 @@ function purchaseOverdue(order,today=purchaseToday()){return order.status==='ord
 function purchaseSupplier(id){return suppliers.find(s=>s.id===id);}
 function purchaseProductName(id){const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
 function purchaseMoney(minor,currency){return minor==null?'':new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS'}).format(Number(minor)/100);}
-function purchaseOrderLines(orderId){return purchaseLines.filter(line=>line.purchase_order_id===orderId).sort((a,b)=>a.line_number-b.line_number);}
+function purchaseOrderLines(orderId){return [...rowsWhere(purchaseLines,'purchase_order_id',orderId)].sort((a,b)=>a.line_number-b.line_number);}
 function purchaseVisibleOrders(orders,{filter,search,today=purchaseToday()}){
  const q=String(search||'').trim().toLowerCase();
  return orders.filter(order=>filter==='all'||(filter==='finished'?['closed','cancelled'].includes(order.status):order.status===filter))
@@ -154,7 +154,7 @@ function bindPurchasing(){
  const supplierForm=$('#supplierForm');
  if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#supplierFormError').textContent='';
   run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
- $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
+ $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing,150);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});
  document.querySelectorAll('[data-purchase-edit]').forEach(button=>button.onclick=()=>{purchaseEditing=button.dataset.purchaseEdit;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
