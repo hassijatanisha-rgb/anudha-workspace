@@ -38,7 +38,7 @@ test('overdue only applies to ordered purchases past their expected date',()=>{
  assert.equal(ctx.purchaseOverdue({status:'ordered',expected_on:null},'2026-09-30'),false);
 });
 test('menu, router, sign-out, pending link and script order are wired',()=>{
- const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.html');
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('workspace-navigation.js'),/\['Purchasing','purchasing','orders'\],\['Suppliers','purchasing','suppliers'\]/);
  assert.match(read('app.js'),/view==='purchasing'\)return purchasingWorkspace\(\)/);assert.match(read('app.js'),/typeof clearPurchasing==='function'\)clearPurchasing\(\)/);
  assert.match(read('pending-stock.js'),/typeof startPurchaseFromPending==='function'/);

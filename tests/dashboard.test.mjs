@@ -104,7 +104,7 @@ test('opening a card sets the same screen state as its menu entry',async()=>{
  assert.deepEqual(calls,['lead:leads','render','request:inquiries','render','prefill','render','render','render','profile:clients']);
 });
 test('Dashboard is wired in: first menu entry, its own screen, cleared on sign-out, loaded before app.js',()=>{
- const nav=read('workspace-navigation.js'),app=read('app.js'),html=read('index.html');
+ const nav=read('workspace-navigation.js'),app=read('app.js'),html=read('index.src.html');
  assert.match(nav,/\{name:'Main',tone:'main',items:\[\n\s+\['Dashboard','dashboard'\],/);
  assert.match(app,/view==='dashboard'\)return dashboardWorkspace\(\)/);
  assert.match(app.split('\n').find(line=>line.startsWith('function clear()')),/typeof clearDashboard==='function'\)clearDashboard\(\)/);

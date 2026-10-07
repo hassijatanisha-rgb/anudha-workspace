@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const profiles=fs.readFileSync(new URL('../client-profile-pages.js',import.meta.url),'utf8');
-const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const html=fs.readFileSync(new URL('../index.src.html',import.meta.url),'utf8');
 
 for(const source of [app,profiles]){
  assert.match(source,/\[\['all','All contacts'\],\['revision','Needs fixing'\]\]/);

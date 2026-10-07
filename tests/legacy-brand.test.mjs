@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 test('header uses the real Anudha logo and loads its scoped theme',()=>{
- const html=read('index.html');
+ const html=read('index.src.html');
  assert.match(html,/<img class="brand-logo" src="assets\/anudha-logo.svg" alt="Anudha Limited"/);
  assert.match(html,/legacy-brand.css\?v=/);
  assert.doesNotMatch(html,/<span class="logo">A<\/span>/);
