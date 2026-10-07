@@ -64,7 +64,7 @@ period: the lists have status tabs but no date filter.
 ## Team tasks (owner and department heads only)
 
 Data: `public.team_task_counts(from, to)` and, when a name is pressed, `public.team_member_tasks(user_id, from, to)`,
-migration `202610070068_team_task_counts.sql`. These are `security definer` because `team_tasks` stays readable only
+migration `202610070070_team_task_counts.sql`. These are `security definer` because `team_tasks` stays readable only
 by the giver, the person given the task and the owner; both check who is asking first (`can_see_team_member`): the owner
 sees every active person, a head sees active people in their own (named) department, themself included, never the
 owner; staff and switched-off heads are refused.
