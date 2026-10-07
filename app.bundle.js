@@ -3701,6 +3701,7 @@ async function showAccountingNavigation(){
  item.hidden=true;
  try{const result=await client.rpc('accounting_access');item.hidden=result?.data!==true}catch{item.hidden=true}
 }
+let navWhileBusy=null;
 function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
@@ -3714,7 +3715,9 @@ function installWorkspaceNavigation(){
  }).observe(header);
  document.addEventListener('click',event=>{
   const button=event.target.closest('#nav [data-view]');
-  if(!button||busy)return;
+  // A menu press while a screen is still loading used to be dropped silently; it is kept and done when loading ends.
+  if(button&&busy){navWhileBusy=button;return;}
+  if(!button)return;
   const section=button.dataset.workspaceSection;
  // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
  if(typeof message==='function')message('');
@@ -4955,7 +4958,9 @@ function friendlyError(e){
  if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. Nothing more was saved. Check your connection and try again.';
  return text||'Something went wrong. Please retry.';
 }
-async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false}}
+async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
+// The menu item pressed while the last action was still running (workspace-navigation.js), pressed again now.
+function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(!button)return;navWhileBusy=null;if(button.isConnected&&!button.hidden)button.click()}
 $('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};
 $('#closeEditor').onclick=()=>$('#editor').close();
 document.addEventListener('click',e=>{

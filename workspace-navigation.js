@@ -29,6 +29,7 @@ async function showAccountingNavigation(){
  item.hidden=true;
  try{const result=await client.rpc('accounting_access');item.hidden=result?.data!==true}catch{item.hidden=true}
 }
+let navWhileBusy=null;
 function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
@@ -42,7 +43,9 @@ function installWorkspaceNavigation(){
  }).observe(header);
  document.addEventListener('click',event=>{
   const button=event.target.closest('#nav [data-view]');
-  if(!button||busy)return;
+  // A menu press while a screen is still loading used to be dropped silently; it is kept and done when loading ends.
+  if(button&&busy){navWhileBusy=button;return;}
+  if(!button)return;
   const section=button.dataset.workspaceSection;
  // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
  if(typeof message==='function')message('');
