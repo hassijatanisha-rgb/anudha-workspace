@@ -62,6 +62,8 @@ async function teamTasksWorkspace(){
  if(typeof renderMyHandoffs==='function')renderMyHandoffs(steps);
  if(typeof renderWorkNotices==='function')renderWorkNotices(steps).catch(()=>{});
  if(me?.role==='owner'&&typeof renderUnownedWork==='function')renderUnownedWork(steps).catch(()=>{});
+ // Everything the bell points to is on this page, so opening it counts as seeing it.
+ if(typeof bellMarkSeen==='function'){bellMarkSeen(actor,['tasks','work','results']);refreshNotificationBell(true).catch(()=>{});}
 }
 function teamTaskDefaultDue(){const d=new Date();if(d.getHours()>=16)d.setDate(d.getDate()+1);d.setHours(17,0,0,0);return d}
 function teamTaskLocalInput(date){return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)}
