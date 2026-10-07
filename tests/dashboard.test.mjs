@@ -119,7 +119,7 @@ test('the landing view follows the address: client links still open the client p
 });
 test('migration 067: one security invoker read, fixed search path, signed-in staff only, next number in sequence',()=>{
  const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort();
- assert.equal(files.at(-1),'202610060067_activity_dashboard.sql');assert.ok(files.at(-2)<files.at(-1));
+ const at=files.indexOf('202610060067_activity_dashboard.sql');assert.ok(at>0);assert.match(files[at-1],/^\d{8}0066_/);
  const sql=read('supabase/migrations/202610060067_activity_dashboard.sql');
  assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);
  assert.match(sql,/returns jsonb language plpgsql stable security invoker set search_path=public,pg_temp/);

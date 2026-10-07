@@ -12,7 +12,7 @@ create function public.inventory_owner() returns boolean language sql stable sec
 insert into auth.users values('${owner}'),('${hod}'),('${worker}'),('${other}'),('${gone}');
 insert into public.staff values('${owner}','owner',true),('${hod}','staff',true),('${worker}','staff',true),('${other}','staff',true),('${gone}','staff',false);
 grant usage on schema public to authenticated;grant usage on schema auth to authenticated;grant select on auth.users to authenticated;`);
-await db.exec(mig('202610010056_team_tasks.sql'));
+await db.exec(mig('202610010056_team_tasks.sql'));await db.exec(mig('202610070068_task_reschedule.sql'));
 const as=a=>db.exec(`select set_config('test.actor','${a||''}',false)`);
 const soon=new Date(Date.now()+86400000).toISOString();
 const save=(tid,v,title,urgency,due,who)=>db.query('select * from public.save_team_task($1,$2,$3,$4,$5,$6,$7)',[tid,v,title,'Details',urgency,due,who]).then(r=>r.rows[0]);
