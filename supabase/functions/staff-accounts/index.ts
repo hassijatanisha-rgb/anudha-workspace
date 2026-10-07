@@ -8,7 +8,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const DOMAIN = 'staff.anudha.com';
 const ALLOWED_ORIGINS = ['https://hassijatanisha-rgb.github.io'];
 const ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const AREAS = ['leads', 'proformas', 'deliveries', 'service', 'purchasing', 'stock', 'stock_count', 'travel', 'reports'];
+const AREAS = ['leads', 'proformas', 'deliveries', 'service', 'purchasing', 'stock', 'stock_count', 'travel', 'reports', 'records'];
 const DEPARTMENTS = ['', 'sales', 'accounts', 'stores', 'service', 'marketing', 'management'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
