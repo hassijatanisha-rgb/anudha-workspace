@@ -9,7 +9,10 @@ no amount, price or value column is read.
 
 **Days** are Dar es Salaam days (Africa/Dar_es_Salaam, UTC+3). "Today" is the server's date in Dar es Salaam. A period
 runs from 00:00 on its first day to 00:00 after its last day, Dar es Salaam time. Periods are at most one year.
-Presets: Today, Yesterday, This week (Monday to today), This month (1st to today), Custom range.
+One period, chosen with a button at the top of the page, feeds Periodic, Result and Team tasks: Today (the default),
+This week (Monday to today), This month (1st to today), This quarter (1 Jan/Apr/Jul/Oct to today), This year (1 January
+to today) or Custom (two dates). The choice is kept per person on that device (`localStorage`
+`anudha.dashboard.period.<user id>`); blocked storage just means the page starts on Today.
 
 **Access** (from migrations 060 and 062): Leads = `has_access('leads')`; Service = `has_access('service')`;
 Quotes = `has_access('proformas')`; Accounts and contacts = any active staff; team tasks = the person given the task,
@@ -30,7 +33,7 @@ the person who gave it, or the owner; order steps (handoffs) = any active staff.
 | Contacts | `contacts` not deleted, status not `incorrect` | Active staff | Not clickable (no all-contacts list) |
 | Tasks | `team_tasks` with status `open` | Own tasks; owner sees all | My tasks |
 
-## Periodic (created in the chosen period, default Yesterday)
+## Periodic (created in the chosen period)
 
 None of these are clickable: no existing list can be filtered by creation date.
 
@@ -43,7 +46,7 @@ None of these are clickable: no existing list can be filtered by creation date.
 | Webqueries | `customer_requests.created_at` in the period, kind `inquiry` or `quote` | Leads |
 | Tasks | `team_tasks.created_at` in the period | Own tasks; owner sees all |
 
-## Result (finished in the chosen period, default Today)
+## Result (finished in the chosen period)
 
 | Card | Table and filter | Access | Click opens |
 |---|---|---|---|
@@ -57,6 +60,32 @@ None of these are clickable: no existing list can be filtered by creation date.
 
 Lists opened from Won, Lost and Resolved show all such records from the last 6 months, not only those in the chosen
 period: the lists have status tabs but no date filter.
+
+## Team tasks (owner and department heads only)
+
+Data: `public.team_task_counts(from, to)` and, when a name is pressed, `public.team_member_tasks(user_id, from, to)`,
+migration `202610070070_team_task_counts.sql`. These are `security definer` because `team_tasks` stays readable only
+by the giver, the person given the task and the owner; both check who is asking first (`can_see_team_member`): the owner
+sees every active person, a head sees active people in their own (named) department, themself included, never the
+owner; staff and switched-off heads are refused.
+
+| Number | Filter (tasks given to the person) |
+|---|---|
+| Open | status `open` and `due_at` before the end of the period (older overdue tasks included) |
+| Completed | status `done`, `closed_at` in the period |
+| Late | still open after `due_at`, or done in the period after `due_at` |
+
+Cancelled tasks are not counted. Order steps (`work_assignments`) are not part of these numbers.
+Tests: `tests/sql/team-task-counts.sql` (who sees whom, counts, refusals).
+
+## Notification bell (header)
+
+`notification-bell.js`. Three count-only reads (`head: true`) under the person's own read rules, refreshed on every
+page change (at most every 10 seconds) and every 2 minutes; the short list (5 per kind) loads only when the bell is
+pressed. Tasks given to me by someone else and still open; open work (`work_assignments`) handed to me by someone
+else; tasks I gave someone else that they finished or that were cancelled, in the last 7 days. "Seen" is a time per
+kind kept on the device (`anudha.bell.seen.<user id>`); opening My tasks marks all three seen, pressing an item marks
+its kind seen. Device clocks that run fast can hide an item until the next new one arrives.
 
 ## Cards from the other CRM that are left out
 

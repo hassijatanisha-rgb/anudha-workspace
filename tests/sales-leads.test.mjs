@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
  const ctx=vm.createContext({orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Intl,Number,String});
@@ -30,10 +30,10 @@ test('client label prefers the client record, then caller details',()=>{
  assert.equal(ctx.leadClientLabel({}),'Unknown caller');
 });
 test('actions follow the stage rules',()=>{
- const ctx=load(),actions=stage=>[...ctx.leadActions(row('x',stage)).matchAll(/data-lead-(?:action="([a-z]+)"|(proforma|edit|history))/g)].map(m=>m[1]||m[2]);
+ const ctx=load(),actions=stage=>[...ctx.leadActions(row('x',stage)).matchAll(/data-lead-(?:action="([a-z]+)"|(proforma|edit|history|handover))/g)].map(m=>m[1]||m[2]);
  assert.deepEqual(actions('inquiry'),['edit','qualify','lost','history']);
- assert.deepEqual(actions('lead'),['edit','assign','proforma','won','lost','history']);
- assert.deepEqual(actions('opportunity'),['edit','assign','proforma','won','lost','history']);
+ assert.deepEqual(actions('lead'),['edit','handover','proforma','won','lost','history']);
+ assert.deepEqual(actions('opportunity'),['edit','handover','proforma','won','lost','history']);
  assert.deepEqual(actions('won'),['history']);
  assert.deepEqual(actions('lost'),['reopen','history']);
 });
@@ -65,4 +65,65 @@ test('after a save or step only that lead is read again',async()=>{
  await ctx.leadRefreshOne('2');
  assert.equal(asked,1);
  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(leadRows.map(r=>r.id+":"+r.stage).sort())',ctx)),['1:lead','2:won']);
+});
+test('the next step reads in words, with late and today marked',()=>{
+ const ctx=load(),step=(extra,today='2026-10-07')=>JSON.parse(JSON.stringify(ctx.leadNextStep(row('n','lead',extra),today)));
+ assert.deepEqual(step({next_action:'Call Mr Bob',next_action_on:'2026-10-08'}),{state:'planned',text:'Call Mr Bob',when:'Thu 8 Oct'});
+ assert.deepEqual(step({next_action:'Call Mr Bob',next_action_on:'2026-10-07'}),{state:'today',text:'Call Mr Bob',when:'Today'});
+ assert.equal(step({next_action:'Send price',next_action_on:'2026-10-01'}).state,'late');
+ assert.equal(step({next_action_on:'2026-10-09'}).text,'Follow up');
+ assert.equal(step({}).state,'none');
+ assert.equal(ctx.leadNextStep(row('w','won',{next_action:'x'})),null,'closed leads have no next step');
+ vm.runInContext('salesProformas=[]',ctx);
+ const card=ctx.leadCard(row('c','lead',{next_action:'Call Mr Bob',next_action_on:'2099-10-10',caller_name:'Stella',caller_phone:'0712 000 111',caller_role:'procurement'}));
+ assert.match(card,/class="lead-next-step lead-next-planned"><small>Next step<\/small><strong>Call Mr Bob · Sat 10 Oct<\/strong>/);
+ assert.ok(card.indexOf('lead-next-step')<card.indexOf('class="details"'),'next step sits above the details');
+ assert.match(card,/Spoke to<\/small> <strong>Stella<\/strong> · 0712 000 111 <span class="tag lead-role lead-role-procurement">Procurement \/ purchasing<\/span>/);
+});
+test('spoke to: linked contact first, then the typed caller; missing role is shown',()=>{
+ const ctx=load();
+ vm.runInContext(`var contacts=[{id:'k',first_name:'Stella',last_name:'M',phone:'0755 111 222',position:'Purchasing officer'}];function salesContactName(id){const c=contacts.find(x=>x.id===id);return c.first_name+' '+c.last_name;}`,ctx);
+ assert.deepEqual(JSON.parse(JSON.stringify(ctx.leadSpokeTo({contact_id:'k',caller_role:'procurement'}))),{name:'Stella M',phone:'0755 111 222',role:'Procurement / purchasing',position:'Purchasing officer'});
+ assert.equal(ctx.leadSpokeTo({caller_name:'Dr Asha',caller_phone:'0712',caller_role:'doctor'}).role,'Doctor / user');
+ assert.match(ctx.leadSpokeToHtml({caller_name:'Dr Asha'}),/role not recorded/);
+ assert.equal(ctx.leadSpokeToHtml({}),'');
+ assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(Object.keys(leadRoles))',ctx)),['doctor','head_of_department','procurement','management','biomedical','other']);
+});
+test('the form sends the role, and a caller name for a known client without a named contact',()=>{
+ const ctx=load();
+ ctx.FormData=class{constructor(form){this.m=new Map(Object.entries(form));}get(k){return this.m.has(k)?this.m.get(k):null;}has(k){return this.m.has(k);}};
+ const base={who:'client',organizationId:'org',contactId:'',clientCallerName:'Stella',clientCallerPhone:'0712',subject:'Ultrasound price',source:'phone',callerRole:'procurement'};
+ const fields=ctx.leadFormValues(base);
+ assert.equal(fields.caller_role,'procurement');assert.equal(fields.caller_name,'Stella');assert.equal(fields.caller_phone,'0712');
+ assert.equal(ctx.leadFormValues({...base,contactId:'k'}).caller_name,'','a named contact replaces the typed name');
+ assert.throws(()=>ctx.leadFormValues({...base,callerRole:''}),/role of the person/);
+});
+test('handover: note needs 5 words; history on the card shows who, to whom, when and the note',()=>{
+ const ctx=load();
+ assert.equal(ctx.leadWords('  call   them back  '),3);assert.equal(ctx.leadWords('Head of radiology wants ultrasound'),5);
+ const html=ctx.leadHandoverHtml([
+  {from_user_id:'a',assigned_user_id:'b',actor_user_id:'a',note:'Head of radiology at X, wants a general ultrasound',created_at:'2026-10-07T08:00:00Z'},
+  {from_user_id:'b',assigned_user_id:'a',actor_user_id:'b',note:'Customer asked for the head to call back',created_at:'2026-10-08T08:00:00Z'}]);
+ assert.match(html,/<ol><li><strong>Baraka<\/strong> → <strong>Asha<\/strong>.*Customer asked for the head to call back/,'newest first');
+ assert.match(html,/Earlier handovers · 1<\/summary><ol><li><strong>Asha<\/strong> → <strong>Baraka<\/strong>.*general ultrasound/);
+ assert.equal(ctx.leadHandoverHtml([]),'');
+ const src=readFileSync(new URL('../sales-leads.js',import.meta.url),'utf8');
+ assert.match(src,/client\.rpc\('hand_over_sales_lead',\{p_id:row\.id,p_expected_version:row\.version,p_new_owner_user_id:values\.assignee,p_note:note,/);
+ assert.match(src,/<select name="assignee" required data-lookup>/,'the new owner is picked from a search box');
+ assert.match(src,/leadColumns='[^']*caller_role/);
+});
+test('migration 069: next number, handover RPC checks access, version and note; handoff reuses work assignments',()=>{
+ const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort();
+ const name='202610070069_lead_spoke_to_and_handover.sql',at=files.indexOf(name);
+ assert.ok(at>0);assert.match(files[at-1],/^202610070068_/);
+ const sql=readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8');
+ assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);assert.match(sql,/^-- Rollback:/m);
+ const start=sql.indexOf('create function public.hand_over_sales_lead'),rpc=sql.slice(start,sql.indexOf('end $$;',start));
+ assert.match(rpc,/security definer set search_path=public,pg_temp/);assert.match(rpc,/perform public\.require_access\('leads'\)/);
+ assert.match(rpc,/v_row\.version <> p_expected_version/);assert.match(rpc,/at least 5 words/);assert.match(rpc,/'leads'=any\(access\)/);
+ assert.match(rpc,/insert into public\.sales_lead_events\([^)]*from_user_id/);
+ assert.match(sql,/revoke all on function public\.hand_over_sales_lead\(uuid,integer,uuid,text,text,date\) from public, anon;/);
+ assert.match(sql,/grant execute on function public\.hand_over_sales_lead\(uuid,integer,uuid,text,text,date\) to authenticated;/);
+ assert.match(sql,/create or replace function public\.handoff_lead\(\)[\s\S]*insert into public\.work_assignments/,'the existing lead handoff trigger puts it on the work list');
+ assert.match(sql,/Use Hand over to give this lead to someone else/);
 });

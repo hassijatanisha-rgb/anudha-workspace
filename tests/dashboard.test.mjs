@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 function load(extra={}){
  const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),...extra});
- vm.runInContext(read('dashboard.js')+';Object.assign(globalThis,{dashboardCards,dashboardPeriodic,dashboardResult});',ctx);return ctx;
+ vm.runInContext(read('dashboard.js')+';Object.assign(globalThis,{dashboardCards,dashboardPresets,dashboardDefaultPeriod});',ctx);return ctx;
 }
 const plain=value=>JSON.parse(JSON.stringify(value));
 const sample={today:'2026-10-06',
@@ -14,7 +14,7 @@ const sample={today:'2026-10-06',
  periodic:{opportunities:2,cases:null,scheduled_service:null,quotes:11,webqueries:0,tasks:54},
  result:{cases_cancelled:null,cases_resolved:null,opportunities_won:1,opportunities_lost:2,quotes_closed:0,tasks_completed:0,webqueries_closed:0}};
 
-test('today and yesterday are Dar es Salaam days (UTC+3), not UTC days',()=>{
+test('today is a Dar es Salaam day (UTC+3), not a UTC day',()=>{
  const {dashboardDay}=load();
  assert.equal(dashboardDay(Date.parse('2026-10-05T21:00:00Z')),'2026-10-06','midnight in Dar is 21:00 UTC');
  assert.equal(dashboardDay(Date.parse('2026-10-05T20:59:59Z')),'2026-10-05');
@@ -23,13 +23,71 @@ test('today and yesterday are Dar es Salaam days (UTC+3), not UTC days',()=>{
 test('preset periods give inclusive first and last days; weeks start on Monday',()=>{
  const {dashboardRange}=load(),r=(preset,today)=>plain(dashboardRange({preset},today));
  assert.deepEqual(r('today','2026-10-06'),{from:'2026-10-06',to:'2026-10-06'});
- assert.deepEqual(r('yesterday','2026-10-06'),{from:'2026-10-05',to:'2026-10-05'});
- assert.deepEqual(r('yesterday','2026-01-01'),{from:'2025-12-31',to:'2025-12-31'});
  assert.deepEqual(r('week','2026-10-06'),{from:'2026-10-05',to:'2026-10-06'},'Tuesday');
  assert.deepEqual(r('week','2026-10-05'),{from:'2026-10-05',to:'2026-10-05'},'Monday');
  assert.deepEqual(r('week','2026-10-11'),{from:'2026-10-05',to:'2026-10-11'},'Sunday');
+ assert.deepEqual(r('week','2026-10-04'),{from:'2026-09-28',to:'2026-10-04'},'Sunday belongs to the week that started the Monday before');
+ assert.deepEqual(r('week','2027-01-03'),{from:'2026-12-28',to:'2027-01-03'},'a week can start in the previous year');
+ assert.deepEqual(r('week','2028-03-01'),{from:'2028-02-28',to:'2028-03-01'},'leap year: Wednesday 1 March');
  assert.deepEqual(r('month','2026-10-06'),{from:'2026-10-01',to:'2026-10-06'});
- assert.throws(()=>dashboardRange({preset:'forever'},'2026-10-06'),/Choose a period/);
+ assert.deepEqual(r('year','2026-10-06'),{from:'2026-01-01',to:'2026-10-06'});
+ assert.deepEqual(r('year','2028-12-31'),{from:'2028-01-01',to:'2028-12-31'},'a whole leap year is 366 days, within the limit');
+ for(const preset of ['yesterday','forever'])assert.throws(()=>dashboardRange({preset},'2026-10-06'),/Choose a period/);
+});
+test('quarters start on 1 January, 1 April, 1 July and 1 October',()=>{
+ const {dashboardRange}=load(),q=today=>dashboardRange({preset:'quarter'},today).from;
+ for(const [today,from] of [['2026-01-01','2026-01-01'],['2026-02-14','2026-01-01'],['2026-03-31','2026-01-01'],['2026-04-01','2026-04-01'],
+  ['2026-06-30','2026-04-01'],['2026-07-01','2026-07-01'],['2026-09-30','2026-07-01'],['2026-10-01','2026-10-01'],['2026-10-06','2026-10-01'],['2026-12-31','2026-10-01']])
+  assert.equal(q(today),from,today);
+ assert.equal(dashboardRange({preset:'quarter'},'2026-10-06').to,'2026-10-06','a period ends today');
+});
+test('the period buttons are the six the heads asked for, in order',()=>{
+ const {dashboardPresets}=load();
+ assert.deepEqual(plain(dashboardPresets.map(([,label])=>label)),['Today','This week','This month','This quarter','This year','Custom']);
+});
+test('the chosen period is remembered per person on this device, and blocked storage never breaks the page',()=>{
+ const {dashboardLoadPeriod,dashboardSavePeriod}=load(),data=new Map();
+ const storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,String(v))};
+ assert.deepEqual(plain(dashboardLoadPeriod('u1',storage)),{preset:'today',from:'',to:''},'nothing saved: Today');
+ dashboardSavePeriod('u1',{preset:'quarter',from:'',to:''},storage);
+ dashboardSavePeriod('u2',{preset:'custom',from:'2026-09-01',to:'2026-09-30'},storage);
+ assert.equal(plain(dashboardLoadPeriod('u1',storage)).preset,'quarter');
+ assert.deepEqual(plain(dashboardLoadPeriod('u2',storage)),{preset:'custom',from:'2026-09-01',to:'2026-09-30'},'each person has their own');
+ data.set('anudha.dashboard.period.u3','{"preset":"custom","from":"2026-09-30","to":"2026-09-01"}');
+ data.set('anudha.dashboard.period.u4','not json');data.set('anudha.dashboard.period.u5','{"preset":"yesterday"}');
+ for(const user of ['u3','u4','u5'])assert.equal(dashboardLoadPeriod(user,storage).preset,'today',`${user}: a broken or old value falls back to Today`);
+ const blocked={getItem(){throw Error('SecurityError')},setItem(){throw Error('QuotaExceededError')}};
+ assert.equal(dashboardLoadPeriod('u1',blocked).preset,'today');
+ assert.doesNotThrow(()=>dashboardSavePeriod('u1',{preset:'week'},blocked));
+ assert.doesNotThrow(()=>dashboardSavePeriod('u1',{preset:'week'},null));
+});
+test('team tasks: one line per person, most late first; only the owner and heads see the section',()=>{
+ const names={a:'Jagroop',b:'Amina',c:'Baraka'};
+ const ctx=load({employeeName:id=>names[id]||'?',me:{user_id:'h',role:'head'}});
+ assert.equal(ctx.dashboardTeamLine({user_id:'a',open_count:4,completed_count:11,late_count:1}),'Jagroop: 4 open · 11 completed · 1 late');
+ const rows=[{user_id:'a',open_count:4,completed_count:11,late_count:0},{user_id:'b',open_count:1,completed_count:0,late_count:1},{user_id:'c',open_count:4,completed_count:2,late_count:0}];
+ assert.deepEqual(plain(ctx.dashboardTeamOrder(rows).map(r=>r.user_id)),['b','c','a'],'late first, then most open, then by name');
+ assert.equal(ctx.dashboardTeamVisible(),true);
+ ctx.me={user_id:'s',role:'staff'};assert.equal(ctx.dashboardTeamVisible(),false);assert.equal(ctx.dashboardTeamSection(),'');
+ ctx.me={user_id:'o',role:'owner'};assert.equal(ctx.dashboardTeamVisible(),true);
+});
+test('a person\'s task shows whether it was late and the result written when it was done',()=>{
+ const ctx=load({employeeName:()=>'Owner'}),now=Date.parse('2026-10-07T09:00:00Z');
+ const done=ctx.dashboardPersonTask({title:'Send <quote>',task_number:'TK-000001',status:'done',due_at:'2026-10-05T14:00:00Z',closed_at:'2026-10-06T08:00:00Z',close_note:'Sent by email',assigned_by:'o'},now);
+ assert.match(done,/class="late"/);assert.match(done,/Done .* · late/);assert.match(done,/Result: Sent by email/);assert.match(done,/Send &#60;quote&#62;/);
+ const open=ctx.dashboardPersonTask({title:'Call',task_number:'TK-000002',status:'open',due_at:'2026-10-08T14:00:00Z',closed_at:null,close_note:'',assigned_by:'o'},now);
+ assert.match(open,/Not done yet/);assert.doesNotMatch(open,/late|Result/);
+});
+test('one period feeds Periodic, Result and Team tasks',async()=>{
+ const calls=[],html={};
+ const ctx=load({me:{user_id:'h',role:'head'},view:'dashboard',employeeName:()=>'X',syncWorkspaceNavigation:()=>{},run:fn=>fn(),
+  $:()=>({set innerHTML(v){html.content=v},get innerHTML(){return html.content},value:''}),document:{querySelectorAll:()=>[]},
+  client:{rpc:async(name,args)=>{calls.push([name,args]);return {data:name==='team_task_counts'?[]:{open:{},periodic:{},result:{}},error:null};}},
+  localStorage:{getItem:()=>JSON.stringify({preset:'quarter'}),setItem:()=>{}}});
+ ctx.dashboardDay=()=>'2026-10-06';
+ await ctx.dashboardWorkspace();
+ assert.deepEqual(plain(calls),[['dashboard_counts',{p_periodic_from:'2026-10-01',p_periodic_to:'2026-10-06',p_result_from:'2026-10-01',p_result_to:'2026-10-06'}],['team_task_counts',{p_from:'2026-10-01',p_to:'2026-10-06'}]]);
+ assert.match(html.content,/aria-pressed="true" class="active">This quarter</);assert.match(html.content,/Team tasks/);
 });
 test('a custom range must be two real dates in order, one year or less apart',()=>{
  const {dashboardRange}=load(),c=(from,to)=>dashboardRange({preset:'custom',from,to},'2026-10-06');
@@ -42,13 +100,13 @@ test('a custom range must be two real dates in order, one year or less apart',()
 });
 test('period labels show the dates as day/month/year',()=>{
  const {dashboardRangeLabel}=load();
- assert.equal(dashboardRangeLabel({preset:'yesterday'},{from:'2026-10-05',to:'2026-10-05'}),'Yesterday (05/10/2026)');
+ assert.equal(dashboardRangeLabel({preset:'today'},{from:'2026-10-05',to:'2026-10-05'}),'Today (05/10/2026)');
+ assert.equal(dashboardRangeLabel({preset:'quarter'},{from:'2026-10-01',to:'2026-10-06'}),'This quarter (01/10/2026 – 06/10/2026)');
  assert.equal(dashboardRangeLabel({preset:'week'},{from:'2026-10-05',to:'2026-10-06'}),'This week (05/10/2026 – 06/10/2026)');
  assert.equal(dashboardRangeLabel({preset:'custom'},{from:'2026-09-01',to:'2026-09-30'}),'01/09/2026 – 30/09/2026');
 });
-test('defaults: Periodic is yesterday, Result is today',()=>{
- const ctx=load();
- assert.equal(ctx.dashboardPeriodic.preset,'yesterday');assert.equal(ctx.dashboardResult.preset,'today');
+test('default period is Today',()=>{
+ assert.equal(load().dashboardDefaultPeriod.preset,'today');
 });
 test('cards follow the screenshot order; a card the person cannot see is left out, not shown as 0',()=>{
  const {dashboardTiles}=load();
@@ -119,7 +177,7 @@ test('the landing view follows the address: client links still open the client p
 });
 test('migration 067: one security invoker read, fixed search path, signed-in staff only, next number in sequence',()=>{
  const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort();
- assert.equal(files.at(-1),'202610060067_activity_dashboard.sql');assert.ok(files.at(-2)<files.at(-1));
+ const at=files.indexOf('202610060067_activity_dashboard.sql');assert.ok(at>0);assert.match(files[at-1],/^\d{8}0066_/);
  const sql=read('supabase/migrations/202610060067_activity_dashboard.sql');
  assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);
  assert.match(sql,/returns jsonb language plpgsql stable security invoker set search_path=public,pg_temp/);
@@ -128,4 +186,21 @@ test('migration 067: one security invoker read, fixed search path, signed-in sta
  assert.match(sql,/grant execute on function public\.dashboard_counts\(date,date,date,date\) to authenticated;/);
  assert.match(sql,/inventory_active_staff\(\) then raise exception 'Active staff access is required'/);
  assert.ok((sql.match(/Africa\/Dar_es_Salaam/g)||[]).length>=5,'every day boundary uses Dar es Salaam time');
+});
+test('migration 070: team counts check who is asking, heads see their own department, next number in sequence',()=>{
+ const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort();
+ assert.equal(files.at(-1),'202610070070_team_task_counts.sql');assert.match(files.at(-2),/^\d{8}0069_/);
+ const sql=read('supabase/migrations/202610070070_team_task_counts.sql');
+ assert.match(sql,/^begin;$/m);assert.match(sql,/^commit;$/m);assert.match(sql,/^-- Rollback:/m);
+ assert.match(sql,/me\.user_id=\(select auth\.uid\(\)\)/);
+ assert.match(sql,/me\.role='owner' or \(me\.role='head' and me\.department<>'' and exists\(\s*select 1 from public\.staff t where t\.user_id=p_user_id and t\.role<>'owner' and t\.department=me\.department/);
+ assert.match(sql,/where s\.active and public\.can_see_team_member\(s\.user_id\)/,'every listed person passes the department check');
+ assert.match(sql,/if p_user_id is null or not public\.can_see_team_member\(p_user_id\) then/);
+ assert.match(sql,/if not \(public\.is_owner\(\) or public\.is_department_head\(\)\) then/);
+ assert.doesNotMatch(sql,/insert into|update public|delete from|alter policy|create policy/i,'read-only; team_tasks read rules unchanged');
+ assert.match(sql,/revoke all on function public\.can_see_team_member\(uuid\), public\.team_task_period\(date,date\) from public, anon, authenticated;/);
+ assert.match(sql,/revoke all on function public\.team_task_counts\(date,date\), public\.team_member_tasks\(uuid,date,date\) from public, anon;/);
+ assert.match(sql,/grant execute on function public\.team_task_counts\(date,date\), public\.team_member_tasks\(uuid,date,date\) to authenticated;/);
+ assert.ok((sql.match(/Africa\/Dar_es_Salaam/g)||[]).length>=2);
+ assert.ok(readdirSync(new URL('./sql/',import.meta.url)).includes('team-task-counts.sql'),'database test for head visibility');
 });

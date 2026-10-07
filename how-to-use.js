@@ -14,7 +14,9 @@ const howToTopics=[
   'Stuck? Press **How to use** at the top of any page to see the guide for that page.']},
  {id:'dashboard',role:'everyone',title:'See the day at a glance on the Dashboard',screens:['dashboard'],steps:[
   'The **Dashboard** opens first after you sign in. Open counts everything still open now. Overdues and Due Today count lead follow-ups, tasks, order steps and service visits.',
-  'Periodic counts what came in during the chosen days (Yesterday at first). Result counts what was finished (Today at first). Change the days with the Show list above each column; Custom range lets you pick two dates.',
+  'Press a period at the top: Today, This week, This month, This quarter or This year. Custom lets you pick two dates. Periodic counts what came in during that period; Result counts what was finished in it. The Dashboard remembers your choice on this computer or phone.',
+  'Owner and heads of department: **Team tasks** shows each person\'s tasks in the period, for example "Jagroop: 4 open · 11 completed · 1 late". Heads see only their own department. Press a name to see that person\'s tasks and what they wrote when each was done.',
+  'The **bell** at the top shows what is new for you: tasks given to you, work handed to you, and results of tasks you gave in the last 7 days. Press an item to go to it. Opening My tasks marks them as seen.',
   'Press a card to open its list. Cards that are not buttons have no single list to open.',
   'You only see cards for the parts of the software you can use. The Dashboard shows counts only, never amounts.']},
  {id:'todo',role:'everyone',title:'Do your tasks and give tasks to others',screens:['personal:task'],steps:[
@@ -25,14 +27,15 @@ const howToTopics=[
   'If you cannot finish an order step on time, press **Report delay**, write the reason and choose the new date.']},
  {id:'inquiry',role:'sales',title:'Record a phone call, message or walk-in',screens:['leads:leads'],steps:[
   'Open **Leads** and press **+ New inquiry**.',
-  'Step 1: choose A client we already have, or Someone new and type their name and phone number.',
+  'Step 1: choose A client we already have, or Someone new and type their name and phone number. Choose the role of the person you spoke to (for example Procurement or Doctor).',
   'Step 2: write in a few words what they need, for example: price for 2 centrifuges.',
   'Step 3: choose how they contacted us.',
   'Step 4: choose the salesperson and the follow-up date if you know them, then press **Save inquiry**.',
   'If you left the salesperson empty, press **Pass to sales as lead** later and choose one.']},
  {id:'lead',role:'sales',title:'Follow up a lead',screens:['leads:leads'],steps:[
   'Open **Leads**. Late follow-ups are at the top. Press **Mine** to see only yours.',
-  'Call the customer, then press **Edit** to write what was agreed and the next follow-up date.',
+  'The green box at the top of each lead is the next step and its date. Call the customer, then press **Edit** to write what was agreed and the next step.',
+  'To give a lead to a colleague (for example the ultrasound specialist), press **Hand over**, choose them and write a short note of at least 5 words. It goes on their Work handed to me list.',
   'When they want a quote, press **Create Pro forma**. The client is filled in for you.',
   'When they buy, press **Mark won** and choose the Pro forma. If they do not, press **Mark lost** and give the reason.']},
  {id:'proforma',role:'sales',title:'Make a Pro forma and send it to accounts',screens:['sales:new','sales:proformas'],steps:[

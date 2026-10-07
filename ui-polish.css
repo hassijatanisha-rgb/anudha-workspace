@@ -182,6 +182,9 @@ main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr)
 .team-task.closed{opacity:.75}
 .team-task h3{margin:0}
 .team-task-meta{margin:6px 0 0}
+.moved-tag{background:#e8eefc;color:#23408e}
+.team-task-moves{margin-top:8px}
+.team-task-moves ol{margin:6px 0 0;padding-left:20px}
 .team-task-group>h2,.team-task-group>summary{margin-top:26px;font-size:1.15em;font-weight:800}
 .urgency-choice{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:10px}
 .urgency-choice legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
@@ -265,7 +268,37 @@ button.dashboard-overdue:hover{background:var(--quality-red,#fde2df)}
 .dashboard-cases .dashboard-group-parts>.dashboard-tile+.dashboard-tile{border-left:0;border-top:1px solid var(--line)}
 @media(max-width:1100px){.dashboard-columns{grid-template-columns:1fr}}
 @media(max-width:420px){.dashboard-tiles{grid-template-columns:1fr}}
-@media print{.dashboard-period select,.dashboard-custom,#dashboardRefresh{display:none}}
+@media print{.dashboard-presets,.dashboard-custom,#dashboardRefresh,.bell{display:none}}
+/* Dashboard period buttons: one period for Periodic, Result and Team tasks */
+.dashboard>.dashboard-period{margin:0 0 16px;padding:10px 12px}
+.dashboard-presets{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.dashboard-presets button{min-height:40px;padding:8px 14px}
+.dashboard-period .dashboard-range{margin:8px 0 0}
+.dashboard>.dashboard-period .dashboard-custom{max-width:520px;margin:10px auto 0}
+/* Team tasks: open, completed and late per person */
+.dashboard-team{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+.dashboard-team>h2{margin:0 0 4px}
+.dashboard-team-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dashboard-person{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;width:100%;text-align:left;border-left:5px solid var(--dash-tasks,var(--green))}
+.dashboard-person span{margin-left:auto;font-variant-numeric:tabular-nums}
+.dashboard-person.has-late{border-left-color:var(--dash-overdue,#ad3333)}
+.dashboard-person-tasks{padding:4px 4px 8px 16px}
+.dashboard-person-tasks ol{margin:6px 0;padding-left:18px}
+.dashboard-person-tasks li{margin:8px 0;overflow-wrap:anywhere}
+.dashboard-person-tasks li.late>small{color:#ad3333}
+.dashboard-task-result{margin:4px 0 0;padding:6px 8px;background:#eef5f0;border-radius:6px}
+@media(max-width:600px){.dashboard-presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.dashboard-presets button{padding:8px 4px}.dashboard-person span{margin-left:0;flex-basis:100%}}
+/* Notification bell in the header */
+.bell{position:relative;display:inline-block}
+.bell-button{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;padding:6px 10px}
+.bell-count{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ad3333;color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
+.bell-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:50;width:min(360px,calc(100vw - 32px));max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(24,53,43,.18);padding:10px 12px;white-space:normal;text-align:left;font-size:14px;color:#20352f}
+.bell-panel h2{font-size:17px;margin:0 0 6px}
+.bell-panel h3{font-size:13px;margin:10px 0 4px;color:#61736b}
+.bell-panel ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.bell-panel li button{width:100%;text-align:left;padding:8px 10px;overflow-wrap:anywhere}
+.bell-more,.bell-clear{margin-top:6px;border:0;background:none;color:var(--green);padding:6px 4px;text-decoration:underline}
+@media(max-width:600px){.bell-panel{position:fixed;left:16px;right:16px;top:calc(var(--workspace-header-height,80px) + 4px);width:auto;max-height:calc(100vh - var(--workspace-header-height,80px) - 24px)}}
 
 /* Type-to-search pickers (smart-lookup.js). */
 .lookup{position:relative;display:block;width:100%}
