@@ -62,6 +62,8 @@ function installWorkspaceNavigation(){
 }
 function syncWorkspaceNavigation(){
  if(typeof applyStockProtection==='function')applyStockProtection();
+ // Moving between pages also checks the bell for new things (at most every 10 seconds).
+ if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
   const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
