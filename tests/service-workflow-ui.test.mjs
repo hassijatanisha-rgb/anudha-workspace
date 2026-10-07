@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html=fs.readFileSync('index.html','utf8');
+const html=fs.readFileSync('index.src.html','utf8');
 const app=fs.readFileSync('app.js','utf8');
 const source=fs.readFileSync('service-domain.js','utf8')+fs.readFileSync('service-workflow.js','utf8');
 const css=fs.readFileSync('style.css','utf8');

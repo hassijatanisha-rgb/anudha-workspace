@@ -46,7 +46,7 @@ test('CSV quotes separators and neutralises spreadsheet formulas',()=>{
  assert.equal(csv,'Name,Value\r\n"Hospital, Dar","\'=HYPERLINK(""x"")"\r\nPlain,5');
 });
 test('menu, router, sign-out and script order are wired',()=>{
- const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.html');
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('workspace-navigation.js'),/\['Reports','reports'\]/);assert.match(read('app.js'),/view==='reports'\)return reportsWorkspace\(\)/);assert.match(read('app.js'),/typeof clearReports==='function'\)clearReports\(\)/);
  assert.ok(html.indexOf('reports.js')>html.indexOf('work-assignments.js')&&html.indexOf('reports.js')<html.indexOf('app.js'));
 });

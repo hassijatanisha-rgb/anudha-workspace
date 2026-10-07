@@ -40,7 +40,7 @@ test('temporary passwords are 14 unambiguous characters and differ',()=>{
  assert.match(a,/^[A-HJ-NP-Za-km-z2-9]{14}$/);assert.notEqual(a,b);
 });
 test('login form, identity bar and staff page are wired to employee login',()=>{
- const app=readFileSync(new URL('../app.js',import.meta.url),'utf8'),html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../app.js',import.meta.url),'utf8'),html=readFileSync(new URL('../index.src.html',import.meta.url),'utf8');
  assert.match(app,/signInWithPassword\(\{email:employeeLoginEmail\(/);assert.match(app,/Employee ID or work email/);
  assert.match(app,/openChangePassword\(\)/);assert.match(app,/openStaffOnboarding\(\)/);
  assert.ok(html.indexOf('employee-login.js')>html.indexOf('employee-names.js')&&html.indexOf('employee-login.js')<html.indexOf('app.js'));
