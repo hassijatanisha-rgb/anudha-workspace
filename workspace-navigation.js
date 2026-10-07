@@ -62,6 +62,8 @@ function installWorkspaceNavigation(){
 }
 function syncWorkspaceNavigation(){
  if(typeof applyStockProtection==='function')applyStockProtection();
+ // The Dashboard is for the owner and department heads; staff start on My tasks.
+ document.querySelectorAll('#nav [data-view="dashboard"]').forEach(button=>button.hidden=me?.role==='staff');
  // Moving between pages also checks the bell for new things (at most every 10 seconds).
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
