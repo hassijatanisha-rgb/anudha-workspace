@@ -4,10 +4,13 @@
 -- items in leads, Pro formas, orders, deliveries and service reports exactly as before; reading is unchanged.
 -- Nobody gets the area automatically and it is in no department template. Only the owner gives or removes it: a head
 -- can neither give it nor take it away, even if the head has it.
+-- People with it also take over the client and item steps that were owner-only (add/edit/approve/group/delete/restore
+-- clients; pack sizes, detail reviews, machine links, source mappings, product list, delete/restore products). Bulk
+-- import (import_records) and deleting or restoring Pro formas stay owner-only.
 -- Each save function below gets "perform public.require_access('records');" as the first statement after begin; the
 -- rest of each function stays exactly as it is live (taken from pg_get_functiondef, not copied by hand).
--- Rollback: a forward migration that removes that one line from the same functions (same do-block with the replace
--- reversed). Leaving "records" in the area list is harmless.
+-- Rollback: a forward migration that removes that one line from the same functions and puts back the owner checks
+-- (same do-blocks with the replaces reversed). Leaving "records" in the area list is harmless.
 begin;
 
 create or replace function public.staff_access_areas() returns text[] language sql immutable set search_path=public,pg_temp as $$
@@ -109,6 +112,60 @@ begin
   if v_new = v_def then raise exception 'No begin line found in %', v_fn; end if;
   execute v_new;
  end loop;
+end $do$;
+
+-- The chosen people do the client and item work the owner did alone until now: in these functions the owner check
+-- becomes the "records" check (the owner still passes). Bulk import (import_records) stays owner-only, and so does
+-- every other owner-only step. Only that one line changes in each function.
+do $do$
+declare v_fn regprocedure; v_def text; v_new text;
+ c_pattern constant text := 'if not public\.(is_owner|inventory_owner)\(\) then raise exception ''[^'']*''';
+ c_records constant text := 'if not public.has_access(''records'') then raise exception ''Only people with Clients & items data access can change clients and items. Ask the owner.''';
+begin
+ foreach v_fn in array array[
+  'public.save_organization(uuid,text,text,text)',
+  'public.approve_organization(uuid)',
+  'public.set_organization_parent(uuid,uuid)',
+  'public.archive_record(text,uuid)',
+  'public.restore_record(text,uuid)',
+  'public.set_product_archived(uuid,boolean)',
+  'public.apply_product_list(jsonb)',
+  'public.save_pack_definition(uuid,uuid,integer,text,integer,text)',
+  'public.save_product_detail_review(uuid,uuid,integer,text,text,text,text,boolean,boolean,text)',
+  'public.save_product_machine_link_review(uuid,uuid,integer,uuid[],text)',
+  'public.save_product_source_mapping_review(uuid,text,integer,uuid,text,jsonb,text)'
+ ]::regprocedure[] loop
+  v_def := pg_get_functiondef(v_fn);
+  if (select count(*) from regexp_matches(v_def, c_pattern, 'g')) <> 1 then
+   raise exception '% does not have exactly one owner check; check it by hand', v_fn;
+  end if;
+  v_new := regexp_replace(v_def, c_pattern, c_records);
+  execute v_new;
+ end loop;
+end $do$;
+
+-- Delete and restore checks in the triggers: clients, branches, contacts and products follow "records"; Pro formas
+-- (the other table guard_record_soft_delete protects) stay owner-only.
+do $do$
+declare v_def text; v_new text;
+begin
+ v_def := pg_get_functiondef('public.guard_client_archive_owner()'::regprocedure);
+ v_new := replace(replace(v_def,
+  'if new.deleted_at is not null and not public.inventory_owner() then raise exception ''Owner access is required to archive clients or contacts''; end if;',
+  'if new.deleted_at is not null and not public.has_access(''records'') then raise exception ''Clients & items data access is required to archive clients or contacts''; end if;'),
+  'if not public.inventory_owner() then raise exception ''Owner access is required to archive or restore clients or contacts''; end if;',
+  'if not public.has_access(''records'') then raise exception ''Clients & items data access is required to archive or restore clients or contacts''; end if;');
+ if v_new = v_def or v_new ~ 'inventory_owner' then raise exception 'guard_client_archive_owner changed; check it by hand'; end if;
+ execute v_new;
+
+ v_def := pg_get_functiondef('public.guard_record_soft_delete()'::regprocedure);
+ v_new := replace(v_def,
+  'if not public.inventory_owner() then raise exception ''Owner access is required to archive or restore records''; end if;',
+  'if not (case when tg_table_name=''products'' then public.has_access(''records'') else public.inventory_owner() end) then raise exception ''% access is required to archive or restore records'', case when tg_table_name=''products'' then ''Clients & items data'' else ''Owner'' end; end if;');
+ if v_new = v_def or (length(v_new)-length(replace(v_new,'inventory_owner','')))/length('inventory_owner') <> 1 then
+  raise exception 'guard_record_soft_delete changed; check it by hand';
+ end if;
+ execute v_new;
 end $do$;
 
 commit;

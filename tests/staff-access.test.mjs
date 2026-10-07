@@ -107,3 +107,26 @@ test('migration 071: records guard on every client and item save, owner-only gra
  const fn=readFileSync(new URL('../supabase/functions/staff-accounts/index.ts',import.meta.url),'utf8');
  assert.match(fn,/const AREAS = \[[^\]]*'records'\]/);
 });
+test('migration 071: the chosen people take over the owner-only client and item steps, not bulk import or Pro formas',()=>{
+ const sql=readFileSync(new URL('../supabase/migrations/202610070071_clients_items_records_access.sql',import.meta.url),'utf8');
+ const widen=sql.slice(sql.indexOf('c_pattern constant text'),sql.indexOf('end $do$;',sql.indexOf('c_pattern constant text')));
+ assert.match(widen,/public\\\.\(is_owner\|inventory_owner\)/,'only the owner check line is rewritten');
+ assert.match(widen,/if not public\.has_access\(''records''\) then raise exception/);
+ for(const fn of ['save_organization','approve_organization','set_organization_parent','archive_record','restore_record','set_product_archived','apply_product_list','save_pack_definition','save_product_detail_review','save_product_machine_link_review','save_product_source_mapping_review'])
+  assert.match(widen,new RegExp(`'public\\.${fn}\\(`),fn);
+ assert.doesNotMatch(widen,/import_records|set_draft_proforma_archived/,'bulk import and Pro formas stay owner-only');
+ assert.match(sql,/case when tg_table_name=''products'' then public\.has_access\(''records''\) else public\.inventory_owner\(\) end/,'Pro forma archiving keeps the owner check');
+ assert.match(sql,/guard_client_archive_owner\(\)'::regprocedure/);
+});
+test('screens: client and item buttons follow Clients & items data; import and Pro forma deletion stay owner-only',()=>{
+ const read=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
+ const app=read('app.js'),profiles=read('client-profile-pages.js'),forms=read('action-forms.js'),recycle=read('recycle-bin.js'),admin=read('admin-records.js'),inv=read('inventory-operations.js');
+ assert.match(app,/canEditRecords\(\)\?'<button id="newOrg">\+ Account<\/button>':''/);
+ assert.match(app,/me\.role==='owner'\?'<button id="newProduct">\+ Add product<\/button>'/,'adding a product uses bulk import, still owner-only');
+ assert.match(app,/item\.dataset\.view==='recycle'&&canEditRecords\(\)/,'Deleted items menu for records holders');
+ assert.match(profiles,/canEditRecords\(\)\?'<button class="primary-action" id="newOrg">\+ Add client<\/button>'/);
+ assert.doesNotMatch(profiles+recycle+forms.slice(0,forms.indexOf('function openProductForm')),/role!=='owner'|role==='owner'/);
+ assert.match(admin,/kind==='product'\?canEditRecords\(\):me\?\.role==='owner'/);
+ assert.match(inv,/\$\{canEditRecords\(\)\?`<details class="card"><summary>1\. Set a product carton size/);
+ assert.match(inv,/me\.role==='owner'\?inventorySetupProgress\(\)\+inventoryImportPanel\(\)/,'product import panel stays owner-only');
+});

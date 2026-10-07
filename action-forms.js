@@ -38,7 +38,7 @@ function actionForm(title,fields,onSubmit){
 }
 
 function openOrganizationForm(o=null){
- if(me?.role!=='owner')throw Error('Owner access is required to edit accounts.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  const id=o?.id||crypto.randomUUID();
  return actionForm(o?'Edit account':'Add account',
   field('name','Account name',o?.name||'','text',true)+field('location','Location',o?.location||'','text',true)+field('type','Organisation type',o?.type||'','text',true),
@@ -83,7 +83,7 @@ function openMatchForm(p){
 }
 
 function openBranchForm(parent,initialBranch=null){
- if(me?.role!=='owner')throw Error('Owner access is required to link branches.');
+ if(!canEditRecords())throw Error(recordsLockedText);
  if(!parent||parent.parent_id)throw Error('Choose a main account before linking a branch.');
  const parents=new Set(organizations.map(x=>x.parent_id).filter(Boolean));const eligible=organizations.filter(x=>x.id!==parent.id&&!x.parent_id&&!parents.has(x.id));
  const form=actionForm('Link existing branch',`<p>Main account: <strong>${esc(parent.name)}</strong> · ${esc(parent.location||'Location missing')}</p><label><span>Find a branch</span><input name="branch_search" type="search" placeholder="Account name, location or type"></label><label><span>Existing branch account</span><select name="branch_id" required></select></label><p id="branchRelationship" class="warning" aria-live="polite"></p><p class="muted">Check ownership and location before saving. Contacts and source records stay separate.</p>`,async values=>{
