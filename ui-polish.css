@@ -279,3 +279,5 @@ button.dashboard-overdue:hover{background:var(--quality-red,#fde2df)}
 @media (max-width:640px){.lookup-list{max-height:45vh}.lookup-list li{padding:12px 10px;font-size:15px}}
 .lookup-list{min-width:min(460px,92vw)}
 @media (min-width:901px){.document-line{grid-template-columns:3fr 1.6fr .6fr .7fr .9fr .7fr .7fr auto}}
+.team-task-result{margin:8px 0 0;padding:10px 12px;border-left:3px solid var(--green,#315c32);background:#f3f8f2;border-radius:6px;white-space:pre-wrap}
+.team-task-result small{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b776d);margin-bottom:2px}
