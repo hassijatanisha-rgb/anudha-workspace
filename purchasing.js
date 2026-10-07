@@ -87,7 +87,8 @@ async function savePurchaseForm(form){
  if(!id&&purchasePendingSave?.key!==key)purchasePendingSave={key,id:crypto.randomUUID()};
  const requestId=id||purchasePendingSave.id,pending=id?null:purchasePendingSave;
  let result;
- try{result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}
+ if(pending)pending.inFlight=true;
+ try{result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}finally{if(pending)pending.inFlight=false;}
  if(!current())return;
  if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
  const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
@@ -114,7 +115,8 @@ async function saveSupplierForm(form){
  if(!id&&supplierPendingSave?.key!==key)supplierPendingSave={key,id:crypto.randomUUID()};
  const requestId=id||supplierPendingSave.id,pending=id?null:supplierPendingSave;
  let result;
- try{result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}
+ if(pending)pending.inFlight=true;
+ try{result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}finally{if(pending)pending.inFlight=false;}
  if(!current())return;
  if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
  const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
@@ -172,12 +174,20 @@ function renderPurchasing(){
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
 function supplierCard(row){return `<article class="card supplier-card" data-supplier-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.supplier_number)}${row.country?' · '+esc(row.country):''}</small><h2>${esc(row.name)}</h2></div><span class="tag">${row.active?'Active':'Inactive'}</span></div><div class="details"><div><small>Contact</small>${esc(row.contact_name||'—')}</div><div><small>Phone</small>${esc(row.phone||'—')}</div><div><small>Email</small>${esc(row.email||'—')}</div><div><small>TIN</small>${esc(row.tin||'—')}</div><div><small>Payment terms</small>${esc(row.payment_terms||'—')}</div><div><small>Purchase orders</small>${purchaseOrders.filter(o=>o.supplier_id===row.id).length}</div></div><div class="actions"><button type="button" data-supplier-edit="${esc(row.id)}">Edit</button></div></article>`;}
+function purchasingResetBlocked(kind){
+ const pending=kind==='purchase'?purchasePendingSave:supplierPendingSave;
+ if(!pending?.uncertain&&!pending?.inFlight)return false;
+ const text=pending.inFlight?'This form is still saving. Wait for the result before starting or closing this form.':'The previous save is unconfirmed. Keep these details and retry the same save before starting or closing this form.';
+ const output=$(kind==='purchase'?'#purchaseFormError':'#supplierFormError');
+ if(output)output.textContent=text;else message(text);
+ return true;
+}
 function bindPurchasing(){
  $('#purchaseRefresh').onclick=()=>run(()=>purchasingWorkspace(true));
- $('#newPurchase')?.addEventListener('click',()=>{purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
- $('#newSupplier')?.addEventListener('click',()=>{supplierEditing='new';supplierPendingSave=null;renderPurchasing();$('#supplierForm [name="name"]')?.focus();});
- $('#closePurchaseEditor')?.addEventListener('click',()=>{purchaseEditing='';purchasePrefill=null;purchasePendingSave=null;renderPurchasing();});
- $('#closeSupplierEditor')?.addEventListener('click',()=>{supplierEditing='';supplierPendingSave=null;renderPurchasing();});
+ $('#newPurchase')?.addEventListener('click',()=>{if(purchasingResetBlocked('purchase'))return;purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
+ $('#newSupplier')?.addEventListener('click',()=>{if(purchasingResetBlocked('supplier'))return;supplierEditing='new';supplierPendingSave=null;renderPurchasing();$('#supplierForm [name="name"]')?.focus();});
+ $('#closePurchaseEditor')?.addEventListener('click',()=>{if(purchasingResetBlocked('purchase'))return;purchaseEditing='';purchasePrefill=null;purchasePendingSave=null;renderPurchasing();});
+ $('#closeSupplierEditor')?.addEventListener('click',()=>{if(purchasingResetBlocked('supplier'))return;supplierEditing='';supplierPendingSave=null;renderPurchasing();});
  const form=$('#purchaseForm');
  if(form){
   $('#addPurchaseLine').onclick=()=>$('#purchaseLines').insertAdjacentHTML('beforeend',purchaseLineRow());
@@ -225,7 +235,7 @@ async function showPurchaseHistory(id){
 }
 // Called from a pending stock order: opens a new purchase request with that product and quantity.
 function startPurchaseFromPending(row){
- if(!row)return;
+ if(!row||purchasingResetBlocked('purchase'))return;
  purchasePrefill={lines:[{product_id:row.product_id,quantity:row.quantity,pending_request_id:row.id,note:`For ${row.request_number}`}],notes:`Customer pending order ${row.request_number}`};
  view='purchasing';openPurchaseSection('orders');purchaseEditing='new';purchasePendingSave=null;render();
 }

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE});
 try{
- for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement','uncertain-transport','uncertain-response',...(kind==='purchase'?['refresh-error-replacement','refresh-error-same-form']:[])]){
+ for(const kind of ['purchase','supplier'])for(const scenario of ['retry','replacement','uncertain-transport','uncertain-response','editor-reset','in-flight-reset',...(kind==='purchase'?['refresh-error-replacement','refresh-error-same-form']:[])]){
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent('<main id="content"></main>');
   await page.addScriptTag({content:`
    let me={user_id:'first',role:'owner'},view='purchasing',calls=[],messages=[],failures=[],refreshCalls=[],deferRefresh=false,products=[{id:'product',name:'Fixture product'}],seq=0,settled=0;
@@ -27,7 +27,29 @@ try{
   else await form.locator('[name="name"]').fill('Fixture supplier');
   await form.locator('[type="submit"]').click();await page.waitForFunction(()=>calls.length===1);
   assert.equal(await form.locator('[type="submit"]').isDisabled(),true);
-  if(scenario==='refresh-error-same-form'){
+  if(scenario==='in-flight-reset'){
+   await page.locator(kind==='purchase'?'#closePurchaseEditor':'#closeSupplierEditor').click();
+   assert.equal(await form.count(),1,'in-flight save must retain its editor');
+   await page.locator(kind==='purchase'?'#newPurchase':'#newSupplier').click();
+   assert.equal(await form.locator(kind==='purchase'?'[name="quantity"]':'[name="name"]').inputValue(),kind==='purchase'?'5':'Fixture supplier');
+   await form.getByRole('alert').filter({hasText:'still saving'}).waitFor();
+   await page.evaluate(()=>calls[0].resolve({error:{code:'P0001',message:'Validation rejected'}}));
+   await page.waitForFunction(()=>settled===1);
+   await page.locator(kind==='purchase'?'#closePurchaseEditor':'#closeSupplierEditor').click();
+   assert.equal(await form.count(),0,'confirmed rejection releases in-flight editor guard');
+  }else if(scenario==='editor-reset'){
+   await page.evaluate(()=>calls[0].reject(Error('Response lost')));
+   await page.waitForFunction(()=>settled===1);
+   await page.locator(kind==='purchase'?'#closePurchaseEditor':'#closeSupplierEditor').click();
+   assert.equal(await form.count(),1,'uncertain save must retain its editor and retry identity');
+   await page.locator(kind==='purchase'?'#newPurchase':'#newSupplier').click();
+   assert.equal(await form.locator(kind==='purchase'?'[name="quantity"]':'[name="name"]').inputValue(),kind==='purchase'?'5':'Fixture supplier');
+   await form.getByRole('alert').filter({hasText:'unconfirmed'}).waitFor();
+   await form.locator('[type="submit"]').click();await page.waitForFunction(()=>calls.length===2);
+   assert.equal(await page.evaluate(()=>JSON.stringify(calls[0].args)===JSON.stringify(calls[1].args)),true);
+   await page.evaluate(()=>calls[1].resolve({data:{id:calls[1].args.p_id,name:'Fixture supplier',po_number:'PO123'}}));
+   await page.waitForFunction(()=>settled===2);
+  }else if(scenario==='refresh-error-same-form'){
    await page.evaluate(()=>{deferRefresh=true;calls[0].resolve({data:{id:calls[0].args.p_id,po_number:'PO123',version:1}})});
    await page.waitForFunction(()=>refreshCalls.length===1);
    await page.evaluate(()=>refreshCalls[0].reject(Error('Refresh unavailable')));
@@ -67,8 +89,8 @@ try{
    await page.waitForFunction(()=>settled===3);
    assert.equal(await page.evaluate(()=>messages.length),1);assert.equal(await form.count(),0);
   }else{
-   await page.locator(kind==='purchase'?'#closePurchaseEditor':'#closeSupplierEditor').click();
-   await page.locator(kind==='purchase'?'#newPurchase':'#newSupplier').click();
+   // A route refresh can replace the DOM independently of editor reset controls.
+   await page.evaluate(()=>renderPurchasing());
    const field=form.locator(kind==='purchase'?'[name="productChoice"]':'[name="name"]');await field.fill('Keep this draft');
    await page.evaluate(()=>calls[0].resolve({data:{id:calls[0].args.p_id,name:'Old supplier',po_number:'OLD'}}));
    await page.waitForFunction(()=>settled===1);

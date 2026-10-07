@@ -23,6 +23,27 @@ for(const [kind,field] of [['purchase','notes'],['supplier','name'],['supplier',
  });
 }
 for(const kind of ['purchase','supplier']){
+ test(`${kind} editor reset guard blocks uncertainty but not a confirmed rejection`,async()=>{
+  const f=fixture(kind);f.form.dataset={id:'',version:'0'};
+  const first=f.save();assert.equal(f.context.purchasingResetBlocked(kind),true);assert.match(f.form.textContent,/still saving/);
+  f.calls[0].reject(Error('Response lost'));await assert.rejects(first,/Response lost/);
+  assert.equal(f.get(kind==='purchase'?'purchasePendingSave.inFlight':'supplierPendingSave.inFlight'),false);
+  assert.equal(f.context.purchasingResetBlocked(kind),true);
+  assert.match(f.form.textContent,/unconfirmed/);
+  const retry=f.save();f.calls[1].resolve({error:{code:'P0001',message:'Validation rejected'}});await assert.rejects(retry,/Validation rejected/);
+  // A rejected retry does not prove the original lost-response write was rolled back.
+  assert.equal(f.context.purchasingResetBlocked(kind),true);
+  const clean=fixture(kind);clean.form.dataset={id:'',version:'0'};
+  const rejected=clean.save();clean.calls[0].resolve({error:{code:'P0001',message:'Validation rejected'}});await assert.rejects(rejected,/Validation rejected/);
+  assert.equal(clean.context.purchasingResetBlocked(kind),false);
+ });
+ if(kind==='purchase')test('pending-order purchase shortcut cannot erase an uncertain request',async()=>{
+  const f=fixture(kind);f.form.dataset={id:'',version:'0'};
+  const first=f.save();f.calls[0].reject(Error('Response lost'));await assert.rejects(first,/Response lost/);
+  const before=f.get('JSON.stringify(purchasePendingSave)');
+  f.context.startPurchaseFromPending({id:'pending',product_id:'product',quantity:3,request_number:'P1'});
+  assert.equal(f.get('JSON.stringify(purchasePendingSave)'),before);assert.equal(f.get('purchasePrefill'),null);
+ });
  test(`${kind} confirmed form cannot resubmit while awaiting list recovery`,async()=>{
   const f=fixture(kind);f.form.dataset={id:'',version:'0'};
   const first=f.save();f.calls[0].resolve({data:{id:f.calls[0].args.p_id,name:'Fixture',po_number:'PO123'}});await first;
