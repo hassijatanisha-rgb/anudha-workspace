@@ -3,7 +3,7 @@
 // Navigation only: these links reuse the existing permission-checked workflows.
 const workspaceGroups=[
  {name:'Main',tone:'main',items:[
-  ['My tasks','personal','task'],['Client accounts','contacts'],['Product search','inventory','catalog'],['Reports','reports'],
+  ['Dashboard','dashboard'],['My tasks','personal','task'],['Client accounts','contacts'],['Product search','inventory','catalog'],['Reports','reports'],
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
