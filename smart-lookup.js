@@ -77,7 +77,9 @@ function lookupAttach(source){
  let input;
  if(isSelect){
   input=document.createElement('input');input.type='search';input.autocomplete='off';input.className='lookup-input';
-  if(source.required){input.required=true;source.required=false;source.dataset.lookupRequired='1';}
+  // The <select> stays the required field (forms check it by name); when the browser flags it, the message is
+  // shown on the search box instead of the hidden list.
+  source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity('Choose one from the list');input.reportValidity();});
   input.setAttribute('aria-label',source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
   source.classList.add('lookup-source');source.tabIndex=-1;source.setAttribute('aria-hidden','true');
   source.parentNode.insertBefore(box,source);box.append(input,source);
@@ -123,12 +125,6 @@ function lookupScan(root=document){
 }
 // Datalists are often rebuilt after the input: refresh options when the list grows.
 document.addEventListener('focusin',e=>{const box=e.target.closest?.('.lookup');if(box&&box._lookupSource.dataset.lookupList&&!box._lookupSource._lookupList?.isConnected)box._lookupSource._lookupList=document.getElementById(box._lookupSource.dataset.lookupList);});
-// Before a form submits, a required lookup with nothing chosen points at the search box, not a hidden field.
-document.addEventListener('submit',e=>{
- for(const source of e.target.querySelectorAll?.('select[data-lookup-required]')||[]){
-  if(source.value===''){const input=source._lookupBox?.querySelector('input.lookup-input');if(input){input.setCustomValidity('Choose one from the list');input.reportValidity();}e.preventDefault();e.stopImmediatePropagation();return;}
- }
-},true);
 // A tap anywhere outside an open list closes it.
 document.addEventListener('pointerdown',e=>{document.querySelectorAll('.lookup').forEach(box=>{if(!box.contains(e.target)&&!box.querySelector('.lookup-list').hidden&&document.activeElement!==box.querySelector('input.lookup-input'))box._lookupLeave?.();else if(!box.contains(e.target))box._lookupHold=false;});},true);
 let lookupQueued=false;
