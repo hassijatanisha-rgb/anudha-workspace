@@ -51,7 +51,7 @@ test('only the salesperson or owner sees close actions; only the owner can exten
  assert.doesNotMatch(ctx.pendingActions({...row,extension_count:4}),/extend/);
 });
 test('menu, router, sign-out and script order are wired',()=>{
- const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.html');
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('app.js'),/view==='pending'\)return pendingStockWorkspace\(\)/);assert.match(read('app.js'),/typeof clearPendingStock==='function'\)clearPendingStock\(\)/);
  assert.ok(html.indexOf('pending-stock.js')>html.indexOf('sales-leads.js')&&html.indexOf('pending-stock.js')<html.indexOf('app.js'));
 });

@@ -83,7 +83,7 @@ test('pressing an item opens the right page and marks that kind seen',()=>{
  assert.deepEqual(marks,['work','tasks']);
 });
 test('wired in: header bell refreshes on navigation and every 2 minutes, My tasks marks it seen, cleared on sign-out',()=>{
- const bell=read('notification-bell.js'),nav=read('workspace-navigation.js'),tasks=read('team-tasks.js'),app=read('app.js'),html=read('index.html');
+ const bell=read('notification-bell.js'),nav=read('workspace-navigation.js'),tasks=read('team-tasks.js'),app=read('app.js'),html=read('index.src.html');
  assert.match(bell,/setInterval\(\(\)=>\{if\(me&&!document\.hidden\)refreshNotificationBell\(true\)\.catch\(\(\)=>\{\}\);\},120000\);/);
  assert.match(nav,/function syncWorkspaceNavigation\(\)\{[\s\S]*?refreshNotificationBell\(\)\.catch/);
  assert.match(tasks,/bellMarkSeen\(actor,\['tasks','work','results'\]\)/);

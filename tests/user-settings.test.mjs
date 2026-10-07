@@ -25,7 +25,7 @@ test('no outside connection claims to be connected until a real provider exists'
  assert.deepEqual([...vm.runInContext('externalConnections',ctx)].map(c=>c.status),['Not connected','Not connected','Not connected','Not connected']);
 });
 test('settings page is in the menu, routed, and loaded before app.js',()=>{
- const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.html');
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('workspace-navigation.js'),/\['My settings','settings'\]/);assert.match(read('app.js'),/view==='settings'\)return settingsWorkspace\(\)/);
  assert.ok(html.indexOf('user-settings.js')>html.indexOf('reports.js')&&html.indexOf('user-settings.js')<html.indexOf('app.js'));
 });

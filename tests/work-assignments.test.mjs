@@ -34,5 +34,5 @@ test('every workflow screen, the task list, sign-out and print are wired',()=>{
  assert.match(read('app.js'),/renderWorkStepOwners\(/);
  assert.match(read('app.js'),/typeof clearWorkAssignments==='function'\)clearWorkAssignments\(\)/);
  assert.match(read('style.css'),/@media print\{\.work-handoff\{display:none!important\}\}/);
- const html=read('index.html');assert.ok(html.indexOf('work-assignments.js')>html.indexOf('pending-stock.js')&&html.indexOf('work-assignments.js')<html.indexOf('app.js'));
+ const html=read('index.src.html');assert.ok(html.indexOf('work-assignments.js')>html.indexOf('pending-stock.js')&&html.indexOf('work-assignments.js')<html.indexOf('app.js'));
 });

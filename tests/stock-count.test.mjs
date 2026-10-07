@@ -40,7 +40,7 @@ test('owner sees accept and reject; counter can void only their own; nothing aft
 });
 test('temporary screen can be switched off in config and is wired into the app',()=>{
  const ctx=load();assert.equal(ctx.stockCountEnabled(),true);ctx.window.ERP_CONFIG.stockCountEnabled=false;assert.equal(ctx.stockCountEnabled(),false);
- const nav=read('workspace-navigation.js'),html=read('index.html'),app=read('app.js');
+ const nav=read('workspace-navigation.js'),html=read('index.src.html'),app=read('app.js');
  assert.match(nav,/\['Stock count','stockcount','count'\],\['Review stock counts','stockcount','review'\]/);assert.match(nav,/ERP_CONFIG\?\.stockCountEnabled!==false/);
  assert.match(app,/view==='stockcount'\)return stockCountWorkspace\(\)/);assert.match(app,/typeof clearStockCount==='function'\)clearStockCount\(\)/);
  assert.ok(html.indexOf('stock-count.js')>html.indexOf('purchasing.js')&&html.indexOf('stock-count.js')<html.indexOf('app.js'));
