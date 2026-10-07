@@ -25,14 +25,15 @@ const howToTopics=[
   'If you cannot finish an order step on time, press **Report delay**, write the reason and choose the new date.']},
  {id:'inquiry',role:'sales',title:'Record a phone call, message or walk-in',screens:['leads:leads'],steps:[
   'Open **Leads** and press **+ New inquiry**.',
-  'Step 1: choose A client we already have, or Someone new and type their name and phone number.',
+  'Step 1: choose A client we already have, or Someone new and type their name and phone number. Choose the role of the person you spoke to (for example Procurement or Doctor).',
   'Step 2: write in a few words what they need, for example: price for 2 centrifuges.',
   'Step 3: choose how they contacted us.',
   'Step 4: choose the salesperson and the follow-up date if you know them, then press **Save inquiry**.',
   'If you left the salesperson empty, press **Pass to sales as lead** later and choose one.']},
  {id:'lead',role:'sales',title:'Follow up a lead',screens:['leads:leads'],steps:[
   'Open **Leads**. Late follow-ups are at the top. Press **Mine** to see only yours.',
-  'Call the customer, then press **Edit** to write what was agreed and the next follow-up date.',
+  'The green box at the top of each lead is the next step and its date. Call the customer, then press **Edit** to write what was agreed and the next step.',
+  'To give a lead to a colleague (for example the ultrasound specialist), press **Hand over**, choose them and write a short note of at least 5 words. It goes on their Work handed to me list.',
   'When they want a quote, press **Create Pro forma**. The client is filled in for you.',
   'When they buy, press **Mark won** and choose the Pro forma. If they do not, press **Mark lost** and give the reason.']},
  {id:'proforma',role:'sales',title:'Make a Pro forma and send it to accounts',screens:['sales:new','sales:proformas'],steps:[

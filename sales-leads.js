@@ -6,10 +6,55 @@ let leadFocusId='';
 // Open one lead from elsewhere (e.g. a task): the section is chosen from its stage once the list has loaded.
 function focusLead(id){leadFocusId=id;leadEditing='';leadPage=0;view='leads';}
 function openLeadSection(section){leadSection='leads';leadPage=0;if(section==='new'){leadEditing='new';leadPendingSave=null;}else leadEditing='';}
-function clearLeads(){leadEpoch++;leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';leadPendingSave=null;if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
+function clearLeads(){leadEpoch++;leadHandoverEpoch++;leadHandovers=new Map();leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';leadPendingSave=null;if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
 const leadStages={inquiry:'Needs a salesperson',lead:'Following up',opportunity:'Following up',won:'Won',lost:'Lost'};
 const leadSources={phone:'Phone call',email:'Email',walk_in:'Walk-in',whatsapp:'WhatsApp',referral:'Referral',website:'Website',other:'Other'};
+// The role of the person we spoke to changes how sales handles the lead (a buyer wants a price, a doctor a demo).
+const leadRoles={doctor:'Doctor / user',head_of_department:'Head of department',procurement:'Procurement / purchasing',management:'Management / director',biomedical:'Biomedical engineer',other:'Other'};
 function leadToday(){return new Date().toISOString().slice(0,10);}
+function leadDay(date){return date?new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}).replace(',',''):'';}
+function leadWords(text){return String(text||'').trim().split(/\s+/).filter(Boolean).length;}
+// Who we spoke to: the linked contact when there is one, otherwise the name and phone typed on the lead.
+function leadSpokeTo(row){
+ const contact=row.contact_id&&typeof contacts!=='undefined'?contacts.find(c=>c.id===row.contact_id):null;
+ const name=contact&&typeof salesContactName==='function'?salesContactName(contact.id):row.caller_name||'';
+ return {name,phone:contact?.phone||row.caller_phone||'',role:leadRoles[row.caller_role]||'',position:contact?.position||''};
+}
+function leadSpokeToHtml(row){
+ const p=leadSpokeTo(row);if(!p.name&&!p.phone&&!p.role)return '';
+ return `<p class="lead-spoke-to"><small>Spoke to</small> <strong>${esc(p.name||'Name not recorded')}</strong>${p.phone?' · '+esc(p.phone):''}${p.role?` <span class="tag lead-role lead-role-${esc(row.caller_role)}">${esc(p.role)}</span>`:' <span class="muted">· role not recorded</span>'}${p.position?` <span class="muted">(${esc(p.position)})</span>`:''}</p>`;
+}
+// The next step, in words, for the top of the card: "Call Mr Bob · Thu 10 Oct".
+function leadNextStep(row,today=leadToday()){
+ if(['won','lost'].includes(row.stage))return null;
+ const what=String(row.next_action||'').trim(),due=row.next_action_on||'';
+ const state=!what&&!due?'none':due&&due<today?'late':due===today?'today':'planned';
+ const when=due?(state==='today'?'Today':leadDay(due)):'';
+ return {state,text:what||(due?'Follow up':'No next step yet. Press Edit or Hand over to set one.'),when};
+}
+function leadNextStepHtml(row){
+ const step=leadNextStep(row);if(!step)return '';
+ return `<div class="lead-next-step lead-next-${step.state}"><small>${step.state==='late'?'Next step · LATE':'Next step'}</small><strong>${esc(step.text)}${step.when?` · ${esc(step.when)}`:''}</strong></div>`;
+}
+// Handovers on the card, newest first: who handed to whom, when, and the note.
+let leadHandovers=new Map(),leadHandoverEpoch=0;
+function leadHandoverHtml(events){
+ if(!events?.length)return '';
+ const item=e=>`<li><strong>${esc(employeeName(e.from_user_id||e.actor_user_id))}</strong> → <strong>${esc(employeeName(e.assigned_user_id))}</strong> · ${esc(new Date(e.created_at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}${e.actor_user_id&&e.from_user_id&&e.actor_user_id!==e.from_user_id?` · by ${esc(employeeName(e.actor_user_id))}`:''}<br>“${esc(e.note)}”</li>`;
+ const [latest,...older]=[...events].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+ return `<div class="lead-handovers"><small>Handed over</small><ol>${item(latest)}</ol>${older.length?`<details><summary>Earlier handovers · ${older.length}</summary><ol>${older.map(item).join('')}</ol></details>`:''}</div>`;
+}
+async function decorateLeadHandovers(){
+ const boxes=[...document.querySelectorAll('[data-lead-handovers]')];if(!boxes.length)return;
+ const epoch=++leadHandoverEpoch,actor=me?.user_id,missing=boxes.map(b=>b.dataset.leadHandovers).filter(id=>!leadHandovers.has(id));
+ if(missing.length){
+  const result=await client.from('sales_lead_events').select('lead_id,action,assigned_user_id,from_user_id,actor_user_id,note,created_at').eq('action','handover').in('lead_id',missing).order('created_at').limit(1000);
+  if(epoch!==leadHandoverEpoch||me?.user_id!==actor||result.error)return;
+  for(const id of missing)leadHandovers.set(id,[]);
+  for(const e of result.data||[])leadHandovers.get(e.lead_id)?.push(e);
+ }
+ for(const box of boxes)if(box.isConnected)box.innerHTML=leadHandoverHtml(leadHandovers.get(box.dataset.leadHandovers));
+}
 function leadOverdue(row,today=leadToday()){return !['won','lost'].includes(row.stage)&&!!row.next_action_on&&row.next_action_on<today;}
 function leadClientLabel(row){const org=orgIndex.get(row.organization_id);return org?`${org.name}${org.location?' · '+org.location:''}`:[row.caller_organization,row.caller_name].filter(Boolean).join(' · ')||'Unknown caller';}
 function leadMoney(minor,currency){return minor==null||minor===''?'':new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS'}).format(Number(minor)/100);}
@@ -22,14 +67,14 @@ function leadVisibleRows(rows,{filter,search,actor,today=leadToday()}){
  const q=String(search||'').trim().toLowerCase();
  const closed=row=>['won','lost'].includes(row.stage)?1:0;
  return rows.filter(row=>leadMatchesFilter(row,filter,actor))
-  .filter(row=>!q||[row.lead_number,row.subject,row.details,row.caller_name,row.caller_phone,row.caller_organization,leadClientLabel(row),employeeName(row.owner_user_id),row.next_action].join(' ').toLowerCase().includes(q))
+  .filter(row=>!q||[row.lead_number,row.subject,row.details,row.caller_name,row.caller_phone,row.caller_organization,leadRoles[row.caller_role],leadClientLabel(row),employeeName(row.owner_user_id),row.next_action].join(' ').toLowerCase().includes(q))
   .sort((a,b)=>closed(a)-closed(b)||Number(leadOverdue(b,today))-Number(leadOverdue(a,today))||String(a.next_action_on||'9999').localeCompare(String(b.next_action_on||'9999'))||String(b.created_at).localeCompare(String(a.created_at))||a.id.localeCompare(b.id));
 }
 function leadActions(row){
  const open=!['won','lost'].includes(row.stage),buttons=[];
  if(open)buttons.push(`<button type="button" data-lead-edit="${esc(row.id)}">Edit</button>`);
  if(row.stage==='inquiry')buttons.push(`<button type="button" data-lead-action="qualify" data-id="${esc(row.id)}">Pass to sales as lead</button>`);
- else if(open)buttons.push(`<button type="button" data-lead-action="assign" data-id="${esc(row.id)}">Change salesperson</button>`);
+ else if(open)buttons.push(`<button type="button" data-lead-handover="${esc(row.id)}">Hand over</button>`);
  if(['lead','opportunity'].includes(row.stage))buttons.push(`<button type="button" data-lead-proforma="${esc(row.id)}">Create Pro forma</button>`,`<button type="button" data-lead-action="won" data-id="${esc(row.id)}">Mark won</button>`);
  if(open)buttons.push(`<button type="button" data-lead-action="lost" data-id="${esc(row.id)}">Mark lost</button>`);
  if(row.stage==='lost')buttons.push(`<button type="button" data-lead-action="reopen" data-id="${esc(row.id)}">Reopen</button>`);
@@ -38,7 +83,7 @@ function leadActions(row){
 }
 function leadCard(row){
  const proforma=salesProformas.find(p=>p.id===row.proforma_id),overdue=leadOverdue(row);
- return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}${row.caller_phone?' · '+esc(row.caller_phone):''}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div><div><small>Next action</small>${esc(row.next_action||'None set')}${row.next_action_on?` · <strong${overdue?' class="overdue"':''}>${overdue?'Overdue ':''}${esc(row.next_action_on)}</strong>`:''}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
+ return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
 }
 function leadEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>inventoryOption(row.user_id,employeeName(row.user_id),row.user_id===selected)).join('');}
 function leadEditor(row){
@@ -46,8 +91,9 @@ function leadEditor(row){
  // Values no longer asked for (estimated value, currency) are carried through unchanged when editing.
  return `<section class="card document-editor lead-editor"><div class="heading"><div><small>${row?esc(row.lead_number):'NEW'}</small><h2>${row?'Edit lead':'New inquiry'}</h2></div><button type="button" id="closeLeadEditor">Close</button></div><form id="leadForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><input type="hidden" name="currency" value="${esc(row?.currency||'TZS')}"><input type="hidden" name="estimatedValue" value="${row?.estimated_value_minor==null||row?.estimated_value_minor===''?'':(Number(row.estimated_value_minor)/100).toFixed(2)}">
  <fieldset class="lead-step"><legend>1. Who is it?</legend><div class="lead-who" role="radiogroup" aria-label="Who is it"><label><input type="radio" name="who" value="client" ${existing?'checked':''}> A client we already have</label><label><input type="radio" name="who" value="new" ${existing?'':'checked'}> Someone new</label></div>
- <div class="grid" data-who="client"${existing?'':' hidden'}><label><span>Client</span><select name="organizationId"><option value="">Choose the client</option>${salesOrganizationOptions(row?.organization_id||'')}</select></label><label><span>Person we spoke to · optional</span><select name="contactId"><option value="">Not a named contact</option>${salesContactOptions(row?.organization_id||'',row?.contact_id||'')}</select></label></div>
- <div class="grid" data-who="new"${existing?' hidden':''}><label><span>Their name</span><input name="callerName" maxlength="200" value="${esc(row?.caller_name||'')}"></label><label><span>Their phone number</span><input name="callerPhone" maxlength="60" inputmode="tel" placeholder="+255…" value="${esc(row?.caller_phone||'')}"></label><label class="wide"><span>Hospital, lab or company · optional</span><input name="callerOrganization" maxlength="300" value="${esc(row?.caller_organization||'')}"></label></div></fieldset>
+ <div class="grid" data-who="client"${existing?'':' hidden'}><label><span>Client</span><select name="organizationId"><option value="">Choose the client</option>${salesOrganizationOptions(row?.organization_id||'')}</select></label><label><span>Person we spoke to · optional</span><select name="contactId"><option value="">Not a named contact</option>${salesContactOptions(row?.organization_id||'',row?.contact_id||'')}</select></label><label data-caller-extra${row?.contact_id?' hidden':''}><span>Their name · if not a named contact</span><input name="clientCallerName" maxlength="200" value="${esc(existing&&!row?.contact_id?row?.caller_name||'':'')}"></label><label data-caller-extra${row?.contact_id?' hidden':''}><span>Their phone number · optional</span><input name="clientCallerPhone" maxlength="60" inputmode="tel" placeholder="+255…" value="${esc(existing&&!row?.contact_id?row?.caller_phone||'':'')}"></label></div>
+ <div class="grid" data-who="new"${existing?' hidden':''}><label><span>Their name</span><input name="callerName" maxlength="200" value="${esc(row?.caller_name||'')}"></label><label><span>Their phone number</span><input name="callerPhone" maxlength="60" inputmode="tel" placeholder="+255…" value="${esc(row?.caller_phone||'')}"></label><label class="wide"><span>Hospital, lab or company · optional</span><input name="callerOrganization" maxlength="300" value="${esc(row?.caller_organization||'')}"></label></div>
+ <label class="lead-role-pick"><span>Their role</span><select name="callerRole" required><option value="">Choose their role</option>${Object.entries(leadRoles).map(([key,label])=>`<option value="${key}" ${row?.caller_role===key?'selected':''}>${label}</option>`).join('')}</select><small class="muted">Sales handles a buyer very differently from a doctor.</small></label></fieldset>
  <fieldset class="lead-step"><legend>2. What do they need?</legend><label><span>In a few words</span><input name="subject" required minlength="2" maxlength="300" placeholder="For example: price for 2 centrifuges" value="${esc(row?.subject||'')}"></label><label><span>More detail · optional</span><textarea name="details" maxlength="8000" placeholder="Products, quantities, machine model…">${esc(row?.details||'')}</textarea></label></fieldset>
  <fieldset class="lead-step"><legend>3. How did they contact us?</legend><div class="lead-sources">${Object.entries(leadSources).map(([key,label])=>`<label><input type="radio" name="source" value="${key}" ${(row?.source||'phone')===key?'checked':''}> ${label}</label>`).join('')}</div></fieldset>
  <fieldset class="lead-step"><legend>4. Who follows up, and when?</legend><div class="grid">${row?'':`<label><span>Salesperson · leave empty if you are not sure</span><select name="ownerUserId"><option value="">Not decided yet</option>${leadEmployeeOptions('')}</select></label>`}<label><span>Follow up on</span><input name="nextActionOn" type="date" value="${esc(row?.next_action_on||'')}"></label><label class="wide"><span>What to do next · optional</span><input name="nextAction" maxlength="500" placeholder="For example: call back with the price" value="${esc(row?.next_action||'')}"></label></div></fieldset>
@@ -55,12 +101,14 @@ function leadEditor(row){
 }
 function leadFormValues(form){
  const f=new FormData(form),who=f.get('who')||'client',organizationId=who==='client'?f.get('organizationId')||'':'',value=String(f.get('estimatedValue')||'').trim();
- const fields={organization_id:organizationId,contact_id:organizationId?f.get('contactId')||'':'',caller_name:who==='new'?String(f.get('callerName')||'').trim():'',caller_phone:who==='new'?String(f.get('callerPhone')||'').trim():'',caller_organization:who==='new'?String(f.get('callerOrganization')||'').trim():'',source:f.get('source')||'phone',subject:String(f.get('subject')||'').trim(),details:String(f.get('details')||''),next_action:String(f.get('nextAction')||'').trim(),next_action_on:f.get('nextActionOn')||'',currency:f.get('currency')||'TZS',estimated_value_minor:''};
+ const contactId=organizationId?f.get('contactId')||'':'',clientCaller=who==='client'&&!contactId;
+ const fields={organization_id:organizationId,contact_id:contactId,caller_name:who==='new'?String(f.get('callerName')||'').trim():clientCaller?String(f.get('clientCallerName')||'').trim():'',caller_phone:who==='new'?String(f.get('callerPhone')||'').trim():clientCaller?String(f.get('clientCallerPhone')||'').trim():'',caller_role:f.get('callerRole')||'',caller_organization:who==='new'?String(f.get('callerOrganization')||'').trim():'',source:f.get('source')||'phone',subject:String(f.get('subject')||'').trim(),details:String(f.get('details')||''),next_action:String(f.get('nextAction')||'').trim(),next_action_on:f.get('nextActionOn')||'',currency:f.get('currency')||'TZS',estimated_value_minor:''};
  if(f.has('ownerUserId'))fields.owner_user_id=f.get('ownerUserId')||'';
  if(value){const amount=Number(value);if(!Number.isFinite(amount)||amount<0)throw Error('Enter a valid estimated value.');fields.estimated_value_minor=String(Math.round(amount*100));}
  if(fields.subject.length<2)throw Error('Describe what the customer needs.');
  if(who==='client'&&!fields.organization_id)throw Error('Choose the client, or pick Someone new.');
  if(who==='new'&&(fields.caller_name.length<2||fields.caller_phone.replace(/\D/g,'').length<6))throw Error('Enter their name and phone number.');
+ if(!fields.caller_role)throw Error('Choose the role of the person we spoke to.');
  return fields;
 }
 let leadPendingSave=null;
@@ -78,7 +126,7 @@ async function saveLeadForm(form){
 }
 // Every open lead is loaded; won and lost leads only from the last six months, so the page stays fast as years
 // of leads build up. Typing in Search also looks up older leads on the server.
-const leadRecentDays=183,leadColumns='id,lead_number,stage,source,organization_id,contact_id,caller_name,caller_phone,caller_organization,subject,details,estimated_value_minor,currency,owner_user_id,next_action,next_action_on,lost_reason,proforma_id,version,created_by,created_at,updated_at';
+const leadRecentDays=183,leadColumns='id,lead_number,stage,source,organization_id,contact_id,caller_name,caller_phone,caller_organization,caller_role,subject,details,estimated_value_minor,currency,owner_user_id,next_action,next_action_on,lost_reason,proforma_id,version,created_by,created_at,updated_at';
 let leadSearchTimer=0;
 function leadSearchTerm(text){return String(text||'').replace(/[^\p{L}\p{N}@.+\- ]/gu,' ').trim().replace(/\s+/g,' ');}
 async function leadSearchOlder(text){
@@ -97,7 +145,7 @@ async function leadRefreshOne(id){
  const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();
  if(result.error)throw Error(result.error.message);
  if(epoch!==leadEpoch||me?.user_id!==actor)return;
- leadRows=leadRows.filter(r=>r.id!==id);if(result.data)leadRows.push(result.data);
+ leadRows=leadRows.filter(r=>r.id!==id);if(result.data)leadRows.push(result.data);leadHandovers.delete(id);
  if(view==='leads')renderLeads();
 }
 async function loadLeads(){
@@ -105,7 +153,7 @@ async function loadLeads(){
  const since=new Date(Date.now()-leadRecentDays*864e5).toISOString();
  const [rows,proformas]=await Promise.all([all('sales_leads',leadColumns,q=>q.or(`stage.not.in.(won,lost),updated_at.gte.${since}`)),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
  if(epoch!==leadEpoch||me?.user_id!==actor)return false;
- leadRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;leadLoaded=true;leadLoadError='';return true;
+ leadRows=rows;leadHandovers=new Map();if(proformas&&!salesLoaded)salesProformas=proformas;leadLoaded=true;leadLoadError='';return true;
 }
 async function leadsWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
@@ -132,7 +180,9 @@ function bindLeads(){
  $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';leadPendingSave=null;renderLeads();});
  const form=$('#leadForm');
  if(form){
-  form.elements.organizationId.onchange=event=>{form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);};
+  const callerExtra=()=>form.querySelectorAll('[data-caller-extra]').forEach(label=>label.hidden=!!form.elements.contactId.value);
+  form.elements.organizationId.onchange=event=>{form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);callerExtra();};
+  form.elements.contactId.onchange=callerExtra;
   form.querySelectorAll('[name="who"]').forEach(input=>input.onchange=()=>form.querySelectorAll('[data-who]').forEach(group=>group.hidden=group.dataset.who!==input.value));
   form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#leadFormError').textContent='';
    run(async()=>{try{await saveLeadForm(form)}catch(error){if($('#leadFormError'))$('#leadFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
@@ -144,6 +194,8 @@ function bindLeads(){
  document.querySelectorAll('[data-lead-action]').forEach(button=>button.onclick=()=>openLeadAction(leadRows.find(row=>row.id===button.dataset.id),button.dataset.leadAction));
  document.querySelectorAll('[data-lead-proforma]').forEach(button=>button.onclick=()=>startProformaFromLead(leadRows.find(row=>row.id===button.dataset.leadProforma)));
  document.querySelectorAll('[data-lead-history]').forEach(button=>button.onclick=()=>run(()=>showLeadHistory(button.dataset.leadHistory)));
+ document.querySelectorAll('[data-lead-handover]').forEach(button=>button.onclick=()=>openLeadHandover(leadRows.find(row=>row.id===button.dataset.leadHandover)));
+ decorateLeadHandovers().catch(()=>{});
  // The salesperson is the person responsible for a lead, so lead cards do not repeat the responsible-person bar.
 }
 function openLeadAction(row,action){
@@ -159,6 +211,22 @@ function openLeadAction(row,action){
   await leadRefreshOne(row.id);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
+// Hand a lead to another salesperson. The note (5 words or more) tells them what the customer wants and what to do;
+// the lead then appears on their "Work handed to me" list with the note and the next step.
+function openLeadHandover(row){
+ if(!row)return;
+ const options=[...employeeDirectory.values()].filter(e=>e.active!==false&&e.user_id!==row.owner_user_id).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(e=>inventoryOption(e.user_id,employeeName(e.user_id))).join('');
+ const fields=`<p><strong>${esc(row.lead_number)}</strong> · ${esc(row.subject)} · ${esc(leadClientLabel(row))}<br><small>Now with ${esc(row.owner_user_id?employeeName(row.owner_user_id):'nobody')}</small></p><label><span>Hand over to</span><select name="assignee" required data-lookup><option value="">Type a name to search</option>${options}</select></label><label><span>Handover note · at least 5 words</span><textarea name="note" required minlength="10" maxlength="1000" placeholder="For example: Head of radiology at Aga Khan, wants a general ultrasound, compare quotes, call Mr Bob 0556…"></textarea></label><div class="grid"><label><span>Next step</span><input name="nextAction" maxlength="500" placeholder="For example: Call Mr Bob" value="${esc(row.next_action||'')}"></label><label><span>By</span><input name="nextActionOn" type="date" min="${leadToday()}" value="${esc(row.next_action_on&&row.next_action_on>=leadToday()?row.next_action_on:'')}"></label></div><p class="muted">They will see this lead, your note and the next step in their Work handed to me list. Your name and the time are kept on the lead.</p>`;
+ actionForm('Hand over lead',fields,async values=>{
+  const note=String(values.note||'').trim().replace(/\s+/g,' ');
+  if(!values.assignee)throw Error('Choose who takes over the lead.');
+  if(leadWords(note)<5)throw Error('Write a handover note of at least 5 words, so they know what to do.');
+  const actor=me?.user_id,result=await client.rpc('hand_over_sales_lead',{p_id:row.id,p_expected_version:row.version,p_new_owner_user_id:values.assignee,p_note:note,p_next_action:String(values.nextAction||'').trim()||null,p_next_action_on:values.nextActionOn||null});
+  if(me?.user_id!==actor)throw Error('Login changed. Reopen the lead.');
+  if(result.error)throw Error(result.error.message);
+  await leadRefreshOne(row.id);message(`${row.lead_number} handed over to ${employeeName(values.assignee)}.`);
+ });
+}
 function startProformaFromLead(row){
  if(!row)return;
  if(!row.organization_id){message('Add this caller to the client list first, then choose the client on the lead (Edit), so the Pro forma has a real customer.',true);return;}
@@ -166,11 +234,12 @@ function startProformaFromLead(row){
  view='sales';salesSection='proformas';salesEditing='new';render();
  message(`New Pro forma for ${row.lead_number}. After saving it, return to the lead and press Mark won.`);
 }
+const leadEventLabels={create:'recorded',edit:'edited',qualify:'passed to sales',assign:'salesperson set',handover:'handed over',opportunity:'opportunity',won:'won',lost:'lost',reopen:'reopened'};
 async function showLeadHistory(id){
  const output=document.querySelector(`[data-lead-history-output="${CSS.escape(id)}"]`),actor=me?.user_id;if(!output)return;
  output.textContent='Loading history…';
- const result=await client.from('sales_lead_events').select('action,from_stage,to_stage,assigned_user_id,note,actor_user_id,created_at').eq('lead_id',id).order('created_at').limit(200);
+ const result=await client.from('sales_lead_events').select('action,from_stage,to_stage,assigned_user_id,from_user_id,note,actor_user_id,created_at').eq('lead_id',id).order('created_at').limit(200);
  if(me?.user_id!==actor||!output.isConnected)return;
  if(result.error){output.textContent=`History could not load: ${result.error.message}`;return;}
- output.innerHTML=`<ol class="lead-history">${(result.data||[]).map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(event.action)}${event.from_stage&&event.from_stage!==event.to_stage?` · ${esc(leadStages[event.from_stage])} → ${esc(leadStages[event.to_stage])}`:''}${event.assigned_user_id?` · salesperson ${esc(employeeName(event.assigned_user_id))}`:''}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
+ output.innerHTML=`<ol class="lead-history">${(result.data||[]).map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(leadEventLabels[event.action]||event.action)}${event.action==='handover'?` from ${esc(employeeName(event.from_user_id))} to ${esc(employeeName(event.assigned_user_id))}`:''}${event.from_stage&&event.from_stage!==event.to_stage?` · ${esc(leadStages[event.from_stage])} → ${esc(leadStages[event.to_stage])}`:''}${event.assigned_user_id&&event.action!=='handover'?` · salesperson ${esc(employeeName(event.assigned_user_id))}`:''}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
 }
