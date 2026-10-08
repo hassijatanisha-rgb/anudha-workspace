@@ -62,6 +62,15 @@ test('The database refuses the same junk task results as the screen (migration 0
  assert.match(sql,/count\(\*\)>=3/);assert.match(js,/real\.length<3/);
 });
 
+test('Staff page reloads names when someone was added since sign-in (no "Employee name not set")',async()=>{
+ let loads=0;const ctx=vm.createContext({employeeDirectory:new Map([['a',{}]]),loadEmployeeNames:async()=>{loads++}});
+ vm.runInContext(fn('employee-names.js','refreshEmployeeNamesFor'),ctx);
+ await ctx.refreshEmployeeNamesFor(['a']);assert.equal(loads,0,'all known: no reload');
+ await ctx.refreshEmployeeNamesFor(['a','new']);assert.equal(loads,1);
+ assert.match(read('app.js'),/select\('user_id,role,active,phone,department,access'\);if\(r\.error\)throw r\.error;await refreshEmployeeNamesFor\(/);
+ assert.match(fn('staff-access.js','headStaffPage'),/await refreshEmployeeNamesFor\(r\.data\.map/);
+});
+
 test('Assign engineer lists only people who can open Service jobs',()=>{
  const ctx=vm.createContext({serviceTeam:[
   {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},
