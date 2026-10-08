@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.PROFORMA_BROWSER_QA==='1';
-const sources=['company-forms.js','sales-domain.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['row-index.js','company-forms.js','sales-domain.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;

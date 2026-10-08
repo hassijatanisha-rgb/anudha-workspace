@@ -27,13 +27,17 @@ function lookupTidy(label){return label.replace(/ · [0-9a-f]{8}-[0-9a-f]{4}-[0-
 // every row from lookupRowSources, and picking one adds its <option> before choosing it, so the form reads and saves
 // the <select> exactly as before.
 const lookupRowSources={organizations:()=>organizations.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(row=>({value:row.id,label:`${row.name}${row.location?' · '+row.location:''}`}))};
+// Likewise <datalist data-lookup-values="products"> takes its suggestions from lookupValueSources, not <option>s.
+const lookupValueSources={products:()=>inventoryProductValues()};
 const lookupNormals=new Map();
 function lookupNormalCached(text){let value=lookupNormals.get(text);if(value===undefined){if(lookupNormals.size>100000)lookupNormals.clear();value=lookupNormal(text);lookupNormals.set(text,value);}return value;}
 function lookupOptionsOf(source){
  const rows=lookupRowSources[source.dataset?.lookupRows];
  if(rows)return rows().filter(row=>row.value!=='').map(row=>{const label=String(row.label).trim();return {value:row.value,label,search:lookupNormalCached(label)}});
  if(source.tagName==='SELECT')return [...source.options].filter(o=>o.value!==''&&!o.disabled).map(o=>({value:o.value,label:o.textContent.trim(),search:lookupNormalCached(o.textContent)}));
- const list=source._lookupList;return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormalCached(label)}}):[];
+ const list=source._lookupList,values=lookupValueSources[list?.dataset.lookupValues];
+ if(values)return values().map(value=>{const label=lookupTidy(value);return {value,label,search:lookupNormalCached(label)}});
+ return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormalCached(label)}}):[];
 }
 function lookupClose(box){box.querySelector('.lookup-list').hidden=true;box.querySelector('input.lookup-input').setAttribute('aria-expanded','false');}
 function lookupRender(box,showAll=false){
