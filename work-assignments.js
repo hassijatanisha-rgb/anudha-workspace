@@ -15,13 +15,15 @@ const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service 
 // Steps the owner gives a default person; the database hands records on to them automatically.
 const workSteps=[['invoice','Tax invoice in TallyPrime','After the customer accepts a Pro forma'],['packing','Packing','After the Tally invoice is linked, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
 function clearWorkAssignments(){workEpoch++;}
+// A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
+function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
  const cards=[];
- document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[]).find(row=>row.id===id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
+ document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
  document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number});});
- document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=(typeof leadRows!=='undefined'?leadRows:[]).find(r=>r.id===card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
- document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=(typeof pendingRows!=='undefined'?pendingRows:[]).find(r=>r.id===card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
- document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=(typeof purchaseOrders!=='undefined'?purchaseOrders:[]).find(r=>r.id===card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
+ document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=workRow(typeof leadRows!=='undefined'?leadRows:[],card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
+ document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=workRow(typeof pendingRows!=='undefined'?pendingRows:[],card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
+ document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=workRow(typeof purchaseOrders!=='undefined'?purchaseOrders:[],card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
  return cards.filter(({card})=>!card.querySelector('[data-work-handoff]'));
 }
 function workSince(iso,now=Date.now()){

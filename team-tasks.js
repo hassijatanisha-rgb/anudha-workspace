@@ -29,7 +29,7 @@ async function loadTeamTasks(){
  const actor=me?.user_id,since=new Date(Date.now()-30*86400000).toISOString();
  // Only tasks given to or by this person are shown; the owner can read everyone's, so filter here or a busy
  // company's tasks would push the person's own past the row limit.
- const result=await client.from('team_tasks').select('*').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
+ const result=await client.from('team_tasks').select('id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
  if(me?.user_id!==actor)return null;
  if(result.error)throw Error(result.error.message);
  const rows=result.data||[],moved=rows.filter(row=>row.reschedule_count>0).map(row=>row.id),moves=new Map();

@@ -7,12 +7,14 @@ const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · o
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
 const purchaseFilters=[['requested','Needs owner approval'],['approved','Approved · order now'],['ordered','Ordered · waiting for goods'],['finished','Arrived or cancelled'],['all','All']];
 const purchaseRecentDays=183;
+// The order and item fields this page reads (approval, ordering and closing times are not shown).
+const purchaseColumns='id,po_number,status,supplier_id,currency,expected_on,lpo_reference,notes,requested_by,approved_by,close_note,version,created_at,updated_at,purchase_order_lines(id,purchase_order_id,line_number,product_id,quantity,unit_price_minor,pending_request_id,note)';
 let purchaseSearchTimer=0;
 // Older orders are looked up on the server by PO or LPO number while typing in Search.
 async function purchaseSearchOlder(text){
  const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
  const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
+ const result=await client.from('purchase_orders').select(purchaseColumns).or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
  if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
  const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
@@ -101,7 +103,7 @@ async function saveSupplierForm(form){
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
  const epoch=purchaseEpoch,actor=me?.user_id;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ const result=await client.from('purchase_orders').select(purchaseColumns).eq('id',id).maybeSingle();
  if(result.error)throw Error(result.error.message);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
@@ -113,7 +115,7 @@ async function loadPurchasing(){
  // Every open order is loaded; arrived and cancelled ones only from the last six months, with their items in the
  // same request (items are nested per order, so the 1,000-row page limit applies to orders only).
  const since=new Date(Date.now()-purchaseRecentDays*864e5).toISOString();
- const [rows,supplierRows]=await Promise.all([all('purchase_orders','*,purchase_order_lines(*)',q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
+ const [rows,supplierRows]=await Promise.all([all('purchase_orders',purchaseColumns,q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
  const orders=rows.map(({purchase_order_lines:items,...order})=>order),lines=rows.flatMap(row=>row.purchase_order_lines||[]);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;

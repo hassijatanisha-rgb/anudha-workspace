@@ -1876,13 +1876,15 @@ const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service 
 // Steps the owner gives a default person; the database hands records on to them automatically.
 const workSteps=[['invoice','Tax invoice in TallyPrime','After the customer accepts a Pro forma'],['packing','Packing','After the Tally invoice is linked, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
 function clearWorkAssignments(){workEpoch++;}
+// A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
+function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
  const cards=[];
- document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[]).find(row=>row.id===id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
+ document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
  document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number});});
- document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=(typeof leadRows!=='undefined'?leadRows:[]).find(r=>r.id===card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
- document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=(typeof pendingRows!=='undefined'?pendingRows:[]).find(r=>r.id===card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
- document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=((()=>{try{return typeof purchaseOrders}catch{return 'undefined'}})()!=='undefined'?purchaseOrders:[]).find(r=>r.id===card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
+ document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=workRow(typeof leadRows!=='undefined'?leadRows:[],card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
+ document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=workRow(typeof pendingRows!=='undefined'?pendingRows:[],card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
+ document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=workRow((()=>{try{return typeof purchaseOrders}catch{return 'undefined'}})()!=='undefined'?purchaseOrders:[],card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
  return cards.filter(({card})=>!card.querySelector('[data-work-handoff]'));
 }
 function workSince(iso,now=Date.now()){
@@ -2080,12 +2082,14 @@ const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · o
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
 const purchaseFilters=[['requested','Needs owner approval'],['approved','Approved · order now'],['ordered','Ordered · waiting for goods'],['finished','Arrived or cancelled'],['all','All']];
 const purchaseRecentDays=183;
+// The order and item fields this page reads (approval, ordering and closing times are not shown).
+const purchaseColumns='id,po_number,status,supplier_id,currency,expected_on,lpo_reference,notes,requested_by,approved_by,close_note,version,created_at,updated_at,purchase_order_lines(id,purchase_order_id,line_number,product_id,quantity,unit_price_minor,pending_request_id,note)';
 let purchaseSearchTimer=0;
 // Older orders are looked up on the server by PO or LPO number while typing in Search.
 async function purchaseSearchOlder(text){
  const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
  const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
+ const result=await client.from('purchase_orders').select(purchaseColumns).or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
  if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
  const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
@@ -2174,7 +2178,7 @@ async function saveSupplierForm(form){
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
  const epoch=purchaseEpoch,actor=me?.user_id;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ const result=await client.from('purchase_orders').select(purchaseColumns).eq('id',id).maybeSingle();
  if(result.error)throw Error(result.error.message);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
@@ -2186,7 +2190,7 @@ async function loadPurchasing(){
  // Every open order is loaded; arrived and cancelled ones only from the last six months, with their items in the
  // same request (items are nested per order, so the 1,000-row page limit applies to orders only).
  const since=new Date(Date.now()-purchaseRecentDays*864e5).toISOString();
- const [rows,supplierRows]=await Promise.all([all('purchase_orders','*,purchase_order_lines(*)',q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
+ const [rows,supplierRows]=await Promise.all([all('purchase_orders',purchaseColumns,q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
  const orders=rows.map(({purchase_order_lines:items,...order})=>order),lines=rows.flatMap(row=>row.purchase_order_lines||[]);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;
@@ -3311,7 +3315,7 @@ async function loadTeamTasks(){
  const actor=me?.user_id,since=new Date(Date.now()-30*86400000).toISOString();
  // Only tasks given to or by this person are shown; the owner can read everyone's, so filter here or a busy
  // company's tasks would push the person's own past the row limit.
- const result=await client.from('team_tasks').select('*').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
+ const result=await client.from('team_tasks').select('id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
  if(me?.user_id!==actor)return null;
  if(result.error)throw Error(result.error.message);
  const rows=result.data||[],moved=rows.filter(row=>row.reschedule_count>0).map(row=>row.id),moves=new Map();
