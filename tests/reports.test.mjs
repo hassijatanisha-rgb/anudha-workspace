@@ -69,6 +69,7 @@ test('new reports: Pro formas by person and currency, leads by source, purchasin
 });
 test('the report list hides stock movements from staff',()=>{
  const src=readFileSync(new URL('../reports.js',import.meta.url),'utf8');
- assert.match(src,/reportChoices\.filter\(\(\[key\]\)=>key!=='movements'\|\|me\?\.role==='owner'\)/);
+ assert.match(src,/reportChoices\.filter\(\(\[key\]\)=>reportChoiceAllowed\(key\)\)/);
+ assert.match(src,/function reportChoiceAllowed\(key\)\{if\(key==='movements'\)return me\?\.role==='owner';/);
  assert.match(src,/Stock reports are for the owner only/);
 });

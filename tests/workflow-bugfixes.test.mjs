@@ -71,6 +71,15 @@ test('Staff page reloads names when someone was added since sign-in (no "Employe
  assert.match(fn('staff-access.js','headStaffPage'),/await refreshEmployeeNamesFor\(r\.data\.map/);
 });
 
+test('Reports offers only reports for parts the person can use',()=>{
+ const run=(role,access)=>{const ctx=vm.createContext({me:{role,access},hasArea:a=>role==='owner'||access.includes(a)});
+  vm.runInContext(read('reports.js').match(/const reportChoiceAreas=.*\n/)[0]+fn('reports.js','reportChoiceAllowed'),ctx);
+  return ['work','tasks','activity','proformas','leads','deliveries','purchasing','service','travel','movements'].filter(k=>ctx.reportChoiceAllowed(k));};
+ assert.deepEqual(run('head',['leads','proformas','deliveries','stock','travel','reports']),['work','tasks','activity','proformas','leads','deliveries','travel']);
+ assert.deepEqual(run('owner',[]).length,10);
+ assert.match(read('reports.js'),/reportChoices\.filter\(\(\[key\]\)=>reportChoiceAllowed\(key\)\)/);
+});
+
 test('Assign engineer lists only people who can open Service jobs',()=>{
  const ctx=vm.createContext({serviceTeam:[
   {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},
