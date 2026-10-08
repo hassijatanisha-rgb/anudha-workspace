@@ -22,7 +22,8 @@ async function all(table,columns,filter){const out=[];for(let offset=0,size=4,ro
 let listsLoaded=false,listsLoading=null,listsEpoch=0;
 function loadLists(){
  const epoch=++listsEpoch,actor=me;listsLoaded=false;
- listsLoading=Promise.all([all('organizations','id,name,location,type,parent_id,approval_status,deleted_at'),all('contacts','id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status,reason,revision,deleted_at'),all('products','id,name,sku,source,match_id,match_status,revision,deleted_at')]).then(([o,c,p])=>{
+ // Deleted clients and contacts are left on the server (they were dropped here anyway), so deleted_at is not sent.
+ listsLoading=Promise.all([all('organizations','id,name,location,type,parent_id,approval_status',q=>q.is('deleted_at',null)),all('contacts','id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status,reason,revision',q=>q.is('deleted_at',null)),all('products','id,name,sku,source,match_id,match_status,revision,deleted_at')]).then(([o,c,p])=>{
   if(epoch!==listsEpoch||me!==actor)return false;
   organizations=o.filter(x=>!x.deleted_at);contacts=c.filter(x=>!x.deleted_at);products=p;organizations.sort((a,b)=>a.name.localeCompare(b.name));scan();listsLoaded=true;return true;
  },e=>{if(epoch===listsEpoch)listsLoading=null;throw e;});
