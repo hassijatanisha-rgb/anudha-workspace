@@ -17,7 +17,12 @@ insert into auth.users values('${owner}'),('${buyer}'),('${other}'),('${inactive
 insert into public.staff values('${owner}','owner',true),('${buyer}','staff',true),('${other}','staff',true),('${inactive}','staff',false);
 insert into public.products values('${p1}',null),('${p2}',null),('${archived}',now());
 insert into public.pending_stock_requests values('${pend}','${p1}');insert into public.inventory_lots values(gen_random_uuid(),10);`);
-await db.exec(readFileSync(new URL('../supabase/migrations/202609300046_suppliers_purchasing.sql',import.meta.url),'utf8'));
+let migration=readFileSync(new URL('../supabase/migrations/202609300046_suppliers_purchasing.sql',import.meta.url),'utf8');
+if(process.env.PURCHASING_RETRY_CANDIDATE==='1'){
+ const {purchasingRetryCandidate}=await import('./purchasing-retry-candidate.mjs');
+ migration=purchasingRetryCandidate(migration);
+}
+await db.exec(migration);
 const as=actor=>db.exec(`select set_config('test.actor','${actor||''}',false)`);
 const supplier=(sid,version,fields)=>db.query('select * from public.save_supplier($1,$2,$3::jsonb)',[sid,version,JSON.stringify(fields)]).then(r=>r.rows[0]);
 const request=(pid,version,supplierId,lines,extra={})=>db.query('select * from public.save_purchase_request($1,$2,$3,$4,$5,$6,$7::jsonb)',[pid,version,supplierId,extra.currency??'TZS',extra.expected??null,extra.notes??'',JSON.stringify(lines)]).then(r=>r.rows[0]);
@@ -33,7 +38,7 @@ await assert.rejects(supplier(id(100),0,{name:'X'}),/check constraint|violates/)
 await assert.rejects(supplier(id(100),0,{name:'Bad Email Ltd',email:'not-an-email'}),/check constraint|violates/);ok();
 const s1=await supplier(id(100),0,{name:'Fixture Medical Supplies',email:'Sales@Fixture.example',phone:'+255 22 000 0000',tin:'100-000-001'});
 assert.match(s1.supplier_number,/^SUP-\d{6}$/);assert.equal(s1.email,'sales@fixture.example');ok();
-assert.equal((await supplier(id(100),0,{name:'Fixture Medical Supplies'})).id,id(100),'identical retry returns the supplier');ok();
+assert.equal((await supplier(id(100),0,{name:'Fixture Medical Supplies',email:'Sales@Fixture.example',phone:'+255 22 000 0000',tin:'100-000-001'})).id,id(100),'identical retry returns the supplier');ok();
 await assert.rejects(supplier(id(101),0,{name:'  fixture   MEDICAL supplies '}),/already exists/);ok();
 await assert.rejects(supplier(id(100),1,{name:'Fixture Medical Supplies',active:false}),/Only the owner/);ok();
 await assert.rejects(supplier(id(100),5,{name:'Stale'}),/changed/);ok();
@@ -48,7 +53,7 @@ await assert.rejects(request(id(200),0,null,[{product_id:p1,quantity:'lots'}]),/
 await assert.rejects(request(id(200),0,null,[{product_id:p1,quantity:1}],{currency:'GBP'}),/TZS, USD or EUR/);ok();
 const po=await request(id(200),0,null,[{product_id:p1,quantity:50,pending_request_id:pend,note:'For PS-000001'},{product_id:p2,quantity:5,unit_price_minor:120000}]);
 assert.equal(po.status,'requested');assert.match(po.po_number,/^PO-\d{6}$/);assert.equal(await lineCount(id(200)),2);ok();
-assert.equal((await request(id(200),0,null,[{product_id:p1,quantity:50},{product_id:p2,quantity:5}])).po_number,po.po_number,'identical retry returns the request');ok();
+assert.equal((await request(id(200),0,null,[{product_id:p1,quantity:50,pending_request_id:pend,note:'For PS-000001'},{product_id:p2,quantity:5,unit_price_minor:120000}])).po_number,po.po_number,'identical retry returns the request');ok();
 // Editing replaces items atomically; a failing edit leaves the previous items intact.
 await assert.rejects(request(id(200),1,s1.id,[{product_id:p1,quantity:60},{product_id:archived,quantity:1}]),/active product/);ok();
 assert.equal(await lineCount(id(200)),2,'failed edit kept the original items');ok();
@@ -89,3 +94,90 @@ const grants=(await db.query(`select has_table_privilege('authenticated','public
  has_function_privilege('anon','public.save_supplier(uuid,integer,jsonb)','execute') anon_sup,has_function_privilege('authenticated','public.advance_purchase_order(uuid,integer,text,text,text,date)','execute') auth_adv`)).rows[0];
 assert.deepEqual(grants,{po_ins:false,sup_upd:false,anon_sup:false,auth_adv:true});ok();
 console.log(`PASS: ${checks} purchasing checks — access, supplier validation and duplicate names, owner-only deactivation, item validation, atomic item replacement, owner approval, LPO ordering, close/cancel rules, immutable history, no deletes, no stock change.`);
+// Opt-in RED acceptance gate for existing migration 046. Never connects to Supabase.
+if(process.env.PURCHASING_RETRY_AUDIT==='1'){
+ const failures=[],fields={name:'Retry audit supplier',phone:'111'},lines=[{product_id:p1,quantity:2}];
+ await supplier(id(300),0,fields);await request(id(400),0,id(300),lines);
+ const multi=[{product_id:p1,quantity:2,note:'First'},{product_id:p2,quantity:3,note:'Second'}];
+ await request(id(401),0,id(300),multi);
+ if(process.env.PURCHASING_RETRY_CANDIDATE==='upgrade'){
+  const {purchasingRetryUpgrade}=await import('./purchasing-retry-candidate.mjs');
+  const snapshot=async()=>({
+   suppliers:(await db.query('select * from public.suppliers order by id')).rows,
+   orders:(await db.query('select * from public.purchase_orders order by id')).rows,
+   lines:(await db.query('select * from public.purchase_order_lines order by id')).rows,
+   events:(await db.query('select * from public.purchase_order_events order by id')).rows,
+   access:(await db.query("select proname,proacl,prosecdef,proconfig from pg_proc where proname in ('save_supplier','save_purchase_request') order by proname")).rows
+  });
+  const before=await snapshot(),upgrade=readFileSync(new URL('../docs/candidates/purchasing-retry-content.sql',import.meta.url),'utf8');
+  assert.ok(upgrade.trimEnd().endsWith(purchasingRetryUpgrade(migration)),'review SQL matches tested predicate prototype');
+  const definitions=async()=>(await db.query("select proname,pg_get_functiondef(oid) definition from pg_proc where proname in ('save_supplier','save_purchase_request') order by proname")).rows;
+  const originalDefinitions=await definitions();
+  const injected=upgrade.replace('create or replace function public.save_purchase_request','select 1/0;\ncreate or replace function public.save_purchase_request');
+  assert.notEqual(injected,upgrade,'fault is injected between function replacements');
+  await assert.rejects(db.exec(injected),/division by zero/);
+  await db.exec('rollback');
+  assert.deepEqual(await definitions(),originalDefinitions,'failed upgrade restores both original functions');
+  assert.deepEqual(await snapshot(),before,'failed upgrade preserves all records and permissions');
+  console.log('PASS failed upgrade rollback: both function definitions, records and permissions restored');
+  await db.exec(upgrade);assert.deepEqual(await snapshot(),before);
+  await db.exec(upgrade);assert.deepEqual(await snapshot(),before);
+  console.log('PASS upgrade twice: existing rows, history and function security unchanged');
+ }
+ const cases=[
+  ['supplier changed phone',()=>supplier(id(300),0,{...fields,phone:'222'})],
+  ['supplier changed active',()=>supplier(id(300),0,{...fields,active:false})],
+  ['supplier changed email',()=>supplier(id(300),0,{...fields,email:'new@fixture.example'})],
+  ['purchase changed quantity',()=>request(id(400),0,id(300),[{product_id:p1,quantity:9}])],
+  ['purchase changed product',()=>request(id(400),0,id(300),[{product_id:p2,quantity:2}])],
+  ['purchase changed currency',()=>request(id(400),0,id(300),lines,{currency:'USD'})],
+  ['purchase changed supplier',()=>request(id(400),0,s2.id,lines)],
+  ['purchase changed notes',()=>request(id(400),0,id(300),lines,{notes:'Changed'})],
+  ['purchase changed expected date',()=>request(id(400),0,id(300),lines,{expected:'2099-01-01'})],
+  ['purchase changed price',()=>request(id(400),0,id(300),[{...lines[0],unit_price_minor:100}])],
+  ['purchase changed pending link',()=>request(id(400),0,id(300),[{...lines[0],pending_request_id:pend}])],
+  ['purchase changed line note',()=>request(id(400),0,id(300),[{...lines[0],note:'Changed'}])],
+  ['purchase reordered lines',()=>request(id(401),0,id(300),[...multi].reverse())],
+  ['purchase duplicate replacement line',()=>request(id(401),0,id(300),[multi[0],multi[0]])],
+  ['purchase omitted line',()=>request(id(401),0,id(300),[multi[0]])]
+ ];
+ for(const [name,call] of cases){
+  try{await assert.rejects(call,/already exists|different|mismatch|compare/i);console.log('PASS retry guard: '+name)}
+  catch(error){failures.push(name);console.error('FAIL retry guard: '+name+' — '+error.message)}
+ }
+ assert.equal((await db.query('select phone from public.suppliers where id=$1',[id(300)])).rows[0].phone,'111');
+ assert.equal((await db.query('select quantity from public.purchase_order_lines where purchase_order_id=$1',[id(400)])).rows[0].quantity,2);
+ assert.equal((await db.query('select sum(loose_units)::int n from public.inventory_lots')).rows[0].n,10);
+ assert.equal((await supplier(id(300),0,{...fields,name:'  Retry audit supplier  ',phone:' 111 '})).version,1);
+ assert.equal((await request(id(400),0,id(300),[{product_id:p1,quantity:'2',unit_price_minor:null,note:''}])).version,1);
+ assert.equal((await request(id(401),0,id(300),multi)).version,1);
+ assert.equal((await db.query('select count(*)::int n from public.purchase_order_events where purchase_order_id=$1',[id(400)])).rows[0].n,1);
+ await as(other);
+ await assert.rejects(supplier(id(300),0,fields),/already exists/);
+ await assert.rejects(request(id(400),0,id(300),lines),/already exists/);
+ console.log('PASS retry invariants: normalized identical content, version/history unchanged, other actor rejected, stock unchanged');
+ await db.exec('set role authenticated');
+ try{
+  await as(owner);
+  assert.equal((await supplier(id(300),0,fields)).id,id(300));
+  assert.equal((await request(id(400),0,id(300),lines)).id,id(400));
+  await assert.rejects(db.query('update public.suppliers set phone=$1 where id=$2',['222',id(300)]),/permission denied/);
+  await assert.rejects(db.query('update public.purchase_orders set notes=$1 where id=$2',['Changed',id(400)]),/permission denied/);
+  await as(other);
+  await assert.rejects(supplier(id(300),0,fields),/already exists/);
+  await assert.rejects(request(id(400),0,id(300),lines),/already exists/);
+  await as(inactive);
+  await assert.rejects(supplier(id(300),0,fields),/Active staff/);
+  await assert.rejects(request(id(400),0,id(300),lines),/Active staff/);
+  assert.equal((await db.query('select count(*)::int n from public.suppliers')).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from public.purchase_orders')).rows[0].n,0);
+ }finally{await db.exec('reset role')}
+ await db.exec('set role anon');
+ try{
+  await assert.rejects(supplier(id(300),0,fields),/permission denied/);
+  await assert.rejects(request(id(400),0,id(300),lines),/permission denied/);
+ }finally{await db.exec('reset role')}
+ console.log('PASS actual roles: authenticated retry, direct writes denied, other/inactive/anonymous blocked, inactive reads empty');
+ await db.close();
+ assert.equal(failures.length,0,`Mismatched retries incorrectly reported success: ${failures.join(', ')}`);
+}else await db.close();

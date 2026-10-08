@@ -2,6 +2,8 @@
 // Suppliers and purchase orders: request → owner approval → ordered (LPO) → closed, or cancelled.
 // Writes go through save_supplier / save_purchase_request / advance_purchase_order only. No stock changes here.
 let purchaseSection='orders',purchaseFilter='requested',purchaseSearch='',purchasePage=0,purchaseLoaded=false,purchaseLoadError='',purchaseEpoch=0;
+let purchaseRenderEpoch=0,purchaseSessionEpoch=0;
+const purchaseRefreshRequests=new Map();
 let purchaseOrders=[],purchaseLines=[],suppliers=[],purchaseEditing='',supplierEditing='',purchasePrefill=null,purchasePendingSave=null,supplierPendingSave=null;
 const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · order now',ordered:'Ordered · waiting for goods',closed:'Goods arrived',cancelled:'Cancelled'};
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
@@ -11,15 +13,18 @@ let purchaseSearchTimer=0;
 // Older orders are looked up on the server by PO or LPO number while typing in Search.
 async function purchaseSearchOlder(text){
  const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
- const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
- if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
+ const epoch=purchaseEpoch,actor=me,actorId=me?.user_id,like=`*${term}*`;
+ const current=()=>!!actor&&epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId&&view==='purchasing'&&purchaseSearch===text;
+ if(!current())return;
+ let result;
+ try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);}catch(error){if(!current())return;throw error;}
+ if(!current()||result.error)return;
  const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
  purchaseOrders=purchaseOrders.concat(extra.map(({purchase_order_lines:items,...order})=>order));purchaseLines=purchaseLines.concat(extra.flatMap(r=>r.purchase_order_lines||[]));
  const box=$('#purchaseSearch');if(box)renderSearchPreservingPosition(box,renderPurchasing);else renderPurchasing();
 }
-function clearPurchasing(){purchaseEpoch++;purchaseLoaded=false;purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
+function clearPurchasing(){purchaseEpoch++;purchaseRenderEpoch++;purchaseSessionEpoch++;purchaseRefreshRequests.clear();purchaseLoaded=false;purchaseLoadError='';purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
 function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';}
 function purchaseToday(){return new Date().toISOString().slice(0,10);}
 function purchaseOverdue(order,today=purchaseToday()){return order.status==='ordered'&&!!order.expected_on&&order.expected_on<today;}
@@ -71,60 +76,91 @@ function purchaseFormValues(form){
  return {supplierId:f.get('supplierId')||null,currency:f.get('currency')||'TZS',expectedOn:f.get('expectedOn')||null,notes:String(f.get('notes')||''),lines};
 }
 async function savePurchaseForm(form){
+ const actor=me,actorId=me?.user_id,epoch=purchaseSessionEpoch;
+ const sessionCurrent=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseSessionEpoch&&view==='purchasing';
+ const current=()=>sessionCurrent()&&form.isConnected&&$('#purchaseForm')===form;
+ if(!current())return;
+ if(form.dataset.savedId)throw Error('This request is already saved. Use Refresh to load it before making further changes.');
  const values=purchaseFormValues(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),key=JSON.stringify(values);
- // One request ID per unchanged form until the server confirms it, so a retry cannot create a duplicate order.
+ // An uncertain write must be reconciled with its original content, never retried as a new order.
+ if(!id&&purchasePendingSave?.uncertain&&purchasePendingSave.key!==key)throw Error('The previous save is unconfirmed. Restore the original details and retry, or refresh and check the saved request before editing it.');
  if(!id&&purchasePendingSave?.key!==key)purchasePendingSave={key,id:crypto.randomUUID()};
- const requestId=id||purchasePendingSave.id,actor=me?.user_id;
- const result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});
- if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
- if(result.error)throw Error(result.error.message);
- const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';await purchaseRefreshOne(saved.id);message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
+ const requestId=id||purchasePendingSave.id,pending=id?null:purchasePendingSave;
+ let result;
+ if(pending)pending.inFlight=true;
+ try{result=await client.rpc('save_purchase_request',{p_id:requestId,p_expected_version:version,p_supplier_id:values.supplierId,p_currency:values.currency,p_expected_on:values.expectedOn,p_notes:values.notes,p_lines:values.lines});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}finally{if(pending)pending.inFlight=false;}
+ if(!current())return;
+ if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
+ const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
+ if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
+ form.dataset.savedId=saved.id;
+ purchasePendingSave=null;purchasePrefill=null;purchaseEditing='';
+ try{await purchaseRefreshOne(saved.id)}catch(error){if(!current())return;throw Error('This request is already saved, but the list could not refresh. Use Refresh before making further changes.');}
+ if(sessionCurrent())message(`${saved.po_number} ${id?'updated':'sent for approval'}.`);
 }
 function supplierEditor(row){
  return `<section class="card document-editor"><div class="heading"><div><small>${row?esc(row.supplier_number):'NEW'}</small><h2>${row?'Edit supplier':'New supplier'}</h2></div><button type="button" id="closeSupplierEditor">Close</button></div><form id="supplierForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><div class="grid"><label class="wide"><span>Supplier name</span><input name="name" required minlength="2" maxlength="200" value="${esc(row?.name||'')}"></label><label><span>Country</span><input name="country" maxlength="100" value="${esc(row?.country||'')}"></label><label><span>Contact person</span><input name="contact_name" maxlength="200" value="${esc(row?.contact_name||'')}"></label><label><span>Phone</span><input name="phone" maxlength="60" inputmode="tel" value="${esc(row?.phone||'')}"></label><label><span>Email</span><input name="email" type="email" maxlength="320" value="${esc(row?.email||'')}"></label><label><span>TIN</span><input name="tin" maxlength="60" value="${esc(row?.tin||'')}"></label><label><span>Payment terms</span><input name="payment_terms" maxlength="300" value="${esc(row?.payment_terms||'')}"></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000">${esc(row?.notes||'')}</textarea></label>${row&&me?.role==='owner'?`<label><span>Status</span><select name="active"><option value="true" ${row.active?'selected':''}>Active</option><option value="false" ${row.active?'':'selected'}>Inactive — hide from new orders</option></select></label>`:''}</div><p role="alert" id="supplierFormError"></p><div class="actions"><button type="submit">${row?'Save changes':'Save supplier'}</button></div></form></section>`;
 }
 async function saveSupplierForm(form){
+ const actor=me,actorId=me?.user_id,epoch=purchaseSessionEpoch;
+ const sessionCurrent=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseSessionEpoch&&view==='purchasing';
+ const current=()=>sessionCurrent()&&form.isConnected&&$('#supplierForm')===form;
+ if(!current())return;
+ if(form.dataset.savedId)throw Error('This supplier is already saved. Use Refresh to load it before making further changes.');
  const f=new FormData(form),id=form.dataset.id||'',version=Number(form.dataset.version||0),existing=suppliers.find(s=>s.id===id);
  const fields={name:String(f.get('name')||'').trim(),country:f.get('country')||'',contact_name:f.get('contact_name')||'',phone:f.get('phone')||'',email:String(f.get('email')||'').trim(),tin:f.get('tin')||'',payment_terms:f.get('payment_terms')||'',notes:f.get('notes')||'',active:f.has('active')?f.get('active')==='true':(existing?.active??true)};
  if(fields.name.length<2)throw Error('Enter the supplier name.');
- if(!id&&supplierPendingSave?.name!==fields.name)supplierPendingSave={name:fields.name,id:crypto.randomUUID()};
- const requestId=id||supplierPendingSave.id,actor=me?.user_id,result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});
- if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
- if(result.error)throw Error(result.error.message);
- const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
+ const key=JSON.stringify(fields);
+ if(!id&&supplierPendingSave?.uncertain&&supplierPendingSave.key!==key)throw Error('The previous save is unconfirmed. Restore the original details and retry, or refresh and check the saved supplier before editing it.');
+ if(!id&&supplierPendingSave?.key!==key)supplierPendingSave={key,id:crypto.randomUUID()};
+ const requestId=id||supplierPendingSave.id,pending=id?null:supplierPendingSave;
+ let result;
+ if(pending)pending.inFlight=true;
+ try{result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});}catch(error){if(pending)pending.uncertain=true;if(!current())return;throw error;}finally{if(pending)pending.inFlight=false;}
+ if(!current())return;
+ if(result?.error){if(pending&&!/^(?:22[0-9A-Z]{3}|23[0-9A-Z]{3}|P0001|42501|40001|40P01)$/.test(result.error.code||''))pending.uncertain=true;throw Error(result.error.message);}
+ const saved=Array.isArray(result?.data)?result.data[0]:result?.data;
+ if(saved?.id!==requestId){if(pending)pending.uncertain=true;throw Error('The server did not confirm the save. Press save again to retry safely.');}
+ form.dataset.savedId=saved.id;
+ supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);if(sessionCurrent())message(`${saved.name} saved.`);
 }
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
- const epoch=purchaseEpoch,actor=me?.user_id;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
- if(result.error)throw Error(result.error.message);
- if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
- purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
- if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
- if(view==='purchasing')renderPurchasing();
+ const epoch=purchaseEpoch,actor=me,actorId=me?.user_id,request={};
+ if(!actor)return;
+ purchaseRefreshRequests.set(id,request);
+ const current=()=>epoch===purchaseEpoch&&me===actor&&me?.user_id===actorId&&purchaseRefreshRequests.get(id)===request;
+ try{
+  let result;
+  try{result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();}catch(error){if(!current())return;throw error;}
+  if(!current())return;
+  if(result.error)throw Error(result.error.message);
+  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
+  if(result.data){const {purchase_order_lines:items,...order}=result.data;purchaseOrders.push(order);purchaseLines.push(...(items||[]));}
+  if(view==='purchasing')renderPurchasing();
+ }finally{if(purchaseRefreshRequests.get(id)===request)purchaseRefreshRequests.delete(id);}
 }
 async function loadPurchasing(){
- const epoch=++purchaseEpoch,actor=me?.user_id;
+ const epoch=++purchaseEpoch,actor=me,actorId=me?.user_id;
  // Every open order is loaded; arrived and cancelled ones only from the last six months, with their items in the
  // same request (items are nested per order, so the 1,000-row page limit applies to orders only).
  const since=new Date(Date.now()-purchaseRecentDays*864e5).toISOString();
  const [rows,supplierRows]=await Promise.all([all('purchase_orders','*,purchase_order_lines(*)',q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
  const orders=rows.map(({purchase_order_lines:items,...order})=>order),lines=rows.flatMap(row=>row.purchase_order_lines||[]);
- if(epoch!==purchaseEpoch||me?.user_id!==actor)return false;
+ if(epoch!==purchaseEpoch||me!==actor||me?.user_id!==actorId)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;
 }
 async function purchasingWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
+ const actor=me,actorId=me?.user_id,epoch=++purchaseRenderEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&view==='purchasing'&&epoch===purchaseRenderEpoch;
+ if(!current())return;
+ syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
   $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
-  try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
+  try{if(!(await loadPurchasing()))return;}catch(error){if(!current())return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
- if(view!=='purchasing'||me?.user_id!==actor)return;
+ if(!current())return;
  renderPurchasing();
 }
 function renderPurchasing(){
@@ -138,22 +174,30 @@ function renderPurchasing(){
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
 function supplierCard(row){return `<article class="card supplier-card" data-supplier-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.supplier_number)}${row.country?' · '+esc(row.country):''}</small><h2>${esc(row.name)}</h2></div><span class="tag">${row.active?'Active':'Inactive'}</span></div><div class="details"><div><small>Contact</small>${esc(row.contact_name||'—')}</div><div><small>Phone</small>${esc(row.phone||'—')}</div><div><small>Email</small>${esc(row.email||'—')}</div><div><small>TIN</small>${esc(row.tin||'—')}</div><div><small>Payment terms</small>${esc(row.payment_terms||'—')}</div><div><small>Purchase orders</small>${purchaseOrders.filter(o=>o.supplier_id===row.id).length}</div></div><div class="actions"><button type="button" data-supplier-edit="${esc(row.id)}">Edit</button></div></article>`;}
+function purchasingResetBlocked(kind){
+ const pending=kind==='purchase'?purchasePendingSave:supplierPendingSave;
+ if(!pending?.uncertain&&!pending?.inFlight)return false;
+ const text=pending.inFlight?'This form is still saving. Wait for the result before starting or closing this form.':'The previous save is unconfirmed. Keep these details and retry the same save before starting or closing this form.';
+ const output=$(kind==='purchase'?'#purchaseFormError':'#supplierFormError');
+ if(output)output.textContent=text;else message(text);
+ return true;
+}
 function bindPurchasing(){
  $('#purchaseRefresh').onclick=()=>run(()=>purchasingWorkspace(true));
- $('#newPurchase')?.addEventListener('click',()=>{purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
- $('#newSupplier')?.addEventListener('click',()=>{supplierEditing='new';supplierPendingSave=null;renderPurchasing();$('#supplierForm [name="name"]')?.focus();});
- $('#closePurchaseEditor')?.addEventListener('click',()=>{purchaseEditing='';purchasePrefill=null;purchasePendingSave=null;renderPurchasing();});
- $('#closeSupplierEditor')?.addEventListener('click',()=>{supplierEditing='';supplierPendingSave=null;renderPurchasing();});
+ $('#newPurchase')?.addEventListener('click',()=>{if(purchasingResetBlocked('purchase'))return;purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
+ $('#newSupplier')?.addEventListener('click',()=>{if(purchasingResetBlocked('supplier'))return;supplierEditing='new';supplierPendingSave=null;renderPurchasing();$('#supplierForm [name="name"]')?.focus();});
+ $('#closePurchaseEditor')?.addEventListener('click',()=>{if(purchasingResetBlocked('purchase'))return;purchaseEditing='';purchasePrefill=null;purchasePendingSave=null;renderPurchasing();});
+ $('#closeSupplierEditor')?.addEventListener('click',()=>{if(purchasingResetBlocked('supplier'))return;supplierEditing='';supplierPendingSave=null;renderPurchasing();});
  const form=$('#purchaseForm');
  if(form){
   $('#addPurchaseLine').onclick=()=>$('#purchaseLines').insertAdjacentHTML('beforeend',purchaseLineRow());
   $('#purchaseLines').addEventListener('click',event=>{const remove=event.target.closest('[data-remove-purchase-line]');if(!remove)return;if(form.querySelectorAll('[data-purchase-line]').length>1)remove.closest('tr').remove();else $('#purchaseFormError').textContent='A purchase request needs at least one item.';});
-  form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#purchaseFormError').textContent='';
-   run(async()=>{try{await savePurchaseForm(form)}catch(error){if($('#purchaseFormError'))$('#purchaseFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+  form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;const actor=me,epoch=purchaseSessionEpoch;button.disabled=true;$('#purchaseFormError').textContent='';
+   run(async()=>{try{await savePurchaseForm(form)}catch(error){if(me!==actor||purchaseSessionEpoch!==epoch||view!=='purchasing'||!form.isConnected||$('#purchaseForm')!==form)return;if($('#purchaseFormError'))$('#purchaseFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
  }
  const supplierForm=$('#supplierForm');
- if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#supplierFormError').textContent='';
-  run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+ if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;const actor=me,epoch=purchaseSessionEpoch;button.disabled=true;$('#supplierFormError').textContent='';
+  run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if(me!==actor||purchaseSessionEpoch!==epoch||view!=='purchasing'||!supplierForm.isConnected||$('#supplierForm')!==supplierForm)return;if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
  $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});
@@ -164,14 +208,21 @@ function bindPurchasing(){
 }
 function openPurchaseAction(order,action){
  if(!order)return;
+ const actor=me,actorId=me?.user_id,epoch=purchaseEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&epoch===purchaseEpoch&&view==='purchasing';
+ if(!current())return;
  const titles={approve:'Approve purchase',order:'Place order with supplier',close:'Goods arrived — close purchase order',cancel:'Cancel purchase order'};
  const supplier=purchaseSupplier(order.supplier_id);
  const fields=`<p><strong>${esc(order.po_number)}</strong> · ${esc(supplier?.name||'Supplier not chosen')}</p>${action==='order'?(supplier?`<label><span>LPO number sent to the supplier</span><input name="lpo" required minlength="2" maxlength="120"></label><label><span>Expected arrival · optional</span><input name="expected" type="date" min="${purchaseToday()}" value="${esc(order.expected_on&&order.expected_on>=purchaseToday()?order.expected_on:'')}"></label>`:'<p class="notice">Choose the supplier first: ask the requester or owner to cancel and re-request, or edit before approval.</p>'):''}${action==='approve'?'<p>Approving lets staff place this order with the supplier.</p>':''}<label><span>${action==='close'?'Supplier delivery note or receipt reference':action==='cancel'?'Why is it cancelled?':'Note · optional'}</span><textarea name="note" maxlength="1000" ${['close','cancel'].includes(action)?'required minlength="3"':''}></textarea></label>${action==='close'?'<p class="muted">Closing records that the goods arrived. Enter the received quantities into stock in Inventory.</p>':''}`;
  actionForm(titles[action],fields,async values=>{
-  const actor=me?.user_id,result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the purchase order.');
+  if(!current())return;
+  let result;
+  try{result=await client.rpc('advance_purchase_order',{p_id:order.id,p_expected_version:order.version,p_action:action,p_note:values.note||'',p_lpo_reference:values.lpo||'',p_expected_on:values.expected||null});}catch(error){if(!current())return;throw error;}
+  if(!current())return;
   if(result.error)throw Error(result.error.message);
-  await purchaseRefreshOne(order.id);message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
+  await purchaseRefreshOne(order.id);
+  if(!current())return;
+  message(`${order.po_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 async function showPurchaseHistory(id){
@@ -184,7 +235,7 @@ async function showPurchaseHistory(id){
 }
 // Called from a pending stock order: opens a new purchase request with that product and quantity.
 function startPurchaseFromPending(row){
- if(!row)return;
+ if(!row||purchasingResetBlocked('purchase'))return;
  purchasePrefill={lines:[{product_id:row.product_id,quantity:row.quantity,pending_request_id:row.id,note:`For ${row.request_number}`}],notes:`Customer pending order ${row.request_number}`};
  view='purchasing';openPurchaseSection('orders');purchaseEditing='new';purchasePendingSave=null;render();
 }
