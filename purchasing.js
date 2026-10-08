@@ -7,12 +7,14 @@ const purchaseStatuses={requested:'Needs owner approval',approved:'Approved · o
 // Filter tabs use the same words as the status tags, so a request reads the same everywhere.
 const purchaseFilters=[['requested','Needs owner approval'],['approved','Approved · order now'],['ordered','Ordered · waiting for goods'],['finished','Arrived or cancelled'],['all','All']];
 const purchaseRecentDays=183;
+// The order and item fields this page reads (approval, ordering and closing times are not shown).
+const purchaseColumns='id,po_number,status,supplier_id,currency,expected_on,lpo_reference,notes,requested_by,approved_by,close_note,version,created_at,updated_at,purchase_order_lines(id,purchase_order_id,line_number,product_id,quantity,unit_price_minor,pending_request_id,note)';
 let purchaseSearchTimer=0;
 // Older orders are looked up on the server by PO or LPO number while typing in Search.
 async function purchaseSearchOlder(text){
  const term=String(text||'').replace(/[^\p{L}\p{N}.\-\/ ]/gu,' ').trim();if(term.length<3)return;
  const epoch=purchaseEpoch,actor=me?.user_id,like=`*${term}*`;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
+ const result=await client.from('purchase_orders').select(purchaseColumns).or(`po_number.ilike.${like},lpo_reference.ilike.${like}`).order('created_at',{ascending:false}).limit(50);
  if(result.error||epoch!==purchaseEpoch||me?.user_id!==actor||view!=='purchasing'||purchaseSearch!==text)return;
  const known=new Set(purchaseOrders.map(o=>o.id)),extra=(result.data||[]).filter(r=>!known.has(r.id));
  if(!extra.length)return;
@@ -26,7 +28,7 @@ function purchaseOverdue(order,today=purchaseToday()){return order.status==='ord
 function purchaseSupplier(id){return suppliers.find(s=>s.id===id);}
 function purchaseProductName(id){const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
 function purchaseMoney(minor,currency){return minor==null?'':new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS'}).format(Number(minor)/100);}
-function purchaseOrderLines(orderId){return purchaseLines.filter(line=>line.purchase_order_id===orderId).sort((a,b)=>a.line_number-b.line_number);}
+function purchaseOrderLines(orderId){return [...rowsWhere(purchaseLines,'purchase_order_id',orderId)].sort((a,b)=>a.line_number-b.line_number);}
 function purchaseVisibleOrders(orders,{filter,search,today=purchaseToday()}){
  const q=String(search||'').trim().toLowerCase();
  return orders.filter(order=>filter==='all'||(filter==='finished'?['closed','cancelled'].includes(order.status):order.status===filter))
@@ -56,7 +58,7 @@ function purchaseLineRow(line={}){
 }
 function purchaseEditor(order){
  const lines=order?purchaseOrderLines(order.id):(purchasePrefill?.lines||[{}]);
- return `<section class="card document-editor"><div class="heading"><div><small>${order?esc(order.po_number):'NEW'}</small><h2>${order?'Edit purchase request':'New purchase request'}</h2></div><button type="button" id="closePurchaseEditor">Close</button></div><form id="purchaseForm" data-id="${esc(order?.id||'')}" data-version="${order?.version||0}"><input type="hidden" name="currency" value="${esc(order?.currency||'TZS')}"><label class="purchase-supplier"><span>1. Supplier</span><select name="supplierId" required><option value="">Choose the supplier, for example Polymed</option>${purchaseSupplierOptions(order?.supplier_id||'')}</select></label><h3>2. Items we need from them</h3><datalist id="purchaseProductChoices">${salesProductChoices()}</datalist><div class="table-wrap"><table class="purchase-lines"><thead><tr><th>Item</th><th>Quantity</th><th>Note</th><th></th></tr></thead><tbody id="purchaseLines">${lines.map(purchaseLineRow).join('')}</tbody></table></div><div class="actions"><button type="button" id="addPurchaseLine">Add item</button></div><details class="purchase-more"${order?.expected_on||order?.notes||purchasePrefill?.notes?' open':''}><summary>Needed by date or a note (optional)</summary><div class="grid"><label><span>Needed by</span><input name="expectedOn" type="date" value="${esc(order?.expected_on||'')}"></label><label class="wide"><span>Note for the owner</span><textarea name="notes" maxlength="4000">${esc(order?.notes||purchasePrefill?.notes||'')}</textarea></label></div></details><p role="alert" id="purchaseFormError"></p><div class="actions"><button type="submit">${order?'Save changes':'Send for approval'}</button></div></form></section>`;
+ return `<section class="card document-editor"><div class="heading"><div><small>${order?esc(order.po_number):'NEW'}</small><h2>${order?'Edit purchase request':'New purchase request'}</h2></div><button type="button" id="closePurchaseEditor">Close</button></div><form id="purchaseForm" data-id="${esc(order?.id||'')}" data-version="${order?.version||0}"><input type="hidden" name="currency" value="${esc(order?.currency||'TZS')}"><label class="purchase-supplier"><span>1. Supplier</span><select name="supplierId" required><option value="">Choose the supplier, for example Polymed</option>${purchaseSupplierOptions(order?.supplier_id||'')}</select></label><h3>2. Items we need from them</h3><datalist id="purchaseProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><div class="table-wrap"><table class="purchase-lines"><thead><tr><th>Item</th><th>Quantity</th><th>Note</th><th></th></tr></thead><tbody id="purchaseLines">${lines.map(purchaseLineRow).join('')}</tbody></table></div><div class="actions"><button type="button" id="addPurchaseLine">Add item</button></div><details class="purchase-more"${order?.expected_on||order?.notes||purchasePrefill?.notes?' open':''}><summary>Needed by date or a note (optional)</summary><div class="grid"><label><span>Needed by</span><input name="expectedOn" type="date" value="${esc(order?.expected_on||'')}"></label><label class="wide"><span>Note for the owner</span><textarea name="notes" maxlength="4000">${esc(order?.notes||purchasePrefill?.notes||'')}</textarea></label></div></details><p role="alert" id="purchaseFormError"></p><div class="actions"><button type="submit">${order?'Save changes':'Send for approval'}</button></div></form></section>`;
 }
 function purchaseFormValues(form){
  const f=new FormData(form),lines=[...form.querySelectorAll('[data-purchase-line]')].map((row,index)=>{
@@ -101,7 +103,7 @@ async function saveSupplierForm(form){
 async function purchaseRefreshOne(id){
  if(!purchaseLoaded||!id)return purchasingWorkspace(true);
  const epoch=purchaseEpoch,actor=me?.user_id;
- const result=await client.from('purchase_orders').select('*,purchase_order_lines(*)').eq('id',id).maybeSingle();
+ const result=await client.from('purchase_orders').select(purchaseColumns).eq('id',id).maybeSingle();
  if(result.error)throw Error(result.error.message);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return;
  purchaseOrders=purchaseOrders.filter(o=>o.id!==id);purchaseLines=purchaseLines.filter(l=>l.purchase_order_id!==id);
@@ -113,7 +115,7 @@ async function loadPurchasing(){
  // Every open order is loaded; arrived and cancelled ones only from the last six months, with their items in the
  // same request (items are nested per order, so the 1,000-row page limit applies to orders only).
  const since=new Date(Date.now()-purchaseRecentDays*864e5).toISOString();
- const [rows,supplierRows]=await Promise.all([all('purchase_orders','*,purchase_order_lines(*)',q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
+ const [rows,supplierRows]=await Promise.all([all('purchase_orders',purchaseColumns,q=>q.or(`status.in.(requested,approved,ordered),updated_at.gte.${since}`)),all('suppliers','*')]);
  const orders=rows.map(({purchase_order_lines:items,...order})=>order),lines=rows.flatMap(row=>row.purchase_order_lines||[]);
  if(epoch!==purchaseEpoch||me?.user_id!==actor)return false;
  purchaseOrders=orders;purchaseLines=lines;suppliers=supplierRows;purchaseLoaded=true;purchaseLoadError='';return true;
@@ -154,7 +156,7 @@ function bindPurchasing(){
  const supplierForm=$('#supplierForm');
  if(supplierForm)supplierForm.onsubmit=event=>{event.preventDefault();const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#supplierFormError').textContent='';
   run(async()=>{try{await saveSupplierForm(supplierForm)}catch(error){if($('#supplierFormError'))$('#supplierFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
- $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
+ $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing,150);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});
  document.querySelectorAll('[data-purchase-edit]').forEach(button=>button.onclick=()=>{purchaseEditing=button.dataset.purchaseEdit;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});

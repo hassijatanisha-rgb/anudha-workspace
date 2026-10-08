@@ -22,9 +22,22 @@ function lookupRank(items,query,limit=lookupShown){
 }
 // Internal record IDs and review notes stay in the saved value but are not shown in the list.
 function lookupTidy(label){return label.replace(/ · [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'').replace(/ · Specification needs review/g,'');}
+// A client/branch list has ~10,000 entries, and a <select> holding them all took a quarter of a second to draw on a
+// desktop (seconds on a phone). <select data-lookup-rows="organizations"> holds only its chosen option: the box offers
+// every row from lookupRowSources, and picking one adds its <option> before choosing it, so the form reads and saves
+// the <select> exactly as before.
+const lookupRowSources={organizations:()=>organizations.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(row=>({value:row.id,label:`${row.name}${row.location?' · '+row.location:''}`}))};
+// Likewise <datalist data-lookup-values="products"> takes its suggestions from lookupValueSources, not <option>s.
+const lookupValueSources={products:()=>inventoryProductValues()};
+const lookupNormals=new Map();
+function lookupNormalCached(text){let value=lookupNormals.get(text);if(value===undefined){if(lookupNormals.size>100000)lookupNormals.clear();value=lookupNormal(text);lookupNormals.set(text,value);}return value;}
 function lookupOptionsOf(source){
- if(source.tagName==='SELECT')return [...source.options].filter(o=>o.value!==''&&!o.disabled).map(o=>({value:o.value,label:o.textContent.trim(),search:lookupNormal(o.textContent)}));
- const list=source._lookupList;return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormal(label)}}):[];
+ const rows=lookupRowSources[source.dataset?.lookupRows];
+ if(rows)return rows().filter(row=>row.value!=='').map(row=>{const label=String(row.label).trim();return {value:row.value,label,search:lookupNormalCached(label)}});
+ if(source.tagName==='SELECT')return [...source.options].filter(o=>o.value!==''&&!o.disabled).map(o=>({value:o.value,label:o.textContent.trim(),search:lookupNormalCached(o.textContent)}));
+ const list=source._lookupList,values=lookupValueSources[list?.dataset.lookupValues];
+ if(values)return values().map(value=>{const label=lookupTidy(value);return {value,label,search:lookupNormalCached(label)}});
+ return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormalCached(label)}}):[];
 }
 function lookupClose(box){box.querySelector('.lookup-list').hidden=true;box.querySelector('input.lookup-input').setAttribute('aria-expanded','false');}
 function lookupRender(box,showAll=false){
@@ -53,6 +66,7 @@ function lookupMove(box,step){
 }
 function lookupPick(box,row){
  const source=box._lookupSource,input=box.querySelector('input.lookup-input');
+ if(source.tagName==='SELECT'&&![...source.options].some(o=>o.value===row.value))source.add(new Option(row.label,row.value));
  if(source.tagName==='SELECT'){source.value=row.value;input.value=row.label;}
  else{source.value=row.value;}
  input.setCustomValidity('');lookupClose(box);box._lookupHold=false;
@@ -72,7 +86,7 @@ function lookupAttach(source){
  if(source._lookupBox||source.closest('.lookup'))return;
  const isSelect=source.tagName==='SELECT';
  if(isSelect&&(source.multiple||source.size>1))return;
- if(isSelect&&[...source.options].filter(o=>o.value!=='').length<lookupMinOptions&&!source.hasAttribute('data-lookup'))return;
+ if(isSelect&&[...source.options].filter(o=>o.value!=='').length<lookupMinOptions&&!source.hasAttribute('data-lookup')&&!source.dataset.lookupRows)return;
  const box=document.createElement('div');box.className='lookup';box.id=`lookup${++lookupCount}`;box._lookupSource=source;source._lookupBox=box;
  let input;
  if(isSelect){

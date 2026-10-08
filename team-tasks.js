@@ -10,7 +10,9 @@ function teamTaskOverdue(row,now=Date.now()){return row.status==='open'&&Date.pa
 function teamTaskOrder(rows){return [...rows].sort((a,b)=>Number(a.status!=='open')-Number(b.status!=='open')||(teamTaskRank[a.urgency]??3)-(teamTaskRank[b.urgency]??3)||Date.parse(a.due_at)-Date.parse(b.due_at)||String(a.id).localeCompare(String(b.id)))}
 function teamTaskUrgencyLabel(key){return teamTaskUrgency.find(([value])=>value===key)?.[1]||key}
 function teamTaskDue(row){return teamTaskTime(row.due_at)}
-function teamTaskTime(value){return new Date(value).toLocaleString(undefined,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+// One formatter for every card: toLocaleString with options builds a new one on each call, which was most of the page.
+const teamTaskTimeFormat=new Intl.DateTimeFormat(undefined,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+function teamTaskTime(value){const date=new Date(value);return isNaN(date)?date.toLocaleString():teamTaskTimeFormat.format(date)}
 function teamTaskCanMove(row){return row.status==='open'&&row.assignee_user_id===me?.user_id&&(row.reschedule_count||0)<teamTaskMoveLimit}
 function teamTaskHistory(moves){return moves.length?`<details class="team-task-moves"><summary>Reschedule history · ${moves.length}</summary><ol>${moves.map(e=>`<li>${esc(teamTaskTime(e.old_due_at))} → <strong>${esc(teamTaskTime(e.new_due_at))}</strong> · ${esc(e.note)} <small class="muted">${esc(employeeName(e.actor_user_id))}, ${esc(new Date(e.created_at).toLocaleString())}</small></li>`).join('')}</ol></details>`:''}
 function teamTaskCard(row){
@@ -27,7 +29,7 @@ async function loadTeamTasks(){
  const actor=me?.user_id,since=new Date(Date.now()-30*86400000).toISOString();
  // Only tasks given to or by this person are shown; the owner can read everyone's, so filter here or a busy
  // company's tasks would push the person's own past the row limit.
- const result=await client.from('team_tasks').select('*').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
+ const result=await client.from('team_tasks').select('id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
  if(me?.user_id!==actor)return null;
  if(result.error)throw Error(result.error.message);
  const rows=result.data||[],moved=rows.filter(row=>row.reschedule_count>0).map(row=>row.id),moves=new Map();
@@ -39,25 +41,38 @@ async function loadTeamTasks(){
  }
  return {rows,moves};
 }
+// A long list shows its first 100 cards and a button for the rest, so the page draws at once however many tasks a
+// person has (one has 2,872 in the test data). The rest are kept here until the button is pressed.
+const teamTaskShown=100;let teamTaskMore=new Map();
+function teamTaskCards(rows){
+ if(rows.length<=teamTaskShown)return rows.map(teamTaskCard).join('');
+ const key=String(teamTaskMore.size+1);teamTaskMore.set(key,rows.slice(teamTaskShown));
+ return rows.slice(0,teamTaskShown).map(teamTaskCard).join('')+`<button type="button" class="team-task-more" data-team-task-more="${key}">Show all ${rows.length} · ${rows.length-teamTaskShown} more</button>`;
+}
 async function teamTasksWorkspace(){
  const epoch=++teamTaskEpoch,actor=me?.user_id,target=$('#content');
  target.innerHTML='<p role="status">Loading your tasks…</p>';
  let loaded;try{loaded=await loadTeamTasks();}catch(error){if(epoch!==teamTaskEpoch)return;target.innerHTML=`<h1>My tasks</h1><p role="alert">Tasks could not load: ${esc(error.message)}</p><button type="button" id="teamTaskRetry">Retry</button>`;$('#teamTaskRetry').onclick=()=>run(teamTasksWorkspace);return;}
  if(epoch!==teamTaskEpoch||loaded===null||me?.user_id!==actor||view!=='personal'||personalSection!=='task')return;
- teamTasks=teamTaskOrder(loaded.rows);teamTaskMoves=loaded.moves;
+ teamTasks=teamTaskOrder(loaded.rows);teamTaskMoves=loaded.moves;teamTaskMore=new Map();
  const forMe=teamTasks.filter(row=>row.status==='open'&&row.assignee_user_id===actor),gave=teamTasks.filter(row=>row.status==='open'&&row.assigned_by===actor&&row.assignee_user_id!==actor),results=teamTasks.filter(row=>row.status!=='open'&&row.assigned_by===actor&&row.assignee_user_id!==actor&&Date.parse(row.closed_at)>Date.now()-7*86400000).sort((a,b)=>Date.parse(b.closed_at)-Date.parse(a.closed_at)),finished=teamTasks.filter(row=>row.status!=='open'&&(row.assignee_user_id===actor||row.assigned_by===actor)&&!results.includes(row));
  target.innerHTML=`<section class="team-tasks"><div class="heading"><div><h1>My tasks</h1><p class="muted">Tasks given to you by the team or your head of department, most urgent first. Every task has an urgency and a due time.</p></div><div class="actions"><button type="button" id="teamTaskRefresh">Refresh</button><button type="button" class="primary-action" id="teamTaskNew">+ New task</button></div></div>
- <section class="team-task-group"><h2>To do · ${forMe.length}</h2>${forMe.map(teamTaskCard).join('')||'<p class="muted">Nothing given to you right now.</p>'}</section>
+ <section class="team-task-group"><h2>To do · ${forMe.length}</h2>${teamTaskCards(forMe)||'<p class="muted">Nothing given to you right now.</p>'}</section>
  <div id="orderSteps"></div>
- ${results.length?`<section class="team-task-group"><h2>Results of tasks I gave · last 7 days · ${results.length}</h2>${results.map(teamTaskCard).join('')}</section>`:''}
- ${gave.length?`<section class="team-task-group"><h2>Tasks I gave others · ${gave.length}</h2>${gave.map(teamTaskCard).join('')}</section>`:''}
- ${finished.length?`<details class="team-task-group"><summary>Finished in the last 30 days · ${finished.length}</summary>${finished.map(teamTaskCard).join('')}</details>`:''}</section>`;
+ ${results.length?`<section class="team-task-group"><h2>Results of tasks I gave · last 7 days · ${results.length}</h2>${teamTaskCards(results)}</section>`:''}
+ ${gave.length?`<section class="team-task-group"><h2>Tasks I gave others · ${gave.length}</h2>${teamTaskCards(gave)}</section>`:''}
+ ${finished.length?`<details class="team-task-group"><summary>Finished in the last 30 days · ${finished.length}</summary>${teamTaskCards(finished)}</details>`:''}</section>`;
  $('#teamTaskRefresh').onclick=()=>run(teamTasksWorkspace);
  $('#teamTaskNew').onclick=()=>openTeamTaskEditor(null);
- target.querySelectorAll('[data-team-task-edit]').forEach(button=>button.onclick=()=>openTeamTaskEditor(teamTasks.find(row=>row.id===button.dataset.teamTaskEdit)));
- target.querySelectorAll('[data-team-task-done]').forEach(button=>button.onclick=()=>openTeamTaskClose(teamTasks.find(row=>row.id===button.dataset.teamTaskDone),'done'));
- target.querySelectorAll('[data-team-task-move]').forEach(button=>button.onclick=()=>openTeamTaskReschedule(teamTasks.find(row=>row.id===button.dataset.teamTaskMove)));
- target.querySelectorAll('[data-team-task-cancel]').forEach(button=>button.onclick=()=>openTeamTaskClose(teamTasks.find(row=>row.id===button.dataset.teamTaskCancel),'cancel'));
+ // One listener for the cards' buttons, so cards added by "Show all" work too.
+ target.querySelector('.team-tasks').onclick=event=>{
+  const button=event.target.closest('button');if(!button)return;const d=button.dataset,task=id=>teamTasks.find(row=>row.id===id);
+  if(d.teamTaskEdit)openTeamTaskEditor(task(d.teamTaskEdit));
+  else if(d.teamTaskDone)openTeamTaskClose(task(d.teamTaskDone),'done');
+  else if(d.teamTaskMove)openTeamTaskReschedule(task(d.teamTaskMove));
+  else if(d.teamTaskCancel)openTeamTaskClose(task(d.teamTaskCancel),'cancel');
+  else if(d.teamTaskMore){const rows=teamTaskMore.get(d.teamTaskMore);teamTaskMore.delete(d.teamTaskMore);if(rows)button.outerHTML=rows.map(teamTaskCard).join('');}
+ };
  const steps=$('#orderSteps');
  if(typeof renderMyHandoffs==='function')renderMyHandoffs(steps);
  if(typeof renderWorkNotices==='function')renderWorkNotices(steps).catch(()=>{});
