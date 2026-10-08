@@ -75,7 +75,8 @@ function leadActions(row){
  if(open)buttons.push(`<button type="button" data-lead-edit="${esc(row.id)}">Edit</button>`);
  if(row.stage==='inquiry')buttons.push(`<button type="button" data-lead-action="qualify" data-id="${esc(row.id)}">Pass to sales as lead</button>`);
  else if(open)buttons.push(`<button type="button" data-lead-handover="${esc(row.id)}">Hand over</button>`);
- if(['lead','opportunity'].includes(row.stage))buttons.push(`<button type="button" data-lead-proforma="${esc(row.id)}">Create Pro forma</button>`,`<button type="button" data-lead-action="won" data-id="${esc(row.id)}">Mark won</button>`);
+ if(['lead','opportunity'].includes(row.stage)&&(typeof hasArea!=='function'||hasArea('proformas')))buttons.push(`<button type="button" data-lead-proforma="${esc(row.id)}">Create Pro forma</button>`);
+ if(['lead','opportunity'].includes(row.stage))buttons.push(`<button type="button" data-lead-action="won" data-id="${esc(row.id)}">Mark won</button>`);
  if(open)buttons.push(`<button type="button" data-lead-action="lost" data-id="${esc(row.id)}">Mark lost</button>`);
  if(row.stage==='lost')buttons.push(`<button type="button" data-lead-action="reopen" data-id="${esc(row.id)}">Reopen</button>`);
  buttons.push(`<button type="button" data-lead-history="${esc(row.id)}">History</button>`);

@@ -1490,7 +1490,8 @@ function leadActions(row){
  if(open)buttons.push(`<button type="button" data-lead-edit="${esc(row.id)}">Edit</button>`);
  if(row.stage==='inquiry')buttons.push(`<button type="button" data-lead-action="qualify" data-id="${esc(row.id)}">Pass to sales as lead</button>`);
  else if(open)buttons.push(`<button type="button" data-lead-handover="${esc(row.id)}">Hand over</button>`);
- if(['lead','opportunity'].includes(row.stage))buttons.push(`<button type="button" data-lead-proforma="${esc(row.id)}">Create Pro forma</button>`,`<button type="button" data-lead-action="won" data-id="${esc(row.id)}">Mark won</button>`);
+ if(['lead','opportunity'].includes(row.stage)&&(typeof hasArea!=='function'||hasArea('proformas')))buttons.push(`<button type="button" data-lead-proforma="${esc(row.id)}">Create Pro forma</button>`);
+ if(['lead','opportunity'].includes(row.stage))buttons.push(`<button type="button" data-lead-action="won" data-id="${esc(row.id)}">Mark won</button>`);
  if(open)buttons.push(`<button type="button" data-lead-action="lost" data-id="${esc(row.id)}">Mark lost</button>`);
  if(row.stage==='lost')buttons.push(`<button type="button" data-lead-action="reopen" data-id="${esc(row.id)}">Reopen</button>`);
  buttons.push(`<button type="button" data-lead-history="${esc(row.id)}">History</button>`);
@@ -1697,7 +1698,8 @@ function pendingProductLabel(row){const product=typeof inventoryProduct==='funct
 function pendingActions(row){
  if(row.status!=='waiting')return `<button type="button" data-pending-history="${esc(row.id)}">History</button>`;
  const mine=row.salesperson_user_id===me?.user_id||me?.role==='owner',buttons=[];
- buttons.push(`<button type="button" data-pending-purchase="${esc(row.id)}">Order from supplier</button>`);
+ // Buying needs Purchasing access; without it the button only led to a "no access" page.
+ if(typeof hasArea!=='function'||hasArea('purchasing'))buttons.push(`<button type="button" data-pending-purchase="${esc(row.id)}">Order from supplier</button>`);
  if(mine)buttons.push(`<button type="button" data-pending-action="fulfil" data-id="${esc(row.id)}">Mark fulfilled</button>`,`<button type="button" data-pending-action="cancel" data-id="${esc(row.id)}">Cancel</button>`);
  if(me?.role==='owner'&&row.extension_count<4)buttons.push(`<button type="button" data-pending-action="extend" data-id="${esc(row.id)}">Extend</button>`);
  if(pendingDaysLeft(row)<0)buttons.push(`<button type="button" data-pending-action="expire" data-id="${esc(row.id)}">Close as expired</button>`);

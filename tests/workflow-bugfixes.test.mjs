@@ -35,6 +35,25 @@ test('A page opened by a button (Create Pro forma on a lead) is recorded, so Bac
  assert.match(read('workspace-navigation.js'),/if\(active\)\{button\.setAttribute\('aria-current','page'\);if\(typeof navRecordOpenPage==='function'\)navRecordOpenPage\(button\);\}/);
 });
 
+test('Order from supplier is offered on a pending order only to people with Purchasing access',()=>{
+ const run=(access,role='head')=>{const ctx=vm.createContext({me:{user_id:'u1',role,access},esc:String,pendingDaysLeft:()=>30,
+  hasArea:a=>role==='owner'||access.includes(a)});
+  vm.runInContext(fn('pending-stock.js','pendingActions'),ctx);
+  return ctx.pendingActions({id:'r1',status:'waiting',salesperson_user_id:'u1',extension_count:0});};
+ assert.doesNotMatch(run(['leads','proformas','deliveries','stock']),/Order from supplier/,'sales head without Purchasing');
+ assert.match(run(['leads','proformas','deliveries','stock']),/Mark fulfilled/);
+ assert.match(run(['proformas','purchasing']),/Order from supplier/);
+ assert.match(run([],'owner'),/Order from supplier/);
+});
+
+test('Create Pro forma is offered on a lead only to people with Pro formas access',()=>{
+ const run=access=>{const ctx=vm.createContext({esc:String,hasArea:a=>access.includes(a)});vm.runInContext(fn('sales-leads.js','leadActions'),ctx);
+  return ctx.leadActions({id:'l1',stage:'lead'});};
+ assert.doesNotMatch(run(['leads']),/Create Pro forma/);
+ assert.match(run(['leads']),/Mark won/);
+ assert.match(run(['leads','proformas']),/Create Pro forma/);
+});
+
 test('Assign engineer lists only people who can open Service jobs',()=>{
  const ctx=vm.createContext({serviceTeam:[
   {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},
