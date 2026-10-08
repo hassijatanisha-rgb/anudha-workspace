@@ -322,3 +322,152 @@ button.dashboard-overdue:hover{background:var(--quality-red,#fde2df)}
 #nav .nav-group.collapsed [data-view]{display:none}
 #nav .nav-group-toggle:hover{background:rgba(255,255,255,.06);border-radius:6px}
 #nav .nav-group>h2>button.nav-group-toggle{display:flex!important;width:100%!important;max-width:none!important}
+
+/* ==========================================================================================================
+   Consistent layout, desktop and phone. Loaded last so it settles spacing, button sizes, rows of actions,
+   forms, tables and dialogs in one place. Colours stay the brand ones above: dark green sidebar, green primary,
+   red danger. Spacing scale: 4 · 8 · 12 · 16 · 24 · 32.
+   ========================================================================================================== */
+:root{--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--control-h:40px;--radius:10px}
+
+/* Buttons: one height and one padding everywhere in the work area and dialogs; text centred on one line. */
+main button,main .button,dialog button,dialog .button{min-height:var(--control-h);padding:10px 14px;font-size:14px;line-height:18px;border-radius:8px;vertical-align:middle}
+main .button,dialog .button{display:inline-flex;align-items:center;justify-content:center}
+/* Secondary look for look-up buttons (Refresh, History, Edit...): a real button, not floating text. */
+[data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
+#tallyInvoiceRefresh,#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh,
+#requestRefresh,#travelRefresh,#teamTaskRefresh,#dashboardRefresh,#inventoryRefresh,[data-recycle-refresh]{background:#fff;border-color:var(--line);color:#3f5a50}
+/* The products banner keeps its white buttons on the green background. */
+main .cleanup-hero button,main .cleanup-hero #refresh{background:#fff;border-color:#fff;color:#174c3d}
+main .cleanup-hero button:hover{background:#edf5e8}
+
+/* Rows of buttons: always wrap with even gaps, never touch. */
+main .actions,dialog .actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+main .card>.actions,main article>.actions,dialog form>.actions,dialog .actions:last-child{margin-top:var(--space-4)}
+main .actions>*,dialog .actions>*{margin:0}
+main .actions .file-button{min-height:var(--control-h)}
+/* Buttons placed straight inside a heading line up with it. */
+main .heading{align-items:center;gap:var(--space-3) var(--space-5)}
+main .heading:has(h1){align-items:flex-start;margin-bottom:var(--space-2)}
+main .heading:has(h1)>.actions,main .heading:has(h1)>button{margin-top:6px}
+main .heading>button,main .heading>.actions{flex:0 0 auto}
+main .heading h1+p,main .heading small+h1+p{margin:6px 0 0}
+main .heading>div:first-child>p:last-child{margin-bottom:0}
+
+/* Cards: the same padding and spacing between them. */
+main .card{padding:var(--space-5);margin-top:var(--space-4)}
+main .card>h2:first-child,main .card>.heading:first-child h2,main .card>.heading:first-child h3{margin-top:0}
+main section>.card:first-child{margin-top:0}
+main .card .card{padding:var(--space-4)}
+/* Cards with their own inner layout keep it. */
+main .howto-topic{padding:0}
+main .team-task{padding:16px 20px;margin-top:12px}
+
+/* Form fields: labels close to their field, fields evenly spaced; grids with a steady gap. */
+main label,dialog label{margin:0 0 var(--space-4)}
+main .grid,dialog .grid{gap:0 var(--space-4)}
+main label>span:first-child,dialog label>span:first-child{margin-bottom:6px}
+main .toolbar{gap:var(--space-3);margin:var(--space-4) 0}
+main form>button[type=submit]:last-child,dialog form>button[type=submit]:last-child{margin-top:var(--space-2)}
+/* Tick boxes and round choices are small controls, never full-width boxes. */
+input[type=checkbox],input[type=radio]{width:18px;height:18px;min-height:0;padding:0;margin:0;flex:0 0 auto;accent-color:var(--green);vertical-align:middle}
+fieldset{border:1px solid var(--line);border-radius:12px;padding:var(--space-3) var(--space-4) var(--space-2);margin:0 0 var(--space-4);min-width:0}
+legend{padding:0 6px;font-weight:700;font-size:14px;color:var(--green)}
+.access-areas>p{margin:4px 0 12px}
+.access-area{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.access-area>span{display:block;margin:0;font-weight:400;font-size:14px}
+.access-area input{margin-top:2px}
+.access-area:has(input:checked){border-color:var(--green);background:#eef6ef}
+.check-row,.delivery-check{gap:8px}
+.lead-role-pick small{display:block;margin-top:6px}
+.lead-role-pick select{max-width:none}
+
+/* Tabs and filter chips. */
+main .tabs{gap:4px;margin:var(--space-4) 0}
+main .tabs button{min-height:36px;padding:8px 14px}
+main .proforma-filters button{min-height:34px;padding:6px 12px}
+
+/* Responsible-person strip: the sentence on its own line, then its buttons in a row. */
+main .work-handoff{gap:var(--space-2);padding:var(--space-3);border-radius:var(--radius)}
+main .work-handoff>span:first-child{flex:1 1 100%;line-height:1.45}
+
+/* Tables: steady padding; every table scrolls inside its box instead of squeezing or widening the page. */
+main .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+main td,main th{padding:10px 12px}
+main th{white-space:nowrap}
+main td .actions{gap:6px}
+main td .actions button,main td>button{white-space:nowrap}
+main td select{min-width:150px}
+main .cleanup-table{overflow-x:auto}
+
+/* Header: the signed-in name sits apart from the buttons around it. */
+#identity{gap:8px}
+#identity .identity-name{padding:0 6px;font-size:13px;color:var(--muted);font-weight:600}
+#identity button{min-height:38px;padding:8px 14px;font-size:13px;line-height:18px}
+
+/* Dialogs: never wider than the screen; content scrolls inside. */
+dialog{width:min(640px,calc(100vw - 32px));max-width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:var(--space-5);overflow:auto}
+dialog .heading{margin-bottom:var(--space-3)}
+dialog h2{margin:0 0 var(--space-3);font-size:21px;line-height:1.25}
+dialog .heading h2{margin:0}
+dialog .urgency-choice label,dialog .lead-who label{min-height:var(--control-h)}
+
+/* The hidden list behind a type-to-search picker takes no room (it pushed dialogs 6px wider on phones). */
+.lookup>select.lookup-source{left:0;top:0;padding:0;border:0;min-height:0;margin:0}
+
+/* Long product, client and supplier names wrap instead of breaking the layout. */
+main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:break-word}
+
+/* Phones and narrow windows. */
+@media(max-width:600px){
+ main .card,main .contact,main .profile-tile{padding:var(--space-4)}
+ main .card{margin-top:var(--space-3)}
+ main .howto-topic{padding:0}
+ main .team-task{padding:14px 16px}
+ /* Page title block: title, then a full-width row of its buttons. */
+ main .heading:has(h1){flex-direction:column;align-items:stretch;gap:var(--space-3)}
+ main .heading:has(h1)>button{align-self:flex-start;margin-top:0}
+ main .heading:has(h1)>.actions{width:100%;margin-top:0}
+ main .heading:has(h1)>.actions>button{flex:1 1 0;min-width:0}
+ /* Rows of buttons in cards and dialogs: two equal columns, a lone button takes the row. */
+ main .card .actions>button,main .card .actions>.button,main article .actions>button,dialog .actions>button,dialog .actions>.button,main .work-handoff>button{flex:1 1 calc(50% - 4px);min-width:0;white-space:normal}
+ main td .actions>button{flex:0 0 auto;white-space:nowrap}
+ /* Tabs wrap into rows instead of running off the edge. */
+ main .tabs{flex-wrap:wrap;width:100%;overflow:visible}
+ main .tabs button{flex:1 1 auto;min-width:0;white-space:normal}
+ main .proforma-filters{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+ main .proforma-filters button{width:100%;padding:6px 8px;font-size:13px}
+ /* Choice buttons share the row evenly. */
+ .lead-who label,.lead-sources label,.urgency-choice label{flex:1 1 calc(50% - 10px);justify-content:flex-start}
+ /* Tables keep readable columns and scroll sideways inside their box. */
+ main .table-wrap>table,main .cleanup-table>table{min-width:560px}
+ main .table-wrap>table:has(td select){min-width:860px}
+ main .purchase-card .table-wrap>table,main .table-wrap>table.purchase-lines{min-width:0}
+ main td,main th{padding:8px 10px}
+ /* Purchase request items: one item per block. */
+ table.purchase-lines thead{display:none}
+ table.purchase-lines,table.purchase-lines tbody{display:block}
+ table.purchase-lines tr{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+ table.purchase-lines td{display:block;padding:0;border:0}
+ table.purchase-lines td:first-child{grid-column:1/-1}
+ table.purchase-lines td:last-child{grid-column:1/-1}
+ table.purchase-lines td:last-child button{width:100%}
+ /* Pro forma item lines: product and description full width, numbers two by two. */
+ .document-line{grid-template-columns:1fr 1fr;gap:0 10px}
+ .document-line>label:nth-child(-n+2){grid-column:1/-1}
+ .document-line label{margin-bottom:10px}
+ .document-line>button{grid-column:1/-1;width:100%}
+ /* Header: logo, then name and bell, then three equal buttons. */
+ body>header{gap:10px;padding:12px 16px}
+ #identity{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;margin:0}
+ #identity>.bell{grid-row:1;grid-column:3;justify-self:end}
+ #identity>.identity-name{grid-row:1;grid-column:1/3;align-self:center;padding:0;font-size:13px}
+ #identity>button{grid-row:2;min-width:0;padding:8px 6px;font-size:13px;white-space:normal}
+ /* Dialogs use most of the screen with a little less padding. */
+ dialog{padding:var(--space-4) 18px;max-height:calc(100vh - 32px)}
+ dialog h2{font-size:19px}
+ /* Upload boxes and wide controls fit the column. */
+ main .file-button{flex-wrap:wrap;width:100%}
+ main .file-button input{max-width:100%}
+ .howto-walk{left:16px;right:16px;width:auto}
+}
