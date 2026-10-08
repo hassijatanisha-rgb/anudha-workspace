@@ -54,6 +54,14 @@ test('Create Pro forma is offered on a lead only to people with Pro formas acces
  assert.match(run(['leads','proformas']),/Create Pro forma/);
 });
 
+test('The database refuses the same junk task results as the screen (migration 075)',()=>{
+ const sql=read('supabase/migrations/202610080075_task_result_needs_words.sql'),js=fn('team-tasks.js','teamTaskResultProblem');
+ const list=s=>[...s.slice(s.search(/'ok','okay'/)).split(']')[0].matchAll(/'(ok|okay|done|na|nil|none|yes|no|test|finished|complete|completed)'/g)].map(m=>m[1]).sort();
+ assert.deepEqual(list(sql),list(js));
+ assert.match(sql,/if p_action = 'done' and not public\.team_task_result_ok\(p_note\)/);
+ assert.match(sql,/count\(\*\)>=3/);assert.match(js,/real\.length<3/);
+});
+
 test('Assign engineer lists only people who can open Service jobs',()=>{
  const ctx=vm.createContext({serviceTeam:[
   {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},
