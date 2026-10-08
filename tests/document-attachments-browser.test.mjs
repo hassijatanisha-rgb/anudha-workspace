@@ -29,7 +29,9 @@ async function fixture(t){
    if(name==='document_attachment_parent_access')return {data:allowed};
    if(window.finalizeFailures>0){window.finalizeFailures--;return {error:{message:'Fixture lost finalize response'}};}
    const row={id:args.p_id,record_type:args.p_record_type,record_id:args.p_record_id,object_path:args.p_object_path,original_filename:args.p_original_filename,mime_type:args.p_mime_type,byte_size:args.p_byte_size,uploaded_by:me.user_id,uploaded_at:'2026-09-25T12:00:00Z'};
-   if(!rows.some(item=>item.id===row.id))rows.push(row);return {data:row};
+   if(!rows.some(item=>item.id===row.id))rows.push(row);
+   if(window.loseCommittedResponse){window.loseCommittedResponse=false;return {error:{message:'Fixture response lost after commit'}};}
+   return {data:row};
   },from:table=>{
    const filters=[];const query={select(){return query},eq(key,value){filters.push([key,value]);return query},order(){return query},range(start,end){calls.push({kind:'list',table,start,end,filters});return Promise.resolve({data:rows.filter(row=>filters.every(([key,value])=>row[key]===value)).slice(start,end+1)})}};return query;
   },storage:{from:bucket=>({upload:async(path,file,options)=>{
@@ -51,6 +53,9 @@ acceptance('PDF upload finalizes, persists on reopen, and downloads through a br
  const downloadEvent=page.waitForEvent('download');await page.locator('[data-attachment-open]').click();
  const download=await downloadEvent;assert.equal(download.suggestedFilename(),pdf.name);
  assert.equal(await download.failure(),null);
+ const stream=await download.createReadStream();assert.ok(stream);
+ const chunks=[];for await(const chunk of stream)chunks.push(chunk);
+ assert.deepEqual(Buffer.concat(chunks),pdf.buffer);
  const calls=await page.evaluate(()=>window.calls);
  assert.equal(calls.filter(call=>call.kind==='upload').length,1);
  assert.equal(calls.filter(call=>call.name==='finalize_document_attachment').length,1);
@@ -61,6 +66,16 @@ acceptance('Mismatched PDF contents fail before any storage request',async t=>{
  await submit(page,{name:'invalid.pdf',mimeType:'application/pdf',buffer:Buffer.from('<html>Not a PDF</html>')});
  await page.waitForFunction(()=>document.querySelector('[data-attachment-status]')?.textContent.includes('file contents do not match'));
  assert.equal(await page.evaluate(()=>calls.filter(call=>call.kind==='upload'||call.kind==='download'||call.name==='finalize_document_attachment').length),0);
+});
+acceptance('Truncated download matching PDF signature is rejected before browser save',async t=>{
+ const page=await fixture(t);await open(page);await submit(page);
+ await page.waitForFunction(()=>document.querySelector('[data-attachment-status]')?.textContent==='Attachment saved to this record.');
+ await page.evaluate(()=>{for(const path of objects.keys())objects.set(path,new Blob(['%PDF-1.7'],{type:'application/pdf'}))});
+ let downloads=0;page.on('download',()=>downloads++);
+ await page.locator('[data-attachment-open]').click();
+ await page.waitForFunction(()=>document.querySelector('[data-attachment-status]')?.textContent.startsWith('Download failed:'));
+ assert.match(await page.locator('[data-attachment-status]').innerText(),/size.*saved attachment/i);
+ assert.equal(downloads,0);
 });
 acceptance('Denied accounting parent access performs no attachment list or storage queries',async t=>{
  const page=await fixture(t);await page.evaluate(()=>window.allowed=false);
@@ -76,6 +91,21 @@ acceptance('Finalize retry retains the same request and path and uploads exactly
  await page.waitForFunction(()=>document.querySelector('[data-attachment-status]')?.textContent==='Attachment saved to this record.');
  const calls=await page.evaluate(()=>window.calls);const finalizes=calls.filter(call=>call.name==='finalize_document_attachment');
  assert.equal(calls.filter(call=>call.kind==='upload').length,1);assert.equal(finalizes.length,2);assert.deepEqual(finalizes[0].args,finalizes[1].args);
+});
+acceptance('Lost finalize response after commit retries without duplicating attachment or upload',async t=>{
+ const page=await fixture(t);await open(page);await page.evaluate(()=>window.loseCommittedResponse=true);await submit(page);
+ await page.waitForFunction(()=>document.querySelector('[type="submit"]')?.textContent==='Retry attachment');
+ assert.equal(await page.evaluate(()=>rows.length),1);
+ await page.locator('.document-attachments [type="submit"]').click();
+ await page.waitForFunction(()=>document.querySelector('[data-attachment-status]')?.textContent==='Attachment saved to this record.');
+ const state=await page.evaluate(()=>({rows:rows.length,objects:objects.size,calls}));
+ assert.equal(state.rows,1);assert.equal(state.objects,1);
+ const finalizes=state.calls.filter(call=>call.name==='finalize_document_attachment');
+ assert.equal(finalizes.length,2);assert.deepEqual(finalizes[0].args,finalizes[1].args);
+ assert.equal(state.calls.filter(call=>call.kind==='upload').length,1);
+ await page.locator('[data-attachment-close]').click();
+ await page.waitForFunction(()=>!document.querySelector('.document-attachments'));await open(page);
+ assert.equal(await page.locator('[data-attachment-open]').count(),1);
 });
 for(const change of ['view','actor'])acceptance(`In-flight upload cannot finalize or leave its dialog visible after ${change} changes`,async t=>{
  const page=await fixture(t);await open(page);await page.evaluate(()=>window.delayUpload=true);await submit(page);

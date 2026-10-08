@@ -60,6 +60,8 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
    if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
    if(!result.data)throw Error('The server returned no file.');
    const safeFile=new Blob([result.data],{type:row.mime_type});
+   const expectedSize=Number(row.byte_size);
+   if(!Number.isSafeInteger(expectedSize)||expectedSize<1||safeFile.size!==expectedSize)throw Error('The downloaded file size does not match the saved attachment. Retry or ask an administrator to check the stored file.');
    await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:safeFile.size,slice:(start,end)=>safeFile.slice(start,end)});checkCurrent();
    const url=URL.createObjectURL(safeFile),link=document.createElement('a');
    try{link.href=url;link.download=row.original_filename;link.rel='noopener';document.body.append(link);link.click();status.textContent='Download requested. Open the downloaded file in your PDF or image viewer to print.';}
