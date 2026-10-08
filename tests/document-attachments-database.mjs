@@ -82,5 +82,43 @@ try {
  await db.exec('reset role');
  await assert.rejects(db.exec("update document_attachments set original_filename='Replaced.pdf'"),/immutable/i);
  await assert.rejects(db.exec('delete from document_attachments'),/immutable/i);
+ if(process.env.TWENTY_EMPLOYEES==='1'){
+  // SQL identity/storage-metadata simulation only: no real login or file service.
+  const baseline=Number((await db.query("select count(*) from document_attachments where record_type<>'accounting'")).rows[0].count);
+  for(let n=100;n<120;n++){
+   await db.query('insert into auth.users values($1,$2)',[id(n),`employee-${n}@example.invalid`]);
+   await db.query("insert into staff values($1,true,'staff')",[id(n)]);
+  }
+  for(let n=100;n<120;n++){
+   await db.exec(`set role authenticated;set test.actor='${id(n)}'`);
+   assert.equal((await db.query("select * from document_attachments where record_type='accounting'")).rows.length,0);
+   assert.equal((await db.query("select * from storage.objects where bucket_id='erp-documents' and name like 'accounting/%'")).rows.length,0);
+   await assert.rejects(upload('accounting',10,n+100,n),/row-level security/i);
+   await upload('service',9,n+100,n);
+   const saved=(await finalize('service',9,n+100)).rows[0];
+   assert.equal(saved.uploaded_by,id(n));
+   assert.deepEqual((await finalize('service',9,n+100)).rows[0],saved);
+   await assert.rejects(finalize('service',9,n+100,'Changed.pdf'),/different metadata/i);
+   await db.exec('reset role');
+  }
+  for(let n=100;n<120;n++){
+   await db.exec(`set role authenticated;set test.actor='${id(n)}'`);
+   assert.equal(Number((await db.query('select count(*) from document_attachments')).rows[0].count),baseline+20);
+   const other=n===119?100:n+1;
+   const object=(await db.query("select * from storage.objects where bucket_id='erp-documents' and name=$1",[path('service',9,other+100)])).rows;
+   assert.equal(object.length,1);assert.equal(object[0].owner_id,id(other));
+   await assert.rejects(finalize('service',9,other+100),/different metadata/i);
+   assert.equal((await db.query("delete from storage.objects where bucket_id='erp-documents' returning id")).rows.length,0);
+   await db.exec('reset role');
+  }
+  await db.query('update staff set active=false where user_id=$1',[id(119)]);
+  await db.exec(`set role authenticated;set test.actor='${id(119)}'`);
+  assert.equal((await db.query('select * from document_attachments')).rows.length,0);
+  assert.equal((await db.query("select * from storage.objects where bucket_id='erp-documents'")).rows.length,0);
+  await assert.rejects(upload('service',9,320,119),/row-level security/i);
+  await db.exec('reset role');
+  assert.equal(Number((await db.query('select count(*) from document_attachments')).rows[0].count),baseline+21);
+  console.log('PASS: 20 sequential fictional staff identities finalize and retry shared service attachment metadata, read one another, cannot access accounting or replace uploader attribution; revocation denies reads/writes. Not real auth, binary uploads/downloads or concurrent connections.');
+ }
  console.log('PASS: private bucket constraints, four real parent schemas, immutable metadata, exact retry, object-owner/MIME/size validation, denied missing parents/accounting cross-access/inactive/anonymous access, restrictive storage replacement/deletion guards.');
 } finally {await db.close();}

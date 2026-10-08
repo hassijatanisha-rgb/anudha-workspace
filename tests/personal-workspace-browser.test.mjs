@@ -25,10 +25,11 @@ async function fixture(t,kind='event',role='staff'){
   window.run=fn=>fn();window.message=s=>$('#notice').textContent=s;
   window.rows=[];window.calls=[];window.loads=0;
   window.client={from:()=>{
-   let kind;const query={};
+   let kind,kinds;const query={};
    for(const method of ['select','is','order','gte','lt'])query[method]=()=>query;
    query.eq=(key,value)=>{if(key==='kind')kind=value;return query};
-   query.range=async()=>{loads++;return window.loadError?{error:{message:loadError}}:{data:structuredClone(rows.filter(row=>row.kind===kind))}};
+   query.in=(key,value)=>{if(key==='kind')kinds=value;return query};
+   query.range=async()=>{loads++;return window.loadError?{error:{message:loadError}}:{data:structuredClone(rows.filter(row=>kinds?kinds.includes(row.kind):row.kind===kind))}};
    return query;
   },rpc:async(name,args)=>{
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
@@ -38,17 +39,19 @@ async function fixture(t,kind='event',role='staff'){
   }};
  },{role});
  for(const source of sources)await page.addScriptTag({content:source});
- await page.evaluate(async kind=>{personalSection=kind;personalMonth='2026-09';await personalWorkspace()},kind);
+ await page.evaluate(async kind=>{personalSection=kind==='task'?'note':kind;personalMonth='2026-09';await personalWorkspace()},kind);
  return page;
 }
 async function fillEntry(page,kind){
- await page.locator('#personalNew').click();
+ await page.locator(kind==='note'?'#personalNewNote':'#personalNew').click();
  await page.locator('[name="title"]').fill('Fixture '+kind);
  await page.locator('[name="body"]').fill('Private detail');
- if(kind!=='note')await page.locator('[name="starts"]').fill('2026-09-25T10:00');
+ if(kind==='event')await page.locator('[name="starts"]').fill('2026-09-25T10:00');
  if(kind==='event')await page.locator('[name="ends"]').fill('2026-09-25T11:00');
- await page.locator('[name="reminder"]').fill('2026-09-25T09:00');
- await page.locator('[name="priority"]').selectOption('urgent');
+ if(kind==='task'){
+  await page.locator('[name="reminder"]').fill('2026-09-25T09:00');
+  await page.locator('[name="urgent"]').check();
+ }
 }
 for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, edit and save use actual form values and original revision`,async t=>{
  const p=await fixture(t,kind);await fillEntry(p,kind);
@@ -58,19 +61,19 @@ for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, e
  const call=await p.evaluate(()=>calls[0]);
  assert.equal(call.name,'save_workspace_entry');
  assert.equal(call.args.p_expected_version,0);assert.equal(call.args.p_kind,kind);
- assert.equal(call.args.p_visibility,'personal');assert.equal(call.args.p_remind_at,'2026-09-25T09:00:00.000Z');
- assert.equal(call.args.p_starts_at,kind==='note'?null:'2026-09-25T10:00:00.000Z');
- assert.equal(call.args.p_body,'Private detail');assert.equal(call.args.p_priority,'urgent');
+ assert.equal(call.args.p_visibility,'personal');assert.equal(call.args.p_remind_at,kind==='task'?'2026-09-25T09:00:00.000Z':null);
+ assert.equal(call.args.p_starts_at,kind==='note'?null:kind==='task'?'2026-09-25T09:00:00.000Z':'2026-09-25T10:00:00.000Z');
+ assert.equal(call.args.p_body,'Private detail');assert.equal(call.args.p_priority,kind==='task'?'urgent':'normal');
  assert.ok(await p.evaluate(()=>loads>=2));
  assert.equal(await p.locator('.personal-entry h2').textContent(),'Fixture '+kind);
  await p.locator('[data-personal-edit]').click();
  assert.equal(await p.locator('[name="body"]').inputValue(),'Private detail');
  await p.locator('[name="title"]').fill('Updated '+kind);
- if(kind!=='event')await p.locator('[name="completed"]').selectOption('true');
+ if(kind==='task')await p.locator('[name="completed"]').check();
  await p.locator('#actionEditor [type="submit"]').click();
  await p.waitForFunction(()=>calls.length===2&&!document.querySelector('#actionEditor').open);
  assert.equal(await p.evaluate(()=>calls[1].args.p_expected_version),1);
- assert.equal(await p.evaluate(()=>calls[1].args.p_completed),kind!=='event');
+ assert.equal(await p.evaluate(()=>calls[1].args.p_completed),kind==='task');
  assert.equal(await p.locator('.personal-entry h2').textContent(),'Updated '+kind);
 });
 acceptance('Company events render green and personal entries white; staff cannot edit shared events',async t=>{
@@ -111,4 +114,70 @@ acceptance('Actor and navigation changes during save cannot refresh or notify re
   assert.equal(await p.locator('#content').innerText(),'Replacement page');
   assert.equal(await p.locator('#notice').innerText(),'');assert.equal(await p.evaluate(()=>window.loads),loads);
  }
+});
+test('Notes and reminders persist through SQL; revoked staff cannot save or read', {skip:!enabled||!process.env.PGLITE_MODULE},async t=>{
+ const {PGlite}=await import(process.env.PGLITE_MODULE);const db=new PGlite();t.after(()=>db.close());
+ const actor='10000000-0000-4000-8000-000000000001';
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create table auth.users(id uuid primary key);create table staff(user_id uuid primary key,active boolean,role text);
+ create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ insert into auth.users values('${actor}');insert into staff values('${actor}',true,'staff');`);
+ const foundation=readFileSync(new URL('../supabase/migrations/202609210001_inventory_foundation.sql',import.meta.url),'utf8');
+ for(const name of ['inventory_active_staff','inventory_owner']){
+  const declaration=foundation.match(new RegExp(`create or replace function public\\.${name}\\(\\)[\\s\\S]*?\\$\\$;`));
+  assert.ok(declaration);await db.exec(declaration[0]);
+ }
+ await db.exec(readFileSync(new URL('../supabase/migrations/202609220012_personal_workspace.sql',import.meta.url),'utf8'));
+ const p=await fixture(t,'note'),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ let tail=Promise.resolve();
+ await p.exposeFunction('workspaceSql',request=>{
+  const result=tail.then(()=>db.transaction(async tx=>{
+   await tx.exec('set local role authenticated');await tx.query("select set_config('test.actor',$1,true)",[actor]);
+   if(request.read)return {data:(await tx.query('select * from workspace_entries where deleted_at is null and kind=any($1::text[]) order by id limit 100',[request.kinds])).rows};
+   assert.equal(request.name,'save_workspace_entry');const a=request.args;
+   return {data:(await tx.query('select * from save_workspace_entry($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',[a.p_id,a.p_expected_version,a.p_kind,a.p_visibility,a.p_title,a.p_body,a.p_starts_at,a.p_ends_at,a.p_remind_at,a.p_priority,a.p_completed,a.p_deleted])).rows[0]};
+  }));tail=result.catch(()=>{});return result.catch(e=>({error:{message:e.message}}));
+ });
+ await p.evaluate(async actor=>{
+  me={user_id:actor,role:'staff'};
+  client={rpc:(name,args)=>workspaceSql({name,args}),from:table=>{
+   if(table!=='workspace_entries')throw Error('Unexpected fixture table');
+   let kinds=[];const q={};for(const key of ['select','is','order'])q[key]=()=>q;
+   q.in=(key,value)=>{kinds=value;return q};q.eq=(key,value)=>{kinds=[value];return q};
+   q.range=()=>workspaceSql({read:true,kinds});return q;
+  }};await personalWorkspace();
+ },actor);
+ await fillEntry(p,'note');await p.locator('#actionEditor [type="submit"]').click();
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ const saved=(await db.query('select * from workspace_entries')).rows;
+ assert.equal(saved.length,1);assert.equal(saved[0].owner_id,actor);assert.equal(saved[0].body,'Private detail');
+ await p.evaluate(async()=>{personalRows=[];await personalWorkspace()});
+ await p.locator('[data-personal-edit]').click();assert.equal(await p.locator('[name="body"]').inputValue(),'Private detail');
+ await p.locator('[name="title"]').fill('SQL updated note');await p.locator('#actionEditor [type="submit"]').click();
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ const changed=(await db.query('select * from workspace_entries')).rows[0];
+ assert.equal(changed.version,2);assert.equal(changed.title,'SQL updated note');
+ assert.equal((await db.query('select * from workspace_entry_audit')).rows.length,2);assert.deepEqual(errors,[]);
+ await p.evaluate(()=>{crypto.randomUUID=()=> '00000000-0000-4000-8000-000000000002'});
+ await fillEntry(p,'task');await p.locator('#actionEditor [type="submit"]').click();
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ let reminder=(await db.query("select * from workspace_entries where kind='task'")).rows[0];
+ assert.equal(new Date(reminder.remind_at).toISOString(),'2026-09-25T09:00:00.000Z');
+ assert.equal(reminder.priority,'urgent');assert.equal(reminder.completed,false);
+ await p.locator('.personal-entry').filter({has:p.locator('h2', {hasText:'Fixture task'})}).locator('[data-personal-edit]').click();
+ await p.locator('[name="completed"]').check();
+ await p.locator('#actionEditor [type="submit"]').click();await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ reminder=(await db.query("select * from workspace_entries where kind='task'")).rows[0];
+ assert.equal(reminder.completed,true);assert.equal(reminder.version,2);
+ await p.locator('.personal-entry').filter({has:p.locator('h2', {hasText:'SQL updated note'})}).locator('[data-personal-edit]').click();
+ const before=(await db.query('select * from workspace_entry_audit order by id')).rows;
+ await db.query('update staff set active=false where user_id=$1',[actor]);
+ await p.locator('[name="body"]').fill('Must not persist');
+ await p.locator('#actionEditor [type="submit"]').click();
+ await p.waitForFunction(()=>document.querySelector('#actionError').textContent.includes('Active staff'));
+ assert.equal(await p.locator('[name="body"]').inputValue(),'Must not persist');
+ assert.equal((await db.query("select body from workspace_entries where kind='note'")).rows[0].body,'Private detail');
+ assert.deepEqual((await db.query('select * from workspace_entry_audit order by id')).rows,before);
+ await p.locator('#actionCancel').click();await p.evaluate(()=>personalWorkspace());
+ assert.equal(await p.locator('.personal-entry').count(),0);assert.deepEqual(errors,[]);
 });
