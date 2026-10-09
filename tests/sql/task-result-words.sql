@@ -1,5 +1,5 @@
--- Marking a task done needs a real result in the database too, not only on the screen (migration 075). Disposable
--- database with the schema and migrations up to 075; fictional users only; everything is rolled back.
+-- Marking a task done needs a real result in the database too, not only on the screen (migration 076). Disposable
+-- database with the schema and migrations up to 076; fictional users only; everything is rolled back.
 --   psql -d <disposable> -v ON_ERROR_STOP=1 -f tests/sql/task-result-words.sql   (prints passed/failed)
 begin;
 create temp table results(name text, ok boolean, detail text) on commit drop;

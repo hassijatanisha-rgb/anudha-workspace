@@ -32,8 +32,8 @@ function catalogProductIssues(p){
  return issues;
 }
 function catalogMatches(p,query){return [p.name,p.sku,p.source?.model,p.source?.specification,p.source?.company].join(' ').toLowerCase().includes(query.trim().toLowerCase())}
-function catalogSorted(rows){return [...rows].sort((a,b)=>{
- const issueDelta=catalogProductIssues(b).length-catalogProductIssues(a).length;
+function catalogSorted(rows){const issues=catalogSort==='issues'?new Map(rows.map(p=>[p,catalogProductIssues(p).length])):null;return [...rows].sort((a,b)=>{
+ const issueDelta=issues?issues.get(b)-issues.get(a):0;
  if(catalogSort==='issues'&&issueDelta)return issueDelta;
  if(catalogSort==='company')return String(a.source?.company||'').localeCompare(String(b.source?.company||''))||String(a.name||'').localeCompare(String(b.name||''));
  return String(a.name||'').localeCompare(String(b.name||''));
@@ -84,7 +84,7 @@ function catalogInventory(){
  $("#content").insertAdjacentHTML("beforeend",`<div class="actions"><button id="catalogPrev" ${catalogPage===0?"disabled":""}>Previous</button><span>Page ${catalogPage+1} of ${paged.pages}</span><button id="catalogNext" ${catalogPage+1>=paged.pages?"disabled":""}>Next</button></div>`);
  $("#catalogPrev").onclick=()=>{catalogPage--;catalogInventory()};$("#catalogNext").onclick=()=>{catalogPage++;catalogInventory()};
  $('#catalogSearch').addEventListener('input',e=>{
-  catalogSearch=e.target.value;catalogPage=0;renderSearchPreservingPosition(e.target,catalogInventory);
+  catalogSearch=e.target.value;catalogPage=0;renderSearchPreservingPosition(e.target,catalogInventory,150);
  });
  $('#catalogSort').onchange=e=>{catalogSort=e.target.value;catalogPage=0;catalogInventory()};
  $('#catalogColour').onchange=e=>{catalogColour=e.target.value;catalogPage=0;catalogInventory()};

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(role='staff',user='a'){
  const ctx=vm.createContext({me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date});
- vm.runInContext(readFileSync(new URL('../purchasing.js',import.meta.url),'utf8'),ctx);
+ for(const file of ['row-index.js','purchasing.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  vm.runInContext(`suppliers=[{id:'s1',name:'Fixture Medical',active:true}];purchaseLines=[{purchase_order_id:'o1',line_number:1,product_id:'p1',quantity:10,unit_price_minor:500},{purchase_order_id:'o1',line_number:2,product_id:'p2',quantity:2,unit_price_minor:1000},{purchase_order_id:'o2',line_number:1,product_id:'p2',quantity:5,unit_price_minor:null}];`,ctx);
  return ctx;
 }
@@ -50,7 +50,7 @@ test('loads every open order but only six months of finished ones, items nested 
   return table==='purchase_orders'?[{id:'o9',status:'requested',purchase_order_lines:[{purchase_order_id:'o9',line_number:1,product_id:'p1',quantity:3}]}]:[{id:'s1',name:'Fixture Medical',active:true}];};
  assert.equal(await ctx.loadPurchasing(),true);
  const orders=calls.find(c=>c[0]==='purchase_orders');
- assert.equal(orders[1],'*,purchase_order_lines(*)');
+ assert.match(orders[1],/^id,po_number,status,.*,purchase_order_lines\(id,purchase_order_id,line_number,product_id,quantity,unit_price_minor,pending_request_id,note\)$/,'only the fields the page reads, items nested per order');
  assert.match(orders[2],/^status\.in\.\(requested,approved,ordered\),updated_at\.gte\.\d{4}-/);
  const since=new Date(orders[2].split('updated_at.gte.')[1]);
  assert.ok(Math.abs((Date.now()-since)/864e5-183)<1,'window is six months');

@@ -1,5 +1,5 @@
 -- Recording a repair on a machine that already has an open service job (usually its planned maintenance) names that
--- job and its date (migration 074). Disposable database with the schema and migrations up to 074; fictional data only;
+-- job and its date (migration 075). Disposable database with the schema and migrations up to 075; fictional data only;
 -- everything is rolled back.
 --   psql -d <disposable> -v ON_ERROR_STOP=1 -f tests/sql/service-open-job-message.sql   (prints passed/failed)
 begin;

@@ -166,7 +166,7 @@ function bindStockCount(){
   const actor=me?.user_id,result=await client.rpc('close_stock_count',{p_id:open.id,p_expected_version:open.version});
   if(me?.user_id!==actor)throw Error('Login changed.');if(result.error)throw Error(result.error.message);await stockCountWorkspace(true);message('Count closed.');});});
  const godown=$('#countGodown');if(godown)godown.onchange=()=>{countGodown=godown.value;countRememberGodown(countGodown);countPicked='';renderStockCount();};
- const search=$('#countSearch');if(search)search.oninput=event=>{countSearch=event.target.value;renderSearchPreservingPosition(event.target,renderStockCount);};
+ const search=$('#countSearch');if(search)search.oninput=event=>{countSearch=event.target.value;renderSearchPreservingPosition(event.target,renderStockCount,150);};
  document.querySelectorAll('[data-count-pick]').forEach(button=>button.onclick=()=>{countPicked=button.dataset.countPick;countPendingSave=null;renderStockCount();$('#countForm [name="quantity"]')?.focus();});
  $('#countUnlisted')?.addEventListener('click',()=>{countPicked='unlisted';countPendingSave=null;renderStockCount();$('#countForm [name="unlisted"]')?.focus();});
  $('#countCancel')?.addEventListener('click',()=>{countPicked='';countPendingSave=null;renderStockCount();$('#countSearch')?.focus();});
