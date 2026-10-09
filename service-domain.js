@@ -4,7 +4,7 @@ const serviceStatuses=['new','assigned','scheduled','on_site','report_required',
 const serviceStatusLabels={new:'New',assigned:'Assigned',scheduled:'Scheduled',on_site:'On site',report_required:'Report required',completed:'Completed',cancelled:'Cancelled'};
 
 function serviceStatusLabel(status){return serviceStatusLabels[status]||String(status||'').replaceAll('_',' ')}
-function serviceNextActions(status){return ({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[]}
+function serviceNextActions(status){return ({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','schedule','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[]}
 function serviceMaintenanceDate(actual,months){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(actual||''))||Number.isNaN(Date.parse(actual+'T00:00:00Z')))throw Error('Enter a valid work date.');
  if(![3,6,12,24,36].includes(Number(months)))throw Error('Choose a supported maintenance interval.');

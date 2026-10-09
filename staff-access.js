@@ -117,6 +117,7 @@ async function headStaffPage(){
  const r=await client.from('staff').select('user_id,role,active,phone,department,access');
  if(me?.user_id!==actor||view!=='staff')return;
  if(r.error){$('#staffList').innerHTML=`<p role="alert">Staff could not load: ${esc(r.error.message)}</p>`;return;}
+ await refreshEmployeeNamesFor(r.data.map(x=>x.user_id));if(me?.user_id!==actor||view!=='staff')return;
  const mine=r.data.filter(row=>row.department===me.department),others=r.data.filter(row=>row.department!==me.department);
  $('#staffList').innerHTML=staffListHtml(mine)+(others.length?`<details><summary>Other departments · ${others.length}</summary>${staffListHtml(others)}</details>`:'');
  bindStaffList(r.data);

@@ -35,6 +35,51 @@ test('A page opened by a button (Create Pro forma on a lead) is recorded, so Bac
  assert.match(read('workspace-navigation.js'),/if\(active\)\{button\.setAttribute\('aria-current','page'\);if\(typeof navRecordOpenPage==='function'\)navRecordOpenPage\(button\);\}/);
 });
 
+test('Order from supplier is offered on a pending order only to people with Purchasing access',()=>{
+ const run=(access,role='head')=>{const ctx=vm.createContext({me:{user_id:'u1',role,access},esc:String,pendingDaysLeft:()=>30,
+  hasArea:a=>role==='owner'||access.includes(a)});
+  vm.runInContext(fn('pending-stock.js','pendingActions'),ctx);
+  return ctx.pendingActions({id:'r1',status:'waiting',salesperson_user_id:'u1',extension_count:0});};
+ assert.doesNotMatch(run(['leads','proformas','deliveries','stock']),/Order from supplier/,'sales head without Purchasing');
+ assert.match(run(['leads','proformas','deliveries','stock']),/Mark fulfilled/);
+ assert.match(run(['proformas','purchasing']),/Order from supplier/);
+ assert.match(run([],'owner'),/Order from supplier/);
+});
+
+test('Create Pro forma is offered on a lead only to people with Pro formas access',()=>{
+ const run=access=>{const ctx=vm.createContext({esc:String,hasArea:a=>access.includes(a)});vm.runInContext(fn('sales-leads.js','leadActions'),ctx);
+  return ctx.leadActions({id:'l1',stage:'lead'});};
+ assert.doesNotMatch(run(['leads']),/Create Pro forma/);
+ assert.match(run(['leads']),/Mark won/);
+ assert.match(run(['leads','proformas']),/Create Pro forma/);
+});
+
+test('The database refuses the same junk task results as the screen (migration 076)',()=>{
+ const sql=read('supabase/migrations/202610080076_task_result_needs_words.sql'),js=fn('team-tasks.js','teamTaskResultProblem');
+ const list=s=>[...s.slice(s.search(/'ok','okay'/)).split(']')[0].matchAll(/'(ok|okay|done|na|nil|none|yes|no|test|finished|complete|completed)'/g)].map(m=>m[1]).sort();
+ assert.deepEqual(list(sql),list(js));
+ assert.match(sql,/if p_action = 'done' and not public\.team_task_result_ok\(p_note\)/);
+ assert.match(sql,/count\(\*\)>=3/);assert.match(js,/real\.length<3/);
+});
+
+test('Staff page reloads names when someone was added since sign-in (no "Employee name not set")',async()=>{
+ let loads=0;const ctx=vm.createContext({employeeDirectory:new Map([['a',{}]]),loadEmployeeNames:async()=>{loads++}});
+ vm.runInContext(fn('employee-names.js','refreshEmployeeNamesFor'),ctx);
+ await ctx.refreshEmployeeNamesFor(['a']);assert.equal(loads,0,'all known: no reload');
+ await ctx.refreshEmployeeNamesFor(['a','new']);assert.equal(loads,1);
+ assert.match(read('app.js'),/select\('user_id,role,active,phone,department,access'\);if\(r\.error\)throw r\.error;await refreshEmployeeNamesFor\(/);
+ assert.match(fn('staff-access.js','headStaffPage'),/await refreshEmployeeNamesFor\(r\.data\.map/);
+});
+
+test('Reports offers only reports for parts the person can use',()=>{
+ const run=(role,access)=>{const ctx=vm.createContext({me:{role,access},hasArea:a=>role==='owner'||access.includes(a)});
+  vm.runInContext(read('reports.js').match(/const reportChoiceAreas=.*\n/)[0]+fn('reports.js','reportChoiceAllowed'),ctx);
+  return ['work','tasks','activity','proformas','leads','deliveries','purchasing','service','travel','movements'].filter(k=>ctx.reportChoiceAllowed(k));};
+ assert.deepEqual(run('head',['leads','proformas','deliveries','stock','travel','reports']),['work','tasks','activity','proformas','leads','deliveries','travel']);
+ assert.deepEqual(run('owner',[]).length,10);
+ assert.match(read('reports.js'),/reportChoices\.filter\(\(\[key\]\)=>reportChoiceAllowed\(key\)\)/);
+});
+
 test('Assign engineer lists only people who can open Service jobs',()=>{
  const ctx=vm.createContext({serviceTeam:[
   {user_id:'a',role:'staff',active:true,access:['service']},{user_id:'b',role:'staff',active:true,access:['deliveries','stock']},

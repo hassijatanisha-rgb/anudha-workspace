@@ -15,7 +15,7 @@ assert.throws(()=>context.serviceMaintenanceDate('2026-10-14',5),/supported main
 
 assert.deepEqual([...context.serviceNextActions('new')],['assign']);
 assert.deepEqual([...context.serviceNextActions('assigned')],['schedule','reassign']);
-assert.deepEqual([...context.serviceNextActions('scheduled')],['start','reassign']);
+assert.deepEqual([...context.serviceNextActions('scheduled')],['start','schedule','reassign']);
 assert.deepEqual([...context.serviceNextActions('on_site')],['submit_report']);
 assert.deepEqual([...context.serviceNextActions('completed')],[]);
 assert.equal(context.serviceStatusLabel('report_required'),'Report required');
