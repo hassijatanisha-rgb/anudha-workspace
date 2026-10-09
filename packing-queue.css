@@ -1,0 +1,82 @@
+/* Packing queue (packing-queue.js): phone page, TV screen, lobby marks and the live order line. */
+:root{--lobby:#b42318;--lobby-soft:#fdecea;--amber:#b54708;--amber-soft:#fff4d6;--late:#b42318}
+
+/* Phone page */
+.packing-page{max-width:760px}
+.packing-big{font-size:22px;font-weight:800;min-height:64px;width:100%;border-radius:12px}
+.packing-take{margin:16px 0 24px}
+.packing-take .muted{margin-top:8px}
+.packing-card{background:#fff;border:2px solid var(--line);border-left-width:8px;border-radius:12px;padding:16px;margin:12px 0}
+.packing-card.packing-lobby{border-left-color:var(--lobby)}
+.packing-card.packing-amber{border-color:#e0a43a;background:var(--amber-soft)}
+.packing-card.packing-red{border-color:var(--late);background:var(--lobby-soft)}
+.packing-card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.packing-number{font-size:24px}
+.packing-clock{margin-left:auto;font-size:28px;font-weight:800;font-variant-numeric:tabular-nums}
+.packing-red .packing-clock{color:var(--late)}.packing-amber .packing-clock{color:var(--amber)}
+.packing-client{font-weight:650;margin:6px 0}
+.packing-items{margin:8px 0;padding-left:20px}.packing-items li{margin:4px 0;font-size:17px}.packing-items small{display:inline;color:var(--muted,#5d7068)}
+.packing-badge{display:inline-block;background:var(--lobby);color:#fff;font-weight:800;font-size:13px;border-radius:6px;padding:3px 8px}
+.packing-alert{color:#fff;background:var(--late);padding:10px;border-radius:8px;font-weight:700}
+.packing-warn{color:#5c3a00;background:var(--amber-soft);border:1px solid #e0a43a;padding:10px;border-radius:8px}
+.packing-call,.packing-call-text{color:var(--late);font-weight:800}
+.packing-call{background:var(--lobby-soft);padding:8px 10px;border-radius:8px}
+.packing-warn-text{color:var(--amber);font-weight:650}
+.packing-waiting-list{list-style:none;padding:0;margin:8px 0}
+.packing-waiting{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0}
+.packing-waiting.packing-lobby{border-color:var(--lobby);background:var(--lobby-soft)}
+.packing-waiting.packing-blocked{border-style:dashed}
+.packing-place{flex:0 0 36px;height:36px;display:grid;place-items:center;border-radius:50%;background:#e7efe9;font-weight:800}
+.packing-lobby .packing-place{background:var(--lobby);color:#fff}
+.packing-waiting-main{min-width:0;flex:1}.packing-waiting-main small{display:block}
+.packing-waiting details summary{min-height:32px;font-weight:600}
+
+/* Hand-off choice and delivery note */
+.collection-choice{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:14px 0}
+.collection-choice legend{font-weight:700;padding:0 6px}
+.collection-option{display:flex;gap:10px;align-items:flex-start;margin:8px 0;cursor:pointer}
+.collection-option input{width:22px;height:22px;flex:0 0 22px;margin-top:2px}
+.collection-option span{display:block;margin:0;font-size:15px;font-weight:400}.collection-option small{display:block}
+.collection-lobby strong{color:var(--lobby)}
+.delivery-collection{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:10px 0}
+
+/* Live order line for the person who placed the order */
+.order-live{display:block;margin:10px 0;padding:8px 12px;border-left:5px solid var(--green);background:#e8f0eb;border-radius:8px;font-weight:650;color:var(--ink,#18352b)}
+.order-live.order-live-lobby{border-left-color:var(--lobby)}
+.order-live.order-live-call{border-left-color:var(--late);background:var(--lobby-soft);color:#7a1d14}
+.proforma-tile .order-live{margin:6px 0 0;padding:4px 8px;font-size:13px}
+.proforma-tile-items{display:block;color:var(--muted,#5d7068)}
+
+/* TV screen: no menu, large type, readable across a room. */
+body.packing-tv>header,body.packing-tv #nav,body.packing-tv #notice{display:none!important}
+body.packing-tv>main,body:has(#nav:not([hidden])).packing-tv>main{margin:0!important;padding:0!important;max-width:none!important}
+body.packing-tv{background:#0f1f19}
+.packing-tv-screen{min-height:100vh;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;gap:2vw;padding:2vw;color:#f3f7f4;background:#0f1f19}
+.packing-tv-col h1{font-size:clamp(28px,3.4vw,64px);margin:0 0 1.2vw;color:#fff;letter-spacing:0}
+.packing-tv-col h1 span{display:inline-block;min-width:1.6em;text-align:center;background:#24745a;border-radius:.4em;margin-left:.3em}
+.packing-tv-waiting,.packing-tv-packing{list-style:none;margin:0;padding:0;display:grid;gap:.8vw}
+.packing-tv-screen li{display:flex;align-items:center;gap:1.4vw;padding:.9vw 1.2vw;border-radius:.8vw;background:#1c362c;border:3px solid #2c5244}
+.packing-tv-screen li>b{font-size:clamp(36px,5vw,110px);line-height:1;font-variant-numeric:tabular-nums;min-width:2.2em}
+.packing-tv-screen li>span{font-size:clamp(18px,1.7vw,36px);min-width:0;flex:1}
+.packing-tv-screen li small{display:block;font-size:.72em;color:#bcd3c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.packing-tv-screen li strong{display:block;font-size:1.1em;color:#fff}
+.packing-tv-screen li.packing-tv-lobby{background:#7a1d14;border-color:#ff6b5b}
+.packing-tv-screen li.packing-tv-lobby small{color:#ffd9d4}
+.packing-tv-screen li.packing-tv-blocked{opacity:.7;border-style:dashed}
+.packing-tv-screen li time{font-size:clamp(30px,3.6vw,80px);font-weight:800;font-variant-numeric:tabular-nums}
+.packing-tv-screen li.packing-tv-amber{border-color:#ffb020;box-shadow:inset 0 0 0 4px #ffb020}
+.packing-tv-screen li.packing-tv-amber time{color:#ffcf6b}
+.packing-tv-screen li.packing-tv-red{border-color:#ff4d3d;box-shadow:inset 0 0 0 6px #ff4d3d;animation:packing-tv-pulse 1.6s ease-in-out infinite}
+.packing-tv-screen li.packing-tv-red time{color:#ff8a7d}
+@keyframes packing-tv-pulse{50%{box-shadow:inset 0 0 0 2px #ff4d3d}}
+@media (prefers-reduced-motion:reduce){.packing-tv-screen li.packing-tv-red{animation:none}}
+.packing-tv-none{font-size:clamp(20px,2vw,40px);color:#9fb8ad;justify-content:center}
+.packing-tv-more{font-size:clamp(18px,1.6vw,32px);color:#bcd3c8}
+.packing-tv-loading{grid-column:1/-1;font-size:4vw;text-align:center;align-self:center}
+.packing-tv-foot{grid-column:1/-1;display:flex;gap:2vw;align-items:center;justify-content:space-between;font-size:clamp(14px,1.1vw,22px);color:#9fb8ad}
+.packing-tv-exit{background:transparent;color:#9fb8ad;border-color:#2c5244;opacity:.6}
+.packing-tv-exit:hover{opacity:1;background:#1c362c}
+@media (max-width:800px){
+ .packing-tv-screen{grid-template-columns:1fr}
+ .packing-clock{font-size:22px}
+}

@@ -111,7 +111,7 @@ function leadActions(row){
 }
 function leadCard(row){
  const proforma=salesProformas.find(p=>p.id===row.proforma_id),overdue=leadOverdue(row);
- return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
+ return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}${typeof orderLiveHtml==='function'?orderLiveHtml(proforma,'span'):''}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
 }
 function leadEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>inventoryOption(row.user_id,employeeName(row.user_id),row.user_id===selected)).join('');}
 function leadEditor(row){
@@ -204,6 +204,8 @@ function renderLeads(){
 }
 function bindLeads(){
  $('#leadRefresh').onclick=()=>run(()=>leadsWorkspace(true));
+ // A won lead shows where its order is now (packing queue, delivery).
+ if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
  $('#newLead')?.addEventListener('click',()=>{leadEditing='new';leadPendingSave=null;renderLeads();$('#leadForm [name="subject"]')?.focus();});
  $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';leadPendingSave=null;renderLeads();});
  const form=$('#leadForm');

@@ -1344,7 +1344,7 @@ function proformaEditor(){
 }
 function proformaTable(record){const lines=salesLines(record.id);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Disc.</th><th>Tax</th><th>Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td>${line.quantity}</td><td>${esc(moneyDisplay(Number(line.unit_price_minor),record.currency))}</td><td>${line.discount_basis_points/100}%</td><td>${line.tax_basis_points/100}%</td><td>${esc(moneyDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
 function proformaActions(record){const actions=proformaNextActions(record.status),buttons=[];if(record.status==='draft')buttons.push(`<button data-edit-proforma="${record.id}">Edit draft</button>`);if(record.status==='draft'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-archive-business="proforma" data-id="${record.id}">Delete draft</button>`);for(const action of actions){const labels={send:'Record sent to client',accept:'Submit to accounting',revise:'Return for revision',reject:'Record rejected',cancel:'Cancel'};buttons.push(`<button data-proforma-action="${action}" data-id="${record.id}" class="${['reject','cancel'].includes(action)?'danger':''}">${labels[action]}</button>`)}if(record.status==='accepted'&&typeof openSendToTally==='function')buttons.push(`<button type="button" data-send-tally="${record.id}">Send to Tally</button>`);buttons.push(`<button data-print-document="${record.id}">Print / PDF</button>`);return buttons.join('')}
-function proformaCard(record){const organization=salesOrganization(record.organization_id),note=latestDelivery(record.id);return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(record.contact_id))}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}</div>${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
+function proformaCard(record){const organization=salesOrganization(record.organization_id),note=latestDelivery(record.id);return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(record.contact_id))}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
 // One tag per Pro forma, from where it is now: its own status, then the delivery started from it.
 const proformaTagKinds=[['draft','Draft'],['revised','Revised'],['sent','Sent to customer'],['waiting','Waiting approval'],['delivery','Approved · in delivery'],['done','Delivered'],['closed','Cancelled / rejected']];
 function proformaTag(record){
@@ -1358,16 +1358,17 @@ function proformaTag(record){
 function proformaTagHtml(record){const kind=proformaTag(record),label=proformaTagKinds.find(([key])=>key===kind)[1];return `<span class="proforma-tag proforma-tag-${kind}">${esc(label)}</span>`}
 function proformaTile(record){
  const organization=salesOrganization(record.organization_id),when=record.updated_at||record.created_at;
- return `<li><button type="button" class="proforma-tile" data-open-proforma="${record.id}">${proformaTagHtml(record)}<strong>${esc(record.document_number)}</strong><span>${esc(organization.name)}${organization.location?' · '+esc(organization.location):''}</span><small>${esc(salesContactName(record.contact_id))}</small><span class="proforma-tile-foot"><b>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</b><small>${when?esc(new Date(when).toLocaleDateString()):''}${record.prepared_by&&typeof employeeName==='function'?' · '+esc(employeeName(record.prepared_by)):''}</small></span></button></li>`;
+ return `<li><button type="button" class="proforma-tile" data-open-proforma="${record.id}">${proformaTagHtml(record)}<strong>${esc(record.document_number)}</strong><span>${esc(organization.name)}${organization.location?' · '+esc(organization.location):''}</span><small>${esc(salesContactName(record.contact_id))}</small>${proformaItemsSummary(record)?`<small class="proforma-tile-items">${esc(proformaItemsSummary(record))}</small>`:''}${typeof orderLiveHtml==='function'?orderLiveHtml(record,'span'):''}<span class="proforma-tile-foot"><b>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</b><small>${when?esc(new Date(when).toLocaleDateString()):''}${record.prepared_by&&typeof employeeName==='function'?' · '+esc(employeeName(record.prepared_by)):''}</small></span></button></li>`;
 }
 function proformaListScreen(){
  const live=salesProformas.filter(record=>!record.deleted_at),q=salesProformaSearch.trim().toLowerCase();
  const counts=Object.fromEntries(proformaTagKinds.map(([key])=>[key,0]));for(const record of live)counts[proformaTag(record)]++;
- const matches=live.filter(record=>(salesProformaFilter==='all'||proformaTag(record)===salesProformaFilter)&&(!q||`${record.document_number} ${salesOrganization(record.organization_id).name} ${salesOrganization(record.organization_id).location||''} ${salesContactName(record.contact_id)} ${record.acceptance_reference||''}`.toLowerCase().includes(q)));
+ const mineToday=live.filter(record=>proformaMineToday(record,me?.user_id)).length;
+ const matches=live.filter(record=>(salesProformaFilter==='all'||(salesProformaFilter==='mine'?proformaMineToday(record,me?.user_id):proformaTag(record)===salesProformaFilter))&&(!q||`${record.document_number} ${salesOrganization(record.organization_id).name} ${salesOrganization(record.organization_id).location||''} ${salesContactName(record.contact_id)} ${record.acceptance_reference||''}`.toLowerCase().includes(q)));
  const shown=matches.slice(0,120);
  return `${salesHeader()}<div class="heading"><p class="muted">Newest first. Press one to open it.</p><button class="primary-action" id="newProforma">+ New Pro forma</button></div>
  <label class="proforma-search"><span>Search</span><input id="proformaSearch" type="search" value="${esc(salesProformaSearch)}" placeholder="PF number, client, contact or LPO" autocomplete="off"></label>
- <div class="tabs proforma-filters" role="group" aria-label="Show Pro formas"><button type="button" data-proforma-filter="all" class="${salesProformaFilter==='all'?'active':''}" aria-pressed="${salesProformaFilter==='all'}">All · ${live.length}</button>${proformaTagKinds.map(([key,label])=>`<button type="button" data-proforma-filter="${key}" class="proforma-filter-${key}${salesProformaFilter===key?' active':''}" aria-pressed="${salesProformaFilter===key}">${esc(label)} · ${counts[key]}</button>`).join('')}</div>
+ <div class="tabs proforma-filters" role="group" aria-label="Show Pro formas"><button type="button" data-proforma-filter="all" class="${salesProformaFilter==='all'?'active':''}" aria-pressed="${salesProformaFilter==='all'}">All · ${live.length}</button><button type="button" data-proforma-filter="mine" class="proforma-filter-mine${salesProformaFilter==='mine'?' active':''}" aria-pressed="${salesProformaFilter==='mine'}">My orders today · ${mineToday}</button>${proformaTagKinds.map(([key,label])=>`<button type="button" data-proforma-filter="${key}" class="proforma-filter-${key}${salesProformaFilter===key?' active':''}" aria-pressed="${salesProformaFilter===key}">${esc(label)} · ${counts[key]}</button>`).join('')}</div>
  ${shown.length?`<ul class="proforma-tiles">${shown.map(proformaTile).join('')}</ul>${matches.length>shown.length?`<p class="muted">Showing ${shown.length} of ${matches.length}. Search to find older ones.</p>`:''}`:live.length?'<p class="empty">No Pro forma matches. Clear the search or choose All.</p>':'<div class="empty"><strong>No Pro formas yet.</strong><br>Press + New Pro forma to make the first one.</div>'}`;
 }
 function proformaScreen(){
@@ -1378,11 +1379,11 @@ function proformaScreen(){
 }
 function haadiLots(productId){const hubIds=new Set(inventoryLocations.filter(row=>row.active&&row.is_dispatch_hub).map(row=>row.id));return inventoryLots.filter(row=>row.product_id===productId&&row.stock_status==='available'&&hubIds.has(row.location_id)&&row.loose_units-row.reserved_units>0)}
 function deliveryEditor(record){
- return `<section class="card document-editor"><div class="heading"><div><small>FROM ${esc(record.document_number)}</small><h2>Record Accounts approval</h2></div><button type="button" id="closeDeliveryEditor">Close</button></div><form id="deliveryForm" data-id="${record.id}" data-version="${record.version}"><div class="grid"><label><span>Accounts approval reference</span><input name="accountsReference" required maxlength="120" placeholder="Approval email, voucher or reference"></label><label><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" min="${salesDate()}" value="${salesDate()}" required></label></div><p class="muted">Accounts approval does not depend on stock availability. Haadi lots are selected and reserved only when downstairs sales starts packing.</p><p class="muted">Accounts-only permissions will be added later. Until then, the signed-in employee who records this approval is saved in the permanent history.</p><button type="submit">Record Accounts approval</button></form></section>`;
+ return `<section class="card document-editor"><div class="heading"><div><small>FROM ${esc(record.document_number)}</small><h2>Record Accounts approval</h2></div><button type="button" id="closeDeliveryEditor">Close</button></div><form id="deliveryForm" data-id="${record.id}" data-version="${record.version}"><div class="grid"><label><span>Accounts approval reference</span><input name="accountsReference" required maxlength="120" placeholder="Approval email, voucher or reference"></label><label><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" min="${salesDate()}" value="${salesDate()}" required></label></div>${deliveryCollectionChoice()}<p class="muted">Accounts approval does not depend on stock availability. Haadi lots are selected and reserved only when downstairs sales starts packing.</p><p class="muted">Accounts-only permissions will be added later. Until then, the signed-in employee who records this approval is saved in the permanent history.</p><button type="submit">Record Accounts approval</button></form></section>`;
 }
 function packingFields(note){const reserved=deliveryLines(note.id);if(reserved.length)return `<p class="notice">Stock was reserved when the Tax Invoice was created. Confirm the team has started packing these reserved items.</p><ul>${reserved.map(line=>`<li>${esc(salesProduct(line.product_id).name)} · ${line.quantity} reserved</li>`).join('')}</ul>`;const record=salesProforma(note.proforma_id),rows=salesLines(record.id).map(line=>({line,remaining:remainingDeliveryQuantity(line,salesDeliveryLines,salesDeliveryNotes)})).filter(row=>row.remaining>0);return `<p>Select only the quantities being packed in this legacy delivery. Saving reserves those exact Haadi units so another order cannot use them.</p>${rows.map(({line,remaining})=>{const lots=haadiLots(line.product_id),key=line.id;return `<div class="delivery-pick"><label class="delivery-check"><input type="checkbox" name="include_${key}" ${lots.length?'':'disabled'}><span>${esc(salesProduct(line.product_id).name)} · ${remaining} ${esc(line.uom)} remaining</span></label><label><span>Haadi lot</span><select name="lot_${key}" ${lots.length?'':'disabled'}><option value="">Choose lot</option>${lots.map(lot=>inventoryOption(lot.id,`${lot.batch_number||'No batch'} · ${lot.loose_units-lot.reserved_units} available`)).join('')}</select></label><label><span>Quantity</span><input name="qty_${key}" type="number" min="1" max="${remaining}" value="${remaining}" ${lots.length?'':'disabled'}></label>${lots.length?'':'<p class="warning">No loose Haadi stock is available for this item.</p>'}</div>`}).join('')}`}
 function deliveryActions(note){const labels={tax_invoice:'Record tax invoice',send_to_sales:'Send to downstairs sales',start_packing:'Start packing',ready:'Packing complete · ready for delivery',dispatch:'Mark out for delivery',deliver:'Record signed delivery note',cancel:'Cancel'};return `${deliveryNextActions(note.status).map(action=>`<button data-delivery-action="${action}" data-id="${note.id}" class="${action==='cancel'?'danger':''}">${labels[action]}</button>`).join('')}<button data-print-document="${note.id}">Print / PDF</button>`}
-function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div>${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">Order closed. Every delivered item classified as a Machine has been added automatically to the Installation queue.</p>`:''}${deliveryHistory(note)}<div class="actions no-print">${deliveryActions(note)}</div></article>`}
+function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div>${deliveryCollectionHtml(note)}${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">Order closed. Every delivered item classified as a Machine has been added automatically to the Installation queue.</p>`:''}${deliveryHistory(note)}<div class="actions no-print">${deliveryActions(note)}</div></article>`}
 function deliveryScreen(){const accepted=salesProformas.filter(canCreateDelivery);return `${salesHeader()}<div class="heading"><div><h2>Delivery register</h2><p class="muted">Press the button for the step you have just finished. Stock is reserved when the tax invoice is made and leaves the godown when you mark Out for delivery.</p></div></div>${salesEditing&&salesEditing!=='new'?deliveryEditor(salesProforma(salesEditing)):''}${salesDeliveryNotes.map(deliveryCard).join('')||'<div class="empty"><strong>No delivery notes yet.</strong><br>Submit an accepted Pro forma, then record the Accounts approval.</div>'}${accepted.length&&!salesEditing?`<section class="card"><h2>Submitted Pro formas waiting for Accounts</h2>${accepted.map(record=>`<div class="recycle-record"><span><strong>${esc(record.document_number)}</strong><small>${esc(salesOrganization(record.organization_id).name)}</small></span><button data-create-delivery="${record.id}">Record Accounts approval</button></div>`).join('')}</section>`:''}`}
 function officialDocumentsScreen(){return `${salesHeader()}<div class="heading"><div><h2>Official forms and printable records</h2><p class="muted">Use the approved Anudha forms. Completed Pro formas and delivery notes are printed from their own record cards.</p></div></div><div class="official-document-grid"><article class="card"><small>WORKFLOW 1 · SALES</small><h3>Pro forma invoice</h3><p>Open a Pro forma record and choose <strong>Print / PDF</strong>. Its current revision, client, items, prices, tax and terms are printed together.</p><button type="button" data-sales-section="proformas">Open Pro formas</button></article><article class="card"><small>WORKFLOW 1 · DELIVERY</small><h3>Delivery note</h3><p>Open a delivery record and choose <strong>Print / PDF</strong>. The signed reference and recipient remain attached to the closed order.</p><button type="button" data-sales-section="delivery">Open delivery notes</button></article><article class="card"><small>WORKFLOW 2 · INSTALLATION</small><h3>Equipment handover and installation report</h3><p>The official Anudha equipment handover and installation form.</p><a class="button" href="official-documents/equipment-handover-installation-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article><article class="card"><small>WORKFLOW 2 · SERVICE</small><h3>Service work report</h3><p>The official Anudha service report for field work, parts, customer sign-off and completion.</p><a class="button" href="official-documents/service-work-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article></div><p class="warning">These blank official forms contain no client data and are included as approved print references. The next service build will turn their fields into connected records and generate completed PDFs from the website.</p>`}
 async function salesDeliveryWorkspace(force=false){
@@ -1413,7 +1414,30 @@ async function saveProformaForm(form){
   if(me?.user_id===actor&&view==='sales')message(salesLoaded?'Pro forma invoice saved with an immutable revision.':'Pro forma was saved, but the register could not reload. Refresh to reopen it.',!salesLoaded);
  }finally{form.dataset.saving='false';button.disabled=false;button.textContent=label;}
 }
-async function createDeliveryForm(form){const f=new FormData(form),result=await client.rpc('create_sales_delivery_note',{p_id:crypto.randomUUID(),p_proforma_id:form.dataset.id,p_expected_proforma_version:Number(form.dataset.version),p_accounts_reference:f.get('accountsReference'),p_expected_delivery_date:f.get('expectedDeliveryDate'),p_lines:[]});if(result.error)throw result.error;salesEditing='';await salesDeliveryWorkspace(true);message('Accounts approval recorded. Next step: create the tax invoice.')}
+async function createDeliveryForm(form){const f=new FormData(form);if(!f.get('collection'))throw Error('Choose whether the customer is waiting in the lobby or it is a delivery.');const result=await client.rpc('create_sales_delivery_note',{p_id:crypto.randomUUID(),p_proforma_id:form.dataset.id,p_expected_proforma_version:Number(form.dataset.version),p_accounts_reference:f.get('accountsReference'),p_expected_delivery_date:f.get('expectedDeliveryDate'),p_lines:[]});if(result.error)throw result.error;
+ // The lobby mark (migration 078) is saved straight after the approval; the approval stands even if it fails.
+ let lobbyProblem='';if(f.get('collection')==='lobby'){const note=Array.isArray(result.data)?result.data[0]:result.data,marked=await client.rpc('set_delivery_customer_waiting',{p_id:note.id,p_expected_version:note.version,p_customer_waiting:true});if(marked.error)lobbyProblem=' The "customer waiting" mark was not saved: press "Customer is waiting in the lobby" on the delivery note.';}
+ salesEditing='';await salesDeliveryWorkspace(true);message('Accounts approval recorded. Next step: create the tax invoice.'+lobbyProblem,!!lobbyProblem)}
+// Hand-off choice at Accounts approval: a cash customer waiting in the lobby goes to the top of the packing queue.
+function deliveryCollectionChoice(){return `<fieldset class="collection-choice"><legend>How does the customer get it?</legend><label class="collection-option collection-lobby"><input type="radio" name="collection" value="lobby" required><span><strong>Customer waiting — cash, collecting now</strong><small>Goes to the top of the packing queue, shown in red.</small></span></label><label class="collection-option"><input type="radio" name="collection" value="delivery" required><span><strong>Delivery</strong><small>Packed in turn, oldest first.</small></span></label></fieldset>`}
+// On a delivery note: lobby or delivery (changeable until packing starts), who is packing it, and the promise.
+function deliveryCollectionHtml(note){
+ const open=!['delivered','cancelled'].includes(note.status),parts=[];
+ parts.push(note.customer_waiting?'<span class="packing-badge">Customer waiting — cash, collecting now</span>':'<span class="tag">Delivery</span>');
+ if(note.status==='packing'&&note.packer_user_id)parts.push(`<span>Being packed by <strong>${esc(employeeName(note.packer_user_id))}</strong>${typeof packingTime==='function'&&note.packing_taken_at?' since '+esc(packingTime(note.packing_taken_at)):''}</span>`);
+ if(note.status==='sent_to_sales'&&note.packing_blocked_reason)parts.push(`<span class="packing-warn-text">${esc(note.packing_blocked_reason)}</span>`);
+ if(open&&typeof packingPromiseText==='function'&&!note.customer_waiting&&note.promised_by)parts.push(`<span class="muted">${esc(packingPromiseText(note))}</span>`);
+ if(open&&typeof packingCallCustomer==='function'&&packingCallCustomer(note))parts.push('<strong class="packing-call-text">Call the customer: more than 2 days past the promise</strong>');
+ const canChange=['accounts_approved','tax_invoice_created','sent_to_sales'].includes(note.status)&&'customer_waiting' in note;
+ return `<div class="delivery-collection no-print">${parts.join('')}${canChange?`<button type="button" data-delivery-collection="${esc(note.id)}">${note.customer_waiting?'Change to delivery':'Customer is waiting in the lobby'}</button>`:''}</div>`;
+}
+// "My orders today": Pro formas I prepared that were made, submitted or moved today.
+function proformaMineToday(record,userId,now=new Date()){
+ if(!userId||record.prepared_by!==userId)return false;
+ const today=now.toDateString();
+ return [record.created_at,record.accepted_at,record.updated_at].some(value=>value&&new Date(value).toDateString()===today);
+}
+function proformaItemsSummary(record){const lines=salesLines(record.id);if(!lines.length)return '';const shown=lines.slice(0,3).map(line=>`${line.quantity} × ${salesProduct(line.product_id).name}`);return shown.join(' · ')+(lines.length>3?` · +${lines.length-3} more`:'');}
 function openProformaAction(record,action){const asksReference=action!=='send',label={send:'Send Pro forma to client',accept:'Record customer acceptance',revise:'Return Pro forma for revision',reject:'Record customer rejection',cancel:'Cancel Pro forma'}[action];actionForm(label,asksReference?`<p>${esc(record.document_number)} · ${esc(salesOrganization(record.organization_id).name)}</p><label><span>${action==='accept'?'Customer LPO, payment proof, email or acceptance reference':'Reason / reference'}</span><textarea name="reference" required maxlength="1000"></textarea></label>`:`<p>Confirm that ${esc(record.document_number)} has been sent to the named customer contact. The sent revision is locked until it is returned to Draft.</p>`,async values=>{const result=await client.rpc('advance_sales_proforma',{p_id:record.id,p_expected_version:record.version,p_action:action,p_reference:values.reference||''});if(result.error)throw result.error;await salesDeliveryWorkspace(true);message(label+' saved.')})}
 // Migration 010 (reserve stock when the tax invoice is made) is not on every database. Where its function is missing,
 // the tax invoice is recorded with the ordinary step and stock is reserved when packing starts, as before.
@@ -1445,6 +1469,8 @@ function bindSalesDelivery(){
  document.querySelectorAll('[data-edit-proforma]').forEach(button=>button.onclick=()=>{salesEditing=button.dataset.editProforma;salesDeliveryWorkspace()});
  document.querySelectorAll('[data-create-delivery]').forEach(button=>button.onclick=()=>{salesSection='delivery';salesEditing=button.dataset.createDelivery;salesDeliveryWorkspace()});
  document.querySelectorAll('[data-proforma-action]').forEach(button=>button.onclick=()=>openProformaAction(salesProforma(button.dataset.id),button.dataset.proformaAction));
+ document.querySelectorAll('[data-delivery-collection]').forEach(button=>button.onclick=()=>{const note=salesDeliveryNotes.find(row=>row.id===button.dataset.deliveryCollection);if(!note)return;const waiting=!note.customer_waiting;if(!confirm(waiting?`Mark ${note.delivery_number}: customer waiting in the lobby (cash, collecting now)? It goes to the top of the packing queue.`:`Change ${note.delivery_number} to delivery? It is packed in turn.`))return;run(async()=>{const r=await client.rpc('set_delivery_customer_waiting',{p_id:note.id,p_expected_version:note.version,p_customer_waiting:waiting});if(r.error)throw r.error;await salesDeliveryWorkspace(true);message(waiting?'Marked: customer waiting in the lobby.':'Marked: delivery.');})});
+ if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
  document.querySelectorAll('[data-delivery-action]').forEach(button=>button.onclick=()=>openDeliveryAction(salesDeliveryNotes.find(row=>row.id===button.dataset.id),button.dataset.deliveryAction));
  document.querySelectorAll('[data-print-document]').forEach(button=>button.onclick=()=>printSalesDocument(button.dataset.printDocument));
  document.querySelectorAll('[data-send-tally]').forEach(button=>button.onclick=()=>run(()=>openSendToTally(button.dataset.sendTally)));
@@ -1564,7 +1590,7 @@ function leadActions(row){
 }
 function leadCard(row){
  const proforma=salesProformas.find(p=>p.id===row.proforma_id),overdue=leadOverdue(row);
- return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
+ return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}${typeof orderLiveHtml==='function'?orderLiveHtml(proforma,'span'):''}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
 }
 function leadEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>inventoryOption(row.user_id,employeeName(row.user_id),row.user_id===selected)).join('');}
 function leadEditor(row){
@@ -1657,6 +1683,8 @@ function renderLeads(){
 }
 function bindLeads(){
  $('#leadRefresh').onclick=()=>run(()=>leadsWorkspace(true));
+ // A won lead shows where its order is now (packing queue, delivery).
+ if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
  $('#newLead')?.addEventListener('click',()=>{leadEditing='new';leadPendingSave=null;renderLeads();$('#leadForm [name="subject"]')?.focus();});
  $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';leadPendingSave=null;renderLeads();});
  const form=$('#leadForm');
@@ -3688,6 +3716,9 @@ async function refreshNotificationBell(force=false){
  if(!force&&Date.now()-bellLastRefresh<10000)return;
  bellLastRefresh=Date.now();
  const epoch=++bellEpoch,seen=bellSeen(actor);
+ // Packing orders taken over 30 minutes ago become tasks for the stores head and the owner (migration 078). Their bell
+ // asks for that first, so the alert arrives even when no packing screen is open. Missing on older databases: ignored.
+ if(me?.role!=='staff'&&typeof client?.rpc==='function'){try{await client.rpc('packing_raise_overdue_alerts');}catch{}}
  const results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor,bellSince(kind,seen),true)));
  if(epoch!==bellEpoch||me?.user_id!==actor)return;
  // A kind that could not be read is left out of the count rather than blocking the others.
@@ -3758,6 +3789,228 @@ function bellInstall(){
 document.addEventListener('click',event=>{if(bellOpen&&!event.target.closest('#bell'))bellSetOpen(false);});
 document.addEventListener('keydown',event=>{if(bellOpen&&event.key==='Escape'){bellSetOpen(false);document.querySelector('#bell .bell-button')?.focus();}});
 setInterval(()=>{if(me&&!document.hidden)refreshNotificationBell(true).catch(()=>{});},120000);
+;// packing-queue.js
+'use strict';
+// Packing queue (migration 078). Each packer presses Take next on their phone and gets the top order: customers
+// waiting in the lobby (red) first, then delivery orders, oldest first. Take next is the Start packing step, given to
+// the person who pressed it; Packed is Mark ready for delivery. One order per packer. The owner or the stores head can
+// put an order back in the queue. The TV screen (#/go/packing/screen) shows the queue in large type for the stores.
+// The page reads one summary (packing_queue_board) every 10 seconds; the clocks tick every second in between.
+let packingSection='queue',packingBoard=null,packingError='',packingEpoch=0,packingTimer=null,packingTick=null,packingLoadedAt=0;
+const packingRefreshMs=10000;
+function clearPackingQueue(){packingEpoch++;packingBoard=null;packingError='';packingStop();liveStatusCache.clear();}
+function packingStop(){clearInterval(packingTimer);clearInterval(packingTick);packingTimer=null;packingTick=null;}
+
+// ---- Plain helpers (tests/packing-queue.test.mjs) ----
+function packingMinutes(from,now=Date.now()){const t=Date.parse(from);return Number.isFinite(t)?Math.max(0,Math.floor((now-t)/60000)):0;}
+// "7:05" (minutes:seconds), "1:07:05" past an hour.
+function packingClock(from,now=Date.now()){
+ const t=Date.parse(from);if(!Number.isFinite(t))return '';
+ const s=Math.max(0,Math.floor((now-t)/1000)),h=Math.floor(s/3600),m=Math.floor(s%3600/60),pad=n=>String(n).padStart(2,'0');
+ return h?`${h}:${pad(m)}:${pad(s%60)}`:`${m}:${pad(s%60)}`;
+}
+// '' under amber, then 'amber', then 'red' at the alert time (both come from the database setting).
+function packingLevel(minutes,amber=20,overdue=30){return minutes>=overdue?'red':minutes>=amber?'amber':'';}
+function packingShortNumber(number){const m=String(number||'').match(/(\d+)$/);return m?String(Number(m[1])):String(number||'');}
+function packingSince(iso,now=Date.now()){
+ const minutes=packingMinutes(iso,now);
+ if(minutes<60)return `${minutes} min`;
+ const hours=Math.floor(minutes/60);if(hours<48)return minutes%60?`${hours} h ${minutes%60} min`:`${hours} h`;
+ return `${Math.floor(hours/24)} days`;
+}
+function packingTime(iso,now=Date.now()){
+ const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';
+ const pad=n=>String(n).padStart(2,'0'),time=`${pad(d.getHours())}:${pad(d.getMinutes())}`,today=new Date(now);
+ return d.toDateString()===today.toDateString()?time:`${d.getDate()} ${d.toLocaleString('en-GB',{month:'short'})} ${time}`;
+}
+// The delivery promise, shown and never blocking: consumables within 24 working hours, machines by availability.
+function packingPromiseText(row,now=Date.now()){
+ if(!row)return '';
+ if(row.customer_waiting)return 'Customer waiting in the lobby — cash, collecting now';
+ if(row.promise_kind==='machines')return `Machine: by availability, agreed with the customer${row.promised_by?` (${packingTime(row.promised_by,now)})`:''}`;
+ return row.promised_by?`Promised by ${packingTime(row.promised_by,now)} (24 working hours)`:'';
+}
+function packingCallCustomer(row,now=Date.now()){
+ if(!row||row.customer_waiting||!row.promised_by||['delivered','cancelled'].includes(row.status))return false;
+ return now>Date.parse(row.promised_by)+2*864e5;
+}
+// One live line for the person who placed the order (order_live_status). proformaStatus is the Pro forma's own.
+function orderLiveText(s,now=Date.now(),proformaStatus=''){
+ if(!s)return proformaStatus==='accepted'?'Submitted to accounting · waiting for approval':'';
+ let text=({
+  accounts_approved:'Approved by accounts · tax invoice next',
+  tax_invoice_created:'Tax invoice made · going to packing next',
+  sent_to_sales:`Sent to packing ${packingSince(s.queued_at,now)} ago · waiting in the queue (position ${s.queue_position??'?'})`,
+  packing:`Being packed${s.packer_name?` by ${s.packer_name}`:''} · ${packingSince(s.taken_at,now)}`,
+  ready:`Packed · ready for delivery${s.ready_at?' '+packingTime(s.ready_at,now):''}`,
+  out_for_delivery:'Out for delivery',
+  delivered:`Delivered${s.delivered_at?' '+packingTime(s.delivered_at,now):''}`,
+  cancelled:'Delivery cancelled'
+ })[s.status]||String(s.status||'').replaceAll('_',' ');
+ if(s.status==='sent_to_sales'&&s.customer_waiting)text+=' · customer waiting';
+ if(s.status==='sent_to_sales'&&s.blocked_reason)text+=` · ${s.blocked_reason}`;
+ if(s.call_customer)text+=' · Call the customer';
+ return text;
+}
+function packingItemsHtml(items,withBatch=false){
+ return `<ul class="packing-items">${(items||[]).map(item=>`<li><b>${esc(item.quantity)} ${esc(item.uom||'')}</b> ${esc(item.name)}${withBatch&&item.batch?` <small>batch ${esc(item.batch)}</small>`:''}</li>`).join('')}</ul>`;
+}
+
+// ---- Data ----
+async function loadPackingBoard(){
+ const actor=me?.user_id,epoch=packingEpoch;
+ const r=await client.rpc('packing_queue_board');
+ if(me?.user_id!==actor||epoch!==packingEpoch)return false;
+ if(r.error){packingError=r.error.message||'The packing queue could not load.';return true;}
+ packingBoard=r.data;packingError='';packingLoadedAt=Date.now();
+ // The board's time is the server's; the clocks run on this device, corrected by the difference.
+ packingBoard.offset=Date.parse(r.data.now)-Date.now();
+ return true;
+}
+function packingNow(){return Date.now()+(packingBoard?.offset||0);}
+
+// ---- Phone page ----
+function packingCard(row,mine=false){
+ const now=packingNow(),minutes=packingMinutes(row.taken_at,now),level=packingLevel(minutes,packingBoard.amber_minutes,packingBoard.overdue_minutes);
+ return `<article class="packing-card packing-${level||'ok'}${row.customer_waiting?' packing-lobby':''}" data-packing-id="${esc(row.id)}">
+  <div class="packing-card-head"><strong class="packing-number">${esc(row.delivery_number)}</strong>${row.customer_waiting?'<span class="packing-badge">Customer waiting</span>':''}<span class="packing-clock" data-clock="${esc(row.taken_at||'')}" aria-label="Time packing">${esc(packingClock(row.taken_at,now))}</span></div>
+  <p class="packing-client">${esc(row.organization)}${row.location?` · ${esc(row.location)}`:''}</p>
+  ${mine?'':`<p class="muted">Packed by <strong>${esc(row.packer_name||'someone from Delivery progress')}</strong> · started ${esc(packingTime(row.taken_at,now))}</p>`}
+  ${packingItemsHtml(row.items,true)}
+  ${level==='red'?`<p class="packing-alert" role="alert">Over ${esc(packingBoard.overdue_minutes)} minutes. The stores head and the owner have been told.</p>`:level==='amber'?`<p class="packing-warn">Over ${esc(packingBoard.amber_minutes)} minutes. Finish soon or tell the stores head.</p>`:''}
+  ${row.call_customer?'<p class="packing-call">Call the customer: more than 2 days past the promise.</p>':''}
+  <p class="muted">${esc(packingPromiseText(row,now))}</p>
+  <div class="actions">${mine?`<button type="button" class="primary-action packing-big" data-packing-packed="${esc(row.id)}" data-version="${esc(row.version)}">Packed</button>`:''}${packingBoard.can_release?`<button type="button" data-packing-release="${esc(row.id)}" data-version="${esc(row.version)}">Put back in queue</button>`:''}</div>
+ </article>`;
+}
+function packingWaitingRow(row,index){
+ const now=packingNow();
+ return `<li class="packing-waiting${row.customer_waiting?' packing-lobby':''}${row.blocked_reason?' packing-blocked':''}"><span class="packing-place">${index+1}</span><span class="packing-waiting-main"><strong>${esc(row.delivery_number)}</strong>${row.customer_waiting?' <span class="packing-badge">Customer waiting</span>':''}<small>${esc(row.organization)} · waiting ${esc(packingSince(row.queued_at,now))}</small>${row.blocked_reason?`<small class="packing-warn-text">${esc(row.blocked_reason)}</small>`:''}${row.call_customer?'<small class="packing-call-text">Call the customer</small>':''}<details><summary>Items</summary>${packingItemsHtml(row.items)}</details></span></li>`;
+}
+function packingQueueHtml(){
+ if(packingError&&!packingBoard)return `<section class="card"><h1>Packing queue</h1><p role="alert">${esc(packingError)}</p><button type="button" data-packing-refresh>Try again</button></section>`;
+ if(!packingBoard)return '<p role="status">Loading the packing queue…</p>';
+ const b=packingBoard,mine=b.packing.find(row=>row.id===b.mine),others=b.packing.filter(row=>row.id!==b.mine);
+ return `<section class="packing-page">
+ <div class="heading"><div><small>ORDERS · STORES</small><h1>Packing queue</h1></div><div class="actions"><button type="button" data-packing-refresh>Refresh</button><button type="button" data-packing-screen>TV screen</button></div></div>
+ ${packingError?`<p class="warning" role="alert">Could not refresh: ${esc(packingError)}</p>`:''}
+ ${mine?`<h2>Your order</h2>${packingCard(mine,true)}<p class="muted">When every item is packed and checked, press <strong>Packed</strong>. Then you can take the next order.</p>`
+  :`<div class="packing-take"><button type="button" class="primary-action packing-big" data-packing-take ${b.waiting.length?'':'disabled'}>Take next</button><p class="muted">${b.waiting.length?`${b.waiting.length} waiting. You get the top order: customers waiting in the lobby first, then the oldest delivery.`:'Nothing is waiting to be packed.'}</p></div>`}
+ <h2>Waiting · ${b.waiting.length}</h2>
+ ${b.waiting.length?`<ol class="packing-waiting-list">${b.waiting.map(packingWaitingRow).join('')}</ol>`:'<p class="empty">Nothing waiting.</p>'}
+ ${b.coming?.count?`<p class="muted">Coming from accounts: ${esc(b.coming.count)}${b.coming.customer_waiting?` (${esc(b.coming.customer_waiting)} with the customer waiting)`:''}.</p>`:''}
+ <h2>Being packed · ${b.packing.length}</h2>
+ ${others.length?others.map(row=>packingCard(row)).join(''):'<p class="muted">Nobody else is packing.</p>'}
+ </section>`;
+}
+
+// ---- TV screen ----
+function packingScreenHtml(){
+ if(!packingBoard)return `<section class="packing-tv-screen"><p class="packing-tv-loading">${esc(packingError||'Loading the packing queue…')}</p><button type="button" class="packing-tv-exit" data-packing-exit>Exit</button></section>`;
+ const b=packingBoard,now=packingNow();
+ return `<section class="packing-tv-screen" aria-label="Packing queue screen">
+ <div class="packing-tv-col"><h1>Waiting <span>${b.waiting.length}</span></h1>
+  <ol class="packing-tv-waiting">${b.waiting.slice(0,18).map(row=>`<li class="${row.customer_waiting?'packing-tv-lobby':''}${row.blocked_reason?' packing-tv-blocked':''}"><b>${esc(packingShortNumber(row.delivery_number))}</b><span>${esc(row.organization)}<small>${row.customer_waiting?'CUSTOMER WAITING · ':''}${esc(packingSince(row.queued_at,now))}${row.blocked_reason?' · waiting for stock':''}${row.call_customer?' · CALL THE CUSTOMER':''}</small><small class="packing-tv-items">${esc((row.items||[]).map(item=>`${item.quantity} ${item.name}`).join(' · '))}</small></span></li>`).join('')||'<li class="packing-tv-none">Nothing waiting</li>'}</ol>
+  ${b.waiting.length>18?`<p class="packing-tv-more">and ${b.waiting.length-18} more</p>`:''}
+ </div>
+ <div class="packing-tv-col"><h1>Packing now <span>${b.packing.length}</span></h1>
+  <ul class="packing-tv-packing">${b.packing.map(row=>{const level=packingLevel(packingMinutes(row.taken_at,now),b.amber_minutes,b.overdue_minutes);return `<li class="packing-tv-${level||'ok'}${row.customer_waiting?' packing-tv-lobby':''}"><b>${esc(packingShortNumber(row.delivery_number))}</b><span><strong>${esc(row.packer_name||'—')}</strong>${esc(row.organization)}<small class="packing-tv-items">${esc((row.items||[]).map(item=>`${item.quantity} ${item.name}`).join(' · '))}</small>${row.call_customer?'<small>CALL THE CUSTOMER</small>':''}</span><time data-clock="${esc(row.taken_at||'')}">${esc(packingClock(row.taken_at,now))}</time></li>`;}).join('')||'<li class="packing-tv-none">Nobody packing</li>'}</ul>
+ </div>
+ <footer class="packing-tv-foot"><span>Red = customer waiting in the lobby, goes first. Amber after ${esc(b.amber_minutes)} min, red after ${esc(b.overdue_minutes)} min.</span><span data-packing-updated>${packingError?'Not updating — check the connection':`Updated ${esc(packingTime(new Date(packingLoadedAt).toISOString()))}`}</span><button type="button" class="packing-tv-exit" data-packing-exit>Exit</button></footer>
+ </section>`;
+}
+
+function syncPackingScreenMode(){document.body.classList.toggle('packing-tv',(()=>{try{return typeof view}catch{return 'undefined'}})()!=='undefined'&&view==='packing'&&packingSection==='screen');}
+function packingDraw(){
+ if(view!=='packing')return packingStop();
+ // Typing in the release form must not be wiped by a redraw.
+ if(document.querySelector('dialog[open]'))return;
+ $('#content').innerHTML=packingSection==='screen'?packingScreenHtml():packingQueueHtml();
+ bindPackingQueue();
+}
+// The clocks on screen, every second, without reloading.
+function packingTickClocks(){
+ if(view!=='packing')return packingStop();
+ const now=packingNow();
+ document.querySelectorAll('[data-clock]').forEach(el=>{if(el.dataset.clock)el.textContent=packingClock(el.dataset.clock,now);});
+ document.querySelectorAll('[data-packing-id]').forEach(card=>{
+  const row=packingBoard?.packing.find(r=>r.id===card.dataset.packingId);if(!row)return;
+  const level=packingLevel(packingMinutes(row.taken_at,now),packingBoard.amber_minutes,packingBoard.overdue_minutes)||'ok';
+  card.classList.remove('packing-ok','packing-amber','packing-red');card.classList.add('packing-'+level);
+ });
+ document.querySelectorAll('.packing-tv-packing li time').forEach(el=>{
+  const li=el.closest('li'),level=packingLevel(packingMinutes(el.dataset.clock,now),packingBoard?.amber_minutes,packingBoard?.overdue_minutes)||'ok';
+  li.classList.remove('packing-tv-ok','packing-tv-amber','packing-tv-red');li.classList.add('packing-tv-'+level);
+ });
+}
+async function packingRefresh(){
+ if(view!=='packing'){packingStop();return;}
+ if(document.hidden&&packingSection!=='screen')return;
+ if(await loadPackingBoard())packingDraw();
+}
+async function packingWorkspace(){
+ syncPackingScreenMode();
+ packingStop();
+ packingDraw();
+ await loadPackingBoard();
+ packingDraw();
+ packingTimer=setInterval(()=>{packingRefresh().catch(()=>{});},packingRefreshMs);
+ packingTick=setInterval(packingTickClocks,1000);
+}
+function openPackingSection(section){packingSection=section==='screen'?'screen':'queue';}
+async function packingAct(work,done){
+ const actor=me?.user_id;
+ const r=await work();
+ if(me?.user_id!==actor)return;
+ if(r.error)throw Error(r.error.message);
+ await loadPackingBoard();packingDraw();
+ if(done)message(typeof done==='function'?done(r.data):done);
+}
+function bindPackingQueue(){
+ document.querySelectorAll('[data-packing-refresh]').forEach(b=>b.onclick=()=>run(async()=>{await loadPackingBoard();packingDraw();}));
+ document.querySelectorAll('[data-packing-take]').forEach(b=>b.onclick=()=>run(()=>packingAct(()=>client.rpc('packing_take_next'),data=>data?.id?`You are packing ${data.delivery_number}.`:'Nothing could be taken: the waiting orders are short of stock.')));
+ document.querySelectorAll('[data-packing-packed]').forEach(b=>b.onclick=()=>{
+  if(!confirm('Is every item packed and checked?'))return;
+  run(()=>packingAct(()=>client.rpc('packing_mark_packed',{p_id:b.dataset.packingPacked,p_expected_version:Number(b.dataset.version)}),data=>`${data?.delivery_number||'Order'} packed · ready for delivery. Press Take next for the next one.`));
+ });
+ document.querySelectorAll('[data-packing-release]').forEach(b=>b.onclick=()=>{
+  const row=packingBoard?.packing.find(r=>r.id===b.dataset.packingRelease);
+  actionForm('Put back in the packing queue',`<p><strong>${esc(row?.delivery_number||'')}</strong>${row?.packer_name?` · with ${esc(row.packer_name)}`:''}</p><p class="muted">It goes back to its place in the queue. Stock picked for it is freed again.</p><label><span>Why?</span><textarea name="reason" required minlength="3" maxlength="500"></textarea></label>`,async values=>{
+   await packingAct(()=>client.rpc('packing_release',{p_id:b.dataset.packingRelease,p_expected_version:Number(b.dataset.version),p_reason:values.reason}),'Put back in the packing queue.');
+  });
+ });
+ document.querySelectorAll('[data-packing-screen]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="screen"]')?.click();});
+ document.querySelectorAll('[data-packing-exit]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="queue"]')?.click();});
+}
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('packing-tv')&&!document.querySelector('dialog[open]'))document.querySelector('#nav [data-view="packing"][data-workspace-section="queue"]')?.click();});
+
+// ---- Live order line on Pro formas and leads ----
+// Elements marked data-live-status="<proforma id>" (data-live-proforma-status = the Pro forma's own status) get one
+// line from order_live_status. Answers are kept 20 seconds, so typing in a search box does not ask again each time.
+const liveStatusCache=new Map();let liveStatusAsk=0;
+async function decorateOrderLiveStatus(){
+ const boxes=[...document.querySelectorAll('[data-live-status]')];if(!boxes.length||(()=>{try{return typeof client}catch{return 'undefined'}})()==='undefined'||!client)return;
+ const actor=me?.user_id,now=Date.now(),ask=++liveStatusAsk;
+ const stale=[...new Set(boxes.map(box=>box.dataset.liveStatus))].filter(id=>!(now-(liveStatusCache.get(id)?.at||0)<20000)).slice(0,300);
+ if(stale.length){
+  const r=await client.rpc('order_live_status',{p_proforma_ids:stale});
+  if(me?.user_id!==actor)return;
+  if(!r.error){const got=new Map((r.data||[]).map(row=>[row.proforma_id,row]));for(const id of stale)liveStatusCache.set(id,{at:now,row:got.get(id)||null});}
+ }
+ if(ask!==liveStatusAsk)return;
+ for(const box of document.querySelectorAll('[data-live-status]')){
+  const entry=liveStatusCache.get(box.dataset.liveStatus);if(!entry)continue;
+  const text=orderLiveText(entry.row,Date.now(),box.dataset.liveProformaStatus||'');
+  box.textContent=text;box.hidden=!text;
+  box.classList.toggle('order-live-call',!!entry.row?.call_customer);
+  box.classList.toggle('order-live-lobby',!!entry.row?.customer_waiting);
+ }
+}
+function orderLiveHtml(record,tag='p'){
+ if(!record||record.status!=='accepted')return '';
+ return `<${tag} class="order-live" data-live-status="${esc(record.id)}" data-live-proforma-status="accepted" aria-live="polite" hidden></${tag}>`;
+}
+setInterval(()=>{if((()=>{try{return typeof me}catch{return 'undefined'}})()!=='undefined'&&me&&!document.hidden&&document.querySelector('[data-live-status]')){liveStatusCache.clear();decorateOrderLiveStatus().catch(()=>{});}},30000);
 ;// workspace-navigation.js
 'use strict';
 
@@ -3769,7 +4022,7 @@ const workspaceGroups=[
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
-  ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
+  ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -3814,6 +4067,7 @@ function installWorkspaceNavigation(){
   if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
  if(button.dataset.view==='purchasing'&&typeof openPurchaseSection==='function')openPurchaseSection(section);
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
+ if(button.dataset.view==='packing'&&typeof openPackingSection==='function')openPackingSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
    if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    salesSection=section==='new'?'proformas':section||'proformas';
@@ -3826,13 +4080,15 @@ function installWorkspaceNavigation(){
 }
 function syncWorkspaceNavigation(){
  if(typeof applyStockProtection==='function')applyStockProtection();
+ // The packing TV screen hides the header and menu; any other page brings them back.
+ if(typeof syncPackingScreenMode==='function')syncPackingScreenMode();
  // The Dashboard is for the owner and department heads; staff start on My tasks.
  document.querySelectorAll('#nav [data-view="dashboard"]').forEach(button=>button.hidden=me?.role==='staff');
  // Moving between pages also checks the bell for new things (at most every 10 seconds).
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
@@ -4214,6 +4470,7 @@ function canManagePerson(row){
 // Menu entry or open screen → area. null means everyone (or owner-only, handled elsewhere).
 function viewArea(target,section){
  if(target==='leads')return 'leads';
+ if(target==='packing')return 'deliveries';
  if(target==='sales')return section==='delivery'?'deliveries':'proformas';
  if(target==='purchasing')return 'purchasing';
  if(target==='service')return 'service';
@@ -4565,6 +4822,14 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
+ {id:'packing',role:'stores',title:'Pack orders from the packing queue',screens:['packing:queue','packing:screen'],steps:[
+  'Open **Packing queue** on your phone. Orders in red have the customer waiting in the lobby and always go first; then delivery orders, oldest first.',
+  'Press **Take next**. You get the top order with its client and items; the stock to use is picked for you. Nobody else can get the same order.',
+  'Pack and check every item, then press **Packed**. Only then can you take the next order.',
+  'The clock on your order turns amber after 20 minutes. After 30 minutes it turns red and the stores head and the owner are told.',
+  'Owner and stores head: press **Put back in queue** and write why, for example when a packer has to leave. The order keeps its place.',
+  'Leave **Packing TV screen** open on the television in stores. It shows the waiting orders as big numbers and who is packing what, and updates by itself.',
+  'Accounts or sales: when you press **Record Accounts approval**, choose whether the customer is waiting in the lobby (cash, collecting now) or it is a delivery. You can change it on the delivery note until packing starts.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',
@@ -4951,7 +5216,7 @@ let contactIssues=new Map(),accountIssues=new Map(),accountReviewCounts=new Map(
 const normalize=s=>String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
 function message(s,error=false){$('#notice').textContent=s;$('#notice').className=s?(error?'notice error':'notice'):''}
 // #editor and #actionEditor are built once when the page loads; every other dialog belongs to one sign-in.
-function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
+function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
 function field(name,label,value='',type='text',required=false){return `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} maxlength="200"></label>`}
 function setup(){clear();$('#content').innerHTML='<div class="login card"><small>ANUDHA · FIRST RELEASE</small><h1>Connect your workspace</h1><p>Contacts and inventory, with individual staff logins.</p><p class="warning">The secure backend is not connected yet. Real records and staff access are not live.</p><p>Your administrator must complete the free Supabase setup and add the public project URL and publishable key to config.js.</p><a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open Supabase setup ↗</a></div>'}
 function login(){clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID (for example jagroop) or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
@@ -5005,7 +5270,7 @@ function inContactView(c,v){if(c.status==='incorrect')return false;return v==='r
 // for the reason and holds its first contact's id; a list is made only when a second contact shares it.
 const duplicateReasons={P:'Phone',E:'Email',N:'Same name at organisation'};
 function scan(){indexCompleteness();duplicates.clear();const groups=new Map(),add=(key,id)=>{const seen=groups.get(key);if(seen===undefined)groups.set(key,id);else if(Array.isArray(seen))seen.push(id);else groups.set(key,[seen,id]);};for(const c of contacts){if(c.status==='incorrect')continue;const phone=(c.country_code+c.phone).replace(/\D/g,'');if(phone.length>=7)add('P'+c.organization_id+':'+phone,c.id);if(c.email)add('E'+c.organization_id+':'+c.email.trim().toLowerCase(),c.id);const name=normalize(c.first_name+c.last_name);if(name.length>=3)add('N'+c.organization_id+':'+name,c.id);}for(const [key,ids] of groups)if(Array.isArray(ids))for(const id of ids){const list=duplicates.get(id)||[];list.push({reason:duplicateReasons[key[0]],ids:ids.filter(x=>x!==id)});duplicates.set(id,list)}for(const c of contacts)if(duplicates.has(c.id)&&c.status==='kept'&&!(contactIssues.get(c.id)||[]).length)accountReviewCounts.set(c.organization_id,(accountReviewCounts.get(c.organization_id)||0)+1);rollupReviewCounts()}
-function render(){if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
+function render(){if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='packing')return packingWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
 function reviewQueue(){
  const rows=contactReviewQueue(contacts,organizations,duplicates),q=search.trim().toLowerCase(),matches=rows.filter(({contact,organization,reasons})=>`${contact.first_name||''} ${contact.last_name||''} ${organization.name||''} ${organization.location||''} ${reasons.join(' ')}`.toLowerCase().includes(q));
  const pages=Math.max(1,Math.ceil(matches.length/30));page=Math.min(Math.max(page,0),pages-1);

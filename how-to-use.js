@@ -57,6 +57,14 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
+ {id:'packing',role:'stores',title:'Pack orders from the packing queue',screens:['packing:queue','packing:screen'],steps:[
+  'Open **Packing queue** on your phone. Orders in red have the customer waiting in the lobby and always go first; then delivery orders, oldest first.',
+  'Press **Take next**. You get the top order with its client and items; the stock to use is picked for you. Nobody else can get the same order.',
+  'Pack and check every item, then press **Packed**. Only then can you take the next order.',
+  'The clock on your order turns amber after 20 minutes. After 30 minutes it turns red and the stores head and the owner are told.',
+  'Owner and stores head: press **Put back in queue** and write why, for example when a packer has to leave. The order keeps its place.',
+  'Leave **Packing TV screen** open on the television in stores. It shows the waiting orders as big numbers and who is packing what, and updates by itself.',
+  'Accounts or sales: when you press **Record Accounts approval**, choose whether the customer is waiting in the lobby (cash, collecting now) or it is a delivery. You can change it on the delivery note until packing starts.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',

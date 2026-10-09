@@ -42,6 +42,9 @@ async function refreshNotificationBell(force=false){
  if(!force&&Date.now()-bellLastRefresh<10000)return;
  bellLastRefresh=Date.now();
  const epoch=++bellEpoch,seen=bellSeen(actor);
+ // Packing orders taken over 30 minutes ago become tasks for the stores head and the owner (migration 078). Their bell
+ // asks for that first, so the alert arrives even when no packing screen is open. Missing on older databases: ignored.
+ if(me?.role!=='staff'&&typeof client?.rpc==='function'){try{await client.rpc('packing_raise_overdue_alerts');}catch{}}
  const results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor,bellSince(kind,seen),true)));
  if(epoch!==bellEpoch||me?.user_id!==actor)return;
  // A kind that could not be read is left out of the count rather than blocking the others.
