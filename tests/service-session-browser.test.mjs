@@ -62,3 +62,50 @@ check('overlapping refresh and replaced identity discard stale rejection and cac
  await p.evaluate(async()=>{finish(14);await next});
  assert.equal(await p.evaluate(()=>serviceLoadedActor===me),true);
 });
+
+async function actionFixture(t){
+ const p=await fixture(t);
+ await p.addScriptTag({content:readFileSync(new URL('../action-forms.js',import.meta.url),'utf8')});
+ await p.evaluate(()=>{
+  window.inventoryProduct=()=>({name:'Fictional machine'});
+  window.notices=[];window.message=s=>notices.push(s);window.writes=[];
+  client.rpc=(name,args)=>{writes.push({name,args});return new Promise((resolve,reject)=>{window.writeResolve=resolve;window.writeReject=reject})};
+  openServiceAction({id:'fictional-case',product_id:'fixture',case_number:'Fixture job',version:2},'start');
+ });
+ await p.locator('[name="note"]').fill('Fixture work started');
+ return p;
+}
+check('actual action dialog prevents obsolete-session submission without losing note',async t=>{
+ const p=await actionFixture(t);
+ await p.evaluate(()=>{me={user_id:'replacement'}});
+ await p.getByRole('button',{name:'Save',exact:true}).click();
+ await p.getByText('Your session or page changed. Reopen the service job before saving.').waitFor();
+ assert.equal(await p.evaluate(()=>writes.length),0);
+ assert.equal(await p.locator('[name="note"]').inputValue(),'Fixture work started');
+ assert.equal(await p.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);
+});
+check('actual action dialog saves one versioned transition and closes after refresh',async t=>{
+ const p=await actionFixture(t);
+ await p.getByRole('button',{name:'Save',exact:true}).click();
+ await p.waitForFunction(()=>writes.length===1);
+ assert.equal(await p.getByRole('button',{name:'Saving…'}).isDisabled(),true);
+ await p.evaluate(()=>writeResolve({data:{status:'in_progress'}}));
+ await p.waitForFunction(()=>requests.length===7);
+ await p.evaluate(()=>finish());
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ assert.deepEqual(await p.evaluate(()=>({count:writes.length,version:writes[0].args.p_expected_version,note:writes[0].args.p_note,notices:notices.length})),{count:1,version:2,note:'Fixture work started',notices:1});
+});
+for(const outcome of ['success','denial','rejection'])check(`actual action dialog discards stale ${outcome} after identity replacement`,async t=>{
+ const p=await actionFixture(t);
+ await p.getByRole('button',{name:'Save',exact:true}).click();
+ await p.waitForFunction(()=>writes.length===1);
+ await p.evaluate(outcome=>{
+  me={user_id:'replacement'};view='clients';$('#content').textContent='Replacement client page';
+  if(outcome==='rejection')writeReject(Error('Old transport failure'));
+  else writeResolve(outcome==='denial'?{error:{message:'Old denial'}}:{data:{status:'in_progress'}});
+ },outcome);
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ assert.equal(await p.locator('#content').innerText(),'Replacement client page');
+ assert.equal(await p.locator('#actionError').innerText(),'');
+ assert.deepEqual(await p.evaluate(()=>({notices:notices.length,reads:requests.length})),{notices:0,reads:0});
+});
