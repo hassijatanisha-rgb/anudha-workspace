@@ -64,9 +64,11 @@ body.packing-tv{background:#0f1f19}
 .packing-tv-screen li.packing-tv-lobby small{color:#ffd9d4}
 .packing-tv-screen li.packing-tv-blocked{opacity:.7;border-style:dashed}
 .packing-tv-screen li time{font-size:clamp(30px,3.6vw,80px);font-weight:800;font-variant-numeric:tabular-nums}
-.packing-tv-screen li.packing-tv-amber{border-color:#ffb020;box-shadow:inset 0 0 0 4px #ffb020}
+.packing-tv-badge{font-style:normal;font-size:.6em;vertical-align:middle;background:#ff4d3d;color:#fff;border-radius:.3em;padding:.1em .4em;margin-left:.4em}
+/* Packing now: the colour is the timer (amber from 20 min, red at 30); a customer in the lobby is the badge. */
+.packing-tv-screen li.packing-tv-amber{background:#4d3600;border-color:#ffb020;box-shadow:inset 0 0 0 4px #ffb020}
 .packing-tv-screen li.packing-tv-amber time{color:#ffcf6b}
-.packing-tv-screen li.packing-tv-red{border-color:#ff4d3d;box-shadow:inset 0 0 0 6px #ff4d3d;animation:packing-tv-pulse 1.6s ease-in-out infinite}
+.packing-tv-screen li.packing-tv-red{background:#7a1d14;border-color:#ff4d3d;box-shadow:inset 0 0 0 6px #ff4d3d;animation:packing-tv-pulse 1.6s ease-in-out infinite}
 .packing-tv-screen li.packing-tv-red time{color:#ff8a7d}
 @keyframes packing-tv-pulse{50%{box-shadow:inset 0 0 0 2px #ff4d3d}}
 @media (prefers-reduced-motion:reduce){.packing-tv-screen li.packing-tv-red{animation:none}}
