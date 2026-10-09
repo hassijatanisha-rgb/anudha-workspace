@@ -8,7 +8,7 @@ const workspaceGroups=[
  ]},
  {name:'Orders',tone:'orders',items:[
   ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
-  ['Delivery progress','sales','delivery'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
+  ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -53,6 +53,7 @@ function installWorkspaceNavigation(){
   if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
  if(button.dataset.view==='purchasing'&&typeof openPurchaseSection==='function')openPurchaseSection(section);
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
+ if(button.dataset.view==='packing'&&typeof openPackingSection==='function')openPackingSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
    if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    salesSection=section==='new'?'proformas':section||'proformas';
@@ -65,13 +66,15 @@ function installWorkspaceNavigation(){
 }
 function syncWorkspaceNavigation(){
  if(typeof applyStockProtection==='function')applyStockProtection();
+ // The packing TV screen hides the header and menu; any other page brings them back.
+ if(typeof syncPackingScreenMode==='function')syncPackingScreenMode();
  // The Dashboard is for the owner and department heads; staff start on My tasks.
  document.querySelectorAll('#nav [data-view="dashboard"]').forEach(button=>button.hidden=me?.role==='staff');
  // Moving between pages also checks the bell for new things (at most every 10 seconds).
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
