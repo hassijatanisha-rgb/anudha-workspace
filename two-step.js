@@ -35,8 +35,9 @@ function showTwoStepPrompt(onDone){
 async function renderTwoStepSettings(target){
  const box=document.createElement('section');box.className='card two-step-settings';box.innerHTML='<h2>Two-step sign-in</h2><p role="status">Checking…</p>';target.append(box);
  let factor;try{factor=await twoStepFactor();}catch(error){box.innerHTML=`<h2>Two-step sign-in</h2><p role="alert">Could not check: ${esc(error.message)}</p>`;return;}
+ const required=await twoStepRequired();
  box.innerHTML=factor
-  ?`<h2>Two-step sign-in <span class="tag two-step-on">On</span></h2><p class="muted">When you sign in, you type your password and then the 6-digit code from your phone. Someone who steals your password still cannot get in.</p><button type="button" id="twoStepOff" class="danger">Turn off</button>`
+  ?`<h2>Two-step sign-in <span class="tag two-step-on">On</span></h2><p class="muted">When you sign in, you type your password and then the 6-digit code from your phone. Someone who steals your password still cannot get in.</p>${required?'<p class="muted">Required for owners and accounts, so it cannot be turned off. If you lose your phone, ask the owner to reset it.</p>':'<button type="button" id="twoStepOff" class="danger">Turn off</button>'}`
   :`<h2>Two-step sign-in <span class="tag">Off</span></h2><p class="muted">Protects your login if someone learns your password. You will need your phone each time you sign in.</p><button type="button" id="twoStepOn" class="primary-action">Turn on</button>`;
  $('#twoStepOn')?.addEventListener('click',()=>run(()=>startTwoStepSetup(box)));
  $('#twoStepOff')?.addEventListener('click',()=>run(async()=>{
@@ -45,7 +46,17 @@ async function renderTwoStepSettings(target){
   await client.auth.refreshSession();box.remove();await renderTwoStepSettings(target);message('Two-step sign-in is off.');
  }));
 }
-async function startTwoStepSetup(box){
+// Owners and accounts must use two-step sign-in (migration 080). These ask the database about the signed-in person
+// only; if the check fails or is not installed, the answer is "not required" and the database still decides access.
+async function twoStepRequired(){try{const r=await client.rpc('two_step_required');return !r.error&&r.data===true;}catch{return false;}}
+async function twoStepSetupRequired(){try{const r=await client.rpc('two_step_setup_required');return !r.error&&r.data===true;}catch{return false;}}
+// Sign-in for someone who must use two-step sign-in but has not set it up. onDone runs load() again afterwards.
+function showTwoStepSetupRequired(onDone){
+ $('#content').innerHTML=`<section class="login card" id="twoStepRequired"><small>ANUDHA WORKSPACE</small><h1>Set up two-step sign-in</h1><p class="muted">Owners and accounts staff must sign in with a code from their phone as well as their password. This keeps company money and records safe if a password is stolen. It takes about two minutes.</p><div class="actions"><button type="button" id="twoStepStart" class="primary-action">Set up now</button><button type="button" id="twoStepSignOut">Sign out</button></div></section>`;
+ $('#twoStepSignOut').onclick=()=>run(async()=>{await client.auth.signOut();login();});
+ $('#twoStepStart').onclick=()=>run(()=>startTwoStepSetup($('#twoStepRequired'),onDone));
+}
+async function startTwoStepSetup(box,onDone=null){
  // An earlier unfinished setup is removed first so the new code is the only one.
  const existing=await client.auth.mfa.listFactors();
  for(const f of existing.data?.all||[])if(f.factor_type==='totp'&&f.status!=='verified')await client.auth.mfa.unenroll({factorId:f.id});
@@ -54,12 +65,12 @@ async function startTwoStepSetup(box){
  const {id,totp}=enrolled.data;
  box.innerHTML=`<h2>Turn on two-step sign-in</h2><ol class="howto-steps"><li>On your phone, install <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>.</li><li>In the app, add an account and scan this picture.</li><li>Type the 6 numbers the app shows, then press Confirm.</li></ol><img class="two-step-qr" src="${esc(totp.qr_code)}" alt="Code to scan with the authenticator app" width="200" height="200"><p class="muted">Cannot scan? Type this key into the app instead: <code>${esc(totp.secret)}</code></p><form id="twoStepConfirm">${twoStepCodeField()}<div class="actions"><button type="submit">Confirm</button><button type="button" id="twoStepCancel">Cancel</button></div></form>`;
  $('#twoStepConfirm [name="code"]').focus();
- $('#twoStepCancel').onclick=()=>run(async()=>{await client.auth.mfa.unenroll({factorId:id});settingsWorkspace();});
+ $('#twoStepCancel').onclick=()=>run(async()=>{await client.auth.mfa.unenroll({factorId:id});if(onDone)showTwoStepSetupRequired(onDone);else settingsWorkspace();});
  $('#twoStepConfirm').onsubmit=event=>{event.preventDefault();run(async()=>{
   const code=twoStepCode(new FormData(event.target).get('code'));
   const result=await client.auth.mfa.challengeAndVerify({factorId:id,code});
   if(result.error)throw Error(/invalid|expired/i.test(result.error.message)?'That code is not right. Wait for a new code in the app and try again.':result.error.message);
-  settingsWorkspace();message('Two-step sign-in is on. You will need your phone each time you sign in.');
+  if(onDone)await onDone();else settingsWorkspace();message('Two-step sign-in is on. You will need your phone each time you sign in.');
  });};
 }
 // Staff page (owner, or a head for their own department): who has it on, and a reset for a lost phone.
