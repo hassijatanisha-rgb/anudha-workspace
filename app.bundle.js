@@ -877,12 +877,22 @@ function inventoryImportPlan(payload,existingProducts=[]){
   const current=groups.get(normalized)||{name,products:[],sourceRows:[]};
   current.products.push(product);current.sourceRows.push(...inventoryImportRows(product));groups.set(normalized,current);
  }
- const existing=new Map(existingProducts.map(product=>[inventoryImportNormalizedName(product.name),product]).filter(([name])=>name));
+ const existing=new Map();
+ for(const product of existingProducts){
+  const key=inventoryImportNormalizedName(product.name);
+  if(key)existing.set(key,[...(existing.get(key)||[]),product]);
+ }
  const newProducts=[],existingMatches=[],duplicateGroups=[];
  for(const [normalized,group] of groups){
+  const matches=existing.get(normalized)||[],candidates=[...group.products,...matches];
+  const identityValue=value=>inventoryImportCleanName(value).toLowerCase();
+  const companies=new Set(candidates.map(p=>identityValue(p.source?.company)));
+  const specifications=new Set(candidates.map(p=>identityValue(p.source?.specification||p.source?.model)));
+  const skus=new Set(candidates.map(p=>identityValue(p.sku)).filter(Boolean));
+  if(matches.length>1||companies.size>1||specifications.size>1||skus.size>1)throw Error(`Product identity needs review for "${group.name}". Same-name records have conflicting or incomplete manufacturer/specification details, different SKUs, or multiple existing matches. Resolve the identity before importing; no products have been imported.`);
   group.sourceRows=[...new Set(group.sourceRows)].sort((a,b)=>a-b);
   if(group.products.length>1||group.sourceRows.length>1)duplicateGroups.push({name:group.name,count:group.products.length,sourceRows:group.sourceRows});
-  const saved=existing.get(normalized);
+  const saved=matches[0];
   if(saved){existingMatches.push({name:group.name,existingProduct:saved,sourceRows:group.sourceRows});continue;}
   const first=group.products[0],source={...(first.source||{}),source_rows:group.sourceRows};delete source.source_row;
   if(group.sourceRows.length>1)source.review_notes=[...(Array.isArray(source.review_notes)?source.review_notes:[]),`Repeated in Book2 rows: ${group.sourceRows.join(', ')}`];
@@ -893,6 +903,7 @@ function inventoryImportPlan(payload,existingProducts=[]){
 ;// inventory-operations.js
 'use strict';
 let inventoryProductId='';
+let inventoryImportReadVersion=0;
 
 let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventorySearch='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[],inventoryMovements=[],inventoryClassifications=[],inventoryImportPreview=null,inventoryImportFileName='';
 const inventoryTabs=[['stock','Stock'],['review','Tally stock review'],['transfers','Move cartons'],['locations','Locations'],['catalog','Products']];
@@ -993,7 +1004,19 @@ function bindInventoryWorkspace(){
  const refresh=$('#inventoryRefresh');if(refresh)refresh.onclick=()=>run(()=>inventoryWorkspace(true));
  const clearScope=$('#clearStockProduct');if(clearScope)clearScope.onclick=()=>{inventoryProductId='';inventorySearch='';$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()};
  const stockSearch=$('#inventorySearch');if(stockSearch)stockSearch.oninput=event=>{inventorySearch=event.target.value;renderSearchPreservingPosition(event.target,()=>{$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()},150)};
- const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=event=>run(async()=>{const file=event.target.files[0];if(!file)return;const payload=JSON.parse(await file.text());inventoryImportPreview=inventoryImportPlan(payload,products);inventoryImportFileName=file.name;$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()});
+ const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=event=>run(async()=>{
+  const file=event.target.files[0];if(!file)return;
+  const readVersion=++inventoryImportReadVersion;
+  inventoryImportPreview=null;inventoryImportFileName='';
+  const commit=$('#inventoryImportCommit'),status=$('#inventoryImportStatus');
+  if(commit)commit.disabled=true;
+  if(status)status.textContent='Checking product identities…';
+  try{
+   const text=await file.text();if(readVersion!==inventoryImportReadVersion)return;
+   const payload=JSON.parse(text);inventoryImportPreview=inventoryImportPlan(payload,products);inventoryImportFileName=file.name;
+   $('#content').innerHTML=inventoryStock();bindInventoryWorkspace();
+  }catch(error){if(readVersion!==inventoryImportReadVersion)return;if(status)status.textContent=error.message||'Import could not be checked.';throw error;}
+ });
  const importCommit=$('#inventoryImportCommit');if(importCommit)importCommit.onclick=()=>run(async()=>{const plan=inventoryImportPreview;if(!plan?.newProducts.length)return;if(!confirm(`Import ${plan.newProducts.length} new product names into this ERP? Existing exact-name matches will be skipped and no stock quantities will be created.`))return;for(let i=0;i<plan.newProducts.length;i+=250){const result=await client.rpc('import_records',{p_products:plan.newProducts.slice(i,i+250)});if(result.error)throw Error(`Import stopped at product ${i}. Completed batches are safe to retry. ${result.error.message}`)}inventoryImportPreview=null;inventoryImportFileName='';await load();message('Book2 product names imported. Enter stock only from verified physical counts.')});
  document.querySelectorAll('form[data-inventory-action]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(()=>submitInventoryForm(form))});
  if(typeof decorateSerialTools==='function')decorateSerialTools().catch(()=>{});
@@ -5660,13 +5683,13 @@ function loadLists(){
  return listsLoading;
 }
 function firstAccount(){return sortedAccounts(organizations.filter(o=>!o.parent_id))[0]?.id||'';}
-async function load(){message('Loading your workspace…');const u=await client.auth.getUser();if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){message('');return showTwoStepPrompt(load);}if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){message('');return showTwoStepSetupRequired(load);}const r=await loadMyStaffRow(u.data.user.id);if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button> <span class="identity-name">${esc(employeeName(me.user_id))}</span> <button id="changePassword" type="button">Change password</button> <button id="logout">Sign out</button>`;$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('');if(typeof requirePasswordChange==='function')requirePasswordChange(u.data.user)}
-// The signed-in person's staff record. If the per-person access list is not on the server yet (screens updated
+async function load(){message('Loading your workspace…');let u,authTimer;try{const deadline=new Promise((_,reject)=>{authTimer=setTimeout(()=>reject(Error('Authentication request timed out. Check your connection.')),20000)});u=await Promise.race([client.auth.getUser(),deadline]);}catch(error){u={error:error||{message:'Authentication request failed'}}}finally{clearTimeout(authTimer)}if(u.error?.name==='AuthSessionMissingError'||(!u.error&&!u.data?.user))return login();if(u.error){clear();$('#content').innerHTML='';throw Error(`Could not verify your session. Please reload to retry. ${u.error.message||'Authentication request failed'}`)}if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){message('');return showTwoStepPrompt(load);}if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){message('');return showTwoStepSetupRequired(load);}let r;try{r=await loadMyStaffRow(u.data.user.id)}catch(error){r={error:error||{message:'Database request failed'}}}if(r.error){clear();$('#content').innerHTML='';throw Error(`Could not verify staff access. Please reload to retry. ${r.error.message||'Database request failed'}`)}if(!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button> <span class="identity-name">${esc(employeeName(me.user_id))}</span> <button id="changePassword" type="button">Change password</button> <button id="logout">Sign out</button>`;$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('');if(typeof requirePasswordChange==='function')requirePasswordChange(u.data.user)}
+// The signed-in person's staff record (no row is an answer, not an error). If the per-person access list is not on the server yet (screens updated
 // before the database), fall back to the older record so nobody is signed out; the database still decides access.
 async function loadMyStaffRow(userId){
- const r=await client.from('staff').select('user_id,role,active,department,access').eq('user_id',userId).single();
+ const r=await client.from('staff').select('user_id,role,active,department,access').eq('user_id',userId).maybeSingle();
  if(!r.error||!/access|department|column/i.test(r.error.message||''))return r;
- const old=await client.from('staff').select('user_id,role,active').eq('user_id',userId).single();
+ const old=await client.from('staff').select('user_id,role,active').eq('user_id',userId).maybeSingle();
  if(old.data)old.data.access=['leads','proformas','deliveries','service','purchasing','stock','stock_count','travel','reports'];
  return old;
 }
