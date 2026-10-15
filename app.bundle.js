@@ -1858,14 +1858,20 @@ async function showLeadHistory(id){
 // Pending stock orders: quantities a customer still needs once stock arrives. Advisory availability only;
 // reservations and deductions stay in the invoice workflow.
 let pendingFilter='waiting',pendingSearch='',pendingPage=0,pendingRows=[],pendingAvailability=new Map(),pendingLoaded=false,pendingLoadError='',pendingAvailabilityError='',pendingEpoch=0,pendingCreating=false,pendingRequestId=null;
-function clearPendingStock(){pendingEpoch++;pendingRows=[];pendingAvailability=new Map();pendingLoaded=false;pendingCreating=false;pendingRequestId=null;}
-function pendingToday(){return new Date().toISOString().slice(0,10);}
+let pendingAvailabilityDay='',pendingRenderEpoch=0;
+function clearPendingStock(){pendingEpoch++;pendingRenderEpoch++;pendingRows=[];pendingAvailability=new Map();pendingAvailabilityDay='';pendingLoaded=false;pendingCreating=false;pendingRequestId=null;pendingFilter='waiting';pendingSearch='';pendingPage=0;pendingLoadError='';pendingAvailabilityError='';}
+function pendingToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function pendingDaysLeft(row,today=pendingToday()){return Math.round((Date.parse(row.expires_on)-Date.parse(today))/86400000);}
 // Saleable pieces per product: sealed cartons × units per carton + loose − reserved, available lots at active locations only.
-function pendingAvailableByProduct(lots,packs,locations){
+function pendingAvailableByProduct(lots,packs,locations,today=pendingToday()){
  const perCarton=new Map(packs.map(pack=>[pack.id,pack.units_per_carton])),active=new Set(locations.filter(location=>location.active).map(location=>location.id)),out=new Map();
  for(const lot of lots){
   if(lot.stock_status!=='available'||!active.has(lot.location_id))continue;
+  // Match stock-review policy: lots expiring today are not available for sale.
+  if(lot.expiry_date!=null){
+   const expiry=String(lot.expiry_date),date=new Date(`${expiry}T00:00:00Z`);
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(expiry)||!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==expiry||expiry<=today)continue;
+  }
   const units=perCarton.get(lot.pack_definition_id),cartons=lot.sealed_cartons,loose=lot.loose_units,reserved=lot.reserved_units;
   if(![units,cartons,loose,reserved].every(value=>Number.isSafeInteger(value)&&value>=0)||reserved>loose)continue;
   out.set(lot.product_id,(out.get(lot.product_id)||0)+cartons*units+loose-reserved);
@@ -1908,28 +1914,35 @@ function pendingForm(){
  return `<section class="card document-editor"><div class="heading"><div><small>NEW</small><h2>Pending stock order</h2></div><button type="button" id="closePendingForm">Close</button></div><form id="pendingForm"><p class="muted">Use this when a customer wants more than is in stock. It does not reserve stock. You will see here when stock arrives.</p><div class="grid"><label><span>Client</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions()}</select></label><label><span>Contact · optional</span><select name="contactId"><option value="">No named contact</option></select></label><label class="wide"><span>Product</span><input name="productChoice" list="pendingProductChoices" required autocomplete="off" placeholder="Type to search products"><datalist id="pendingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist></label><label><span>Quantity still needed (pieces)</span><input name="quantity" type="number" min="1" max="1000000" step="1" required></label><label><span>Pro forma · optional</span><select name="proformaId"><option value="">Not linked</option></select></label><label><span>Salesperson</span><select name="salesperson" required>${leadEmployeeOptions(me?.user_id||'')}</select></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000"></textarea></label></div><p role="alert" id="pendingFormError"></p><div class="actions"><button type="submit">Save pending order</button></div></form></section>`;
 }
 async function loadPendingStock(){
- const epoch=++pendingEpoch,actor=me?.user_id;
+ const epoch=++pendingEpoch,actor=me,actorId=me?.user_id;
+ const current=()=>epoch===pendingEpoch&&me===actor&&me?.user_id===actorId;
  const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
- if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
+ if(!current())return false;
  pendingRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
-  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
-  if(epoch!==pendingEpoch||me?.user_id!==actor)return false;
-  pendingAvailability=pendingAvailableByProduct(lots,packs,locations);pendingAvailabilityError='';
- }catch(error){if(epoch!==pendingEpoch)return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
+  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+  if(!current())return false;
+  pendingAvailabilityDay=pendingToday();pendingAvailability=pendingAvailableByProduct(lots,packs,locations,pendingAvailabilityDay);pendingAvailabilityError='';
+ }catch(error){if(!current())return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
  pendingLoaded=true;pendingLoadError='';return true;
 }
 async function pendingStockWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
- if(force||!pendingLoaded){
+ const actor=me,actorId=me?.user_id,epoch=++pendingRenderEpoch;
+ const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&view==='pending'&&epoch===pendingRenderEpoch;
+ if(!current())return;
+ syncWorkspaceNavigation();
+ if(force||!pendingLoaded||pendingAvailabilityDay!==pendingToday()){
   $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
-  try{if(!(await loadPendingStock()))return;}catch(error){if(me?.user_id!==actor)return;pendingLoadError=error.message;pendingLoaded=false;}
+  try{if(!(await loadPendingStock()))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  }
- if(view!=='pending'||me?.user_id!==actor)return;
+ if(!current())return;
  renderPendingStock();
 }
 function renderPendingStock(){
+ if(pendingAvailabilityDay&&pendingAvailabilityDay!==pendingToday()){
+  pendingAvailability=new Map();pendingAvailabilityError='Stock check is from a previous day. Press Refresh to check current availability';
+ }
  const availability=pendingAvailabilityError?null:pendingAvailability;
  const rows=pendingVisibleRows(pendingRows,{filter:pendingFilter,search:pendingSearch,actor:me?.user_id,availability});
  const pages=Math.max(1,Math.ceil(rows.length/20));pendingPage=Math.min(Math.max(pendingPage,0),pages-1);
@@ -5456,7 +5469,7 @@ function timedFetch(url,options={}){
 }
 function friendlyError(e){
  const text=String(e?.message||'');
- if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. Nothing more was saved. Check your connection and try again.';
+ if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. We could not confirm the result. Reconnect and check the record before submitting again.';
  return text||'Something went wrong. Please retry.';
 }
 async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
