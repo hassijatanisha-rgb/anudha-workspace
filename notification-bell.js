@@ -45,6 +45,8 @@ async function refreshNotificationBell(force=false){
  // Packing orders taken over 30 minutes ago become tasks for the stores head and the owner (migration 078). Their bell
  // asks for that first, so the alert arrives even when no packing screen is open. Missing on older databases: ignored.
  if(me?.role!=='staff'&&typeof client?.rpc==='function'){try{await client.rpc('packing_raise_overdue_alerts');}catch{}}
+ // Overdue tasks become one task for the department head (migration 083). Missing on older databases: ignored.
+ if(typeof client?.rpc==='function'){try{await client.rpc('raise_team_task_overdue_alerts');}catch{}}
  const results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor,bellSince(kind,seen),true)));
  if(epoch!==bellEpoch||me?.user_id!==actor)return;
  // A kind that could not be read is left out of the count rather than blocking the others.
