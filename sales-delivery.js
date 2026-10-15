@@ -254,6 +254,7 @@ function bindSalesDelivery(){
  if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
  if(typeof decorateDiscountApprovals==='function')decorateDiscountApprovals().catch(()=>{});
  if(typeof decorateCustomerReturns==='function')decorateCustomerReturns().catch(()=>{});
+ if(typeof decorateDeliverySerials==='function')decorateDeliverySerials().catch(()=>{});
  document.querySelectorAll('[data-delivery-action]').forEach(button=>button.onclick=()=>openDeliveryAction(salesDeliveryNotes.find(row=>row.id===button.dataset.id),button.dataset.deliveryAction));
  document.querySelectorAll('[data-print-document]').forEach(button=>button.onclick=()=>printSalesDocument(button.dataset.printDocument));
  document.querySelectorAll('[data-send-tally]').forEach(button=>button.onclick=()=>run(()=>openSendToTally(button.dataset.sendTally)));

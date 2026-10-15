@@ -47,6 +47,7 @@ async function decorateCustomerReturns(){
  }
  document.querySelectorAll('[data-return-record]').forEach(button=>button.onclick=()=>openRecordReturn(salesDeliveryNotes.find(row=>row.id===button.dataset.returnRecord)));
  document.querySelectorAll('[data-return-inspect]').forEach(button=>button.onclick=()=>openInspectReturnLine(customerReturnLines.find(row=>row.id===button.dataset.returnInspect)));
+ if(typeof decorateReturnedSerials==='function')decorateReturnedSerials(); // serial-numbers.js; whichever panel loads last adds the button
  document.querySelectorAll('[data-return-credit]').forEach(button=>button.onclick=()=>run(()=>createReturnCreditNote(customerReturns.find(row=>row.id===button.dataset.returnCredit))));
 }
 
