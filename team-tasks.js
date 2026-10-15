@@ -1,7 +1,8 @@
 'use strict';
 // My tasks: tasks one person gives another (or themselves), each with an urgency and a due date and time, shown
 // together with the order steps handed to this person. Writes go through save_team_task / close_team_task /
-// reschedule_team_task only. The person doing a task may move it later at most 3 times, with a reason each time.
+// reschedule_team_task only. A task may be moved later at most 3 times, with a reason each time: by the owner directly,
+// or by the person doing it with their department head's approval (deadline-requests.js, migration 083).
 let teamTasks=[],teamTaskMoves=new Map(),teamTaskEpoch=0;
 const teamTaskMoveLimit=3;
 const teamTaskUrgency=[['do_now','Do now'],['urgent','Urgent'],['normal','Normal']];
@@ -21,7 +22,8 @@ function teamTaskCard(row){
  const buttons=[];
  const moved=row.reschedule_count||0;
  if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Mark done</button>`);
- if(teamTaskCanMove(row))buttons.push(`<button type="button" data-team-task-move="${esc(row.id)}">Reschedule</button>`);
+ // Migration 083: only the owner moves a deadline directly; everyone else asks their department head.
+ if(teamTaskCanMove(row))buttons.push(owner||typeof openDeadlineRequest!=='function'?`<button type="button" data-team-task-move="${esc(row.id)}">Reschedule</button>`:`<button type="button" data-team-task-ask="${esc(row.id)}">Ask for more time</button>`);
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
  return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)}">${esc(teamTaskUrgencyLabel(row.urgency))}</span>${moved?` <span class="urgency-tag moved-tag">Rescheduled ${moved} of ${teamTaskMoveLimit}</span>`:''}<h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}`}</p>${!open&&row.close_note?`<p class="team-task-result"><small>Result</small>${esc(row.close_note)}</p>`:''}${open&&mine&&!gave&&moved>=teamTaskMoveLimit?`<p class="muted">Already moved ${teamTaskMoveLimit} times. Mark it done, or ask ${esc(employeeName(row.assigned_by))} to change it.</p>`:''}${teamTaskHistory(teamTaskMoves.get(row.id)||[])}${buttons.length?`<div class="actions">${buttons.join('')}</div>`:''}</article>`;
 }
@@ -70,10 +72,12 @@ async function teamTasksWorkspace(){
   if(d.teamTaskEdit)openTeamTaskEditor(task(d.teamTaskEdit));
   else if(d.teamTaskDone)openTeamTaskClose(task(d.teamTaskDone),'done');
   else if(d.teamTaskMove)openTeamTaskReschedule(task(d.teamTaskMove));
+  else if(d.teamTaskAsk)openDeadlineRequest(task(d.teamTaskAsk));
   else if(d.teamTaskCancel)openTeamTaskClose(task(d.teamTaskCancel),'cancel');
   else if(d.teamTaskMore){const rows=teamTaskMore.get(d.teamTaskMore);teamTaskMore.delete(d.teamTaskMore);if(rows)button.outerHTML=rows.map(teamTaskCard).join('');}
  };
  const steps=$('#orderSteps');
+ if(typeof renderDeadlineRequests==='function')renderDeadlineRequests(steps).catch(()=>{});
  if(typeof renderMyHandoffs==='function')renderMyHandoffs(steps);
  if(typeof renderWorkNotices==='function')renderWorkNotices(steps).catch(()=>{});
  if(me?.role==='owner'&&typeof renderUnownedWork==='function')renderUnownedWork(steps).catch(()=>{});
