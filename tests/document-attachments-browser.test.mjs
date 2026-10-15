@@ -88,7 +88,7 @@ for(const change of ['view','actor'])acceptance(`In-flight upload cannot finaliz
 });
 acceptance('Sales and service attachment buttons route each saved record to its matching parent type',async t=>{
  const page=await fixture(t);
- for(const name of ['sales-delivery.js','service-workflow.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
+ for(const name of ['row-index.js','sales-delivery.js','service-workflow.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   window.$=selector=>document.querySelector(selector);window.run=fn=>fn();window.opened=[];
   openDocumentAttachments=async(...args)=>opened.push(args);

@@ -38,7 +38,7 @@ test('A save finishing after login changes does not refresh or notify the new us
  vm.runInContext(source,context);
  context.personalWorkspace=async()=>{refreshes++};
  vm.runInContext("personalSection='task'; personalEditor(null,0,'one')",context);
- const saving=submit({title:'Call',priority:'normal'});
+ const saving=submit({title:'Call',reminder:'2026-10-02T10:00'});
  context.me={user_id:'two',role:'staff'};
  resolveSave({error:null});await saving;
  assert.equal(refreshes,0);

@@ -1,0 +1,28 @@
+// Disposable PGlite fixture only: run with PGLITE_MODULE pointing to @electric-sql/pglite dist/index.js.
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(process.env.PGLITE_MODULE);
+const db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,mig=f=>readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8');
+const owner=id(1),staff=id(2),gone=id(3);
+await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
+create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+create table public.staff(user_id uuid primary key,role text,active boolean,display_name text,name_version integer not null default 0);
+create function public.is_owner() returns boolean language sql stable security definer set search_path=public as $$select exists(select 1 from public.staff where user_id=auth.uid() and active and role='owner')$$;
+create function public.inventory_active_staff() returns boolean language sql stable security definer set search_path=public as $$select exists(select 1 from public.staff where user_id=auth.uid() and active)$$;
+insert into auth.users values('${owner}'),('${staff}'),('${gone}');insert into public.staff(user_id,role,active) values('${owner}','owner',true),('${staff}','staff',true),('${gone}','staff',false);`);
+await db.exec(mig('202609300049_staff_accounts.sql'));await db.exec(mig('202610010054_staff_departments.sql'));
+const as=a=>db.exec(`select set_config('test.actor','${a||''}',false)`);
+const setDept=(u,d)=>db.query('select * from public.set_staff_department($1,$2)',[u,d]).then(r=>r.rows[0]);
+let checks=0;const ok=()=>checks++;
+await as(staff);await assert.rejects(setDept(staff,'sales'),/Owner access/);ok();
+assert.equal((await db.query('select count(*)::int n from public.staff_departments()')).rows[0].n,3,'any active staff can read departments for the report');ok();
+await as(owner);
+await assert.rejects(setDept(staff,'canteen'),/Choose a department/);ok();
+await assert.rejects(setDept(id(9),'sales'),/does not exist/);ok();
+assert.equal((await setDept(staff,'stores')).department,'stores');ok();
+assert.equal((await setDept(staff,'')).department,'','department can be cleared');ok();
+assert.deepEqual((await db.query(`select action,note from staff_account_events order by recorded_at,id`)).rows.map(r=>r.action+':'+r.note).sort(),['department_changed:','department_changed:stores'].sort());ok();
+await as(gone);assert.equal((await db.query('select count(*)::int n from public.staff_departments()')).rows[0].n,0,'inactive staff see nothing');ok();
+await as('');assert.equal((await db.query('select count(*)::int n from public.staff_departments()')).rows[0].n,0);ok();
+assert.equal((await db.query(`select has_function_privilege('anon','public.staff_departments()','EXECUTE') a`)).rows[0].a,false);ok();
+console.log(`staff departments database: ${checks} checks passed`);

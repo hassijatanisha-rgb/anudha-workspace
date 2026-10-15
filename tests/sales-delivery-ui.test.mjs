@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const source=fs.readFileSync('sales-delivery.js','utf8'),html=fs.readFileSync('index.html','utf8'),app=fs.readFileSync('app.js','utf8');
+const source=fs.readFileSync('sales-delivery.js','utf8'),html=fs.readFileSync('index.src.html','utf8'),app=fs.readFileSync('app.js','utf8');
 assert.match(html,/data-view="sales">Pro forma &amp; delivery/);
 assert.match(html,/sales-domain\.js/);
 assert.match(html,/sales-delivery\.js/);

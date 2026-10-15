@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
-const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const html=readFileSync(new URL('../index.src.html',import.meta.url),'utf8');
 test('System groups supporting pages and retains owner-only staff hook',()=>{
  const system=html.match(/<details id="systemNav">([\s\S]*?)<\/details>/)?.[1];
  assert.ok(system);

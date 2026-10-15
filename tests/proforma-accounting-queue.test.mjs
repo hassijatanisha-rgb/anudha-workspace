@@ -16,7 +16,7 @@ function fixture(options={}){
 }
 test('accepted submissions render safely with bounded deterministic pagination',async()=>{
  const f=fixture();await f.ctx.mountProformaAccountingQueue(f.target,'one');
- assert.match(f.target.innerHTML,/Submitted pro formas/);assert.match(f.target.innerHTML,/Customer/);assert.match(f.target.innerHTML,/PF-1/);assert.match(f.target.innerHTML,/revision 3/i);assert.match(f.target.innerHTML,/LPO &lt;one&gt;/);assert.match(f.target.innerHTML,/no invoice or stock/i);
+ assert.match(f.target.innerHTML,/Submitted pro formas/);assert.match(f.target.innerHTML,/Customer/);assert.match(f.target.innerHTML,/PF-1/);assert.match(f.target.innerHTML,/revision 3/i);assert.match(f.target.innerHTML,/LPO &lt;one&gt;/);assert.match(f.target.innerHTML,/Open one to see where it is/);
  assert.ok(f.calls.some(c=>c[0]==='eq'&&c[1]==='status'&&c[2]==='accepted'));
  assert.deepEqual(f.calls.filter(c=>c[0]==='order').map(c=>[c[1],c[2].ascending]),[['accepted_at',false],['created_at',false],['id',false]]);
  assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,24]]);

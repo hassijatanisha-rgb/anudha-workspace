@@ -12,7 +12,7 @@ const records=[
 const context=vm.createContext({products:records,document:{addEventListener(){}},esc:String,$:()=>node,
  reviewedCatalogProduct:p=>p,productReviewDefaults:p=>p,productReviewIssues:()=>[],
  inventoryClassification:id=>({category:['xl','dhs'].includes(id)?'machines':'reagents'}),
- inventoryOption:()=>'',me:{role:'staff'},bindInventoryWorkspace(){},productWorkbenchTable:()=>'',bindProductWorkbench(){}});
+ inventoryOption:()=>'',me:{role:'staff'},bindInventoryWorkspace(){},productWorkbenchTable:()=>'',bindProductWorkbench(){},canEditRecords:()=>true,recordsLockedNote:()=>''});
 vm.runInContext(readFileSync(new URL('../catalog-inventory.js',import.meta.url),'utf8'),context);
 test('Reviewed machines remain available as compatibility links',()=>{
  const html=context.catalogMachineLinks(records[2],records);
@@ -49,4 +49,14 @@ test('Malformed imported machine links are flagged, never guessed or allowed to 
   records.push(product);
   try{vm.runInContext("catalogMachineId='xl';catalogInventory()",context);assert.doesNotMatch(node.innerHTML,/data-product-review="bad-link"/)}finally{records.pop()}
  }
+});
+test('Product name and category edits are shown only to people with Clients & items data access',()=>{
+ const html=context.catalogProduct(records[2],records);
+ assert.match(html,/data-product-edit="r-a"/);assert.match(html,/data-inventory-action="classification"/);
+ context.canEditRecords=()=>false;context.recordsLockedNote=()=>'<p>locked</p>';
+ try{
+  const locked=context.catalogProduct(records[2],records);
+  assert.doesNotMatch(locked,/data-product-edit|data-inventory-action="classification"/);
+  assert.match(locked,/data-workbench-stock="r-a"/,'stock and details stay visible');
+ }finally{context.canEditRecords=()=>true;context.recordsLockedNote=()=>'';}
 });

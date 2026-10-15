@@ -19,8 +19,11 @@ function companyFormDefinitions(){
 function companyFormDefinition(kind){const def=companyFormDefinitions()[kind];if(!def)throw Error('Unknown company form.');return def}
 function companyFormEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function companyFormLabel(key){return {description:'Description of goods',quantity:'Quantity',rate:'Rate',per:'Per',amount:'Amount',particulars:'Particulars',debit:'Debit',credit:'Credit'}[key]||key}
-function companyFormBrand(){
- return '<header class="company-form-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><div><strong>ANUDHA LIMITED</strong><br>P. O. BOX 5982, DAR ES SALAAM, TANZANIA<br>Plot 2169/82 &amp; 2170/82, Morogoro Road, Opp. International Commercial Bank<br>Tel: +255 22 2125746/ 2121188/ 2122745/ 2122747/ 2122746; Fax: +255 22 2126490; Cell: +255 783 523 777<br>Email: sales2@anudha.com,anudha@anudha.com,service@anudha.com<br>TIN: 100-113-473 · VRN: 10-001061-P</div></header>';
+// One phone number and one email per form, so the letterhead stays short. Service forms use the service mailbox.
+const companyFormContact={phone:'+255 783 523 777',sales:'sales2@anudha.com',service:'service@anudha.com'};
+function companyFormBrand(kind='sales'){
+ const email=companyFormContact[kind]||companyFormContact.sales;
+ return `<header class="company-form-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><div><strong>ANUDHA LIMITED</strong><br>P. O. Box 5982 · Plot 2169/82 &amp; 2170/82, Morogoro Road, Dar es Salaam<br>${companyFormContact.phone} · ${email}<br>TIN: 100-113-473 · VRN: 10-001061-P</div></header>`;
 }
 function companyProformaReferenceTerms(){
  return '<section class="reference-terms"><p>Items subject to availability at the time of order</p><p>Thank you for your enquiry<br>If you need any further information please feel free to contact us<br>Hope to hear from you with a positive response</p><p>Where applicable:<br>* Warranty excludes conditions arising from normal wear and tear<br>* Warranty void for damage caused by improper power<br>* Installation and application charges NOT included unless specified<br>* VAT is added to the prices shown, where applicable.</p><p><strong>Bank Details:</strong> Not configured — obtain approved payment details from Accounting.</p></section>';

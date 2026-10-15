@@ -33,7 +33,7 @@ test('colours, Furniture and the owner upload are wired into the pages',()=>{
  assert.match(read('product-workbench.js'),/quality-'\+quality\.level/);assert.match(read('app.js'),/contactQuality\(missing,hits\)/);
  assert.match(read('catalog-inventory.js'),/\['furniture','Furniture'\]/);assert.match(read('catalog-inventory.js'),/id="productListFile"/);
  assert.match(read('stock-count.js'),/applyProductListFile\(file\)/);
- const html=read('index.html');assert.ok(html.indexOf('data-quality.js')>0&&html.indexOf('data-quality.js')<html.indexOf('app.js'));
+ const html=read('index.src.html');assert.ok(html.indexOf('data-quality.js')>0&&html.indexOf('data-quality.js')<html.indexOf('app.js'));
  assert.match(read('supabase/migrations/202609300048_apply_product_list.sql'),/'machines','furniture','reagents'/);
 });
 test('product pickers label reviewed products so a choice can be found again',()=>{

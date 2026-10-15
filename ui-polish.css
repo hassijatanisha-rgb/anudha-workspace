@@ -13,13 +13,13 @@ main .heading .actions{gap:10px}
 [data-lead-action="qualify"],[data-lead-proforma],
 [data-proforma-action="send"],[data-proforma-action="accept"],
 [data-delivery-action]:not([data-delivery-action="cancel"]),
-[data-pending-action="fulfil"],[data-work-done],[data-work-finish],#countSave,#countOpen,[data-count-action="accept"]{
+[data-pending-action="fulfil"],[data-work-done],[data-work-finish],[data-tally-invoice-action="match"],[data-send-tally],#countSave,#countOpen,[data-count-action="accept"]{
  background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 1px 2px rgba(16,73,54,.18)}
 #newLead:hover,#newPending:hover,#addEmployee:hover,#newPurchase:hover,#newSupplier:hover,[data-purchase-action="approve"]:hover,[data-purchase-action="order"]:hover,[data-purchase-action="close"]:hover,
 [data-lead-action="qualify"]:hover,[data-lead-proforma]:hover,
 [data-proforma-action="send"]:hover,[data-proforma-action="accept"]:hover,
 [data-delivery-action]:not([data-delivery-action="cancel"]):hover,
-[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
+[data-pending-action="fulfil"]:hover,[data-work-done]:hover,[data-work-finish]:hover,[data-tally-invoice-action="match"]:hover,[data-send-tally]:hover,#countSave:hover,#countOpen:hover,[data-count-action="accept"]:hover{background:var(--green-dark);border-color:var(--green-dark);color:#fff}
 
 /* Danger: clearly different so nobody cancels or deletes by mistake. */
 button.danger,[data-count-action="void"],[data-count-action="reject"],#countClose,[data-purchase-action="cancel"],[data-lead-action="lost"],[data-pending-action="cancel"],[data-proforma-action="cancel"],[data-proforma-action="reject"],
@@ -31,10 +31,10 @@ button.danger:hover,[data-count-action="void"]:hover,[data-count-action="reject"
 
 /* Quiet: looking things up, not changing them. */
 [data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
-#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
+#tallyInvoiceRefresh,#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh{
  background:transparent;border-color:transparent;color:#3f5a50}
 [data-lead-history]:hover,[data-pending-history]:hover,[data-lead-edit]:hover,[data-load-order-timing]:hover,[data-work-open]:hover,[data-purchase-history]:hover,[data-purchase-edit]:hover,[data-supplier-edit]:hover,
-#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
+#tallyInvoiceRefresh:hover,#countRefresh:hover,#purchaseRefresh:hover,#leadRefresh:hover,#pendingRefresh:hover,#salesRefresh:hover,#serviceRefresh:hover,#refresh:hover{background:#edf4f0;border-color:var(--line)}
 
 /* Keyboard users always see where they are. */
 main button:focus-visible,main a:focus-visible,main input:focus-visible,main select:focus-visible,main textarea:focus-visible{outline:3px solid #8cc63f;outline-offset:2px}
@@ -75,3 +75,398 @@ main .contact.quality-red{background:var(--quality-red);border-color:var(--quali
 td .quality-badge{display:block;width:max-content}
 main .file-button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
 main .file-button input{max-width:220px;font-size:13px}
+
+/* Tally invoices: a cancelled voucher stays listed but is struck through. */
+.tally-invoices-workspace td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+.tally-invoices-workspace tr.tally-cancelled td:first-child strong{text-decoration:line-through}
+
+/* Accountability: nobody-responsible list stands out; step owner table stays compact. */
+main .unowned-work.attention{border-color:var(--quality-red-line);background:var(--quality-red)}
+main .work-notices{border-color:var(--green)}
+main .work-step-owners td small{display:block;color:var(--muted,#5d7068);font-size:12px}
+main .work-step-owners label.check{display:block;padding:2px 0}
+
+/* Step timing: the responsible strip turns yellow after a day and red after two, or when an expected date passes. */
+main .work-handoff.quality-yellow{background:var(--quality-yellow);border-color:var(--quality-yellow-line)}
+main .work-handoff.quality-red{background:var(--quality-red);border-color:var(--quality-red-line)}
+main .handoff-list li.quality-yellow{background:var(--quality-yellow);border-radius:6px;padding:6px}
+main .handoff-list li.quality-red{background:var(--quality-red);border-radius:6px;padding:6px}
+main .work-timeline{margin-top:6px;width:100%}
+main .work-timeline small{display:block;color:var(--muted,#5d7068);font-size:12px}
+
+/* Work report: department subtotal rows stand apart from people. */
+main tr.report-subtotal td{font-weight:700;background:#edf4f0}
+
+/* Phone: the company letterhead on Pro formas wraps instead of widening the page. */
+.company-form-brand>div{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+/* How to use: plain step lists, large type, and a walk-through panel that stays on screen while staff follow it. */
+.howto{max-width:900px}
+.howto-search{max-width:620px}
+.howto-here>h2{margin:24px 0 0}
+.howto-here .howto-topic{border-left:5px solid var(--green)}
+.howto-topic{padding:0}
+.howto-topic>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 22px;font-size:1.1em;font-weight:700;list-style-position:outside}
+.howto-topic>summary small{font-weight:500;white-space:nowrap}
+.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 22px 18px}
+.howto-steps{padding-left:24px;font-size:1.05em;line-height:1.6}
+.howto-steps li{margin:8px 0;padding-left:4px}
+.howto-button{font-weight:700;border-color:var(--green);color:var(--green)}
+.howto-walk{position:fixed;right:16px;bottom:16px;z-index:50;width:min(380px,calc(100vw - 32px));padding:18px 20px;background:#fff;border:2px solid var(--green);border-radius:14px;box-shadow:0 12px 36px rgba(20,45,38,.22)}
+.howto-walk h2{font-size:1em;margin:4px 0 6px;color:var(--muted)}
+.howto-walk p{font-size:1.1em;margin:0 0 14px}
+.howto-walk .heading button{border:0;font-size:22px;padding:2px 10px;min-height:0}
+@media(max-width:600px){#identity{white-space:normal}.howto-topic>summary{padding:14px 16px}.howto-topic>.howto-steps,.howto-topic>.actions{margin:0 16px 14px}}
+@media print{.howto-walk,.howto-button{display:none}}
+
+/* Pro forma list: one tile per Pro forma, coloured status tag in the top corner. */
+.proforma-search{max-width:520px}
+.proforma-filters button{font-size:.92em}
+.proforma-tiles{list-style:none;padding:0;margin:8px 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.proforma-tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;height:100%;min-height:150px;padding:18px 18px 14px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:12px;font-weight:400}
+.proforma-tile:hover{border-color:var(--green);background:#fff;box-shadow:0 3px 14px #173b2a14}
+.proforma-tile>strong{font-size:1.1em;margin-top:26px}
+.proforma-tile>span:not(.proforma-tag){overflow-wrap:anywhere}
+.proforma-tile-foot{margin-top:auto;padding-top:10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;width:100%;flex-wrap:wrap}
+.proforma-tile .proforma-tag{position:absolute;top:12px;right:12px}
+.proforma-tag{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.proforma-tag-draft{background:#eceff1;color:#37474f;border-color:#cfd8dc}
+.proforma-tag-revised{background:#f1e8fb;color:#5b2a86;border-color:#d4bdf0}
+.proforma-tag-sent{background:#e3f0fd;color:#0d4a85;border-color:#b5d4f4}
+.proforma-tag-waiting{background:#fff4cc;color:#6b4e00;border-color:#e8c95a}
+.proforma-tag-delivery{background:#dff3f1;color:#0b5c55;border-color:#a6dbd4}
+.proforma-tag-done{background:#e2f4e6;color:#1d6332;border-color:#a9d9b4}
+.proforma-tag-closed{background:#fde8e8;color:#8a2222;border-color:#f2b8b8}
+.proforma-filters button[class*="proforma-filter-"]::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle;background:currentColor;opacity:.25}
+.proforma-filter-draft::before{background:#90a4ae!important;opacity:1!important}
+.proforma-filter-revised::before{background:#8e5cc2!important;opacity:1!important}
+.proforma-filter-sent::before{background:#2f7fd0!important;opacity:1!important}
+.proforma-filter-waiting::before{background:#d9a514!important;opacity:1!important}
+.proforma-filter-delivery::before{background:#1a948a!important;opacity:1!important}
+.proforma-filter-done::before{background:#2e8b47!important;opacity:1!important}
+.proforma-filter-closed::before{background:#c43d3d!important;opacity:1!important}
+@media(max-width:600px){.proforma-tiles{grid-template-columns:1fr}}
+@media print{.proforma-tag{border:1px solid #999;background:none;color:#000}}
+main .proforma-filters{flex-wrap:wrap;overflow:visible;white-space:normal}
+main .proforma-filters button{flex:0 0 auto}
+/* All eight order steps stay visible: they wrap to a second row instead of scrolling off the side. */
+main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));overflow:visible}
+
+/* New inquiry: four numbered steps, choices as large tappable options. */
+.lead-step{border:1px solid var(--line);border-radius:12px;padding:14px 18px 6px;margin:0 0 16px}
+.lead-step legend{font-weight:800;font-size:1.05em;padding:0 6px;color:var(--green)}
+.lead-who,.lead-sources{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 12px}
+.lead-who label,.lead-sources label{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-weight:600}
+.lead-who input,.lead-sources input{width:auto;margin:0}
+.lead-who label:has(input:checked),.lead-sources label:has(input:checked){border-color:var(--green);background:#e7f1ec}
+.lead-tag-inquiry{background:#fff4cc;color:#6b4e00}
+.lead-tag-lead,.lead-tag-opportunity{background:#e3f0fd;color:#0d4a85}
+.lead-tag-won{background:#e2f4e6;color:#1d6332}
+.lead-tag-lost{background:#fde8e8;color:#8a2222}
+.purchase-tag-requested{background:#fff4cc;color:#6b4e00}
+.purchase-tag-approved{background:#e3f0fd;color:#0d4a85}
+.purchase-tag-ordered{background:#dff3f1;color:#0b5c55}
+.purchase-tag-closed{background:#e2f4e6;color:#1d6332}
+.purchase-tag-cancelled{background:#fde8e8;color:#8a2222}
+.purchase-supplier{max-width:520px}
+.purchase-supplier span,.document-editor h3{font-weight:800}
+.purchase-more{margin:14px 0}
+
+/* Tasks: urgency colour on every task; late tasks stand out. */
+.urgency-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.urgency-do_now{background:#fde8e8;color:#8a2222}
+.urgency-urgent{background:#fff4cc;color:#6b4e00}
+.urgency-normal{background:#eceff1;color:#37474f}
+.team-task{padding:16px 20px;margin-top:12px}
+.team-task.overdue{border-left:5px solid #c43d3d}
+.team-task.closed{opacity:.75}
+.team-task h3{margin:0}
+.team-task-meta{margin:6px 0 0}
+.moved-tag{background:#e8eefc;color:#23408e}
+.team-task-moves{margin-top:8px}
+.team-task-moves ol{margin:6px 0 0;padding-left:20px}
+.team-task-group>h2,.team-task-group>summary{margin-top:26px;font-size:1.15em;font-weight:800}
+.urgency-choice{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:10px}
+.urgency-choice legend{font-size:13px;font-weight:600;margin-bottom:6px;padding:0}
+.urgency-choice label{display:flex;align-items:center;gap:8px;margin:0;padding:9px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:700}
+.urgency-choice input{width:auto;margin:0}
+.urgency-choice label:has(input:checked){outline:2px solid currentColor}
+.check-row{display:flex;align-items:center;gap:8px}
+.check-row input{width:auto}
+
+/* Stock pages: watermark over the page, no text selection, nothing printed. */
+#stockWatermark{position:fixed;inset:0;z-index:30;pointer-events:none;background-repeat:repeat}
+body.stock-protected #content{-webkit-user-select:none;user-select:none}
+body.stock-protected #content input,body.stock-protected #content textarea{-webkit-user-select:text;user-select:text}
+@media print{body.stock-protected main,body.stock-protected #nav,body.stock-protected>header{display:none!important}body.stock-protected::after{content:"Stock pages cannot be printed. Send customers a Pro forma instead.";display:block;padding:40px;font:16px sans-serif}#stockWatermark{display:none}}
+
+/* Travel requests: status tag per trip; the form uses the same step boxes as a new inquiry. */
+.travel-tag{display:inline-block;margin-bottom:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.travel-tag-waiting{background:#fff4cc;color:#6b4e00}
+.travel-tag-approved{background:#e3f0fd;color:#0d4a85}
+.travel-tag-away{background:#dff3f1;color:#0b5c55}
+.travel-tag-done{background:#e2f4e6;color:#1d6332}
+.travel-tag-closed{background:#fde8e8;color:#8a2222}
+.travel-card.travel-away{border-left:5px solid #1a948a}
+.travel-card h3{margin:0}
+.travel-step{border:1px solid var(--line);border-radius:12px;padding:10px 14px 4px;margin:0 0 12px}
+.travel-step legend{font-weight:800;color:var(--green);padding:0 6px}
+.travel-people{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;max-height:180px;overflow:auto}
+.travel-people label{display:flex;align-items:center;gap:6px;margin:0;padding:7px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer}
+.travel-people input{width:auto;margin:0}
+.travel-people label:has(input:checked){border-color:var(--green);background:#e7f1ec;font-weight:700}
+
+/* Two-step sign-in */
+.two-step-qr{display:block;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+.two-step-on{background:#e2f4e6;color:#1d6332}
+/* Website requests */
+.request-tag-received{background:#fff4cc;color:#6b4e00}
+.request-tag-in_progress{background:#e3f0fd;color:#0d4a85}
+.request-tag-resolved{background:#e2f4e6;color:#1d6332}
+.request-tag-closed{background:#eceff1;color:#455a64}
+.request-message{white-space:pre-wrap;margin:8px 0}
+.request-confirmation{align-items:center;flex-wrap:wrap;gap:8px}
+.request-sent{background:#e2f4e6;color:#1d6332}
+/* Dashboard: three columns of count cards; each kind of work keeps one colour from the tag palette above */
+:root{--dash-overdue:#a12a2a;--dash-due:#1d6332;--dash-leads:#1d6332;--dash-cases:#5b2a86;--dash-accounts:#0d4a85;--dash-schedule:#245b8a;--dash-quotes:#53606e;--dash-web:#805319;--dash-contacts:#614387;--dash-tasks:#0b5c55;--dash-won:#1d6332;--dash-lost:#a12a2a}
+.dashboard-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.dashboard-column{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.dashboard-column>h2{text-align:center;font-size:20px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.dashboard-period{margin:0 0 12px;padding:8px 10px;background:var(--soft,#f5f7f5);border-radius:10px}
+.dashboard-range{text-align:center;font-weight:700;margin:0 0 6px}
+.dashboard-period label{margin:0}
+.dashboard-custom{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end;margin-top:8px}
+.dashboard-custom input{min-width:0;width:100%}
+.dashboard-custom button{grid-column:1/-1}
+.dashboard-tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dashboard-result .dashboard-tiles{grid-template-columns:1fr}
+.dashboard-tile{--tile:var(--green);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:100%;min-height:86px;margin:0;padding:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-left:5px solid var(--tile);border-radius:10px;box-shadow:0 1px 3px rgba(24,53,43,.1);text-align:center;font-size:15px;font-weight:650;overflow-wrap:anywhere}
+.dashboard-tile strong{font-size:24px;line-height:1.2;color:var(--tile);font-variant-numeric:tabular-nums}
+.dashboard-tile small{font-size:12px;font-weight:500;color:var(--muted)}
+button.dashboard-tile:hover{background:#fff;box-shadow:0 3px 10px rgba(24,53,43,.16)}
+button.dashboard-tile:focus-visible{outline:3px solid var(--tile);outline-offset:2px}
+.dashboard-overdue{--tile:var(--dash-overdue);background:var(--quality-red,#fde2df)}
+button.dashboard-overdue:hover{background:var(--quality-red,#fde2df)}
+.dashboard-due{--tile:var(--dash-due);background:#e2f4e6}
+.dashboard-leads{--tile:var(--dash-leads)}
+.dashboard-cases{--tile:var(--dash-cases)}
+.dashboard-accounts{--tile:var(--dash-accounts)}
+.dashboard-schedule{--tile:var(--dash-schedule)}
+.dashboard-quotes{--tile:var(--dash-quotes)}
+.dashboard-web{--tile:var(--dash-web)}
+.dashboard-contacts{--tile:var(--dash-contacts)}
+.dashboard-tasks{--tile:var(--dash-tasks)}
+.dashboard-won{--tile:var(--dash-won)}
+.dashboard-lost{--tile:var(--dash-lost)}
+.dashboard-group{align-items:stretch;padding:10px 12px}
+.dashboard-group h3{font-size:18px;margin:0 0 6px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+.dashboard-group h3 strong{font-size:inherit}
+.dashboard-group-parts{display:flex;gap:0}
+.dashboard-group-parts>.dashboard-tile{flex:1;min-height:0;border:0;border-radius:6px;box-shadow:none;background:transparent}
+.dashboard-group-parts>.dashboard-tile+.dashboard-tile{border-left:1px solid var(--line);border-radius:0}
+.dashboard-cases .dashboard-group-parts{flex-direction:column}
+.dashboard-cases .dashboard-group-parts>.dashboard-tile+.dashboard-tile{border-left:0;border-top:1px solid var(--line)}
+@media(max-width:1100px){.dashboard-columns{grid-template-columns:1fr}}
+@media(max-width:420px){.dashboard-tiles{grid-template-columns:1fr}}
+@media print{.dashboard-presets,.dashboard-custom,#dashboardRefresh,.bell{display:none}}
+/* Dashboard period buttons: one period for Periodic, Result and Team tasks */
+.dashboard>.dashboard-period{margin:0 0 16px;padding:10px 12px}
+.dashboard-presets{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.dashboard-presets button{min-height:40px;padding:8px 14px}
+.dashboard-period .dashboard-range{margin:8px 0 0}
+.dashboard>.dashboard-period .dashboard-custom{max-width:520px;margin:10px auto 0}
+/* Team tasks: open, completed and late per person */
+.dashboard-team{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+.dashboard-team>h2{margin:0 0 4px}
+.dashboard-team-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dashboard-person{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;width:100%;text-align:left;border-left:5px solid var(--dash-tasks,var(--green))}
+.dashboard-person span{margin-left:auto;font-variant-numeric:tabular-nums}
+.dashboard-person.has-late{border-left-color:var(--dash-overdue,#ad3333)}
+.dashboard-person-tasks{padding:4px 4px 8px 16px}
+.dashboard-person-tasks ol{margin:6px 0;padding-left:18px}
+.dashboard-person-tasks li{margin:8px 0;overflow-wrap:anywhere}
+.dashboard-person-tasks li.late>small{color:#ad3333}
+.dashboard-task-result{margin:4px 0 0;padding:6px 8px;background:#eef5f0;border-radius:6px}
+@media(max-width:600px){.dashboard-presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.dashboard-presets button{padding:8px 4px}.dashboard-person span{margin-left:0;flex-basis:100%}}
+/* Notification bell in the header */
+.bell{position:relative;display:inline-block}
+.bell-button{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;padding:6px 10px}
+.bell-count{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ad3333;color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
+.bell-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:50;width:min(360px,calc(100vw - 32px));max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(24,53,43,.18);padding:10px 12px;white-space:normal;text-align:left;font-size:14px;color:#20352f}
+.bell-panel h2{font-size:17px;margin:0 0 6px}
+.bell-panel h3{font-size:13px;margin:10px 0 4px;color:#61736b}
+.bell-panel ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.bell-panel li button{width:100%;text-align:left;padding:8px 10px;overflow-wrap:anywhere}
+.bell-more,.bell-clear{margin-top:6px;border:0;background:none;color:var(--green);padding:6px 4px;text-decoration:underline}
+@media(max-width:600px){.bell-panel{position:fixed;left:16px;right:16px;top:calc(var(--workspace-header-height,80px) + 4px);width:auto;max-height:calc(100vh - var(--workspace-header-height,80px) - 24px)}}
+
+/* Type-to-search pickers (smart-lookup.js). */
+.lookup{position:relative;display:block;width:100%}
+.lookup>input.lookup-input{width:100%;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235d7068' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.lookup>select.lookup-source{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;clip:rect(0 0 0 0)}
+.lookup-list{position:absolute;z-index:60;left:0;right:0;top:calc(100% + 4px);max-height:min(340px,55vh);overflow:auto;margin:0;padding:4px;list-style:none;background:#fff;border:1px solid var(--line,#dfe7df);border-radius:10px;box-shadow:0 10px 30px rgba(20,40,30,.16)}
+.lookup-list li{padding:9px 10px;border-radius:7px;cursor:pointer;font-size:14px;line-height:1.35;color:var(--ink,#243128)}
+.lookup-list li.active,.lookup-list li[data-i]:hover{background:#eaf3ea}
+.lookup-list li mark{background:none;color:inherit;font-weight:700}
+.lookup-list li.lookup-more{cursor:default;color:var(--muted,#6b776d);font-size:13px;background:none}
+@media (max-width:640px){.lookup-list{max-height:45vh}.lookup-list li{padding:12px 10px;font-size:15px}}
+.lookup-list{min-width:min(460px,92vw)}
+@media (min-width:901px){.document-line{grid-template-columns:3fr 1.6fr .6fr .7fr .9fr .7fr .7fr auto}}
+.team-task-result{margin:8px 0 0;padding:10px 12px;border-left:3px solid var(--green,#315c32);background:#f3f8f2;border-radius:6px;white-space:pre-wrap}
+.team-task-result small{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b776d);margin-bottom:2px}
+/* Drop-down menu groups (nav-dropdown.js). */
+#nav .nav-group h2{display:block;width:100%;padding:0;margin:0}
+#nav .nav-group-toggle{display:flex;justify-content:space-between;align-items:center;width:100%;min-height:40px;margin:0;padding:8px;background:none;border:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;box-shadow:none}
+#nav .nav-group-toggle::after{content:'';flex:none;margin-left:auto;width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .15s;margin-right:4px}
+#nav .nav-group.collapsed .nav-group-toggle::after{transform:rotate(-45deg)}
+#nav .nav-group.collapsed [data-view]{display:none}
+#nav .nav-group-toggle:hover{background:rgba(255,255,255,.06);border-radius:6px}
+#nav .nav-group>h2>button.nav-group-toggle{display:flex!important;width:100%!important;max-width:none!important}
+
+/* ==========================================================================================================
+   Consistent layout, desktop and phone. Loaded last so it settles spacing, button sizes, rows of actions,
+   forms, tables and dialogs in one place. Colours stay the brand ones above: dark green sidebar, green primary,
+   red danger. Spacing scale: 4 · 8 · 12 · 16 · 24 · 32.
+   ========================================================================================================== */
+:root{--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--control-h:40px;--radius:10px}
+
+/* Buttons: one height and one padding everywhere in the work area and dialogs; text centred on one line. */
+main button,main .button,dialog button,dialog .button{min-height:var(--control-h);padding:10px 14px;font-size:14px;line-height:18px;border-radius:8px;vertical-align:middle}
+main .button,dialog .button{display:inline-flex;align-items:center;justify-content:center}
+/* Secondary look for look-up buttons (Refresh, History, Edit...): a real button, not floating text. */
+[data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-work-open],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
+#tallyInvoiceRefresh,#countRefresh,#purchaseRefresh,#leadRefresh,#pendingRefresh,#salesRefresh,#serviceRefresh,#refresh,
+#requestRefresh,#travelRefresh,#teamTaskRefresh,#dashboardRefresh,#inventoryRefresh,[data-recycle-refresh]{background:#fff;border-color:var(--line);color:#3f5a50}
+/* The products banner keeps its white buttons on the green background. */
+main .cleanup-hero button,main .cleanup-hero #refresh{background:#fff;border-color:#fff;color:#174c3d}
+main .cleanup-hero button:hover{background:#edf5e8}
+
+/* Rows of buttons: always wrap with even gaps, never touch. */
+main .actions,dialog .actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+main .card>.actions,main article>.actions,dialog form>.actions,dialog .actions:last-child{margin-top:var(--space-4)}
+main .actions>*,dialog .actions>*{margin:0}
+main .actions .file-button{min-height:var(--control-h)}
+/* Buttons placed straight inside a heading line up with it. */
+main .heading{align-items:center;gap:var(--space-3) var(--space-5)}
+main .heading:has(h1){align-items:flex-start;margin-bottom:var(--space-2)}
+main .heading:has(h1)>.actions,main .heading:has(h1)>button{margin-top:6px}
+main .heading>button,main .heading>.actions{flex:0 0 auto}
+main .heading h1+p,main .heading small+h1+p{margin:6px 0 0}
+main .heading>div:first-child>p:last-child{margin-bottom:0}
+
+/* Cards: the same padding and spacing between them. */
+main .card{padding:var(--space-5);margin-top:var(--space-4)}
+main .card>h2:first-child,main .card>.heading:first-child h2,main .card>.heading:first-child h3{margin-top:0}
+main section>.card:first-child{margin-top:0}
+main .card .card{padding:var(--space-4)}
+/* Cards with their own inner layout keep it. */
+main .howto-topic{padding:0}
+main .team-task{padding:16px 20px;margin-top:12px}
+
+/* Form fields: labels close to their field, fields evenly spaced; grids with a steady gap. */
+main label,dialog label{margin:0 0 var(--space-4)}
+main .grid,dialog .grid{gap:0 var(--space-4)}
+main label>span:first-child,dialog label>span:first-child{margin-bottom:6px}
+main .toolbar{gap:var(--space-3);margin:var(--space-4) 0}
+main form>button[type=submit]:last-child,dialog form>button[type=submit]:last-child{margin-top:var(--space-2)}
+/* Tick boxes and round choices are small controls, never full-width boxes. */
+input[type=checkbox],input[type=radio]{width:18px;height:18px;min-height:0;padding:0;margin:0;flex:0 0 auto;accent-color:var(--green);vertical-align:middle}
+fieldset{border:1px solid var(--line);border-radius:12px;padding:var(--space-3) var(--space-4) var(--space-2);margin:0 0 var(--space-4);min-width:0}
+legend{padding:0 6px;font-weight:700;font-size:14px;color:var(--green)}
+.access-areas>p{margin:4px 0 12px}
+.access-area{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.access-area>span{display:block;margin:0;font-weight:400;font-size:14px}
+.access-area input{margin-top:2px}
+.access-area:has(input:checked){border-color:var(--green);background:#eef6ef}
+.check-row,.delivery-check{gap:8px}
+.lead-role-pick small{display:block;margin-top:6px}
+.lead-role-pick select{max-width:none}
+
+/* Tabs and filter chips. */
+main .tabs{gap:4px;margin:var(--space-4) 0}
+main .tabs button{min-height:36px;padding:8px 14px}
+main .proforma-filters button{min-height:34px;padding:6px 12px}
+
+/* Responsible-person strip: the sentence on its own line, then its buttons in a row. */
+main .work-handoff{gap:var(--space-2);padding:var(--space-3);border-radius:var(--radius)}
+main .work-handoff>span:first-child{flex:1 1 100%;line-height:1.45}
+
+/* Tables: steady padding; every table scrolls inside its box instead of squeezing or widening the page. */
+main .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+main td,main th{padding:10px 12px}
+main th{white-space:nowrap}
+main td .actions{gap:6px}
+main td select{min-width:130px}
+main .cleanup-table{overflow-x:auto}
+
+/* Header: the signed-in name sits apart from the buttons around it. */
+#identity{gap:8px}
+#identity .identity-name{padding:0 6px;font-size:13px;color:var(--muted);font-weight:600}
+#identity button{min-height:38px;padding:8px 14px;font-size:13px;line-height:18px}
+
+/* Dialogs: never wider than the screen; content scrolls inside. */
+dialog{width:min(640px,calc(100vw - 32px));max-width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:var(--space-5);overflow:auto}
+dialog .heading{margin-bottom:var(--space-3)}
+dialog h2{margin:0 0 var(--space-3);font-size:21px;line-height:1.25}
+dialog .heading h2{margin:0}
+dialog .urgency-choice label,dialog .lead-who label{min-height:var(--control-h)}
+
+/* The hidden list behind a type-to-search picker takes no room (it pushed dialogs 6px wider on phones). */
+.lookup>select.lookup-source{left:0;top:0;padding:0;border:0;min-height:0;margin:0}
+
+/* Long product, client and supplier names wrap instead of breaking the layout. */
+main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:break-word}
+
+/* Phones and narrow windows. */
+@media(max-width:600px){
+ main .card,main .contact,main .profile-tile{padding:var(--space-4)}
+ main .card{margin-top:var(--space-3)}
+ main .howto-topic{padding:0}
+ main .team-task{padding:14px 16px}
+ /* Page title block: title, then a full-width row of its buttons. */
+ main .heading:has(h1){flex-direction:column;align-items:stretch;gap:var(--space-3)}
+ main .heading:has(h1)>button{align-self:flex-start;margin-top:0}
+ main .heading:has(h1)>.actions{width:100%;margin-top:0}
+ main .heading:has(h1)>.actions>button{flex:1 1 0;min-width:0}
+ /* Rows of buttons in cards and dialogs: two equal columns, a lone button takes the row. */
+ main .card .actions>button,main .card .actions>.button,main article .actions>button,dialog .actions>button,dialog .actions>.button,main .work-handoff>button{flex:1 1 calc(50% - 4px);min-width:0;white-space:normal}
+ main td .actions>button,main td>button{flex:0 0 auto;white-space:nowrap}
+ /* Tabs wrap into rows instead of running off the edge. */
+ main .tabs{flex-wrap:wrap;width:100%;overflow:visible}
+ main .tabs button{flex:1 1 auto;min-width:0;white-space:normal}
+ main .proforma-filters{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+ main .proforma-filters button{width:100%;padding:6px 8px;font-size:13px}
+ /* Choice buttons share the row evenly. */
+ .lead-who label,.lead-sources label,.urgency-choice label{flex:1 1 calc(50% - 10px);justify-content:flex-start}
+ /* Tables keep readable columns and scroll sideways inside their box. */
+ main .table-wrap>table,main .cleanup-table>table{min-width:560px}
+ main .table-wrap>table:has(td select){min-width:860px}
+ main .purchase-card .table-wrap>table,main .table-wrap>table.purchase-lines{min-width:0}
+ main td,main th{padding:8px 10px}
+ /* Purchase request items: one item per block. */
+ table.purchase-lines thead{display:none}
+ table.purchase-lines,table.purchase-lines tbody{display:block}
+ table.purchase-lines tr{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+ table.purchase-lines td{display:block;padding:0;border:0}
+ table.purchase-lines td:first-child{grid-column:1/-1}
+ table.purchase-lines td:last-child{grid-column:1/-1}
+ table.purchase-lines td:last-child button{width:100%}
+ /* Pro forma item lines: product and description full width, numbers two by two. */
+ .document-line{grid-template-columns:1fr 1fr;gap:0 10px}
+ .document-line>label:nth-child(-n+2){grid-column:1/-1}
+ .document-line label{margin-bottom:10px}
+ .document-line>button{grid-column:1/-1;width:100%}
+ /* Header: logo, then name and bell, then three equal buttons. */
+ body>header{gap:10px;padding:12px 16px}
+ #identity{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;margin:0}
+ #identity>.bell{grid-row:1;grid-column:3;justify-self:end}
+ #identity>.identity-name{grid-row:1;grid-column:1/3;align-self:center;padding:0;font-size:13px}
+ #identity>button{grid-row:2;min-width:0;padding:8px 6px;font-size:13px;white-space:normal}
+ /* Dialogs use most of the screen with a little less padding. */
+ dialog{padding:var(--space-4) 18px;max-height:calc(100vh - 32px)}
+ dialog h2{font-size:19px}
+ /* Upload boxes and wide controls fit the column. */
+ main .file-button{flex-wrap:wrap;width:100%}
+ main .file-button input{max-width:100%}
+ .howto-walk{left:16px;right:16px;width:auto}
+}

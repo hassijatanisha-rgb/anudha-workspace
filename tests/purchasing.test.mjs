@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(role='staff',user='a'){
  const ctx=vm.createContext({me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date});
- vm.runInContext(readFileSync(new URL('../purchasing.js',import.meta.url),'utf8'),ctx);
+ for(const file of ['row-index.js','purchasing.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  vm.runInContext(`suppliers=[{id:'s1',name:'Fixture Medical',active:true}];purchaseLines=[{purchase_order_id:'o1',line_number:1,product_id:'p1',quantity:10,unit_price_minor:500},{purchase_order_id:'o1',line_number:2,product_id:'p2',quantity:2,unit_price_minor:1000},{purchase_order_id:'o2',line_number:1,product_id:'p2',quantity:5,unit_price_minor:null}];`,ctx);
  return ctx;
 }
@@ -38,9 +38,32 @@ test('overdue only applies to ordered purchases past their expected date',()=>{
  assert.equal(ctx.purchaseOverdue({status:'ordered',expected_on:null},'2026-09-30'),false);
 });
 test('menu, router, sign-out, pending link and script order are wired',()=>{
- const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.html');
+ const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('workspace-navigation.js'),/\['Purchasing','purchasing','orders'\],\['Suppliers','purchasing','suppliers'\]/);
  assert.match(read('app.js'),/view==='purchasing'\)return purchasingWorkspace\(\)/);assert.match(read('app.js'),/typeof clearPurchasing==='function'\)clearPurchasing\(\)/);
  assert.match(read('pending-stock.js'),/typeof startPurchaseFromPending==='function'/);
  assert.ok(html.indexOf('purchasing.js')>html.indexOf('work-assignments.js')&&html.indexOf('purchasing.js')<html.indexOf('app.js'));
+});
+test('loads every open order but only six months of finished ones, items nested per order',async()=>{
+ const ctx=load(),calls=[];
+ ctx.all=async(table,columns,filter)=>{const q={or(v){calls.push([table,columns,v]);return q;}};if(filter)filter(q);else calls.push([table,columns,null]);
+  return table==='purchase_orders'?[{id:'o9',status:'requested',purchase_order_lines:[{purchase_order_id:'o9',line_number:1,product_id:'p1',quantity:3}]}]:[{id:'s1',name:'Fixture Medical',active:true}];};
+ assert.equal(await ctx.loadPurchasing(),true);
+ const orders=calls.find(c=>c[0]==='purchase_orders');
+ assert.match(orders[1],/^id,po_number,status,.*,purchase_order_lines\(id,purchase_order_id,line_number,product_id,quantity,unit_price_minor,pending_request_id,note\)$/,'only the fields the page reads, items nested per order');
+ assert.match(orders[2],/^status\.in\.\(requested,approved,ordered\),updated_at\.gte\.\d{4}-/);
+ const since=new Date(orders[2].split('updated_at.gte.')[1]);
+ assert.ok(Math.abs((Date.now()-since)/864e5-183)<1,'window is six months');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>[o.id,"purchase_order_lines" in o])'),[['o9',false]]);
+ assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
+});
+function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
+test('after a step only that order is read again; the rest of the list is kept',async()=>{
+ const ctx=load('owner');let asked=0,full=0;
+ ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]}})};return q;}};
+ vm.runInContext(`purchaseLoaded=true;view='purchasing';purchaseOrders=[{id:'o1',status:'requested'},{id:'o2',status:'requested'}];renderPurchasing=()=>{};purchasingWorkspace=async()=>{globalThis.fullReload=(globalThis.fullReload||0)+1};`,ctx);
+ await ctx.purchaseRefreshOne('o1');
+ assert.equal(asked,1);assert.equal(vmJson(ctx,'globalThis.fullReload||0'),0,'no full reload');
+ assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
+ assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
 });

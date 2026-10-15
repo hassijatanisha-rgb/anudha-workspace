@@ -15,7 +15,7 @@ try{
   window.catalogProductIssues=()=>[];window.catalogLabel=()=> 'Reagents';window.catalogCategoryOf=()=> 'reagents';
   window.run=fn=>fn();window.inventoryAvailableTotals=lots=>({cartons:0,loose:lots.reduce((sum,x)=>sum+x.loose_units,0)});
  });
- for(const file of ['search-state.js','product-review-ui.js','inventory-operations.js','product-workbench.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ for(const file of ['row-index.js','search-state.js','product-review-ui.js','inventory-operations.js','product-workbench.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   productDetailReviews.set('maker-a',{name:'Reviewed Albumin',company:'Corrected Maker A',specification:'200 ml'});
   inventoryLocation=()=>({name:'Godown A',code:'G-A'});

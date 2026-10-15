@@ -2,6 +2,9 @@
 let employeeDirectory=new Map(),employeeNamesEpoch=0;
 function clearEmployeeNames(){employeeNamesEpoch++;employeeDirectory=new Map();}
 function employeeName(id){if(!id)return 'Unassigned';return employeeDirectory.get(id)?.display_name?.trim()||(id===me?.user_id?'You':'Employee name not set');}
+// Someone added since this person signed in (for example by a department head) is not in the name list yet; the Staff
+// page reloads the names then, instead of showing "Employee name not set".
+async function refreshEmployeeNamesFor(ids){if(ids.some(id=>id&&!employeeDirectory.has(id)))await loadEmployeeNames();}
 async function loadEmployeeNames(){
  const epoch=++employeeNamesEpoch,actor=me?.user_id,next=new Map(),seen=new Set();employeeDirectory=new Map();
  if(!actor)return false;
