@@ -24,12 +24,22 @@ function inventoryImportPlan(payload,existingProducts=[]){
   const current=groups.get(normalized)||{name,products:[],sourceRows:[]};
   current.products.push(product);current.sourceRows.push(...inventoryImportRows(product));groups.set(normalized,current);
  }
- const existing=new Map(existingProducts.map(product=>[inventoryImportNormalizedName(product.name),product]).filter(([name])=>name));
+ const existing=new Map();
+ for(const product of existingProducts){
+  const key=inventoryImportNormalizedName(product.name);
+  if(key)existing.set(key,[...(existing.get(key)||[]),product]);
+ }
  const newProducts=[],existingMatches=[],duplicateGroups=[];
  for(const [normalized,group] of groups){
+  const matches=existing.get(normalized)||[],candidates=[...group.products,...matches];
+  const identityValue=value=>inventoryImportCleanName(value).toLowerCase();
+  const companies=new Set(candidates.map(p=>identityValue(p.source?.company)));
+  const specifications=new Set(candidates.map(p=>identityValue(p.source?.specification||p.source?.model)));
+  const skus=new Set(candidates.map(p=>identityValue(p.sku)).filter(Boolean));
+  if(matches.length>1||companies.size>1||specifications.size>1||skus.size>1)throw Error(`Product identity needs review for "${group.name}". Same-name records have conflicting or incomplete manufacturer/specification details, different SKUs, or multiple existing matches. Resolve the identity before importing; no products have been imported.`);
   group.sourceRows=[...new Set(group.sourceRows)].sort((a,b)=>a-b);
   if(group.products.length>1||group.sourceRows.length>1)duplicateGroups.push({name:group.name,count:group.products.length,sourceRows:group.sourceRows});
-  const saved=existing.get(normalized);
+  const saved=matches[0];
   if(saved){existingMatches.push({name:group.name,existingProduct:saved,sourceRows:group.sourceRows});continue;}
   const first=group.products[0],source={...(first.source||{}),source_rows:group.sourceRows};delete source.source_row;
   if(group.sourceRows.length>1)source.review_notes=[...(Array.isArray(source.review_notes)?source.review_notes:[]),`Repeated in Book2 rows: ${group.sourceRows.join(', ')}`];

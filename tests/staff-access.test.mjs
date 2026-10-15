@@ -55,11 +55,11 @@ test('database enforces areas on reads and saves, and heads only for their depar
 test('sign-in keeps working if the screens go live before the access list exists on the server',async()=>{
  const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
  const start=app.indexOf('async function loadMyStaffRow'),src=app.slice(start,app.indexOf('\n}\n',start)+3);
- const asked=[],client={from:()=>({select:cols=>{asked.push(cols);return {eq:()=>({single:async()=>cols.includes('access')?{error:{message:'column staff.access does not exist'}}:{data:{user_id:'u',role:'staff',active:true}}})};}})};
+ const asked=[],client={from:()=>({select:cols=>{asked.push(cols);const reply=async()=>cols.includes('access')?{error:{message:'column staff.access does not exist'}}:{data:{user_id:'u',role:'staff',active:true}};return {eq:()=>({single:reply,maybeSingle:reply})};}})};
  const ctx=vm.createContext({client});vm.runInContext(src,ctx);
  const r=await ctx.loadMyStaffRow('u');
  assert.equal(r.data.active,true);assert.equal(r.data.access.length,9);assert.equal(asked.length,2);
- client.from=()=>({select:()=>({eq:()=>({single:async()=>({error:{message:'JWT expired'}})})})});
+ client.from=()=>({select:()=>({eq:()=>({single:async()=>({error:{message:'JWT expired'}}),maybeSingle:async()=>({error:{message:'JWT expired'}})})})});
  assert.equal((await ctx.loadMyStaffRow('u')).error.message,'JWT expired','other errors are not hidden');
 });
 test('staff list file: validated, heads first, people with a login skipped',()=>{
