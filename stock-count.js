@@ -6,13 +6,14 @@ const countGodowns=['Haadi','Main store','City Printer Godown','City Printer God
 const countUnits=['PCS','BOX','PKT','DOZ','SET','KIT','BOTTLE','ROLL','PAIR','BAG','GALLON','SHEET','CARTON','LITRE','KG','TUBE'];
 const countConditions={good:'Good',damaged:'Damaged',expired:'Expired',quarantine:'Set aside / check'};
 const countStatuses={recorded:'Waiting for review',accepted:'Accepted',rejected:'Rejected',void:'Voided'};
-let countTab='count',countSearch='',countGodown='',countPicked='',countReviewFilter='recorded',countReviewGodown='',countPage=0;
+let countTab='count',countSearch='',countGodown='',countPicked='',countReviewFilter='recorded',countReviewGodown='',countReviewSessionId='',countPage=0;
 let countLoaded=false,countLoadError='',countEpoch=0,countCatalogue=[],countSessions=[],countEntries=[],countPendingSave=null;
 function stockCountEnabled(){return window.ERP_CONFIG?.stockCountEnabled!==false;}
-function clearStockCount(){countEpoch++;countLoaded=false;countCatalogue=[];countSessions=[];countEntries=[];countPicked='';countPendingSave=null;countSearch='';}
+function clearStockCount(){countEpoch++;countLoaded=false;countCatalogue=[];countSessions=[];countEntries=[];countPicked='';countPendingSave=null;countSearch='';countReviewSessionId='';countPage=0;}
 function openStockCountSection(section){countTab=section==='review'?'review':'count';countPage=0;countPicked='';}
 function countOpenSession(){return countSessions.find(s=>s.status==='open')||null;}
 function countCurrentSession(){return countOpenSession()||[...countSessions].sort((a,b)=>String(b.opened_at).localeCompare(String(a.opened_at)))[0]||null;}
+function countReviewSession(){return countSessions.find(session=>session.id===countReviewSessionId)||countCurrentSession();}
 function countItem(code){return countCatalogue.find(item=>item.code===code);}
 function countLabel(entry){const item=entry.code?countItem(entry.code):null;return item?[item.product,item.company,item.specification].filter(Boolean).join(' · '):entry.unlisted||'Unknown product';}
 function countRememberedGodown(){try{return localStorage.getItem('anudha-count-godown')||'';}catch{return '';}}
@@ -67,21 +68,21 @@ async function loadCountCatalogueFile(file){
  const total=await applyProductListFile(file);
  countCatalogue=[];await stockCountWorkspace(true);message(productListSummary(total));
 }
-async function loadStockCount(){
- const epoch=++countEpoch,actor=me?.user_id;
- const [catalogue,sessions,entries]=await Promise.all([countCatalogue.length?Promise.resolve(countCatalogue):all('count_catalogue','code,product,company,specification,category,search_text'),all('stock_count_sessions','*'),all('stock_count_entries','*')]);
- if(epoch!==countEpoch||me?.user_id!==actor)return false;
+async function loadStockCount(refreshCatalogue=false){
+ const epoch=++countEpoch,actor=me;
+ const [catalogue,sessions,entries]=await Promise.all([!refreshCatalogue&&countCatalogue.length?Promise.resolve(countCatalogue):all('count_catalogue','code,product,company,specification,category,search_text'),all('stock_count_sessions','*'),all('stock_count_entries','*')]);
+ if(epoch!==countEpoch||me!==actor)return false;
  countCatalogue=catalogue;countSessions=sessions;countEntries=entries;countLoaded=true;countLoadError='';return true;
 }
 async function stockCountWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
+ const actor=me;syncWorkspaceNavigation();
  if(!stockCountEnabled()){$('#content').innerHTML='<section class="card"><h1>Stock count is switched off</h1><p class="muted">The physical count is finished. Stock is managed in Inventory.</p></section>';return;}
  if(!countGodown)countGodown=countRememberedGodown();
  if(force||!countLoaded){
   $('#content').innerHTML='<p role="status">Loading the product list and counts…</p>';
-  try{if(!(await loadStockCount()))return;}catch(error){if(me?.user_id!==actor)return;countLoadError=error.message;countLoaded=false;}
+  const epoch=countEpoch+1;try{if(!(await loadStockCount(force)))return;}catch(error){if(me!==actor||countEpoch!==epoch)return;countLoadError=error.message;countLoaded=false;}
  }
- if(view!=='stockcount'||me?.user_id!==actor)return;
+ if(view!=='stockcount'||me!==actor)return;
  renderStockCount();
 }
 function countPickedForm(item){
@@ -95,7 +96,7 @@ function countEntryRow(entry,{review=false}={}){
  return `<tr data-count-entry="${esc(entry.id)}"><td>${entry.code?`<small>${esc(entry.code)}</small> `:'<small>Not on list</small> '}${esc(countLabel(entry))}${entry.notes?`<small>${esc(entry.notes)}</small>`:''}</td>${review?`<td>${esc(entry.godown)}</td>`:''}<td><strong>${esc(Number(entry.quantity))}</strong> ${esc(entry.unit)}</td><td>${esc(countConditions[entry.condition]||entry.condition)}${entry.batch?`<small>Batch ${esc(entry.batch)}</small>`:''}${entry.expiry?`<small>Exp ${esc(entry.expiry)}</small>`:''}</td><td>${esc(employeeName(entry.counted_by))}<small>${esc(new Date(entry.counted_at).toLocaleString())}</small></td><td><span class="tag">${esc(countStatuses[entry.status])}</span>${entry.status_note?`<small>${esc(entry.status_note)}</small>`:''}</td><td class="actions">${buttons.join('')}</td></tr>`;
 }
 function renderStockCount(){
- const owner=me?.role==='owner',session=countCurrentSession(),open=countOpenSession();
+ const owner=me?.role==='owner',session=countReviewSession(),open=countOpenSession();
  const tabs=`<div class="tabs" role="group" aria-label="Stock count sections">${[['count','Count a godown'],['review',owner?'Review counts':'All counts']].map(([key,label])=>`<button type="button" data-count-tab="${key}" class="${countTab===key?'active':''}" aria-pressed="${countTab===key}">${label}</button>`).join('')}</div>`;
  const loader=owner?`<details class="card count-loader"${countCatalogue.length?'':' open'}><summary>${countCatalogue.length?`Product list: ${countCatalogue.length} products · load a newer file`:'Load the product list'}</summary><p class="muted">Choose the product list file (.json) prepared from the Tally and CRM data. It also updates the ERP product list. Loading again updates products with the same AN code and keeps corrections staff have made; it never touches stock.</p><label><span>Product list file</span><input type="file" id="countCatalogueFile" accept=".json,application/json"></label></details>`:'';
  const sessionBar=`<div class="help-strip">${open?`<strong>Count running: ${esc(open.name)}</strong><span>Started ${esc(new Date(open.opened_at).toLocaleDateString())} by ${esc(employeeName(open.opened_by))}</span>`:`<strong>No count is running.</strong><span>${owner?'Start one to let staff record counts.':'Ask the owner to start the count.'}</span>`}${owner?(open?'<button type="button" id="countClose">Close this count</button>':'<button type="button" id="countOpen">Start a count</button>'):''}</div>`;
@@ -121,12 +122,15 @@ function renderCountReview(session){
  const pages=Math.max(1,Math.ceil(rows.length/50));countPage=Math.min(Math.max(countPage,0),pages-1);
  const all=countEntriesFor({session}),byStatus=s=>all.filter(e=>e.status===s).length,accepted=countAcceptedTotals(all);
  const godownProgress=countGodowns.map(g=>[g,all.filter(e=>e.godown===g&&e.status!=='void'&&e.status!=='rejected').length]).filter(([,n])=>n);
- return `<p class="muted">${esc(session.name)} · ${byStatus('recorded')} waiting · ${byStatus('accepted')} accepted · ${byStatus('rejected')} rejected · ${byStatus('void')} voided</p>${godownProgress.length?`<p class="muted">${godownProgress.map(([g,n])=>`${esc(g)}: ${n}`).join(' · ')}</p>`:''}<div class="grid"><label><span>Status</span><select id="countReviewFilter">${[['recorded','Waiting for review'],['accepted','Accepted'],['rejected','Rejected'],['void','Voided'],['all','All']].map(([k,v])=>`<option value="${k}" ${countReviewFilter===k?'selected':''}>${v}</option>`).join('')}</select></label><label><span>Godown</span><select id="countReviewGodown"><option value="">All godowns</option>${countGodowns.map(g=>`<option ${g===countReviewGodown?'selected':''}>${esc(g)}</option>`).join('')}</select></label></div>${me?.role==='owner'?`<div class="actions"><button type="button" id="countExport" ${accepted.length?'':'disabled'}>Download accepted counts (${accepted.length} line${accepted.length===1?"":"s"})</button></div>`:''}<p class="muted">${rows.length} matching</p>${rows.length?`<div class="table-wrap"><table><thead><tr><th>Product</th><th>Godown</th><th>Qty</th><th>Condition</th><th>Counted by</th><th>Status</th><th></th></tr></thead><tbody>${rows.slice(countPage*50,countPage*50+50).map(e=>countEntryRow(e,{review:true})).join('')}</tbody></table></div>`:'<p class="muted">No counts here.</p>'}<div class="actions"><button type="button" id="countPrev" ${countPage===0?'disabled':''}>Previous</button><span>Page ${countPage+1} of ${pages}</span><button type="button" id="countNext" ${countPage>=pages-1?'disabled':''}>Next</button></div>`;
+ return `<label><span>Count session to review / export</span><select id="countReviewSession">${[...countSessions].sort((a,b)=>String(b.opened_at).localeCompare(String(a.opened_at))||a.id.localeCompare(b.id)).map(row=>`<option value="${esc(row.id)}" ${row.id===session.id?'selected':''}>${esc(row.name)} · ${row.status==='open'?'Running':'Closed'}</option>`).join('')}</select></label><p class="muted">${esc(session.name)} · ${byStatus('recorded')} waiting · ${byStatus('accepted')} accepted · ${byStatus('rejected')} rejected · ${byStatus('void')} voided</p>${godownProgress.length?`<p class="muted">${godownProgress.map(([g,n])=>`${esc(g)}: ${n}`).join(' · ')}</p>`:''}<div class="grid"><label><span>Status</span><select id="countReviewFilter">${[['recorded','Waiting for review'],['accepted','Accepted'],['rejected','Rejected'],['void','Voided'],['all','All']].map(([k,v])=>`<option value="${k}" ${countReviewFilter===k?'selected':''}>${v}</option>`).join('')}</select></label><label><span>Godown</span><select id="countReviewGodown"><option value="">All godowns</option>${countGodowns.map(g=>`<option ${g===countReviewGodown?'selected':''}>${esc(g)}</option>`).join('')}</select></label></div>${me?.role==='owner'?`<div class="actions"><button type="button" id="countExport" ${accepted.length?'':'disabled'}>Download accepted counts (${accepted.length} line${accepted.length===1?"":"s"})</button></div>`:''}<p class="muted">${rows.length} matching</p>${rows.length?`<div class="table-wrap"><table><thead><tr><th>Product</th><th>Godown</th><th>Qty</th><th>Condition</th><th>Counted by</th><th>Status</th><th></th></tr></thead><tbody>${rows.slice(countPage*50,countPage*50+50).map(e=>countEntryRow(e,{review:true})).join('')}</tbody></table></div>`:'<p class="muted">No counts here.</p>'}<div class="actions"><button type="button" id="countPrev" ${countPage===0?'disabled':''}>Previous</button><span>Page ${countPage+1} of ${pages}</span><button type="button" id="countNext" ${countPage>=pages-1?'disabled':''}>Next</button></div>`;
 }
 function countFormValues(form){
- const f=new FormData(form),quantity=Number(f.get('quantity'));
- if(f.get('quantity')===''||!Number.isFinite(quantity)||quantity<0||quantity>10000000)throw Error('Enter the quantity counted (0 or more).');
- if(Math.round(quantity*1000)!==quantity*1000)throw Error('Use at most three decimal places.');
+ const f=new FormData(form),text=String(f.get('quantity')??'').trim();
+ if(!/^\d+(?:\.\d+)?$/.test(text))throw Error('Enter the quantity counted (0 or more).');
+ const [whole,fraction='']=text.split('.');if(fraction.length>3)throw Error('Use at most three decimal places.');
+ const thousandths=Number(whole)*1000+Number((fraction+'000').slice(0,3));
+ if(!Number.isSafeInteger(thousandths)||thousandths>10000000000)throw Error('Enter a quantity from 0 to 10,000,000.');
+ const quantity=thousandths/1000;
  const unlisted=String(f.get('unlisted')||'').trim();
  if(countPicked==='unlisted'&&unlisted.length<3)throw Error('Describe the product so it can be matched later.');
  return {code:countPicked==='unlisted'?'':countPicked,unlisted:countPicked==='unlisted'?unlisted:'',quantity,unit:f.get('unit'),condition:f.get('condition'),batch:String(f.get('batch')||'').trim(),expiry:f.get('expiry')||null,notes:String(f.get('notes')||'').trim()};
@@ -136,13 +140,16 @@ async function saveCountForm(form){
  const values=countFormValues(form),key=JSON.stringify([open.id,countGodown,values]);
  // Same id for an unchanged retry, so a lost response cannot record the same count twice.
  if(countPendingSave?.key!==key)countPendingSave={key,id:crypto.randomUUID()};
- const actor=me?.user_id,result=await client.rpc('record_stock_count',{p_id:countPendingSave.id,p_session_id:open.id,p_godown:countGodown,p_code:values.code,p_unlisted:values.unlisted,p_quantity:values.quantity,p_unit:values.unit,p_batch:values.batch,p_expiry:values.expiry,p_condition:values.condition,p_notes:values.notes});
- if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
+ const request=countPendingSave,actor=me,epoch=countEpoch,result=await client.rpc('record_stock_count',{p_id:request.id,p_session_id:open.id,p_godown:countGodown,p_code:values.code,p_unlisted:values.unlisted,p_quantity:values.quantity,p_unit:values.unit,p_batch:values.batch,p_expiry:values.expiry,p_condition:values.condition,p_notes:values.notes});
+ if(me!==actor||countEpoch!==epoch)return;
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==countPendingSave.id)throw Error('The server did not confirm the count. Press save again to retry safely.');
- countPendingSave=null;countEntries=[saved,...countEntries.filter(e=>e.id!==saved.id)];countPicked='';countSearch='';renderStockCount();
- message(`Counted ${Number(saved.quantity)} ${saved.unit} of ${countLabel(saved)} in ${saved.godown}.`);$('#countSearch')?.focus();
+ if(saved?.id!==request.id)throw Error('The server did not confirm the count. Press save again to retry safely.');
+ countEntries=[saved,...countEntries.filter(e=>e.id!==saved.id)];
+ const ownsDraft=countPendingSave===request&&form.isConnected;
+ if(countPendingSave===request)countPendingSave=null;
+ if(ownsDraft){countPicked='';countSearch='';}
+ if(view==='stockcount'&&!countPicked){renderStockCount();message(`Counted ${Number(saved.quantity)} ${saved.unit} of ${countLabel(saved)} in ${saved.godown}.`);if(ownsDraft)$('#countSearch')?.focus();}
 }
 function openCountAction(entry,action){
  if(!entry)return;
@@ -159,7 +166,7 @@ function bindStockCount(){
  $('#countRefresh').onclick=()=>run(()=>stockCountWorkspace(true));
  const catalogueFile=$('#countCatalogueFile');if(catalogueFile)catalogueFile.onchange=()=>{const file=catalogueFile.files[0];if(file)run(()=>loadCountCatalogueFile(file));};
  document.querySelectorAll('[data-count-tab]').forEach(button=>button.onclick=()=>{openStockCountSection(button.dataset.countTab);renderStockCount();});
- $('#countOpen')?.addEventListener('click',()=>actionForm('Start a count','<label><span>Name for this count</span><input name="name" required minlength="3" maxlength="120" value="Full stock count '+new Date().toISOString().slice(0,10)+'"></label><p class="muted">Staff can record counts until you close it.</p>',async values=>{
+ $('#countOpen')?.addEventListener('click',()=>actionForm('Start a count','<label><span>Name for this count</span><input name="name" required minlength="3" maxlength="120" value="Full stock count '+companyDate()+'"></label><p class="muted">Staff can record counts until you close it.</p>',async values=>{
   const actor=me?.user_id,result=await client.rpc('open_stock_count',{p_id:crypto.randomUUID(),p_name:values.name});
   if(me?.user_id!==actor)throw Error('Login changed.');if(result.error)throw Error(result.error.message);await stockCountWorkspace(true);message('Count started.');}));
  $('#countClose')?.addEventListener('click',()=>{const open=countOpenSession();if(!open)return;actionForm('Close this count',`<p>Closing stops new counts for <strong>${esc(open.name)}</strong>. You can still review what was counted.</p>`,async()=>{
@@ -172,13 +179,14 @@ function bindStockCount(){
  $('#countCancel')?.addEventListener('click',()=>{countPicked='';countPendingSave=null;renderStockCount();$('#countSearch')?.focus();});
  const form=$('#countForm');
  if(form)form.onsubmit=event=>{event.preventDefault();const button=$('#countSave');if(button.disabled)return;button.disabled=true;$('#countFormError').textContent='';
-  run(async()=>{try{await saveCountForm(form)}catch(error){if($('#countFormError'))$('#countFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+  run(async()=>{try{await saveCountForm(form)}catch(error){if(form.isConnected)form.querySelector('#countFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+ const reviewSession=$('#countReviewSession');if(reviewSession)reviewSession.onchange=()=>{countReviewSessionId=reviewSession.value;countPage=0;renderStockCount();};
  const filter=$('#countReviewFilter');if(filter)filter.onchange=()=>{countReviewFilter=filter.value;countPage=0;renderStockCount();};
  const reviewGodown=$('#countReviewGodown');if(reviewGodown)reviewGodown.onchange=()=>{countReviewGodown=reviewGodown.value;countPage=0;renderStockCount();};
  $('#countPrev')?.addEventListener('click',()=>{countPage--;renderStockCount();});$('#countNext')?.addEventListener('click',()=>{countPage++;renderStockCount();});
  document.querySelectorAll('[data-count-action]').forEach(button=>button.onclick=()=>openCountAction(countEntries.find(e=>e.id===button.dataset.id),button.dataset.countAction));
  $('#countExport')?.addEventListener('click',()=>{
-  const session=countCurrentSession(),csv=countCsv(countAcceptedTotals(countEntriesFor({session})));
-  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));link.download=`accepted-stock-count-${new Date().toISOString().slice(0,10)}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+  const session=countReviewSession(),csv=countCsv(countAcceptedTotals(countEntriesFor({session})));
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));link.download=`accepted-stock-count-${session.id}-${companyDate()}.csv`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
  });
 }

@@ -4,6 +4,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
  const ctx=vm.createContext({orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Intl,Number,String});
+ vm.runInContext(readFileSync(new URL('../business-date.js',import.meta.url),'utf8'),ctx);
  vm.runInContext(readFileSync(new URL('../sales-leads.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 const row=(id,stage,extra={})=>({id,stage,lead_number:'LD-'+id,subject:'Need '+id,created_at:'2026-09-0'+(id.length%9+1),...extra});
@@ -41,7 +42,7 @@ test('menu, router, sign-out and Pro forma prefill are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
  assert.match(read('workspace-navigation.js'),/\['Leads','leads','leads'\]/);assert.doesNotMatch(read('workspace-navigation.js'),/Inquiries|Lead \/ Opportunity/);
  assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{clearEmployeeNames\(\);if\(typeof clearLeads==='function'\)clearLeads\(\);/);
- assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>\{salesPrefill=null;/);
+ assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>salesNavigate\(\(\)=>\{salesPrefill=null;/);
  const html=read('index.src.html');assert.ok(html.indexOf('sales-leads.js')>html.indexOf('sales-delivery.js')&&html.indexOf('sales-leads.js')<html.indexOf('app.js'));
 });
 test('loads every open lead but only six months of won and lost ones; search reaches older leads',async()=>{

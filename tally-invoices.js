@@ -109,7 +109,7 @@ function openTallyTestInvoice(){
  actionForm('Make TEST invoice',fields,async values=>{
   const p=ready.find(r=>r.id===values.proforma);if(!p)throw Error('Choose a Pro forma.');
   const total=Number(p.total_minor)||0,vat=Number(p.tax_minor)||0;
-  const row={voucher_number:`TEST-${p.document_number}`,voucher_date:new Date().toISOString().slice(0,10),voucher_type:'TEST Sales',party_name:name(p),order_reference:p.document_number,currency:p.currency||'TZS',net_minor:total-vat,vat_minor:vat,total_minor:total,lines:[],narration:'TEST INVOICE - NOT A REAL TAX INVOICE'};
+  const row={voucher_number:`TEST-${p.document_number}`,voucher_date:companyDate(),voucher_type:'TEST Sales',party_name:name(p),order_reference:p.document_number,currency:p.currency||'TZS',net_minor:total-vat,vat_minor:vat,total_minor:total,lines:[],narration:'TEST INVOICE - NOT A REAL TAX INVOICE'};
   const r=await client.rpc('import_tally_invoices',{p_rows:[row],p_source:'upload'});if(r.error)throw Error(r.error.message);
   await tallyInvoicesWorkspace(true);message(`TEST invoice ${row.voucher_number} made and linked to ${p.document_number}.`);
  });

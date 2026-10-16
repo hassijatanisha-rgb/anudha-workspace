@@ -101,7 +101,7 @@ test('the TV screen hides the menu and shows big numbers, client, items and the 
 
 test('My orders today: Pro formas I prepared that moved today',()=>{
  const src=read('sales-delivery.js'),fn=src.split('\n').findIndex(line=>line.startsWith('function proformaMineToday('));
- const ctx=vm.createContext({});vm.runInContext(src.split('\n').slice(fn,fn+5).join('\n'),ctx);
+ const ctx=vm.createContext({});vm.runInContext(read('business-date.js'),ctx);vm.runInContext(src.split('\n').slice(fn,fn+5).join('\n'),ctx);
  const now=new Date('2026-10-09T12:00:00'),today=new Date('2026-10-09T09:00:00').toISOString(),old=new Date('2026-10-01T09:00:00').toISOString();
  assert.equal(ctx.proformaMineToday({prepared_by:'u1',created_at:old,accepted_at:today},'u1',now),true);
  assert.equal(ctx.proformaMineToday({prepared_by:'u2',created_at:today},'u1',now),false);

@@ -1,12 +1,15 @@
 'use strict';
 let profileTab='contacts',branchHistoryMonth='';
-const branchHistoryCache=new Map();
+const branchHistoryCache=new Map(),branchActivityCache=new Map();let branchHistoryEpoch=0;
+function clearBranchHistory(){branchHistoryEpoch++;branchHistoryCache.clear();branchActivityCache.clear();branchHistoryMonth='';profileTab='contacts';}
 function readProfileRoute(){
  const match=location.hash.match(/^#\/(clients|client|branch)(?:\/([^/?#]+))?\/?$/);
  if(!match||match[1]==='clients')return {kind:'clients',id:''};
  return {kind:match[1],id:match[2]||''};
 }
 function goProfile(kind='clients',id=''){
+ if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
  const hash=kind==='clients'?'#/clients':`#/${kind}/${encodeURIComponent(id)}`;
  view='contacts';filter='all';page=0;profileTab='contacts';
  if(location.hash===hash){selected=id;render()}else location.hash=hash;
@@ -14,21 +17,26 @@ function goProfile(kind='clients',id=''){
 window.addEventListener('hashchange',()=>{
  // Other pages' addresses (#/go/…, set by nav-history.js) are not client pages.
  if(!/^#\/(clients|client|branch)\b/.test(location.hash))return;
+ if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  const route=readProfileRoute();view='contacts';selected=route.id;filter='all';page=0;profileTab='contacts';if(me)render();
 });
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-profile-tab]');if(!button||busy)return;
  profileTab=button.dataset.profileTab;page=0;profileView();
  if(profileTab==='history'&&selected&&!branchHistoryCache.has(selected))run(()=>loadBranchHistory(selected));
+ if(['orders','leads','service'].includes(profileTab)&&selected)run(()=>loadBranchActivity(selected,profileTab));
 });
 async function loadBranchHistory(organizationId,force=false){
+ const actor=me,epoch=branchHistoryEpoch;
  if(!force&&branchHistoryCache.has(organizationId))return;
  if(!inventoryLoaded)await loadInventoryOperations();
+ if(me!==actor||epoch!==branchHistoryEpoch)return;
  if(!inventoryLoaded)throw Error(inventoryLoadError||'Inventory history is unavailable.');
- const result=await client.from('inventory_issues').select('*').eq('organization_id',organizationId).order('issued_on',{ascending:false}).limit(1000);
- if(result.error)throw result.error;
- branchHistoryCache.set(organizationId,result.data||[]);
- if(profileTab==='history'&&selected===organizationId)profileView();
+ const rows=await all('inventory_issues','*',q=>q.eq('organization_id',organizationId));
+ if(me!==actor||epoch!==branchHistoryEpoch)return;
+ branchHistoryCache.set(organizationId,rows.sort((a,b)=>String(b.issued_on).localeCompare(String(a.issued_on))));
+ if(view==='contacts'&&profileTab==='history'&&selected===organizationId)profileView();
 }
 function historyCategory(issue){return catalogCategoryOf(inventoryProduct(issue.product_id))}
 function historyCategoryLabel(category){return catalogLabel(category==='non_stock'?'non_stock':category)}
@@ -91,7 +99,7 @@ function profileBranch(o){
  const rows=sortedContacts(ownContacts.filter(c=>inContactView(c,filter))),pages=Math.max(1,Math.ceil(rows.length/30));page=Math.min(Math.max(page,0),pages-1);
  const tabs=[['contacts','Contacts'],['orders','Active orders'],['leads','Leads'],['service','Service'],['history','Consumer history']];
  const activeTab=tabs.find(([id])=>id===profileTab)||tabs[0];
- const panel=profileTab==='contacts'?`<div class="heading"><div><h2>Branch contacts</h2><p class="muted">Contacts for ${esc(o.location||o.name)} only · email is optional.</p>${recordsLockedNote()}</div>${canEditRecords()?'<button id="newContact">+ Contact</button>':''}</div><div class="tabs" aria-label="Contact filters">${[['all','All contacts'],['revision','Needs fixing']].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label} <small>${ownContacts.filter(c=>inContactView(c,id)).length}</small></button>`).join('')}</div>${rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>'}${profilePagination(rows.length,pages,'contacts')}`:profileTab==='history'?branchConsumerHistory(o):`<div class="card empty"><h2>${activeTab[1]}</h2><p>Not yet implemented.</p></div>`;
+ const panel=profileTab==='contacts'?`<div class="heading"><div><h2>Branch contacts</h2><p class="muted">Contacts for ${esc(o.location||o.name)} only · email is optional.</p>${recordsLockedNote()}</div>${canEditRecords()?'<button id="newContact">+ Contact</button>':''}</div><div class="tabs" aria-label="Contact filters">${[['all','All contacts'],['revision','Needs fixing']].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label} <small>${ownContacts.filter(c=>inContactView(c,id)).length}</small></button>`).join('')}</div>${rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>'}${profilePagination(rows.length,pages,'contacts')}`:profileTab==='history'?branchConsumerHistory(o):branchActivity(o,profileTab);
  $('#content').innerHTML=`<section class="client-pages"><nav class="profile-breadcrumb" aria-label="Breadcrumb"><a href="#/clients">Clients</a><span aria-hidden="true">/</span><a href="#/client/${esc(parent.id)}">${esc(parent.name)}</a><span aria-hidden="true">/</span><span aria-current="page">${esc(o.name)} · ${esc(o.location||'Location missing')}</span></nav><section class="account-head ${needsRevision(o)?'incomplete':''}"><small>BRANCH PROFILE</small><h1>${esc(o.name||'Branch name missing')}</h1><p class="branch-location"><strong>${esc(o.location||'Location missing')}</strong> · ${esc(o.type||'Organisation type missing')}</p>${profileApproval(o)}<div class="actions">${canEditRecords()?`<button data-edit-account="${esc(o.id)}">Edit branch profile</button><button class="danger" data-delete-org="${esc(o.id)}">Delete branch</button>${o.parent_id?'<button id="ungroupAccount">Remove branch from group</button>':''}`:''}</div></section><div class="profile-sections" role="tablist" aria-label="Branch sections">${tabs.map(([id,label])=>`<button role="tab" id="profile-tab-${id}" aria-selected="${profileTab===id}" aria-controls="profile-panel" data-profile-tab="${id}" class="${profileTab===id?'current':''}">${label}</button>`).join('')}</div><section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab-${activeTab[0]}">${panel}</section></section>`;
 }
 function profileView(){
@@ -102,3 +110,23 @@ function profileView(){
  if(route.kind==='client'){const parent=rootAccount(o);selected=parent.id;return profileParent(parent)}
  return profileBranch(o);
 }
+
+const branchActivityTypes={orders:{area:['proformas','deliveries'],table:'sales_proformas',columns:'id,document_number,status,organization_id',type:'proforma',number:'document_number'},leads:{area:'leads',table:'sales_leads',columns:'id,lead_number,subject,stage,organization_id',type:'lead',number:'lead_number'},service:{area:'service',table:'service_cases',columns:'id,case_number,case_type,status,organization_id',type:'service',number:'case_number'}};
+async function loadBranchActivity(id,section){
+ const config=branchActivityTypes[section],actor=me,epoch=branchHistoryEpoch,key=id+':'+section;
+ if(!config||!hasArea(config.area))return;
+ try{
+  const rows=await all(config.table,config.columns,q=>{q=q.eq('organization_id',id);if(section==='orders')q=q.is('deleted_at',null).in('status',['draft','sent','accepted']);return q;});
+  if(actor!==me||epoch!==branchHistoryEpoch)return;branchActivityCache.set(key,{rows});
+ }catch(error){if(actor!==me||epoch!==branchHistoryEpoch)return;branchActivityCache.set(key,{error:error.message});}
+ if(view==='contacts'&&selected===id&&profileTab===section)profileView();
+}
+function branchActivity(organization,section){
+ const config=branchActivityTypes[section];if(!config)return '';
+ if(!hasArea(config.area))return '<div class="card"><p>You do not have access to this area.</p></div>';
+ const data=branchActivityCache.get(organization.id+':'+section);
+ if(!data)return '<p role="status">Loading this branch’s records…</p>';
+ if(data.error)return `<p role="alert">${esc(data.error)}</p><p>Choose this tab again to retry.</p>`;
+ return data.rows.map(row=>`<article class="card"><strong>${esc(row[config.number])}</strong><p>${esc(row.subject||row.case_type||'')} · ${esc(row.status||row.stage)}</p>${section!=='orders'||hasArea('proformas')?`<button type="button" data-branch-record="${esc(row.id)}" data-branch-kind="${config.type}">Open record</button>`:''}</article>`).join('')||'<p class="empty">No records for this branch.</p>';
+}
+document.addEventListener('click',event=>{const button=event.target.closest?.('[data-branch-record]');if(button)run(()=>workOpenRecord({record_type:button.dataset.branchKind,record_id:button.dataset.branchRecord}));});

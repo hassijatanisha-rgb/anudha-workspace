@@ -32,3 +32,11 @@ function remainingDeliveryQuantity(proformaLine,deliveryLines,deliveryNotes){
  const allocated=deliveryLines.filter(line=>line.proforma_line_id===proformaLine.id&&active.has(line.delivery_note_id)).reduce((sum,line)=>sum+line.quantity,0);
  return Math.max(0,proformaLine.quantity-allocated);
 }
+
+function proformaFulfillment(proformaLines,deliveryLines,deliveryNotes){
+ const delivered=new Set(deliveryNotes.filter(note=>note.status==='delivered').map(note=>note.id));
+ const quantities=new Map();
+ for(const line of deliveryLines)if(delivered.has(line.delivery_note_id))quantities.set(line.proforma_line_id,(quantities.get(line.proforma_line_id)||0)+line.quantity);
+ const complete=proformaLines.length>0&&proformaLines.every(line=>(quantities.get(line.id)||0)>=line.quantity);
+ return complete?'complete':proformaLines.some(line=>(quantities.get(line.id)||0)>0)?'partial':'none';
+}

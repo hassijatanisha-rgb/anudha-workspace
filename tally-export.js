@@ -63,7 +63,7 @@ async function openSendToTally(proformaId){
   }
   const items=new Map(lines.map((line,i)=>[line.product_id,{product_id:line.product_id,item_name:String(values[`item-${i}`]||'').trim(),unit:String(values[`unit-${i}`]||'').trim()}]));
   const ledgerName=String(values.ledger||'').trim();if(!ledgerName)throw Error('Enter the customer ledger name in Tally.');
-  const xml=buildTallySalesOrderXml({proforma,lines,ledgerName,items,settings:current,date:new Date().toISOString().slice(0,10)}),hash=await tallySha256(xml);
+  const xml=buildTallySalesOrderXml({proforma,lines,ledgerName,items,settings:current,date:companyDate()}),hash=await tallySha256(xml);
   if(tallyExportPending?.hash!==hash||tallyExportPending.proforma!==proforma.id)tallyExportPending={hash,proforma:proforma.id,id:crypto.randomUUID()};
   const r=await client.rpc('record_tally_export',{p_id:tallyExportPending.id,p_proforma_id:proforma.id,p_expected_version:proforma.version,p_voucher_type:current.voucher_type,p_content_sha256:hash,p_ledger_name:ledgerName,p_items:[...items.values()]});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing was downloaded.');

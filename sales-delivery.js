@@ -2,7 +2,32 @@
 
 let salesSection='proformas',salesLoaded=false,salesLoadError='',salesProformas=[],salesProformaLines=[],salesProformaEvents=[],salesDeliveryNotes=[],salesDeliveryLines=[],salesDeliveryEvents=[],salesEditing='',salesFocusedProforma='',salesPrefill=null;
 function clearSalesPrefill(){salesPrefill=null;}
-let salesProformaFilter='all',salesProformaSearch='';
+let salesProformaFilter='all',salesProformaSearch='',salesShown=120,salesDeliveryShown=120;
+let salesEpoch=0,salesLoadRequest=0,salesWorkspaceRequest=0,salesRevisionSnapshots=new Map();
+function clearSalesDelivery(){
+ salesEpoch++;salesLoadRequest++;salesWorkspaceRequest++;proformaExistingAsk++;
+ salesLoaded=false;salesLoadError='';salesProformas=[];salesProformaLines=[];salesProformaEvents=[];salesDeliveryNotes=[];salesDeliveryLines=[];salesDeliveryEvents=[];
+ salesEditing='';salesFocusedProforma='';salesPrefill=null;salesSection='proformas';salesProformaFilter='all';salesProformaSearch='';salesShown=120;salesDeliveryShown=120;salesRevisionSnapshots.clear();
+}
+function salesEditorState(form){return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(input=>input.name).map(input=>[input.name,input.value,input.checked]));}
+function salesEditorChanged(form){return !!form&&form.dataset.initialState!==undefined&&salesEditorState(form)!==form.dataset.initialState;}
+function salesConfirmLeave(){
+ const form=document.querySelector('#proformaForm,#deliveryForm');
+ if(form?.dataset.saving==='true'){message('Wait for this save to finish before leaving the form.',true);return false;}
+ if(!salesEditorChanged(form))return true;
+ if(!confirm('Discard the unsaved changes to this form?'))return false;
+ form.dataset.initialState=salesEditorState(form);return true;
+}
+if(typeof window!=='undefined')window.addEventListener('beforeunload',event=>{
+ const form=document.querySelector('#proformaForm,#deliveryForm');
+ if(form?.dataset.saving==='true'||salesEditorChanged(form)){event.preventDefault();event.returnValue='';}
+});
+function salesNavigate(action){if(salesConfirmLeave())action();}
+function salesLockForm(form){
+ const controls=[...form.querySelectorAll('input,select,textarea,button')],disabled=controls.map(control=>control.disabled);
+ controls.forEach(control=>{control.disabled=true;});
+ return ()=>controls.forEach((control,index)=>{control.disabled=disabled[index];});
+}
 const salesTabs=[['proformas','Pro forma invoices'],['delivery','Delivery notes'],['documents','Official forms & PDFs']];
 const salesWorkflowSteps=[
  ['submitted','Pro forma submitted'],['accounts_approved','Accounts approved'],['tax_invoice_created','Tax invoice created'],['sent_to_sales','Sent to downstairs sales'],['packing','Packing in progress'],['ready','Ready for delivery'],['out_for_delivery','Out for delivery'],['delivered','Delivery note signed']
@@ -14,17 +39,18 @@ function salesProduct(id){return rowById(products,id)||{name:'Product unavailabl
 function salesProforma(id){return rowById(salesProformas,id)}
 function salesLines(id){return [...rowsWhere(salesProformaLines,'proforma_id',id)].sort((a,b)=>a.sort_order-b.sort_order)}
 function deliveryLines(id){return [...rowsWhere(salesDeliveryLines,'delivery_note_id',id)]}
-function salesDate(offset=0){const date=new Date();date.setDate(date.getDate()+offset);return date.toISOString().slice(0,10)}
+function salesDate(offset=0){return companyDate(offset)}
 function salesStatus(value){return ({draft:'Draft',sent:'Sent to client',accepted:'Pro forma submitted',accounts_approved:'Accounts approved',tax_invoice_created:'Tax invoice created',sent_to_sales:'Sent to downstairs sales',packing:'Packing in progress',ready:'Ready for delivery',out_for_delivery:'Out for delivery',delivered:'Delivery note signed',rejected:'Rejected',cancelled:'Cancelled'})[value]||String(value||'').replaceAll('_',' ')}
 function latestDelivery(proformaId){return rowsWhere(salesDeliveryNotes,'proforma_id',proformaId).find(note=>note.status!=='cancelled')}
 function openDelivery(proformaId){return rowsWhere(salesDeliveryNotes,'proforma_id',proformaId).find(note=>!['cancelled','delivered'].includes(note.status))}
-function hasRemainingDelivery(record){return salesLines(record.id).some(line=>remainingDeliveryQuantity(line,salesDeliveryLines,salesDeliveryNotes)>0)}
+function salesFulfillment(record){const notes=rowsWhere(salesDeliveryNotes,'proforma_id',record.id);return proformaFulfillment(salesLines(record.id),notes.flatMap(note=>deliveryLines(note.id)),notes)}
+function hasRemainingDelivery(record){const notes=rowsWhere(salesDeliveryNotes,'proforma_id',record.id),lines=notes.flatMap(note=>deliveryLines(note.id));return salesLines(record.id).some(line=>remainingDeliveryQuantity(line,lines,notes)>0)}
 function canCreateDelivery(record){return record.status==='accepted'&&!openDelivery(record.id)&&hasRemainingDelivery(record)}
-function workflowIndex(record,note){if(record.status!=='accepted')return -1;if(!note)return 0;return salesWorkflowSteps.findIndex(([status])=>status===note.status)}
+function workflowIndex(record,note){if(record?.status!=='accepted')return -1;if(!note)return 0;return salesWorkflowSteps.findIndex(([status])=>status===note.status)}
 function workflowProgress(record,note){const current=workflowIndex(record,note);return `<ol class="workflow-progress" aria-label="Order progress">${salesWorkflowSteps.map(([status,label],index)=>`<li class="${index<current?'complete':index===current?'current':''}" ${index===current?'aria-current="step"':''}><span>${index<current?'✓':index+1}</span><small>${esc(label)}</small></li>`).join('')}</ol><details class="workflow-history" data-order-timing data-proforma="${esc(record?.id||'')}" data-delivery="${esc(note?.id||'')}"><summary>Step durations, waiting time and staff</summary><button type="button" data-load-order-timing>Load / refresh timing</button><div data-order-timing-output role="status">Load complete history to calculate durations.</div></details>`}
 async function loadOrderTiming(panel){
- const actor=me?.user_id,target=panel.querySelector('[data-order-timing-output]'),button=panel.querySelector('button');
- const current=()=>me?.user_id===actor&&view==='sales'&&panel.isConnected;
+ const actor=me,epoch=salesEpoch,target=panel.querySelector('[data-order-timing-output]'),button=panel.querySelector('button');
+ const current=()=>me===actor&&salesEpoch===epoch&&view==='sales'&&panel.isConnected;
  button.disabled=true;target.textContent='Loading complete event history…';
  try{
   const id=panel.dataset.proforma,noteId=panel.dataset.delivery;
@@ -39,22 +65,32 @@ async function loadOrderTiming(panel){
   const combined=events.map(event=>({...event,id:'proforma:'+event.id}));
   delivery.forEach((event,index)=>combined.push({...event,id:'delivery:'+event.id,from_status:index===0&&event.from_status==null?'accepted':event.from_status}));
   const now=Date.now(),timing=orderTiming(combined,recordResult.data.status,now);
-  const date=value=>value?new Date(value).toLocaleString('en-TZ'):'—',who=value=>value===actor?'You':value||'Unknown';
+  const date=value=>value?new Date(value).toLocaleString('en-TZ'):'—',who=value=>value===actor?.user_id?'You':value||'Unknown';
   target.innerHTML=`<p>Total elapsed: <strong>${esc(orderDuration(timing.totalMs))}</strong> · Current waiting: <strong>${esc(orderDuration(timing.waitingMs))}</strong></p><p>As of ${esc(date(now))}. Refresh for current waiting time. ${noteId?'This delivery path only. ':''}${timing.reliable?'':'History has missing or inconsistent transitions; unknown durations are not estimated.'}</p><div class="table-wrap"><table><thead><tr><th>Step / visit</th><th>Started</th><th>Started by</th><th>Ended</th><th>Ended by</th><th>Duration</th></tr></thead><tbody>${timing.visits.map(visit=>`<tr><td>${esc(salesStatus(visit.status))}</td><td>${esc(date(visit.startedAt))}</td><td>${esc(who(visit.startedBy))}</td><td>${esc(date(visit.endedAt))}</td><td>${esc(who(visit.endedBy))}</td><td>${esc(orderDuration(visit.durationMs))}</td></tr>`).join('')}</tbody></table></div>`;
  }catch(error){if(current())target.textContent='Timing unavailable: '+error.message;}
  finally{if(current())button.disabled=false;}
 }
 function deliveryHistory(note){const events=salesDeliveryEvents.filter(event=>event.delivery_note_id===note.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));if(!events.length)return '';return `<details class="workflow-history"><summary>Who changed this order and when</summary>${events.map(event=>`<div><strong>${esc(salesStatus(event.to_status))}</strong><small>${esc(employeeName(event.actor_user_id))} · ${esc(new Date(event.created_at).toLocaleString('en-TZ'))}${event.reference?' · '+esc(event.reference):''}</small></div>`).join('')}</details>`}
-// Lines are loaded only for the Pro formas and delivery notes on screen, 100 parents and 1,000 rows at a time, so
-// the server's per-request row limit can never silently drop items.
+// Page parents and related rows independently so the server row limit cannot hide history.
+async function salesRegisterRows(table){
+ const actor=me,epoch=salesEpoch,data=[];
+ for(let offset=0;;offset+=1000){
+  const result=await client.from(table).select('*').order('created_at',{ascending:false}).order('id').range(offset,offset+999);
+  if(me!==actor||salesEpoch!==epoch)return {data:[]};
+  if(result.error)return {error:result.error};
+  data.push(...(result.data||[]));
+  if((result.data||[]).length<1000)return {data};
+ }
+}
 async function salesRowsFor(table,column,ids,order){
- const out=[];
+ const actor=me,epoch=salesEpoch,out=[];
  for(let i=0;i<ids.length;i+=100){
   const chunk=ids.slice(i,i+100);
   for(let offset=0;;offset+=1000){
    let query=client.from(table).select('*').in(column,chunk);
    if(order)query=query.order(order);
    const result=await query.order('id').range(offset,offset+999);
+   if(me!==actor||salesEpoch!==epoch)return {data:[]};
    if(result.error)return {error:result.error};
    out.push(...(result.data||[]));
    if((result.data||[]).length<1000)break;
@@ -63,35 +99,49 @@ async function salesRowsFor(table,column,ids,order){
  return {data:out};
 }
 async function loadSalesDelivery(){
- const actor=me?.user_id;
+ const actor=me,epoch=salesEpoch,request=++salesLoadRequest,current=()=>me===actor&&salesEpoch===epoch&&request===salesLoadRequest;
  salesLoadError='';
  if(!inventoryLoaded)await loadInventoryOperations();
+ if(!current())return;
  const requests=await Promise.all([
-  client.from('sales_proformas').select('*').order('created_at',{ascending:false}).limit(200),
-  Promise.resolve({data:[]}),
-  client.from('sales_proforma_events').select('*').order('created_at',{ascending:false}).limit(500),
-  client.from('sales_delivery_notes').select('*,tax_invoice_reference').order('created_at',{ascending:false}).limit(200),
-  Promise.resolve({data:[]}),
-  client.from('sales_delivery_events').select('*').order('created_at',{ascending:false}).limit(1000)
+  salesRegisterRows('sales_proformas'),Promise.resolve({data:[]}),Promise.resolve({data:[]}),
+  salesRegisterRows('sales_delivery_notes'),Promise.resolve({data:[]}),Promise.resolve({data:[]})
  ]);
- if(me?.user_id!==actor)return;
+ if(!current())return;
  const failed=requests.find(result=>result.error);
  if(failed){salesLoaded=false;salesLoadError=failed.error.message||'Sales workflow schema has not been installed.';return;}
  if(salesFocusedProforma&&!requests[0].data?.some(row=>row.id===salesFocusedProforma)){
   const record=await client.from('sales_proformas').select('*').eq('id',salesFocusedProforma).single();
-  if(me?.user_id!==actor)return;
+  if(!current())return;
   if(record.error||!record.data){salesLoaded=false;salesLoadError=record.error?.message||'Saved Pro forma unavailable.';return;}
   requests[0].data=[record.data,...(requests[0].data||[])];
  }
- const [proformaLines,deliveryLines]=await Promise.all([
-  salesRowsFor('sales_proforma_lines','proforma_id',(requests[0].data||[]).map(row=>row.id),'sort_order'),
-  salesRowsFor('sales_delivery_lines','delivery_note_id',(requests[3].data||[]).map(row=>row.id))
+ const proformaIds=(requests[0].data||[]).map(row=>row.id),deliveryIds=(requests[3].data||[]).map(row=>row.id);
+ const related=await Promise.all([
+  salesRowsFor('sales_proforma_lines','proforma_id',proformaIds,'sort_order'),
+  salesRowsFor('sales_proforma_events','proforma_id',proformaIds,'created_at'),
+  salesRowsFor('sales_delivery_lines','delivery_note_id',deliveryIds),
+  salesRowsFor('sales_delivery_events','delivery_note_id',deliveryIds,'created_at')
  ]);
- if(me?.user_id!==actor)return;
- const linesFailed=[proformaLines,deliveryLines].find(result=>result.error);
+ if(!current())return;
+ const linesFailed=related.find(result=>result.error);
  if(linesFailed){salesLoaded=false;salesLoadError=linesFailed.error.message||'Items could not load.';return;}
- requests[1]=proformaLines;requests[4]=deliveryLines;
+ [requests[1],requests[2],requests[4],requests[5]]=related;
  [salesProformas,salesProformaLines,salesProformaEvents,salesDeliveryNotes,salesDeliveryLines,salesDeliveryEvents]=requests.map(result=>result.data||[]);salesLoaded=true;
+}
+async function loadSalesRevision(record){
+ const key=record.id+':'+record.revision;
+ if(salesRevisionSnapshots.has(key))return;
+ const actor=me,epoch=salesEpoch,result=await client.from('sales_proforma_revisions').select('snapshot').eq('proforma_id',record.id).eq('revision',record.revision).single();
+ if(me!==actor||salesEpoch!==epoch)return;
+ if(result.error||!result.data?.snapshot)throw Error('The saved revision could not load. Refresh before printing this Pro forma.');
+ salesRevisionSnapshots.set(key,result.data.snapshot);
+}
+function salesDocumentSnapshot(record){return salesRevisionSnapshots.get(record.id+':'+record.revision);}
+function salesDocumentLines(record){
+ const snapshot=salesDocumentSnapshot(record);
+ if(!snapshot)return record.status==='draft'?salesLines(record.id):[];
+ return (snapshot.lines||[]).map(line=>({product_id:line.productId,product_name:line.productName||'Historical product name not recorded',description:line.description,quantity:line.quantity,uom:line.uom,unit_price_minor:line.unitPriceMinor,discount_basis_points:line.discountBasisPoints,tax_basis_points:line.taxBasisPoints}));
 }
 function salesHeader(){return `<div class="heading"><div><small>ORDERS</small><h1>${salesSection==='delivery'?'Delivery progress':salesEditing==='new'?'Create Pro forma':'Pro formas'}</h1></div><button id="salesRefresh" type="button">Refresh list</button></div>`}
 function salesUnavailable(){return `${salesHeader()}<section class="card"><h2>Pro formas could not be loaded</h2><p class="warning">Press Refresh list. If it keeps happening, tell the owner. Nothing was changed.</p><p class="muted">${esc(salesLoadError)}</p></section>`}
@@ -123,18 +173,19 @@ function proformaEditor(){
  const record=salesEditing==='new'?null:salesProforma(salesEditing),lines=record?salesLines(record.id):[{}],prefill=record?null:salesPrefill,organizationId=record?.organization_id||prefill?.organizationId||'',contactId=record?.contact_id||prefill?.contactId||'';
  return `<section class="card document-editor"><div class="heading"><div><small>${record?'REVISION '+record.revision:'NEW DOCUMENT'}</small><h2>${record?'Edit '+esc(record.document_number):'New Pro forma invoice'}</h2></div><button type="button" id="closeSalesEditor">Close</button></div><form id="proformaForm" data-id="${record?.id||''}" data-version="${record?.version||0}"><div class="grid"><label><span>Client branch</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions(organizationId)}</select></label><label><span>Named contact</span><select name="contactId" required><option value="">Choose the branch first</option>${salesContactOptions(organizationId,contactId)}</select></label><label><span>Currency</span><select name="currency"><option ${record?.currency==='TZS'?'selected':''}>TZS</option><option ${record?.currency==='USD'?'selected':''}>USD</option><option ${record?.currency==='EUR'?'selected':''}>EUR</option></select></label><label><span>Valid until</span><input name="validUntil" type="date" min="${salesDate()}" value="${record?.valid_until||salesDate(15)}" required></label><label><span>Delivery period</span><input name="deliveryPeriod" value="${esc(record?.delivery_period||'As agreed after acceptance')}" required maxlength="300"></label><label><span>Payment terms</span><input name="paymentTerms" value="${esc(record?.payment_terms||'Payment before delivery')}" required maxlength="1000"></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000">${esc(record?.notes||'')}</textarea></label></div><h3>Items</h3><datalist id="salesProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><div id="proformaLines">${lines.map(salesLineRow).join('')}</div><div class="actions"><button type="button" id="addSalesLine">+ Add item</button><button type="submit">${record?'Save new revision':'Save Pro forma invoice'}</button></div></form></section>`;
 }
-function proformaTable(record){const lines=salesLines(record.id);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Disc.</th><th>Tax</th><th>Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td>${line.quantity}</td><td>${esc(moneyDisplay(Number(line.unit_price_minor),record.currency))}</td><td>${line.discount_basis_points/100}%</td><td>${line.tax_basis_points/100}%</td><td>${esc(moneyDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
+function proformaTable(record){const lines=salesDocumentLines(record);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Disc.</th><th>Tax</th><th>Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(line.product_name||salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td>${line.quantity}</td><td>${esc(moneyDisplay(Number(line.unit_price_minor),record.currency))}</td><td>${line.discount_basis_points/100}%</td><td>${line.tax_basis_points/100}%</td><td>${esc(moneyDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
 function proformaActions(record){const actions=proformaNextActions(record.status),buttons=[];if(record.status==='draft')buttons.push(`<button data-edit-proforma="${record.id}">Edit draft</button>`);if(record.status==='draft'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-archive-business="proforma" data-id="${record.id}">Delete draft</button>`);for(const action of actions){const labels={send:'Record sent to client',accept:'Submit to accounting',revise:'Return for revision',reject:'Record rejected',cancel:'Cancel'};buttons.push(`<button data-proforma-action="${action}" data-id="${record.id}" class="${['reject','cancel'].includes(action)?'danger':''}">${labels[action]}</button>`)}buttons.push(`<button data-print-document="${record.id}">Print / PDF</button>`);return buttons.join('')}
-function proformaCard(record){const organization=salesOrganization(record.organization_id),note=latestDelivery(record.id);return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(record.contact_id))}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
+function proformaCard(record){const snapshot=salesDocumentSnapshot(record),organization=snapshot?{name:snapshot.organizationName||'Historical client name not recorded',location:snapshot.organizationLocation||''}:record.status==='draft'?salesOrganization(record.organization_id):{name:'Saved revision unavailable',location:''},contactName=snapshot?(snapshot.contactName||'Historical contact name not recorded'):record.status==='draft'?salesContactName(record.contact_id):'Saved revision unavailable',note=latestDelivery(record.id);if(snapshot)record={...record,currency:snapshot.currency,valid_until:snapshot.validUntil,delivery_period:snapshot.deliveryPeriod,payment_terms:snapshot.paymentTerms,notes:snapshot.notes,subtotal_minor:snapshot.subtotalMinor,discount_minor:snapshot.discountMinor,tax_minor:snapshot.taxMinor,total_minor:snapshot.totalMinor};return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(contactName)}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
 // One tag per Pro forma, from where it is now: its own status, then the delivery started from it.
-const proformaTagKinds=[['draft','Draft'],['revised','Revised'],['sent','Sent to customer'],['waiting','Waiting approval'],['delivery','Approved · in delivery'],['done','Delivered'],['closed','Cancelled / rejected']];
+const proformaTagKinds=[['draft','Draft'],['revised','Revised'],['sent','Sent to customer'],['waiting','Waiting approval'],['delivery','Approved · in delivery'],['partial','Partially delivered'],['done','Delivered'],['closed','Cancelled / rejected']];
 function proformaTag(record){
  if(record.status==='cancelled'||record.status==='rejected')return 'closed';
  if(record.status==='draft')return record.revision>1?'revised':'draft';
  if(record.status==='sent')return 'sent';
  const note=latestDelivery(record.id);
  if(!note||note.status==='draft')return 'waiting';
- return note.status==='delivered'?'done':'delivery';
+ const fulfilled=salesFulfillment(record);
+ return fulfilled==='complete'?'done':fulfilled==='partial'?'partial':'delivery';
 }
 function proformaTagHtml(record){const kind=proformaTag(record),label=proformaTagKinds.find(([key])=>key===kind)[1];return `<span class="proforma-tag proforma-tag-${kind}">${esc(label)}</span>`}
 function proformaTile(record){
@@ -146,11 +197,11 @@ function proformaListScreen(){
  const counts=Object.fromEntries(proformaTagKinds.map(([key])=>[key,0]));for(const record of live)counts[proformaTag(record)]++;
  const mineToday=live.filter(record=>proformaMineToday(record,me?.user_id)).length;
  const matches=live.filter(record=>(salesProformaFilter==='all'||(salesProformaFilter==='mine'?proformaMineToday(record,me?.user_id):proformaTag(record)===salesProformaFilter))&&(!q||`${record.document_number} ${salesOrganization(record.organization_id).name} ${salesOrganization(record.organization_id).location||''} ${salesContactName(record.contact_id)} ${record.acceptance_reference||''}`.toLowerCase().includes(q)));
- const shown=matches.slice(0,120);
+ const shown=matches.slice(0,salesShown);
  return `${salesHeader()}<div class="heading"><p class="muted">Newest first. Press one to open it.</p><button class="primary-action" id="newProforma">+ New Pro forma</button></div>
  <label class="proforma-search"><span>Search</span><input id="proformaSearch" type="search" value="${esc(salesProformaSearch)}" placeholder="PF number, client, contact or LPO" autocomplete="off"></label>
  <div class="tabs proforma-filters" role="group" aria-label="Show Pro formas"><button type="button" data-proforma-filter="all" class="${salesProformaFilter==='all'?'active':''}" aria-pressed="${salesProformaFilter==='all'}">All · ${live.length}</button><button type="button" data-proforma-filter="mine" class="proforma-filter-mine${salesProformaFilter==='mine'?' active':''}" aria-pressed="${salesProformaFilter==='mine'}">My orders today · ${mineToday}</button>${proformaTagKinds.map(([key,label])=>`<button type="button" data-proforma-filter="${key}" class="proforma-filter-${key}${salesProformaFilter===key?' active':''}" aria-pressed="${salesProformaFilter===key}">${esc(label)} · ${counts[key]}</button>`).join('')}</div>
- ${shown.length?`<ul class="proforma-tiles">${shown.map(proformaTile).join('')}</ul>${matches.length>shown.length?`<p class="muted">Showing ${shown.length} of ${matches.length}. Search to find older ones.</p>`:''}`:live.length?'<p class="empty">No Pro forma matches. Clear the search or choose All.</p>':'<div class="empty"><strong>No Pro formas yet.</strong><br>Press + New Pro forma to make the first one.</div>'}`;
+ ${shown.length?`<ul class="proforma-tiles">${shown.map(proformaTile).join('')}</ul>${matches.length>shown.length?`<p class="muted">Showing ${shown.length} of ${matches.length}.</p><button type="button" id="moreProformas">Show more Pro formas</button>`:''}`:live.length?'<p class="empty">No Pro forma matches. Clear the search or choose All.</p>':'<div class="empty"><strong>No Pro formas yet.</strong><br>Press + New Pro forma to make the first one.</div>'}`;
 }
 function proformaScreen(){
  if(salesEditing)return `${salesHeader()}${proformaEditor()}`;
@@ -164,41 +215,65 @@ function deliveryEditor(record){
 }
 function packingFields(note){const reserved=deliveryLines(note.id);if(reserved.length)return `<p class="notice">Stock was reserved when the Tax Invoice was created. Confirm the team has started packing these reserved items.</p><ul>${reserved.map(line=>`<li>${esc(salesProduct(line.product_id).name)} · ${line.quantity} reserved</li>`).join('')}</ul>`;const record=salesProforma(note.proforma_id),rows=salesLines(record.id).map(line=>({line,remaining:remainingDeliveryQuantity(line,salesDeliveryLines,salesDeliveryNotes)})).filter(row=>row.remaining>0);return `<p>Select only the quantities being packed in this legacy delivery. Saving reserves those exact Haadi units so another order cannot use them.</p>${rows.map(({line,remaining})=>{const lots=haadiLots(line.product_id),key=line.id;return `<div class="delivery-pick"><label class="delivery-check"><input type="checkbox" name="include_${key}" ${lots.length?'':'disabled'}><span>${esc(salesProduct(line.product_id).name)} · ${remaining} ${esc(line.uom)} remaining</span></label><label><span>Haadi lot</span><select name="lot_${key}" ${lots.length?'':'disabled'}><option value="">Choose lot</option>${lots.map(lot=>inventoryOption(lot.id,`${lot.batch_number||'No batch'} · ${lot.loose_units-lot.reserved_units} available`)).join('')}</select></label><label><span>Quantity</span><input name="qty_${key}" type="number" min="1" max="${remaining}" value="${remaining}" ${lots.length?'':'disabled'}></label>${lots.length?'':'<p class="warning">No loose Haadi stock is available for this item.</p>'}</div>`}).join('')}`}
 function deliveryActions(note){const labels={tax_invoice:'Record tax invoice',send_to_sales:'Send to downstairs sales',start_packing:'Start packing',ready:'Packing complete · ready for delivery',dispatch:'Mark out for delivery',deliver:'Record signed delivery note',cancel:'Cancel'};return `${deliveryNextActions(note.status).map(action=>`<button data-delivery-action="${action}" data-id="${note.id}" class="${action==='cancel'?'danger':''}">${labels[action]}</button>`).join('')}<button data-print-document="${note.id}">Print / PDF</button>`}
-function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div>${deliveryCollectionHtml(note)}${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">Order closed. Every delivered item classified as a Machine has been added automatically to the Installation queue.</p>`:''}${deliveryHistory(note)}<div class="actions no-print">${deliveryActions(note)}</div></article>`}
-function deliveryScreen(){const accepted=salesProformas.filter(canCreateDelivery);return `${salesHeader()}<div class="heading"><div><h2>Delivery register</h2><p class="muted">Press the button for the step you have just finished. Stock is reserved when the tax invoice is made and leaves the godown when you mark Out for delivery.</p></div></div>${salesEditing&&salesEditing!=='new'?deliveryEditor(salesProforma(salesEditing)):''}${salesDeliveryNotes.map(deliveryCard).join('')||'<div class="empty"><strong>No delivery notes yet.</strong><br>Submit an accepted Pro forma, then record the Accounts approval.</div>'}${accepted.length&&!salesEditing?`<section class="card"><h2>Submitted Pro formas waiting for Accounts</h2>${accepted.map(record=>`<div class="recycle-record"><span><strong>${esc(record.document_number)}</strong><small>${esc(salesOrganization(record.organization_id).name)}</small></span><button data-create-delivery="${record.id}">Record Accounts approval</button></div>`).join('')}</section>`:''}`}
+function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div>${deliveryCollectionHtml(note)}${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">This delivery is complete.${proforma&&salesFulfillment(proforma)!=='complete'?' Remaining order quantities still require delivery.':''} Every delivered item classified as a Machine has been added automatically to the Installation queue.</p>`:''}${deliveryHistory(note)}<div class="actions no-print">${deliveryActions(note)}</div></article>`}
+function deliveryScreen(){const accepted=salesProformas.filter(canCreateDelivery);return `${salesHeader()}<div class="heading"><div><h2>Delivery register</h2><p class="muted">Press the button for the step you have just finished. Stock is reserved when the tax invoice is made and leaves the godown when you mark Out for delivery.</p></div></div>${salesEditing&&salesEditing!=='new'?deliveryEditor(salesProforma(salesEditing)):''}${salesDeliveryNotes.slice(0,salesDeliveryShown).map(deliveryCard).join('')||'<div class="empty"><strong>No delivery notes yet.</strong><br>Submit an accepted Pro forma, then record the Accounts approval.</div>'}${salesDeliveryNotes.length>salesDeliveryShown?'<button type="button" id="moreSalesDeliveries">Show more delivery notes</button>':''}${accepted.length&&!salesEditing?`<section class="card"><h2>Submitted Pro formas waiting for Accounts</h2>${accepted.map(record=>`<div class="recycle-record"><span><strong>${esc(record.document_number)}</strong><small>${esc(salesOrganization(record.organization_id).name)}</small></span><button data-create-delivery="${record.id}">Record Accounts approval</button></div>`).join('')}</section>`:''}`}
 function officialDocumentsScreen(){return `${salesHeader()}<div class="heading"><div><h2>Official forms and printable records</h2><p class="muted">Use the approved Anudha forms. Completed Pro formas and delivery notes are printed from their own record cards.</p></div></div><div class="official-document-grid"><article class="card"><small>WORKFLOW 1 · SALES</small><h3>Pro forma invoice</h3><p>Open a Pro forma record and choose <strong>Print / PDF</strong>. Its current revision, client, items, prices, tax and terms are printed together.</p><button type="button" data-sales-section="proformas">Open Pro formas</button></article><article class="card"><small>WORKFLOW 1 · DELIVERY</small><h3>Delivery note</h3><p>Open a delivery record and choose <strong>Print / PDF</strong>. The signed reference and recipient remain attached to the closed order.</p><button type="button" data-sales-section="delivery">Open delivery notes</button></article><article class="card"><small>WORKFLOW 2 · INSTALLATION</small><h3>Equipment handover and installation report</h3><p>The official Anudha equipment handover and installation form.</p><a class="button" href="official-documents/equipment-handover-installation-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article><article class="card"><small>WORKFLOW 2 · SERVICE</small><h3>Service work report</h3><p>The official Anudha service report for field work, parts, customer sign-off and completion.</p><a class="button" href="official-documents/service-work-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article></div><p class="warning">These blank official forms contain no client data and are included as approved print references. The next service build will turn their fields into connected records and generate completed PDFs from the website.</p>`}
 async function salesDeliveryWorkspace(force=false){
- const actor=me?.user_id;
+ if(!salesConfirmLeave())return;
+ const actor=me,epoch=salesEpoch,request=++salesWorkspaceRequest,current=()=>me===actor&&salesEpoch===epoch&&request===salesWorkspaceRequest&&view==='sales';
  syncWorkspaceNavigation();
  $('#content').innerHTML='<p role="status">Loading Pro forma invoices and deliveries…</p>';
  if(salesSection==='documents'){$('#content').innerHTML=officialDocumentsScreen();bindSalesDelivery();return;}
  if(force||!salesLoaded)await loadSalesDelivery();
- if(me?.user_id!==actor||view!=='sales')return;
+ if(!current())return;
  if(!salesLoaded){$('#content').innerHTML=salesUnavailable();bindSalesDelivery();return;}
+ const focused=salesFocusedProforma&&salesProforma(salesFocusedProforma);
+ if(focused&&!salesEditing){
+  try{await loadSalesRevision(focused);}catch(error){if(current()){$('#content').innerHTML=`${salesHeader()}<p class="warning">${esc(error.message)}</p>`;bindSalesDelivery();}return;}
+  if(!current())return;
+ }
  $('#content').innerHTML=salesSection==='delivery'?deliveryScreen():salesSection==='documents'?officialDocumentsScreen():proformaScreen();bindSalesDelivery();
 }
 function readProformaLines(form){return [...form.querySelectorAll('[data-proforma-line]')].map(row=>{const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value);if(!product)throw Error('Choose every product from the search suggestions.');const quantity=Number(row.querySelector('[name="quantity"]').value),discount=Number(row.querySelector('[name="discount"]').value),tax=Number(row.querySelector('[name="tax"]').value);if(!Number.isSafeInteger(quantity)||quantity<1)throw Error('Every quantity must be a positive whole number.');if(!Number.isFinite(discount)||discount<0||discount>100||!Number.isFinite(tax)||tax<0||tax>100)throw Error('Discount and tax must be between 0% and 100%.');return {productId:product.id,description:row.querySelector('[name="description"]').value.trim(),quantity,uom:row.querySelector('[name="uom"]').value.trim(),unitPriceMinor:moneyMinor(row.querySelector('[name="unitPrice"]').value),discountBasisPoints:Math.round(discount*100),taxBasisPoints:Math.round(tax*100)}})}
 async function saveProformaForm(form){
  if(form.dataset.saving==='true')return;
- const actor=me?.user_id;if(!actor||view!=='sales'||!form.isConnected)throw Error('Reopen the Pro forma form before saving.');
+ const actor=me,epoch=salesEpoch;if(!actor?.user_id||view!=='sales'||!form.isConnected)throw Error('Reopen the Pro forma form before saving.');
  const button=form.querySelector('[type="submit"]'),label=button.textContent;
- form.dataset.saving='true';button.disabled=true;button.textContent='Saving…';
+ const f=new FormData(form),lines=readProformaLines(form),id=form.dataset.id||(form.dataset.requestId ||= crypto.randomUUID()),version=Number(form.dataset.version);
+ form.dataset.saving='true';const unlock=salesLockForm(form);button.textContent='Saving…';
  try{
-  const f=new FormData(form),id=form.dataset.id||(form.dataset.requestId ||= crypto.randomUUID()),version=Number(form.dataset.version);
-  const result=await client.rpc('save_sales_proforma',{p_id:id,p_expected_version:version,p_organization_id:f.get('organizationId'),p_contact_id:f.get('contactId'),p_currency:f.get('currency'),p_valid_until:f.get('validUntil'),p_delivery_period:f.get('deliveryPeriod'),p_payment_terms:f.get('paymentTerms'),p_notes:f.get('notes'),p_lines:readProformaLines(form)});
-  if(me?.user_id!==actor||view!=='sales'||!form.isConnected)return;
+  const result=await client.rpc('save_sales_proforma',{p_id:id,p_expected_version:version,p_organization_id:f.get('organizationId'),p_contact_id:f.get('contactId'),p_currency:f.get('currency'),p_valid_until:f.get('validUntil'),p_delivery_period:f.get('deliveryPeriod'),p_payment_terms:f.get('paymentTerms'),p_notes:f.get('notes'),p_lines:lines});
+  if(me!==actor||salesEpoch!==epoch||view!=='sales'||!form.isConnected)return;
   if(result.error)throw result.error;
   const saved=Array.isArray(result.data)?result.data[0]:result.data;
   if(saved?.id!==id||!Number.isInteger(saved.version)||saved.version!==version+1)throw Error('The server did not confirm this saved revision. Refresh the register before retrying.');
-  form.dataset.id=id;form.dataset.version=String(saved.version);salesFocusedProforma=id;salesEditing='';
+  form.dataset.id=id;form.dataset.version=String(saved.version);form.dataset.initialState=salesEditorState(form);form.dataset.saving='false';salesFocusedProforma=id;salesEditing='';salesPrefill=null;
   await salesDeliveryWorkspace(true);
-  if(me?.user_id===actor&&view==='sales')message(salesLoaded?'Pro forma invoice saved with an immutable revision.':'Pro forma was saved, but the register could not reload. Refresh to reopen it.',!salesLoaded);
- }finally{form.dataset.saving='false';button.disabled=false;button.textContent=label;}
+  if(me===actor&&salesEpoch===epoch&&view==='sales')message(salesLoaded?'Pro forma invoice saved with an immutable revision.':'Pro forma was saved, but the register could not reload. Refresh to reopen it.',!salesLoaded);
+ }finally{form.dataset.saving='false';unlock();button.textContent=label;}
 }
-async function createDeliveryForm(form){const f=new FormData(form);if(!f.get('collection'))throw Error('Choose whether the customer is waiting in the lobby or it is a delivery.');const result=await client.rpc('create_sales_delivery_note',{p_id:crypto.randomUUID(),p_proforma_id:form.dataset.id,p_expected_proforma_version:Number(form.dataset.version),p_accounts_reference:f.get('accountsReference'),p_expected_delivery_date:f.get('expectedDeliveryDate'),p_lines:[]});if(result.error)throw result.error;
- // The lobby mark (migration 078) is saved straight after the approval; the approval stands even if it fails.
- let lobbyProblem='';if(f.get('collection')==='lobby'){const note=Array.isArray(result.data)?result.data[0]:result.data,marked=await client.rpc('set_delivery_customer_waiting',{p_id:note.id,p_expected_version:note.version,p_customer_waiting:true});if(marked.error)lobbyProblem=' The "customer waiting" mark was not saved: press "Customer is waiting in the lobby" on the delivery note.';}
- salesEditing='';await salesDeliveryWorkspace(true);message('Accounts approval recorded. Next step: create the tax invoice.'+lobbyProblem,!!lobbyProblem)}
+async function createDeliveryForm(form){
+ if(form.dataset.saving==='true')return;
+ const actor=me,epoch=salesEpoch,current=()=>me===actor&&salesEpoch===epoch&&view==='sales'&&form.isConnected;
+ if(!actor?.user_id||!current())throw Error('Reopen Accounts approval before saving.');
+ const f=new FormData(form);if(!f.get('collection'))throw Error('Choose whether the customer is waiting in the lobby or it is a delivery.');
+ const id=form.dataset.requestId ||= crypto.randomUUID(),button=form.querySelector('[type="submit"]'),label=button.textContent;
+ form.dataset.saving='true';const unlock=salesLockForm(form);button.textContent='Saving…';
+ try{
+  const result=await client.rpc('create_sales_delivery_note',{p_id:id,p_proforma_id:form.dataset.id,p_expected_proforma_version:Number(form.dataset.version),p_accounts_reference:f.get('accountsReference'),p_expected_delivery_date:f.get('expectedDeliveryDate'),p_lines:[]});
+  if(!current())return;if(result.error)throw result.error;
+  const note=Array.isArray(result.data)?result.data[0]:result.data;
+  if(note?.id!==id||!Number.isInteger(note.version))throw Error('The server did not confirm this approval. Refresh the register before retrying.');
+  // The approval stands even when the separate lobby mark fails.
+  let lobbyProblem='';if(f.get('collection')==='lobby'){
+   const marked=await client.rpc('set_delivery_customer_waiting',{p_id:note.id,p_expected_version:note.version,p_customer_waiting:true});
+   if(!current())return;
+   if(marked.error)lobbyProblem=' The "customer waiting" mark was not saved: press "Customer is waiting in the lobby" on the delivery note.';
+  }
+  form.dataset.initialState=salesEditorState(form);form.dataset.saving='false';salesEditing='';await salesDeliveryWorkspace(true);
+  if(me===actor&&salesEpoch===epoch&&view==='sales')message('Accounts approval recorded. Next step: create the tax invoice.'+lobbyProblem,!!lobbyProblem);
+ }finally{form.dataset.saving='false';unlock();button.textContent=label;}
+}
 // Hand-off choice at Accounts approval: a cash customer waiting in the lobby goes to the top of the packing queue.
 function deliveryCollectionChoice(){return `<fieldset class="collection-choice"><legend>How does the customer get it?</legend><label class="collection-option collection-lobby"><input type="radio" name="collection" value="lobby" required><span><strong>Customer waiting — cash, collecting now</strong><small>Goes to the top of the packing queue, shown in red.</small></span></label><label class="collection-option"><input type="radio" name="collection" value="delivery" required><span><strong>Delivery</strong><small>Packed in turn, oldest first.</small></span></label></fieldset>`}
 // On a delivery note: lobby or delivery (changeable until packing starts), who is packing it, and the promise.
@@ -215,8 +290,8 @@ function deliveryCollectionHtml(note){
 // "My orders today": Pro formas I prepared that were made, submitted or moved today.
 function proformaMineToday(record,userId,now=new Date()){
  if(!userId||record.prepared_by!==userId)return false;
- const today=now.toDateString();
- return [record.created_at,record.accepted_at,record.updated_at].some(value=>value&&new Date(value).toDateString()===today);
+ const today=companyDate(0,now);
+ return [record.created_at,record.accepted_at,record.updated_at].some(value=>value&&companyDate(0,new Date(value))===today);
 }
 function proformaItemsSummary(record){const lines=salesLines(record.id);if(!lines.length)return '';const shown=lines.slice(0,3).map(line=>`${line.quantity} × ${salesProduct(line.product_id).name}`);return shown.join(' · ')+(lines.length>3?` · +${lines.length-3} more`:'');}
 function openProformaAction(record,action){const asksReference=action!=='send',label={send:'Send Pro forma to client',accept:'Record customer acceptance',revise:'Return Pro forma for revision',reject:'Record customer rejection',cancel:'Cancel Pro forma'}[action];actionForm(label,asksReference?`<p>${esc(record.document_number)} · ${esc(salesOrganization(record.organization_id).name)}</p><label><span>${action==='accept'?'Customer LPO, payment proof, email or acceptance reference':'Reason / reference'}</span><textarea name="reference" required maxlength="1000"></textarea></label>`:`<p>Confirm that ${esc(record.document_number)} has been sent to the named customer contact. The sent revision is locked until it is returned to Draft.</p>`,async values=>{const result=await client.rpc('advance_sales_proforma',{p_id:record.id,p_expected_version:record.version,p_action:action,p_reference:values.reference||''});if(result.error)throw result.error;await salesDeliveryWorkspace(true);message(label+' saved.')})}
@@ -228,6 +303,9 @@ function openDeliveryAction(note,action){const content=action==='tax_invoice'?'<
 async function salesPrefillTaxInvoice(note){try{const r=await client.from('acc_invoices').select('invoice_number').eq('proforma_id',note.proforma_id).is('voided_at',null).limit(1);const number=r.data?.[0]?.invoice_number,input=[...document.querySelectorAll('input[name="proof"]')].pop();if(number&&input&&!input.value)input.value=number;}catch{}}
 function printSalesDocument(id){const card=document.querySelector(`[data-document-card="${CSS.escape(id)}"]`);if(!card)return;card.classList.add('print-document');try{window.print()}finally{card.classList.remove('print-document')}}
 function bindSalesDelivery(){
+ const editor=document.querySelector('#proformaForm,#deliveryForm');if(editor)editor.dataset.initialState=salesEditorState(editor);
+ $('#moreProformas')?.addEventListener('click',()=>{salesShown+=120;salesDeliveryWorkspace()});
+ $('#moreSalesDeliveries')?.addEventListener('click',()=>{salesDeliveryShown+=120;salesDeliveryWorkspace()});
  document.querySelectorAll('[data-load-order-timing]').forEach(button=>button.onclick=()=>loadOrderTiming(button.closest('[data-order-timing]')));
  if(typeof openDocumentAttachments==='function')document.querySelectorAll('[data-document-card]').forEach(card=>{
   const id=card.dataset.documentCard,proforma=salesProforma(id),note=salesDeliveryNotes.find(row=>row.id===id),actions=card.querySelector('.actions');
@@ -235,22 +313,22 @@ function bindSalesDelivery(){
   const button=document.createElement('button');button.type='button';button.dataset.documentFiles=id;button.textContent='Upload / view documents';
   button.onclick=()=>run(()=>openDocumentAttachments(proforma?'proforma':'delivery',id,proforma?.document_number||note.delivery_number));actions.append(button);
  });
- document.querySelectorAll('[data-sales-section]').forEach(button=>button.onclick=()=>{salesSection=button.dataset.salesSection;salesEditing='';salesFocusedProforma='';salesDeliveryWorkspace()});
+ document.querySelectorAll('[data-sales-section]').forEach(button=>button.onclick=()=>salesNavigate(()=>{salesSection=button.dataset.salesSection;salesEditing='';salesFocusedProforma='';salesDeliveryWorkspace()}));
  document.querySelectorAll('[data-open-proforma]').forEach(button=>button.onclick=()=>{salesFocusedProforma=button.dataset.openProforma;salesDeliveryWorkspace();window.scrollTo?.(0,0)});
  document.querySelectorAll('[data-proforma-back]').forEach(button=>button.onclick=()=>{salesFocusedProforma='';salesDeliveryWorkspace()});
- document.querySelectorAll('[data-proforma-filter]').forEach(button=>button.onclick=()=>{salesProformaFilter=button.dataset.proformaFilter;salesDeliveryWorkspace()});
- const proformaSearch=$('#proformaSearch');if(proformaSearch)proformaSearch.oninput=event=>{salesProformaSearch=event.target.value;renderSearchPreservingPosition(event.target,()=>{$('#content').innerHTML=proformaScreen();bindSalesDelivery()},150)};
+ document.querySelectorAll('[data-proforma-filter]').forEach(button=>button.onclick=()=>{salesShown=120;salesProformaFilter=button.dataset.proformaFilter;salesDeliveryWorkspace()});
+ const proformaSearch=$('#proformaSearch');if(proformaSearch)proformaSearch.oninput=event=>{salesShown=120;salesProformaSearch=event.target.value;renderSearchPreservingPosition(event.target,()=>{$('#content').innerHTML=proformaScreen();bindSalesDelivery()},150)};
  $('#salesRefresh')?.addEventListener('click',()=>run(()=>salesDeliveryWorkspace(true)));
- $('#newProforma')?.addEventListener('click',()=>{salesPrefill=null;salesEditing='new';salesDeliveryWorkspace()});
- $('#closeSalesEditor')?.addEventListener('click',()=>{salesPrefill=null;salesEditing='';salesDeliveryWorkspace()});
- $('#closeDeliveryEditor')?.addEventListener('click',()=>{salesEditing='';salesDeliveryWorkspace()});
+ $('#newProforma')?.addEventListener('click',()=>salesNavigate(()=>{salesPrefill=null;salesEditing='new';salesDeliveryWorkspace()}));
+ $('#closeSalesEditor')?.addEventListener('click',()=>salesNavigate(()=>{salesPrefill=null;salesEditing='';salesDeliveryWorkspace()}));
+ $('#closeDeliveryEditor')?.addEventListener('click',()=>salesNavigate(()=>{salesEditing='';salesDeliveryWorkspace()}));
  $('#addSalesLine')?.addEventListener('click',()=>$('#proformaLines').insertAdjacentHTML('beforeend',salesLineRow()));
  $('#proformaForm')?.addEventListener('change',event=>{if(event.target.name==='organizationId'){const select=$('#proformaForm [name="contactId"]');select.innerHTML='<option value="">Choose named contact</option>'+salesContactOptions(event.target.value);proformaShowExisting()}});proformaShowExisting();
  $('#proformaForm')?.addEventListener('submit',event=>{event.preventDefault();run(()=>saveProformaForm(event.currentTarget))});
  $('#deliveryForm')?.addEventListener('submit',event=>{event.preventDefault();run(()=>createDeliveryForm(event.currentTarget))});
  $('#proformaLines')?.addEventListener('click',event=>{const button=event.target.closest('[data-remove-sales-line]');if(!button)return;if(document.querySelectorAll('[data-proforma-line]').length>1)button.closest('[data-proforma-line]').remove();else message('A Pro forma needs at least one item.',true)});
  document.querySelectorAll('[data-edit-proforma]').forEach(button=>button.onclick=()=>{salesEditing=button.dataset.editProforma;salesDeliveryWorkspace()});
- document.querySelectorAll('[data-create-delivery]').forEach(button=>button.onclick=()=>{salesSection='delivery';salesEditing=button.dataset.createDelivery;salesDeliveryWorkspace()});
+ document.querySelectorAll('[data-create-delivery]').forEach(button=>button.onclick=()=>salesNavigate(()=>{salesSection='delivery';salesEditing=button.dataset.createDelivery;salesDeliveryWorkspace()}));
  document.querySelectorAll('[data-proforma-action]').forEach(button=>button.onclick=()=>openProformaAction(salesProforma(button.dataset.id),button.dataset.proformaAction));
  document.querySelectorAll('[data-delivery-collection]').forEach(button=>button.onclick=()=>{const note=salesDeliveryNotes.find(row=>row.id===button.dataset.deliveryCollection);if(!note)return;const waiting=!note.customer_waiting;if(!confirm(waiting?`Mark ${note.delivery_number}: customer waiting in the lobby (cash, collecting now)? It goes to the top of the packing queue.`:`Change ${note.delivery_number} to delivery? It is packed in turn.`))return;run(async()=>{const r=await client.rpc('set_delivery_customer_waiting',{p_id:note.id,p_expected_version:note.version,p_customer_waiting:waiting});if(r.error)throw r.error;await salesDeliveryWorkspace(true);message(waiting?'Marked: customer waiting in the lobby.':'Marked: delivery.');})});
  if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});

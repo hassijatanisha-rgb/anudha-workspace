@@ -10,12 +10,12 @@ function fixture(){
   document:{addEventListener(){},querySelectorAll(){return []}},$ :selector=>selector==='#content'?content:null,
   esc:String,client:{from:()=>query,rpc:async(name,args)=>{calls.push({name,args});return {data:{}}}},
   all:async table=>{if(table==='product_detail_reviews')throw Error('Correction connection unavailable');return [];},products:[{id:'p',name:'Raw source identity',source:{}}],
-  me:{role:'owner',user_id:'owner'},organizations:[],syncWorkspaceNavigation(){},message(){},
+  view:'inventory',me:{role:'owner',user_id:'owner'},organizations:[],syncWorkspaceNavigation(){},message(){},
   inventoryAvailableTotals:()=>({cartons:0,loose:0}),crypto:{randomUUID:()=> 'fixture-id'},
   FormData:class{constructor(form){this.fields=form.fields||{}}get(key){return this.fields[key]??''}}
  });
  vm.runInContext(readFileSync(new URL('../staff-access.js',import.meta.url),'utf8'),ctx);
- for(const file of ['product-review-ui.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx,{filename:file});
+ for(const file of ['business-date.js','product-review-ui.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx,{filename:file});
  return {ctx,content,calls};
 }
 

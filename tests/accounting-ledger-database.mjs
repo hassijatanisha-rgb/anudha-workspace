@@ -39,7 +39,7 @@ try{
  await db.exec(migration);
  await db.exec(migration); // re-runnable
  // Later accounting migrations must keep every rule below.
- for(const later of ['202610160090_invoice_on_submit.sql','202610160091_erp_tax_invoice.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+later,import.meta.url),'utf8'));
+ for(const later of ['202610160090_invoice_on_submit.sql','202610160091_erp_tax_invoice.sql','202610160093_accounting_integrity.sql','202610160093_accounting_integrity.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+later,import.meta.url),'utf8'));
  const as=async actor=>db.exec(`reset role;set test.actor='${actor}';set role authenticated`);
  const q=(sql,params)=>db.query(sql,params);
  const one=async(sql,params)=>(await q(sql,params)).rows[0];
@@ -53,8 +53,11 @@ try{
  await ok(async()=>{assert.equal((await one('select count(*)::int n from acc_accounts')).n,0);});
  await ok(()=>rejects(q('select post_manual_journal($1,$2,$3,$4)',[nid(),D,'Not allowed',lines([RENT,100,0],[BANK,0,100])]),/Accounting access is required/));
  await ok(()=>rejects(q('select * from acc_trial_balance($1)',[D]),/Accounting access is required/));
+ await ok(async()=>{assert.equal((await one('select count(*)::int n from acc_invoice_balances')).n,0);assert.equal((await one('select count(*)::int n from acc_waiting_proformas')).n,0);});
  await db.exec('reset role;set role anon');
  await ok(()=>rejects(q('select * from acc_trial_balance($1)',[D]),/permission denied/));
+ await ok(()=>rejects(q('select * from acc_invoice_balances'),/permission denied/));
+ await ok(()=>rejects(q('select * from acc_waiting_proformas'),/permission denied/));
 
  // Manual journals.
  await as(ACCT);
@@ -120,6 +123,10 @@ try{
   assert.equal((await one('select count(*)::int n from acc_receipts')).n,1,'retry did not record twice');});
  await ok(()=>rejects(q('select void_invoice($1,$2,$3)',[inv,'2026-10-13','Customer cancelled order']),/Void the receipts/));
 
+ await ok(async()=>{const r=await one('select * from acc_invoice_balances where id=$1',[inv]);assert.equal(Number(r.paid_minor),60000000);assert.equal(Number(r.outstanding_minor),52100000);assert.ok(['part','overdue'].includes(r.status_key));assert.equal(r.proforma_number,'PF-2026-000001');
+  assert.equal((await one('select count(*)::int n from acc_waiting_proformas where id=$1',[PF])).n,0,'live invoice excluded by server anti-join');});
+ await ok(()=>rejects(q('update acc_invoice_balances set buyer_tin=$1 where id=$2',['123456789',inv]),/permission denied|cannot update view/));
+
  // Reports.
  await ok(async()=>{const tb=(await q('select * from acc_trial_balance($1)',['2026-10-31'])).rows;
   const d=tb.reduce((s,r)=>s+Number(r.debit_minor),0),c=tb.reduce((s,r)=>s+Number(r.credit_minor),0);assert.equal(d,c,'trial balance balances');
@@ -137,13 +144,34 @@ try{
  await ok(async()=>{const gl=(await q('select * from acc_account_ledger($1,$2,$3)',[BANK,'2026-10-02','2026-10-31'])).rows;
   assert.equal(Number(gl[0].balance_minor),500000000,'opening balance');assert.equal(Number(gl.at(-1).balance_minor),500000000-20000000+20000000+60000000,'running balance');});
 
+ const arAt=async(org,date)=>Number((await one('select coalesce(sum(l.debit_minor-l.credit_minor),0)::bigint b from acc_journal_lines l join acc_journal_entries e on e.id=l.entry_id where l.account_id=$1 and l.organization_id=$2 and e.entry_date<=$3',[AR,org,date])).b);
+ const ageingAt=async(org,date)=>(await q('select * from acc_receivables_ageing($1)',[date])).rows.find(r=>r.organization_id===org);
+
  // Unallocated money is a customer credit; voiding a receipt then the invoice reverses both.
  await ok(async()=>{await q('select record_receipt($1,$2,$3,$4,$5,$6,$7,$8)',[nid(),ORG2,'2026-10-14',1000000,'cash','Advance','a0000000-0000-4000-8000-000000001100','[]']);
   const ag=(await q('select * from acc_receivables_ageing($1)',['2026-10-31'])).rows.find(r=>r.organization_id===ORG2);assert.equal(Number(ag.unapplied_credit_minor),1000000);assert.equal(Number(ag.balance_minor),49000000);});
  await ok(async()=>{await q('select void_receipt($1,$2,$3)',[rct,'2026-10-15','Cheque bounced at bank']);
   await q('select void_invoice($1,$2,$3)',[inv,'2026-10-15','Customer cancelled order']);
   const r=await one('select sum(debit_minor-credit_minor)::bigint b from acc_journal_lines l join acc_journal_entries e on e.id=l.entry_id where l.account_id=$1 and l.organization_id=$2',[AR,ORG]);assert.equal(Number(r.b),0,'customer owes nothing after both voids');
+  const voided=await one('select paid_minor,outstanding_minor,status_key from acc_invoice_balances where id=$1',[inv]);assert.equal(Number(voided.paid_minor),0);assert.equal(Number(voided.outstanding_minor),0);assert.equal(voided.status_key,'void');
+  assert.equal((await one('select count(*)::int n from acc_waiting_proformas where id=$1',[PF])).n,1,'void invoice returns Pro forma to waiting');
   const again=await one('select (create_invoice_from_proforma($1,$2,$3,$4,$5)).invoice_number',[nid(),PF,'2026-10-16','2026-10-30','']);assert.ok(again.invoice_number,'re-invoice after void');});
+
+ // Void clicks happen now, but history follows the reversal's accounting date.
+ await ok(async()=>{for(const [date,expected] of [['2026-10-11',112100000],['2026-10-14',52100000],['2026-10-15',0]]){
+  assert.equal(Number((await ageingAt(ORG,date))?.balance_minor||0),expected,`ageing at ${date} after backdated void`);assert.equal(await arAt(ORG,date),expected);
+ }});
+ const futureVoidReceipt=nid();
+ await q('select record_receipt($1,$2,$3,$4,$5,$6,$7,$8)',[futureVoidReceipt,ORG2,'2026-10-16',2000000,'bank','Future reversal',BANK,JSON.stringify([{invoice_id:inv2,amount_minor:2000000}])]);
+ await q('select void_receipt($1,$2,$3)',[futureVoidReceipt,'2026-11-10','Future bank correction']);
+ await q('select void_invoice($1,$2,$3)',[inv2,'2026-11-01','Future order cancellation']);
+ await ok(async()=>{for(const [date,expected] of [['2026-10-20',47000000],['2026-11-05',-3000000],['2026-11-10',-1000000]]){
+  assert.equal(Number((await ageingAt(ORG2,date))?.balance_minor||0),expected,`ageing at ${date} before/after future reversals`);assert.equal(await arAt(ORG2,date),expected);
+ }});
+ await ok(async()=>{const futureInvoice=nid(),earlyReceipt=nid();await q('select create_invoice_from_proforma($1,$2,$3,$4,$5)',[futureInvoice,PF2,'2026-11-15','2027-01-15','']);
+  await q('select record_receipt($1,$2,$3,$4,$5,$6,$7,$8)',[earlyReceipt,ORG2,'2026-10-20',5000000,'bank','Advance before invoice date',BANK,JSON.stringify([{invoice_id:futureInvoice,amount_minor:5000000}])]);
+  for(const date of ['2026-11-05','2026-11-15'])assert.equal(Number((await ageingAt(ORG2,date)).balance_minor),await arAt(ORG2,date),'allocations before invoice date remain historical customer credit');
+ });
 
  // Lock date: owner only; nothing on or before it.
  await ok(()=>rejects(q('select set_books_lock($1,$2)',[1,'2026-09-30']),/Only the owner/));
@@ -160,6 +188,20 @@ try{
   await rejects(q('select save_ledger_account($1,$2,$3,$4,$5,$6)',[acc,1,'6150','Stale edit','expense',true]),/changed this account/);});
  await ok(()=>rejects(q('select save_ledger_account($1,$2,$3,$4,$5,$6)',[AR,1,'1300','Receivables','asset',false]),/automatic postings/));
  await ok(()=>rejects(q('select save_ledger_account($1,$2,$3,$4,$5,$6)',[nid(),null,'61','Bad code','expense',true]),/4 to 6 digits/));
+
+ // A payment cannot disappear when the UI's historical 1,000-row receipt limit is exceeded.
+ await ok(async()=>{const live=(await one('select id from acc_invoices where proforma_id=$1 and voided_at is null',[PF])).id;
+  await q(`select record_receipt(('00000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,$1,'2026-10-20',1,'bank','Volume receipt',$2,jsonb_build_array(jsonb_build_object('invoice_id',$3::text,'amount_minor',1))) from generate_series(100000,101004) n`,[ORG,BANK,live]);
+  const r=await one('select paid_minor,outstanding_minor from acc_invoice_balances where id=$1',[live]);assert.equal(Number(r.paid_minor),1005);assert.equal(Number(r.outstanding_minor),112100000-1005);
+ });
+ await ok(async()=>{await db.exec('reset role');
+  await db.exec(`insert into sales_proformas(id,document_number,organization_id,status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,revision)
+   select ('00000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'PF-USD-'||n,'${ORG}','accepted','USD',100,0,0,100,1 from generate_series(200000,200500) n`);
+  await as(ACCT);assert.equal((await one("select count(*)::int n from acc_waiting_proformas where currency='USD'")).n,501,'waiting candidates have no 500-row SQL cap');
+  assert.equal((await one("select total_minor from acc_waiting_proformas where document_number='PF-USD-200500'")).total_minor,100);
+ });
+
+ await ok(async()=>{await as(SALES);assert.equal((await one('select count(*)::int n from acc_invoice_balances')).n,0,'populated invoice view keeps accounting RLS');assert.equal((await one('select count(*)::int n from acc_waiting_proformas')).n,0);await as(ACCT);});
 
  // Whole-book check: every entry balances.
  await ok(async()=>{const r=await one(`select count(*)::int n from (select entry_id from acc_journal_lines group by entry_id having sum(debit_minor)<>sum(credit_minor)) x`);assert.equal(r.n,0);});
