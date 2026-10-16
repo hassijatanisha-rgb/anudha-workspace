@@ -272,6 +272,34 @@ body.packing-tv{background:#0f1f19}
  .packing-tv-screen{grid-template-columns:1fr}
  .packing-clock{font-size:22px}
 }
+/* books.css */
+.nav-accounts{--group-color:#1d5f6b}
+.books-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:0 0 4px}
+.books-metrics>div{padding:18px 20px;border:1px solid #d7e5de;border-radius:16px;background:#fff}
+.books-metrics small,.books-metrics strong{display:block}
+.books-metrics strong{margin-top:4px;font-size:clamp(17px,2vw,22px);color:#174c3d;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.books td{white-space:nowrap}.books td:nth-child(3),.books td small{white-space:normal}
+.books td,.books th{font-variant-numeric:tabular-nums}
+.books .tag.books-paid{background:#def3e7;color:#176344}
+.books .tag.books-overdue{background:#fde8e8;color:#8a2222}
+.books .tag.books-part{background:#f6e8a6}
+.books .tag.books-void{background:#e5e7e6;color:#555}
+.books tr.books-total td{font-weight:700;background:#f4f8f6}
+.books #booksJournalLines select{min-width:220px}
+.books #booksJournalLines input{min-width:110px}
+.books-print{background:#fff;border:1px solid var(--line);border-radius:12px;padding:25px;margin-top:20px}
+.books-print header{display:flex;justify-content:space-between;align-items:center;gap:20px;min-height:auto;padding:0 0 12px;border-bottom:2px solid #176149;background:#fff}
+.books-print header strong,.books-print header small,.books-print header b,.books-print p small,.books-print p strong{display:block}
+.books-print header b{color:#8a2222}
+.books-print dl{display:grid;grid-template-columns:auto auto;justify-content:end;gap:4px 24px;margin:16px 0}
+.books-print dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:520px){.books-metrics{grid-template-columns:1fr}}
+@media print{
+ body.books-printing>*:not(main),body.books-printing #nav,body.books-printing main>#notice,body.books-printing .books>*:not(#booksBody),body.books-printing #booksBody>*:not(.books-print),body.books-printing .no-print{display:none!important}
+ body.books-printing .books-print{border:0;padding:0;margin:0}
+ body.books-printing-report>*:not(main),body.books-printing-report #nav,body.books-printing-report main>#notice,body.books-printing-report .books>*:not(#booksBody),body.books-printing-report #booksBody>*:not(.books-report){display:none!important}
+}
+.two-step-trust{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:600}.two-step-trust input{width:auto}.two-step-trust small{flex-basis:100%;font-weight:400}
 /* ui-polish.css */
 /* Interface polish, loaded last. Adds visual hierarchy without changing any workflow markup:
    primary = the usual next step, danger = cancels, rejects, loses or deletes, quiet = look-up actions. */

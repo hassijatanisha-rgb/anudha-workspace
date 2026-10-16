@@ -12,7 +12,9 @@ function load(level,factors,verify={}){
 }
 test('the code is asked for only when the login has two-step on and has not entered it yet',async()=>{
  assert.equal(await load({currentLevel:'aal1',nextLevel:'aal2'},[]).ctx.twoStepNeeded(),true);
- assert.equal(await load({currentLevel:'aal2',nextLevel:'aal2'},[]).ctx.twoStepNeeded(),false);
+ const now=Math.floor(Date.now()/1000);
+ assert.equal(await load({currentLevel:'aal2',nextLevel:'aal2',currentAuthenticationMethods:[{method:'totp',timestamp:now-60}]},[]).ctx.twoStepNeeded(),false);
+ assert.equal(await load({currentLevel:'aal2',nextLevel:'aal2',currentAuthenticationMethods:[{method:'totp',timestamp:now-31*86400}]},[]).ctx.twoStepNeeded(),true,'asked again after 30 days');
  assert.equal(await load({currentLevel:'aal1',nextLevel:'aal1'},[]).ctx.twoStepNeeded(),false);
 });
 test('a correct code continues sign-in; a wrong one shows a plain message',async()=>{

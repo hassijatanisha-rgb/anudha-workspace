@@ -7,6 +7,33 @@
 ;// config.js
 // Public browser connection settings. Access is enforced by authenticated database policies.
 window.ERP_CONFIG={url:'https://udncxdbrbaptcefvjucj.supabase.co',key:'sb_publishable_Al7Dk5JpJ0_5w8679Ztckw_W2FHiFo5',staffLoginDomain:'staff.anudha.com',stockCountEnabled:true};
+;// trusted-device.js
+'use strict';
+// Where the sign-in is kept. Normally only for this browser tab (closing it signs out). After the 6-digit code, a person
+// may tick "Trust this device for 30 days": the sign-in then survives closing the browser on this device only. The
+// database still refuses data once the last code is more than 30 days old (migration 088), so trust cannot outlive it.
+const deviceTrustKey='anudha-trusted-until',deviceTrustDays=30;
+function deviceTrustedUntil(){try{return Number(localStorage.getItem(deviceTrustKey)||0)}catch{return 0}}
+function deviceTrusted(now=Date.now()){return deviceTrustedUntil()>now}
+function deviceStore(){return deviceTrusted()?localStorage:sessionStorage}
+const deviceSessionStorage={
+ getItem(key){try{return deviceStore().getItem(key)}catch{return null}},
+ setItem(key,value){try{deviceStore().setItem(key,value)}catch{}},
+ removeItem(key){try{localStorage.removeItem(key)}catch{}try{sessionStorage.removeItem(key)}catch{}}
+};
+function moveSignIn(from,to){
+ const keys=[];for(let i=0;i<from.length;i++){const key=from.key(i);if(key&&key.startsWith('sb-'))keys.push(key);}
+ for(const key of keys){to.setItem(key,from.getItem(key));from.removeItem(key);}
+}
+function trustThisDevice(now=Date.now()){
+ try{localStorage.setItem(deviceTrustKey,String(now+deviceTrustDays*86400000));moveSignIn(sessionStorage,localStorage);return true}catch{return false}
+}
+function forgetThisDevice(){
+ try{const was=deviceTrusted();localStorage.removeItem(deviceTrustKey);if(was)moveSignIn(localStorage,sessionStorage);}catch{}
+}
+// Trust ended (30 days passed): drop the kept sign-in so the next visit asks for the password and code again.
+try{if(!deviceTrusted()&&localStorage.getItem(deviceTrustKey)!==null){localStorage.removeItem(deviceTrustKey);for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i);if(key&&key.startsWith('sb-'))localStorage.removeItem(key);}}}catch{}
+function deviceTrustField(){return '<label class="two-step-trust"><input type="checkbox" name="trustDevice"> Trust this device for 30 days <small>Do not tick on a shared or public computer.</small></label>'}
 ;// phone-rules.js
 // Same numbering metadata as backend phone_rules; personal/business contact numbers.
 window.PHONE_RULES={"AC":{"code":"247","lengths":[5,6],"pattern":"(?:[01589]\\d|[2-467])\\d{4}"},"AD":{"code":"376","lengths":[6,8,9],"pattern":"(?:1|6\\d)\\d{7}|[135-9]\\d{5}"},"AE":{"code":"971","lengths":[5,6,7,8,9,10,11,12],"pattern":"(?:[4-7]\\d|9[0-689])\\d{7}|800\\d{2,9}|[2-4679]\\d{7}"},"AF":{"code":"93","lengths":[9],"pattern":"[2-7]\\d{8}"},"AG":{"code":"1","lengths":[10],"pattern":"(?:268|[58]\\d\\d|900)\\d{7}"},"AI":{"code":"1","lengths":[10],"pattern":"(?:264|[58]\\d\\d|900)\\d{7}"},"AL":{"code":"355","lengths":[6,7,8,9],"pattern":"(?:700\\d\\d|900)\\d{3}|8\\d{5,7}|(?:[2-5]|6\\d)\\d{7}"},"AM":{"code":"374","lengths":[8],"pattern":"(?:[1-489]\\d|55|60|77)\\d{6}"},"AO":{"code":"244","lengths":[9],"pattern":"[29]\\d{8}"},"AR":{"code":"54","lengths":[10,11],"pattern":"(?:11|[89]\\d\\d)\\d{8}|[2368]\\d{9}"},"AS":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|684|900)\\d{7}"},"AT":{"code":"43","lengths":[4,5,6,7,8,9,10,11,12,13],"pattern":"1\\d{3,12}|2\\d{6,12}|43(?:(?:0\\d|5[02-9])\\d{3,9}|2\\d{4,5}|[3467]\\d{4}|8\\d{4,6}|9\\d{4,7})|5\\d{4,12}|8\\d{7,12}|9\\d{8,12}|(?:[367]\\d|4[0-24-9])\\d{4,11}"},"AU":{"code":"61","lengths":[5,6,7,8,9,10,12],"pattern":"1(?:[0-79]\\d{7}(?:\\d(?:\\d{2})?)?|8[0-24-9]\\d{7})|[2-478]\\d{8}|1\\d{4,7}"},"AW":{"code":"297","lengths":[7],"pattern":"(?:[25-79]\\d\\d|800)\\d{4}"},"AX":{"code":"358","lengths":[5,6,7,8,9,10,11,12],"pattern":"2\\d{4,9}|35\\d{4,5}|(?:60\\d\\d|800)\\d{4,6}|7\\d{5,11}|(?:[14]\\d|3[0-46-9]|50)\\d{4,8}"},"AZ":{"code":"994","lengths":[9],"pattern":"365\\d{6}|(?:[124579]\\d|60|88)\\d{7}"},"BA":{"code":"387","lengths":[8,9],"pattern":"6\\d{8}|(?:[35689]\\d|49|70)\\d{6}"},"BB":{"code":"1","lengths":[10],"pattern":"(?:246|[58]\\d\\d|900)\\d{7}"},"BD":{"code":"880","lengths":[6,7,8,9,10],"pattern":"[1-469]\\d{9}|8[0-79]\\d{7,8}|[2-79]\\d{8}|[2-9]\\d{7}|[3-9]\\d{6}|[57-9]\\d{5}"},"BE":{"code":"32","lengths":[8,9],"pattern":"4\\d{8}|[1-9]\\d{7}"},"BF":{"code":"226","lengths":[8],"pattern":"[024-7]\\d{7}"},"BG":{"code":"359","lengths":[6,7,8,9,12],"pattern":"00800\\d{7}|[2-7]\\d{6,7}|[89]\\d{6,8}|2\\d{5}"},"BH":{"code":"973","lengths":[8],"pattern":"[136-9]\\d{7}"},"BI":{"code":"257","lengths":[8],"pattern":"(?:[267]\\d|31)\\d{6}"},"BJ":{"code":"229","lengths":[8,10],"pattern":"(?:01\\d|8)\\d{7}"},"BL":{"code":"590","lengths":[9],"pattern":"7090\\d{5}|(?:[56]9|[89]\\d)\\d{7}"},"BM":{"code":"1","lengths":[10],"pattern":"(?:441|[58]\\d\\d|900)\\d{7}"},"BN":{"code":"673","lengths":[7],"pattern":"[2-578]\\d{6}"},"BO":{"code":"591","lengths":[8,9],"pattern":"(?:[2-7]\\d\\d|8001)\\d{5}"},"BQ":{"code":"599","lengths":[7],"pattern":"(?:[34]1|7\\d)\\d{5}"},"BR":{"code":"55","lengths":[8,9,10,11],"pattern":"[1-467]\\d{9,10}|55[0-46-9]\\d{8}|[34]\\d{7}|55\\d{7,8}|(?:5[0-46-9]|[89]\\d)\\d{7,9}"},"BS":{"code":"1","lengths":[10],"pattern":"(?:242|[58]\\d\\d|900)\\d{7}"},"BT":{"code":"975","lengths":[7,8],"pattern":"[178]\\d{7}|[2-8]\\d{6}"},"BW":{"code":"267","lengths":[7,8,10],"pattern":"(?:0800|(?:[37]|800)\\d)\\d{6}|(?:[2-6]\\d|90)\\d{5}"},"BY":{"code":"375","lengths":[6,7,8,9,10,11],"pattern":"(?:[12]\\d|33|44|902)\\d{7}|8(?:0[0-79]\\d{5,7}|[1-7]\\d{9})|8(?:1[0-489]|[5-79]\\d)\\d{7}|8[1-79]\\d{6,7}|8[0-79]\\d{5}|8\\d{5}"},"BZ":{"code":"501","lengths":[7,11],"pattern":"(?:0800\\d|[2-8])\\d{6}"},"CA":{"code":"1","lengths":[7,10],"pattern":"[2-9]\\d{9}|3\\d{6}"},"CC":{"code":"61","lengths":[6,7,8,9,10,12],"pattern":"1(?:[0-79]\\d{8}(?:\\d{2})?|8[0-24-9]\\d{7})|[148]\\d{8}|1\\d{5,7}"},"CD":{"code":"243","lengths":[7,8,9,10],"pattern":"(?:(?:[189]|5\\d)\\d|2)\\d{7}|[1-68]\\d{6}"},"CF":{"code":"236","lengths":[8],"pattern":"8776\\d{4}|(?:[27]\\d|61)\\d{6}"},"CG":{"code":"242","lengths":[9],"pattern":"222\\d{6}|(?:0\\d|80)\\d{7}"},"CH":{"code":"41","lengths":[9,12],"pattern":"8\\d{11}|[2-9]\\d{8}"},"CI":{"code":"225","lengths":[10],"pattern":"[02]\\d{9}"},"CK":{"code":"682","lengths":[5],"pattern":"[2-578]\\d{4}"},"CL":{"code":"56","lengths":[9,10,11],"pattern":"12300\\d{6}|6\\d{9,10}|[2-9]\\d{8}"},"CM":{"code":"237","lengths":[8,9],"pattern":"[26]\\d{8}|88\\d{6,7}"},"CN":{"code":"86","lengths":[7,8,9,10,11,12],"pattern":"(?:(?:1[03-689]|2\\d)\\d\\d|6)\\d{8}|1\\d{10}|[126]\\d{6}(?:\\d(?:\\d{2})?)?|86\\d{5,6}|(?:[3-579]\\d|8[0-57-9])\\d{5,9}"},"CO":{"code":"57","lengths":[8,10,11],"pattern":"(?:46|60\\d\\d)\\d{6}|(?:1\\d|[39])\\d{9}"},"CR":{"code":"506","lengths":[8,10],"pattern":"(?:8\\d|90)\\d{8}|(?:[24-8]\\d{3}|3005)\\d{4}"},"CU":{"code":"53","lengths":[6,7,8,10],"pattern":"(?:[2-7]|8\\d\\d)\\d{7}|[2-47]\\d{6}|[34]\\d{5}"},"CV":{"code":"238","lengths":[7],"pattern":"(?:[2-59]\\d\\d|800)\\d{4}"},"CW":{"code":"599","lengths":[7,8],"pattern":"(?:[34]1|60|(?:7|9\\d)\\d)\\d{5}"},"CX":{"code":"61","lengths":[6,7,8,9,10,12],"pattern":"1(?:[0-79]\\d{8}(?:\\d{2})?|8[0-24-9]\\d{7})|[148]\\d{8}|1\\d{5,7}"},"CY":{"code":"357","lengths":[8],"pattern":"(?:[279]\\d|[58]0)\\d{6}"},"CZ":{"code":"420","lengths":[9,10,11,12],"pattern":"(?:[2-578]\\d|60)\\d{7}|9\\d{8,11}"},"DE":{"code":"49","lengths":[4,5,6,7,8,9,10,11,12,13,14,15],"pattern":"[2579]\\d{5,14}|49(?:[34]0|69|8\\d)\\d\\d?|49(?:37|49|60|7[089]|9\\d)\\d{1,3}|49(?:2[024-9]|3[2-689]|7[1-7])\\d{1,8}|(?:1|[368]\\d|4[0-8])\\d{3,13}|49(?:[015]\\d|2[13]|31|[46][1-8])\\d{1,9}"},"DJ":{"code":"253","lengths":[8],"pattern":"(?:2\\d|77)\\d{6}"},"DK":{"code":"45","lengths":[8],"pattern":"[2-9]\\d{7}"},"DM":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|767|900)\\d{7}"},"DO":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|900)\\d{7}"},"DZ":{"code":"213","lengths":[8,9],"pattern":"(?:[1-4]|[5-79]\\d|80)\\d{7}"},"EC":{"code":"593","lengths":[8,9,10,11],"pattern":"1\\d{9,10}|(?:[2-7]|9\\d)\\d{7}"},"EE":{"code":"372","lengths":[7,8,10],"pattern":"8\\d{9}|[4578]\\d{7}|(?:[3-8]\\d|90)\\d{5}"},"EG":{"code":"20","lengths":[8,9,10],"pattern":"[189]\\d{8,9}|[24-6]\\d{8}|[135]\\d{7}"},"EH":{"code":"212","lengths":[9],"pattern":"[5-8]\\d{8}"},"ER":{"code":"291","lengths":[7],"pattern":"[178]\\d{6}"},"ES":{"code":"34","lengths":[9],"pattern":"(?:400|[5-9]\\d\\d)\\d{6}"},"ET":{"code":"251","lengths":[9],"pattern":"(?:11|[2-57-9]\\d)\\d{7}"},"FI":{"code":"358","lengths":[5,6,7,8,9,10,11,12],"pattern":"[1-35689]\\d{4}|7\\d{10,11}|(?:[124-7]\\d|3[0-46-9])\\d{8}|[1-9]\\d{5,8}"},"FJ":{"code":"679","lengths":[7,11],"pattern":"45\\d{5}|(?:0800\\d|[235-9])\\d{6}"},"FK":{"code":"500","lengths":[5],"pattern":"[2-7]\\d{4}"},"FM":{"code":"691","lengths":[7],"pattern":"(?:[39]\\d\\d|820)\\d{4}"},"FO":{"code":"298","lengths":[6],"pattern":"[2-9]\\d{5}"},"FR":{"code":"33","lengths":[9],"pattern":"[1-9]\\d{8}"},"GA":{"code":"241","lengths":[7,8],"pattern":"(?:[067]\\d|11)\\d{6}|[2-7]\\d{6}"},"GB":{"code":"44","lengths":[7,9,10],"pattern":"[1-357-9]\\d{9}|[18]\\d{8}|8\\d{6}"},"GD":{"code":"1","lengths":[10],"pattern":"(?:473|[58]\\d\\d|900)\\d{7}"},"GE":{"code":"995","lengths":[9],"pattern":"(?:[3-57]\\d\\d|800)\\d{6}"},"GF":{"code":"594","lengths":[9],"pattern":"(?:694\\d|7093)\\d{5}|(?:59|[89]\\d)\\d{7}"},"GG":{"code":"44","lengths":[7,9,10],"pattern":"(?:1481|[357-9]\\d{3})\\d{6}|8\\d{6}(?:\\d{2})?"},"GH":{"code":"233","lengths":[8,9],"pattern":"[235]\\d{8}|800\\d{5,6}"},"GI":{"code":"350","lengths":[8],"pattern":"(?:[25]\\d|60)\\d{6}"},"GL":{"code":"299","lengths":[6],"pattern":"(?:19|[2-689]\\d|70)\\d{4}"},"GM":{"code":"220","lengths":[7,9],"pattern":"[48]\\d{8}|[2-9]\\d{6}"},"GN":{"code":"224","lengths":[8,9],"pattern":"722\\d{6}|(?:3|6\\d)\\d{7}"},"GP":{"code":"590","lengths":[9],"pattern":"7090\\d{5}|(?:[56]9|[89]\\d)\\d{7}"},"GQ":{"code":"240","lengths":[9],"pattern":"222\\d{6}|(?:3\\d|55|[89]0)\\d{7}"},"GR":{"code":"30","lengths":[10,11,12],"pattern":"5005000\\d{3}|8\\d{9,11}|(?:[269]\\d|70)\\d{8}"},"GT":{"code":"502","lengths":[8,11],"pattern":"80\\d{6}|(?:1\\d{3}|[2-7])\\d{7}"},"GU":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|671|900)\\d{7}"},"GW":{"code":"245","lengths":[7,9],"pattern":"[49]\\d{8}|4\\d{6}"},"GY":{"code":"592","lengths":[7],"pattern":"(?:[2-8]\\d{3}|9008)\\d{3}"},"HK":{"code":"852","lengths":[5,6,7,8,9,11],"pattern":"8[0-46-9]\\d{6,7}|9\\d{4,7}|(?:[2-7]|9\\d{3})\\d{7}"},"HN":{"code":"504","lengths":[8,11],"pattern":"8\\d{10}|[237-9]\\d{7}"},"HR":{"code":"385","lengths":[7,8,9],"pattern":"[2-69]\\d{8}|80\\d{5,7}|[1-79]\\d{7}|6\\d{6}"},"HT":{"code":"509","lengths":[8],"pattern":"[2-589]\\d{7}"},"HU":{"code":"36","lengths":[8,9],"pattern":"[235-7]\\d{8}|[1-9]\\d{7}"},"ID":{"code":"62","lengths":[7,8,9,10,11,12,13,14,15,16,17],"pattern":"00[1-9]\\d{9,14}|(?:[1-36]|8\\d{5})\\d{6}|00\\d{9}|[1-9]\\d{8,10}|[2-9]\\d{7}"},"IE":{"code":"353","lengths":[7,8,9,10],"pattern":"(?:1\\d|[2569])\\d{6,8}|4\\d{6,9}|7\\d{8}|8\\d{8,9}"},"IL":{"code":"972","lengths":[7,8,9,10,11,12],"pattern":"1\\d{6}(?:\\d{3,5})?|[57]\\d{8}|[1-489]\\d{7}"},"IM":{"code":"44","lengths":[10],"pattern":"1624\\d{6}|(?:[3578]\\d|90)\\d{8}"},"IN":{"code":"91","lengths":[8,9,10,11,12,13],"pattern":"(?:000800|[2-9]\\d\\d)\\d{7}|1\\d{7,12}"},"IO":{"code":"246","lengths":[7],"pattern":"3\\d{6}"},"IQ":{"code":"964","lengths":[8,9,10],"pattern":"(?:1|7\\d\\d)\\d{7}|[2-6]\\d{7,8}"},"IR":{"code":"98","lengths":[4,5,6,7,10],"pattern":"[1-9]\\d{9}|(?:[1-8]\\d\\d|9)\\d{3,4}"},"IS":{"code":"354","lengths":[7,9],"pattern":"(?:38\\d|[4-9])\\d{6}"},"IT":{"code":"39","lengths":[6,7,8,9,10,11,12],"pattern":"0\\d{5,11}|1\\d{8,10}|3(?:[0-8]\\d{7,10}|9\\d{7,8})|(?:43|55|70)\\d{8}|8\\d{5}(?:\\d{2,4})?"},"JE":{"code":"44","lengths":[10],"pattern":"1534\\d{6}|(?:[3578]\\d|90)\\d{8}"},"JM":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|658|900)\\d{7}"},"JO":{"code":"962","lengths":[8,9],"pattern":"(?:(?:[2689]|7\\d)\\d|32|427|53)\\d{6}"},"JP":{"code":"81","lengths":[8,9,10,11,12,13,14,15,16,17],"pattern":"00[1-9]\\d{6,14}|[25-9]\\d{9}|(?:00|[1-9]\\d\\d)\\d{6}"},"KE":{"code":"254","lengths":[7,8,9,10],"pattern":"(?:[17]\\d\\d|900)\\d{6}|(?:2|80)0\\d{6,7}|[4-6]\\d{6,8}"},"KG":{"code":"996","lengths":[9,10],"pattern":"8\\d{9}|[235-9]\\d{8}"},"KH":{"code":"855","lengths":[8,9,10],"pattern":"1\\d{9}|[1-9]\\d{7,8}"},"KI":{"code":"686","lengths":[5,8],"pattern":"(?:[37]\\d|6[0-79])\\d{6}|(?:[2-48]\\d|50)\\d{3}"},"KM":{"code":"269","lengths":[7],"pattern":"[3478]\\d{6}"},"KN":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|900)\\d{7}"},"KP":{"code":"850","lengths":[8,10],"pattern":"85\\d{6}|(?:19\\d|[2-7])\\d{7}"},"KR":{"code":"82","lengths":[5,6,8,9,10,11,12,13,14],"pattern":"00[1-9]\\d{8,11}|(?:[12]|5\\d{3})\\d{7}|[13-6]\\d{9}|(?:[1-6]\\d|80)\\d{7}|[3-6]\\d{4,5}|(?:00|7)0\\d{8}"},"KW":{"code":"965","lengths":[7,8],"pattern":"18\\d{5}|(?:[2569]\\d|41)\\d{6}"},"KY":{"code":"1","lengths":[10],"pattern":"(?:345|[58]\\d\\d|900)\\d{7}"},"KZ":{"code":"7","lengths":[10,14],"pattern":"8\\d{13}|[78]\\d{9}"},"LA":{"code":"856","lengths":[8,9,10],"pattern":"[23]\\d{9}|3\\d{8}|(?:[235-8]\\d|41)\\d{6}"},"LB":{"code":"961","lengths":[7,8],"pattern":"[27-9]\\d{7}|[13-9]\\d{6}"},"LC":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|758|900)\\d{7}"},"LI":{"code":"423","lengths":[7,9],"pattern":"[68]\\d{8}|(?:[2378]\\d|90)\\d{5}"},"LK":{"code":"94","lengths":[9],"pattern":"[1-9]\\d{8}"},"LR":{"code":"231","lengths":[7,8,9],"pattern":"(?:[2457]\\d|33|88)\\d{7}|(?:2\\d|[4-6])\\d{6}"},"LS":{"code":"266","lengths":[8],"pattern":"(?:[256]\\d\\d|800)\\d{5}"},"LT":{"code":"370","lengths":[8],"pattern":"(?:[3469]\\d|52|[78]0)\\d{6}"},"LU":{"code":"352","lengths":[4,5,6,7,8,9,10,11],"pattern":"35[013-9]\\d{4,8}|6\\d{8}|35\\d{2,4}|(?:[2457-9]\\d|3[0-46-9])\\d{2,9}"},"LV":{"code":"371","lengths":[8],"pattern":"(?:[268]\\d|78|90)\\d{6}"},"LY":{"code":"218","lengths":[9],"pattern":"[2-9]\\d{8}"},"MA":{"code":"212","lengths":[9],"pattern":"[5-8]\\d{8}"},"MC":{"code":"377","lengths":[8,9],"pattern":"(?:[3489]|[67]\\d)\\d{7}"},"MD":{"code":"373","lengths":[8],"pattern":"(?:[235-7]\\d|[89]0)\\d{6}"},"ME":{"code":"382","lengths":[8,9],"pattern":"(?:20|[3-79]\\d)\\d{6}|80\\d{6,7}"},"MF":{"code":"590","lengths":[9],"pattern":"7090\\d{5}|(?:[56]9|[89]\\d)\\d{7}"},"MG":{"code":"261","lengths":[9],"pattern":"[23]\\d{8}"},"MH":{"code":"692","lengths":[7],"pattern":"329\\d{4}|(?:[256]\\d|45)\\d{5}"},"MK":{"code":"389","lengths":[8],"pattern":"[2-578]\\d{7}"},"ML":{"code":"223","lengths":[8],"pattern":"[24-9]\\d{7}"},"MM":{"code":"95","lengths":[6,7,8,9,10],"pattern":"1\\d{5,7}|95\\d{6}|(?:[4-7]|9[0-46-9])\\d{6,8}|(?:2|8\\d)\\d{5,8}"},"MN":{"code":"976","lengths":[8,9,10],"pattern":"[12]\\d{7,9}|[5-9]\\d{7}"},"MO":{"code":"853","lengths":[7,8],"pattern":"0800\\d{3}|(?:28|[68]\\d)\\d{6}"},"MP":{"code":"1","lengths":[10],"pattern":"[58]\\d{9}|(?:67|90)0\\d{7}"},"MQ":{"code":"596","lengths":[9],"pattern":"7091\\d{5}|(?:[56]9|[89]\\d)\\d{7}"},"MR":{"code":"222","lengths":[8],"pattern":"(?:[2-4]\\d\\d|800)\\d{5}"},"MS":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|664|900)\\d{7}"},"MT":{"code":"356","lengths":[8],"pattern":"3550\\d{4}|(?:[2579]\\d\\d|800)\\d{5}"},"MU":{"code":"230","lengths":[7,8,10],"pattern":"(?:[57]|8\\d\\d)\\d{7}|[2-468]\\d{6}"},"MV":{"code":"960","lengths":[7,10],"pattern":"(?:800|9[0-57-9]\\d)\\d{7}|[34679]\\d{6}"},"MW":{"code":"265","lengths":[7,9],"pattern":"(?:[1289]\\d|31|77)\\d{7}|1\\d{6}"},"MX":{"code":"52","lengths":[10],"pattern":"[2-9]\\d{9}"},"MY":{"code":"60","lengths":[8,9,10],"pattern":"1\\d{8,9}|(?:3\\d|[4-9])\\d{7}"},"MZ":{"code":"258","lengths":[8,9],"pattern":"(?:2|8\\d)\\d{7}"},"NA":{"code":"264","lengths":[8,9],"pattern":"[68]\\d{7,8}"},"NC":{"code":"687","lengths":[6],"pattern":"(?:050|[2-57-9]\\d\\d)\\d{3}"},"NE":{"code":"227","lengths":[8],"pattern":"[027-9]\\d{7}"},"NF":{"code":"672","lengths":[6],"pattern":"[13]\\d{5}"},"NG":{"code":"234","lengths":[10,11,12,13,14],"pattern":"(?:20|9\\d)\\d{8}|[78]\\d{9,13}"},"NI":{"code":"505","lengths":[8],"pattern":"(?:1800|[25-8]\\d{3})\\d{4}"},"NL":{"code":"31","lengths":[5,6,7,8,9,10,11],"pattern":"(?:[124-7]\\d\\d|3(?:[02-9]\\d|1[0-8]))\\d{6}|8\\d{6,9}|9\\d{6,10}|1\\d{4,5}"},"NO":{"code":"47","lengths":[5,8],"pattern":"(?:0|[2-9]\\d{3})\\d{4}"},"NP":{"code":"977","lengths":[8,10,11],"pattern":"(?:1\\d|9)\\d{9}|[1-9]\\d{7}"},"NR":{"code":"674","lengths":[7],"pattern":"(?:222|444|(?:55|8\\d)\\d|666|777|999)\\d{4}"},"NU":{"code":"683","lengths":[4,7],"pattern":"(?:[4-7]|888\\d)\\d{3}"},"NZ":{"code":"64","lengths":[5,6,7,8,9,10],"pattern":"[1289]\\d{9}|50\\d{5}(?:\\d{2,3})?|[27-9]\\d{7,8}|(?:[34]\\d|6[0-35-9])\\d{6}|8\\d{4,6}"},"OM":{"code":"968","lengths":[7,8,9],"pattern":"(?:1505|[279]\\d{3}|500)\\d{4}|800\\d{5,6}"},"PA":{"code":"507","lengths":[7,8,10,11],"pattern":"(?:00800|8\\d{3})\\d{6}|[68]\\d{7}|[1-57-9]\\d{6}"},"PE":{"code":"51","lengths":[8,9],"pattern":"(?:[14-8]|9\\d)\\d{7}"},"PF":{"code":"689","lengths":[6,8,9],"pattern":"4\\d{5}(?:\\d{2})?|8\\d{7,8}"},"PG":{"code":"675","lengths":[7,8],"pattern":"(?:180|[78]\\d{3})\\d{4}|(?:[2-589]\\d|64)\\d{5}"},"PH":{"code":"63","lengths":[6,8,9,10,11,12,13],"pattern":"(?:[2-7]|9\\d)\\d{8}|2\\d{5}|(?:1800|8)\\d{7,9}"},"PK":{"code":"92","lengths":[8,9,10,11,12],"pattern":"122\\d{6}|[24-8]\\d{10,11}|9(?:[013-9]\\d{8,10}|2(?:[01]\\d\\d|2(?:[06-8]\\d|1[01]))\\d{7})|(?:[2-8]\\d{3}|92(?:[0-7]\\d|8[1-9]))\\d{6}|[24-9]\\d{8}|[89]\\d{7}"},"PL":{"code":"48","lengths":[6,7,8,9,10],"pattern":"(?:6|8\\d\\d)\\d{7}|[1-9]\\d{6}(?:\\d{2})?|[26]\\d{5}"},"PM":{"code":"508","lengths":[6,9],"pattern":"[78]\\d{8}|[2-9]\\d{5}"},"PR":{"code":"1","lengths":[10],"pattern":"(?:[589]\\d\\d|787)\\d{7}"},"PS":{"code":"970","lengths":[8,9,10],"pattern":"[2489]2\\d{6}|(?:1\\d|5)\\d{8}"},"PT":{"code":"351","lengths":[9],"pattern":"1693\\d{5}|(?:[26-9]\\d|30)\\d{7}"},"PW":{"code":"680","lengths":[7],"pattern":"(?:[24-8]\\d\\d|345|900)\\d{4}"},"PY":{"code":"595","lengths":[6,7,8,9,10,11],"pattern":"[36-8]\\d{5,8}|4\\d{6,8}|59\\d{6}|9\\d{5,10}|(?:2\\d|5[0-8])\\d{6,7}"},"QA":{"code":"974","lengths":[7,8,9,11],"pattern":"800\\d{4}|(?:2|800)\\d{6}|(?:0080|[3-7])\\d{7}"},"RE":{"code":"262","lengths":[9],"pattern":"709\\d{6}|(?:26|[689]\\d)\\d{7}"},"RO":{"code":"40","lengths":[6,9],"pattern":"(?:[236-8]\\d|90)\\d{7}|[23]\\d{5}"},"RS":{"code":"381","lengths":[6,7,8,9,10,11,12],"pattern":"38[02-9]\\d{6,9}|6\\d{7,9}|90\\d{4,8}|38\\d{5,6}|(?:7\\d\\d|800)\\d{3,9}|(?:[12]\\d|3[0-79])\\d{5,10}"},"RU":{"code":"7","lengths":[10,14],"pattern":"8\\d{13}|[347-9]\\d{9}"},"RW":{"code":"250","lengths":[8,9],"pattern":"(?:06|[27]\\d\\d|[89]00)\\d{6}"},"SA":{"code":"966","lengths":[9,10],"pattern":"(?:[15]\\d|800|92)\\d{7}"},"SB":{"code":"677","lengths":[5,7],"pattern":"[6-9]\\d{6}|[1-6]\\d{4}"},"SC":{"code":"248","lengths":[7],"pattern":"(?:[2489]\\d|64)\\d{5}"},"SD":{"code":"249","lengths":[9],"pattern":"[19]\\d{8}"},"SE":{"code":"46","lengths":[6,7,8,9,10,12],"pattern":"(?:[26]\\d\\d|9)\\d{9}|[1-9]\\d{8}|[1-689]\\d{7}|[1-4689]\\d{6}|2\\d{5}"},"SG":{"code":"65","lengths":[8,10,11],"pattern":"(?:(?:1\\d|8)\\d\\d|7000)\\d{7}|[3689]\\d{7}"},"SH":{"code":"290","lengths":[4,5],"pattern":"(?:[256]\\d|8)\\d{3}"},"SI":{"code":"386","lengths":[5,6,7,8],"pattern":"[1-7]\\d{7}|8\\d{4,7}|90\\d{4,6}"},"SJ":{"code":"47","lengths":[5,8],"pattern":"0\\d{4}|(?:[489]\\d|79)\\d{6}"},"SK":{"code":"421","lengths":[6,7,9],"pattern":"[2-689]\\d{8}|[2-59]\\d{6}|[2-5]\\d{5}"},"SL":{"code":"232","lengths":[8],"pattern":"(?:[237-9]\\d|66)\\d{6}"},"SM":{"code":"378","lengths":[8,10],"pattern":"(?:0549|[5-7]\\d)\\d{6}"},"SN":{"code":"221","lengths":[9],"pattern":"(?:[378]\\d|93)\\d{7}"},"SO":{"code":"252","lengths":[6,7,8,9],"pattern":"[346-9]\\d{8}|[12679]\\d{7}|[1-5]\\d{6}|[1348]\\d{5}"},"SR":{"code":"597","lengths":[6,7],"pattern":"(?:[2-5]|[6-9]\\d)\\d{5}"},"SS":{"code":"211","lengths":[9],"pattern":"[19]\\d{8}"},"ST":{"code":"239","lengths":[7],"pattern":"(?:22|9\\d)\\d{5}"},"SV":{"code":"503","lengths":[7,8,11],"pattern":"[25-7]\\d{7}|(?:80\\d|900)\\d{4}(?:\\d{4})?"},"SX":{"code":"1","lengths":[10],"pattern":"7215\\d{6}|(?:[58]\\d\\d|900)\\d{7}"},"SY":{"code":"963","lengths":[8,9],"pattern":"[1-359]\\d{8}|[1-5]\\d{7}"},"SZ":{"code":"268","lengths":[8,9],"pattern":"0800\\d{4}|(?:[237]\\d|900)\\d{6}"},"TA":{"code":"290","lengths":[4],"pattern":"8\\d{3}"},"TC":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|649|900)\\d{7}"},"TD":{"code":"235","lengths":[8],"pattern":"(?:22|[3689]\\d|77)\\d{6}"},"TG":{"code":"228","lengths":[8],"pattern":"[279]\\d{7}"},"TH":{"code":"66","lengths":[8,9,10,13],"pattern":"(?:001800|[2-57]|[689]\\d)\\d{7}|1\\d{7,9}"},"TJ":{"code":"992","lengths":[9],"pattern":"(?:[0-57-9]\\d|66)\\d{7}"},"TK":{"code":"690","lengths":[4,5,6,7],"pattern":"[2-47]\\d{3,6}"},"TL":{"code":"670","lengths":[7,8],"pattern":"7\\d{7}|(?:[2-47]\\d|[89]0)\\d{5}"},"TM":{"code":"993","lengths":[8],"pattern":"[1-7]\\d{7}"},"TN":{"code":"216","lengths":[8],"pattern":"[2-57-9]\\d{7}"},"TO":{"code":"676","lengths":[5,7],"pattern":"(?:0800|(?:[5-8]\\d\\d|999)\\d)\\d{3}|[2-8]\\d{4}"},"TR":{"code":"90","lengths":[7,10,12,13],"pattern":"4\\d{6}|8\\d{11,12}|(?:[2-58]\\d\\d|900)\\d{7}"},"TT":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|900)\\d{7}"},"TV":{"code":"688","lengths":[5,6,7],"pattern":"(?:2|7\\d\\d|90)\\d{4}"},"TW":{"code":"886","lengths":[7,8,9,10,11],"pattern":"[2-689]\\d{8}|7\\d{9,10}|[2-8]\\d{7}|2\\d{6}"},"TZ":{"code":"255","lengths":[9],"pattern":"(?:[25-8]\\d|41|90)\\d{7}"},"UA":{"code":"380","lengths":[9,10],"pattern":"[89]\\d{9}|[3-9]\\d{8}"},"UG":{"code":"256","lengths":[9],"pattern":"800\\d{6}|(?:[29]0|[347]\\d)\\d{7}"},"US":{"code":"1","lengths":[10],"pattern":"[2-9]\\d{9}|3\\d{6}"},"UY":{"code":"598","lengths":[4,5,6,7,8,9,10,11,12,13],"pattern":"0004\\d{2,9}|[1249]\\d{7}|2\\d{3,4}|(?:[49]\\d|80)\\d{5}"},"UZ":{"code":"998","lengths":[9],"pattern":"(?:20|33|[5-9]\\d)\\d{7}"},"VA":{"code":"39","lengths":[6,7,8,9,10,11,12],"pattern":"0\\d{5,10}|3[0-8]\\d{7,10}|55\\d{8}|8\\d{5}(?:\\d{2,4})?|(?:1\\d|39)\\d{7,8}"},"VC":{"code":"1","lengths":[10],"pattern":"(?:[58]\\d\\d|784|900)\\d{7}"},"VE":{"code":"58","lengths":[10],"pattern":"[68]00\\d{7}|(?:[24]\\d|[59]0)\\d{8}"},"VG":{"code":"1","lengths":[10],"pattern":"(?:284|[58]\\d\\d|900)\\d{7}"},"VI":{"code":"1","lengths":[10],"pattern":"[58]\\d{9}|(?:34|90)0\\d{7}"},"VN":{"code":"84","lengths":[7,8,9,10],"pattern":"[12]\\d{9}|[135-9]\\d{8}|[16]\\d{6,7}|7\\d{6}"},"VU":{"code":"678","lengths":[5,7],"pattern":"[57-9]\\d{6}|(?:[238]\\d|48)\\d{3}"},"WF":{"code":"681","lengths":[6,9],"pattern":"(?:40|72|8\\d{4})\\d{4}|[89]\\d{5}"},"WS":{"code":"685","lengths":[5,6,7,10],"pattern":"(?:[2-6]|8\\d{5})\\d{4}|[78]\\d{6}|[68]\\d{5}"},"XK":{"code":"383","lengths":[8,9,10,11,12],"pattern":"2\\d{7,8}|3\\d{7,11}|(?:4\\d\\d|[89]00)\\d{5}"},"YE":{"code":"967","lengths":[7,8,9],"pattern":"(?:1|7\\d)\\d{7}|[1-7]\\d{6}"},"YT":{"code":"262","lengths":[9],"pattern":"(?:639\\d|7093)\\d{5}|(?:26|80|9\\d)\\d{7}"},"ZA":{"code":"27","lengths":[5,6,7,8,9,10],"pattern":"[1-79]\\d{8}|8\\d{4,9}"},"ZM":{"code":"260","lengths":[9],"pattern":"800\\d{6}|(?:21|[579]\\d|63)\\d{7}"},"ZW":{"code":"263","lengths":[7,9,10],"pattern":"(?:13|8\\d{4})\\d{5}|[235-8]\\d{8}|[2-689]\\d{6}"}};
@@ -4430,6 +4457,9 @@ const workspaceGroups=[
   ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
+ {name:'Accounts',tone:'accounts',items:[
+  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports']
+ ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
   ['Service forms','service','forms']
@@ -4445,16 +4475,17 @@ const workspaceGroups=[
 // Keys are a view, or view:section for one page of a view.
 const ownerOnlyViews=new Set(['staff','approvals','recycle','stockcount:review','inventory:review']);
 async function showAccountingNavigation(){
- const item=document.querySelector('#nav [data-accounting-only]');if(!item)return;
- item.hidden=true;
- try{const result=await client.rpc('accounting_access');item.hidden=result?.data!==true}catch{item.hidden=true}
+ const items=[...document.querySelectorAll('#nav [data-accounting-only]')];if(!items.length)return;
+ items.forEach(item=>item.hidden=true);
+ let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
+ items.forEach(item=>item.hidden=!allowed);
 }
 let navWhileBusy=null;
 function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'||target==='books'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
@@ -4480,6 +4511,7 @@ function installWorkspaceNavigation(){
    salesEditing=section==='new'?'new':'';
   }
   if(button.dataset.view==='service')serviceSection=section||'installations';
+  if(button.dataset.view==='books'&&typeof openBooksSection==='function')openBooksSection(section);
   if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
   if(button.dataset.view==='inventory')inventorySection=section||'stock';
  },true);
@@ -4494,7 +4526,7 @@ function syncWorkspaceNavigation(){
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:null;
+  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&(()=>{try{return typeof booksSection}catch{return 'undefined'}})()!=='undefined'?booksSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
@@ -4702,6 +4734,304 @@ async function accountingEditor(row,actor){
   finally{button.disabled=false;}
  };
 }
+;// accounting-ledger.js
+'use strict';
+// Books (migration 087): chart of accounts, journal entries, customer invoices from accepted Pro formas, customer
+// receipts, lock date and reports. The database checks access, balance and permanence; this page only shows and asks.
+let booksSection='overview',booksData=null,booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''},booksDraft=null,booksEpoch=0;
+const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports']];
+const booksTypes=[['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['income','Income'],['expense','Expenses']];
+const booksMethods=[['bank','Bank transfer'],['cash','Cash'],['mobile_money','Mobile money'],['cheque','Cheque']];
+
+function openBooksSection(section){booksSection=booksSections.some(([key])=>key===section)?section:'overview';booksDraft=null;}
+function booksToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
+function booksAddDays(date,days){const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+function booksMonthStart(date){return `${date.slice(0,7)}-01`;}
+function booksMoney(minor){return minor==null?'—':moneyDisplay(Number(minor));}
+function booksCustomer(id){return ((()=>{try{return typeof orgIndex}catch{return 'undefined'}})()!=='undefined'&&orgIndex.get(id)?.name)||(organizations||[]).find(o=>o.id===id)?.name||'Customer not loaded';}
+function booksAccountLabel(account){return account?`${account.code} · ${account.name}`:'Unknown account';}
+
+// Money still owed on an invoice: total less allocations from receipts that are not void.
+function booksInvoicePaid(invoice,allocations,receipts){
+ const live=new Set(receipts.filter(r=>!r.voided_at).map(r=>r.id));
+ return allocations.filter(a=>a.invoice_id===invoice.id&&live.has(a.receipt_id)).reduce((sum,a)=>sum+Number(a.amount_minor),0);
+}
+function booksInvoiceStatus(invoice,paid,today){
+ if(invoice.voided_at)return {key:'void',label:'Void'};
+ const left=Number(invoice.total_minor)-paid;
+ if(left<=0)return {key:'paid',label:'Paid'};
+ if(invoice.due_date<today)return {key:'overdue',label:paid?'Part paid · overdue':'Overdue'};
+ return {key:paid?'part':'open',label:paid?'Part paid':'Unpaid'};
+}
+// A journal draft: lines [{accountId, debit, credit, description}] with amounts as typed. Returns totals and the first problem.
+function booksJournalCheck(lines){
+ let debit=0,credit=0,used=0,problem='';
+ lines.forEach((line,index)=>{
+  const hasDebit=String(line.debit||'').trim()!=='',hasCredit=String(line.credit||'').trim()!=='';
+  if(!line.accountId&&!hasDebit&&!hasCredit)return;
+  used++;
+  try{
+   const d=hasDebit?moneyMinor(line.debit):0,c=hasCredit?moneyMinor(line.credit):0;
+   if(!line.accountId&&!problem)problem=`Line ${index+1}: choose an account.`;
+   if((d>0)===(c>0)&&!problem)problem=`Line ${index+1}: enter either a debit or a credit.`;
+   debit+=d;credit+=c;
+  }catch(error){if(!problem)problem=`Line ${index+1}: ${error.message}`;}
+ });
+ if(!problem&&used<2)problem='An entry needs at least two lines.';
+ if(!problem&&debit!==credit)problem=`Debits and credits differ by ${moneyDisplay(Math.abs(debit-credit))}.`;
+ return {debit,credit,difference:debit-credit,problem};
+}
+// Spread a receipt over a customer's invoices, oldest due first.
+function booksAllocateOldest(amountMinor,openInvoices){
+ let left=amountMinor;const out=new Map();
+ for(const invoice of [...openInvoices].sort((a,b)=>a.due_date.localeCompare(b.due_date)||a.invoice_number.localeCompare(b.invoice_number))){
+  if(left<=0)break;const take=Math.min(left,invoice.outstanding);if(take>0){out.set(invoice.id,take);left-=take;}
+ }
+ return out;
+}
+function booksCsv(columns,rows){
+ const cell=v=>{const s=String(v??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
+ return [columns.map(([,label])=>cell(label)).join(','),...rows.map(row=>columns.map(([key])=>cell(row[key])).join(','))].join('\n');
+}
+function booksDownload(name,text){
+ const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([text],{type:'text/csv'}));link.download=name;document.body.append(link);link.click();
+ setTimeout(()=>{URL.revokeObjectURL(link.href);link.remove();},1000);
+}
+async function booksRpc(name,args){
+ const r=await client.rpc(name,args);
+ if(r.error)throw Error(r.error.message);
+ return r.data;
+}
+async function booksSelect(table,columns,build){
+ let query=client.from(table).select(columns);if(build)query=build(query);
+ const r=await query;if(r.error)throw Error(`${table.replace('acc_','').replace(/_/g,' ')} could not load: ${r.error.message}`);
+ return r.data||[];
+}
+async function loadBooksData(){
+ const [accounts,settings,invoices,receipts,allocations,proformas]=await Promise.all([
+  booksSelect('acc_accounts','*',q=>q.order('code')),
+  booksSelect('acc_settings','*'),
+  booksSelect('acc_invoices','*',q=>q.order('invoice_date',{ascending:false}).order('invoice_number',{ascending:false}).limit(1000)),
+  booksSelect('acc_receipts','*',q=>q.order('receipt_date',{ascending:false}).order('receipt_number',{ascending:false}).limit(1000)),
+  booksSelect('acc_receipt_allocations','*'),
+  booksSelect('sales_proformas','id,document_number,organization_id,status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,accepted_at,acceptance_reference,deleted_at',q=>q.eq('status','accepted').is('deleted_at',null).order('accepted_at',{ascending:false}).limit(500))
+ ]);
+ const today=booksToday();
+ for(const invoice of invoices){invoice.paid=booksInvoicePaid(invoice,allocations,receipts);invoice.outstanding=invoice.voided_at?0:Number(invoice.total_minor)-invoice.paid;invoice.state=booksInvoiceStatus(invoice,invoice.paid,today);}
+ const invoiced=new Set(invoices.filter(i=>!i.voided_at).map(i=>i.proforma_id));
+ return {accounts,settings:settings[0]||{version:1,locked_through:null},invoices,receipts,allocations,toInvoice:proformas.filter(p=>!invoiced.has(p.id)),today};
+}
+async function booksWorkspace(){
+ const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
+ const current=()=>me?.user_id===actor&&view==='books'&&epoch===booksEpoch;
+ if(!current())return;
+ $('#content').innerHTML='<p role="status">Loading the books…</p>';
+ const data=await loadBooksData();
+ if(!current())return;
+ booksData=data;
+ const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports}[booksSection]||booksOverview;
+ $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>Books</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
+ <div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>
+ <div id="booksBody"></div></section>`;
+ document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
+ await body(actor,current);
+}
+async function booksOverview(actor,current){
+ const d=booksData,today=d.today;
+ const [tb,pl]=await Promise.all([booksRpc('acc_trial_balance',{p_as_of:today}),booksRpc('acc_profit_and_loss',{p_from:booksMonthStart(today),p_to:today})]);
+ if(!current())return;
+ const balance=key=>{const account=d.accounts.find(a=>a.system_key===key);const row=account&&tb.find(r=>r.account_id===account.id);return row?Number(row.debit_minor)-Number(row.credit_minor):0;};
+ const money=['cash','bank','mobile_money'].reduce((s,k)=>s+balance(k),0);
+ const income=pl.filter(r=>r.account_type==='income').reduce((s,r)=>s+Number(r.amount_minor),0),expense=pl.filter(r=>r.account_type==='expense').reduce((s,r)=>s+Number(r.amount_minor),0);
+ const overdue=d.invoices.filter(i=>i.state.key==='overdue');
+ $('#booksBody').innerHTML=`<div class="books-metrics">
+  <div><small>Cash, bank and mobile money</small><strong>${booksMoney(money)}</strong></div>
+  <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
+  <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
+  <div><small>Profit this month</small><strong>${booksMoney(income-expense)}</strong></div></div>
+ <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
+ <section class="card"><h2>Overdue invoices (${overdue.length})</h2>${overdue.length?booksInvoiceTable(overdue.slice(0,20)):'<p class="empty">No overdue invoices.</p>'}</section>`;
+ document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};return booksWorkspace();}));
+ wireBooksInvoiceActions();
+}
+function booksInvoiceTable(rows){
+ return `<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date · due</th><th>Customer</th><th>Total</th><th>Paid</th><th>Owed</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.invoice_number)}<small>${esc(booksData.toInvoice.find(p=>p.id===i.proforma_id)?.document_number||'')}${i.tax_invoice_reference?` · Tax inv. ${esc(i.tax_invoice_reference)}`:''}</small></td><td>${esc(i.invoice_date)}<small>due ${esc(i.due_date)}</small></td><td>${esc(booksCustomer(i.organization_id))}</td><td>${booksMoney(i.total_minor)}</td><td>${booksMoney(i.paid)}</td><td>${booksMoney(i.outstanding)}</td><td><span class="tag books-${i.state.key}">${esc(i.state.label)}</span></td><td class="actions"><button type="button" data-books-print-invoice="${esc(i.id)}">Print</button>${i.voided_at?'':`<button type="button" class="danger" data-books-void-invoice="${esc(i.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function wireBooksInvoiceActions(){
+ document.querySelectorAll('[data-books-print-invoice]').forEach(b=>b.onclick=()=>booksPrintInvoice(booksData.invoices.find(i=>i.id===b.dataset.booksPrintInvoice)));
+ document.querySelectorAll('[data-books-void-invoice]').forEach(b=>b.onclick=()=>booksVoidPrompt('invoice',booksData.invoices.find(i=>i.id===b.dataset.booksVoidInvoice)));
+}
+function booksVoidPrompt(kind,record){
+ if(!record)return;
+ const number=kind==='invoice'?record.invoice_number:record.receipt_number;
+ const box=document.createElement('section');box.className='card books-void';
+ box.innerHTML=`<h2>Void ${esc(number)}</h2><p>Voiding posts a reversing entry dated below. The original stays in the books.${kind==='invoice'?' Void its receipts first if any were paid against it.':''}</p><form id="booksVoidForm"><div class="grid"><label><span>Date of the reversal</span><input name="date" type="date" required value="${esc(booksData.today)}"></label><label><span>Reason (at least 5 characters)</span><input name="reason" required minlength="5" maxlength="300"></label></div><div class="actions"><button type="submit">Void ${esc(number)}</button><button type="button" id="booksVoidCancel">Cancel</button></div></form>`;
+ $('#booksBody').prepend(box);box.scrollIntoView({block:'start'});
+ $('#booksVoidCancel').onclick=()=>box.remove();
+ $('#booksVoidForm').onsubmit=event=>{event.preventDefault();const f=new FormData(event.target);run(async()=>{
+  await booksRpc(kind==='invoice'?'void_invoice':'void_receipt',kind==='invoice'?{p_invoice_id:record.id,p_date:f.get('date'),p_reason:f.get('reason')}:{p_receipt_id:record.id,p_date:f.get('date'),p_reason:f.get('reason')});
+  message(`${number} voided.`);await booksWorkspace();
+ });};
+}
+async function booksInvoices(){
+ const d=booksData,chosen=booksDraft?.proformaId||'';
+ $('#booksBody').innerHTML=`<section class="card"><h2>Create an invoice from an accepted Pro forma</h2>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
+  <label class="wide"><span>Accepted Pro forma</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · ${esc(booksMoney(p.total_minor))}</option>`).join('')}</select></label>
+  <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
+  <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
+  <label class="wide"><span>Tax invoice number (TallyPrime / EFD) · optional</span><input name="taxref" maxlength="80"></label></div>
+  <p class="muted">Posts: customer owes the total; sales gets the amount after discount; VAT goes to VAT output payable.</p>
+  <div class="actions"><button type="submit">Post invoice</button></div></form>`:'<p class="empty">No accepted Pro formas are waiting for an invoice.</p>'}</section>
+ <section class="card"><div class="heading"><h2>Invoices (${d.invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${d.invoices.length?booksInvoiceTable(d.invoices):'<p class="empty">No invoices yet.</p>'}</section>`;
+ const form=$('#booksInvoiceForm');
+ if(form){const id=crypto.randomUUID();form.onsubmit=event=>{event.preventDefault();const f=new FormData(form);run(async()=>{
+  const r=await booksRpc('create_invoice_from_proforma',{p_id:id,p_proforma_id:f.get('proforma'),p_invoice_date:f.get('date'),p_due_date:f.get('due'),p_tax_reference:f.get('taxref')||''});
+  booksDraft=null;message(`${r.invoice_number} posted.`);await booksWorkspace();
+ });};}
+ $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tax_invoice_reference','Tax invoice'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
+  d.invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
+ wireBooksInvoiceActions();
+}
+function booksPrintInvoice(invoice){
+ if(!invoice)return;
+ const lines=Array.isArray(invoice.lines)?invoice.lines:[];
+ const area=document.createElement('section');area.className='books-print';
+ area.innerHTML=`<header><img src="assets/anudha-logo.svg" alt="Anudha Limited" width="160"><div><strong>INVOICE ${esc(invoice.invoice_number)}</strong>${invoice.voided_at?'<b>VOID</b>':''}<small>Date ${esc(invoice.invoice_date)} · Due ${esc(invoice.due_date)}${invoice.tax_invoice_reference?` · Tax invoice ${esc(invoice.tax_invoice_reference)}`:''}</small></div></header>
+ <p><small>Bill to</small><strong>${esc(booksCustomer(invoice.organization_id))}</strong></p>
+ <table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>VAT</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.description)}</td><td>${esc(l.quantity)} ${esc(l.uom||'')}</td><td>${booksMoney(l.unit_price_minor)}</td><td>${Number(l.discount_basis_points||0)/100}%</td><td>${Number(l.tax_basis_points||0)/100}%</td></tr>`).join('')}</tbody></table>
+ <dl><dt>Subtotal</dt><dd>${booksMoney(invoice.subtotal_minor)}</dd><dt>Discount</dt><dd>${booksMoney(invoice.discount_minor)}</dd><dt>VAT</dt><dd>${booksMoney(invoice.tax_minor)}</dd><dt>Total</dt><dd><strong>${booksMoney(invoice.total_minor)}</strong></dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Balance due</dt><dd><strong>${booksMoney(invoice.outstanding)}</strong></dd></dl>
+ <div class="actions no-print"><button type="button" id="booksPrintNow">Print / PDF</button><button type="button" id="booksPrintClose">Close</button></div>`;
+ $('#booksBody').prepend(area);area.scrollIntoView({block:'start'});
+ $('#booksPrintClose').onclick=()=>{document.body.classList.remove('books-printing');area.remove();};
+ $('#booksPrintNow').onclick=()=>{document.body.classList.add('books-printing');window.print();document.body.classList.remove('books-printing');};
+}
+// Money accounts: cash, bank and mobile money (codes 1100–1299), never receivables.
+function booksDepositAccounts(){return booksData.accounts.filter(a=>a.active&&a.account_type==='asset'&&a.system_key!=='receivables'&&/^1[12]\d\d$/.test(a.code));}
+async function booksReceipts(){
+ const d=booksData,draft=booksDraft?.receipt||{organizationId:'',amount:'',method:'bank'};
+ const openFor=org=>d.invoices.filter(i=>i.organization_id===org&&!i.voided_at&&i.outstanding>0);
+ const deposits=booksDepositAccounts();
+ $('#booksBody').innerHTML=`<section class="card"><h2>Record money received from a customer</h2><form id="booksReceiptForm"><div class="grid">
+  <label class="wide"><span>Customer</span><select name="organization" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${typeof salesOrganizationOptions==='function'?salesOrganizationOptions():''}</select></label>
+  <label><span>Date received</span><input name="date" type="date" required value="${esc(d.today)}"></label>
+  <label><span>Amount (TZS)</span><input name="amount" inputmode="decimal" required placeholder="e.g. 1500000"></label>
+  <label><span>How it was paid</span><select name="method">${booksMethods.map(([k,l])=>`<option value="${k}"${k===draft.method?' selected':''}>${esc(l)}</option>`).join('')}</select></label>
+  <label><span>Paid into</span><select name="deposit" required>${deposits.map(a=>`<option value="${esc(a.id)}"${a.system_key==='bank'?' selected':''}>${esc(booksAccountLabel(a))}</option>`).join('')}</select></label>
+  <label class="wide"><span>Reference (bank slip, M-Pesa code, cheque number) · optional</span><input name="reference" maxlength="120"></label></div>
+  <div id="booksAllocation"><p class="muted">Choose a customer to see what they owe.</p></div>
+  <p id="booksReceiptCheck" class="muted"></p>
+  <div class="actions"><button type="submit">Record receipt</button></div></form></section>
+ <section class="card"><div class="heading"><h2>Receipts (${d.receipts.length})</h2><button type="button" id="booksReceiptsCsv">Download CSV</button></div>${d.receipts.length?`<div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Customer</th><th>Method · reference</th><th>Amount</th><th>Applied to</th><th></th></tr></thead><tbody>${d.receipts.map(r=>`<tr><td>${esc(r.receipt_number)}${r.voided_at?'<small>Void</small>':''}</td><td>${esc(r.receipt_date)}</td><td>${esc(booksCustomer(r.organization_id))}</td><td>${esc(booksMethods.find(([k])=>k===r.method)?.[1]||r.method)}<small>${esc(r.reference)}</small></td><td>${booksMoney(r.amount_minor)}</td><td>${d.allocations.filter(a=>a.receipt_id===r.id).map(a=>`${esc(d.invoices.find(i=>i.id===a.invoice_id)?.invoice_number||'Invoice')} ${booksMoney(a.amount_minor)}`).join('<br>')||'<small>Customer credit</small>'}</td><td>${r.voided_at?'':`<button type="button" class="danger" data-books-void-receipt="${esc(r.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">No receipts yet.</p>'}</section>`;
+ const form=$('#booksReceiptForm'),id=crypto.randomUUID();
+ const allocationInputs=()=>[...document.querySelectorAll('[data-books-allocate]')];
+ const check=()=>{
+  let amount=0,applied=0,problem='';
+  try{amount=form.amount.value.trim()?moneyMinor(form.amount.value):0;}catch(error){problem=`Amount: ${error.message}`;}
+  for(const input of allocationInputs()){if(!input.value.trim())continue;try{applied+=moneyMinor(input.value);}catch(error){problem=problem||`Allocation: ${error.message}`;}}
+  if(!problem&&applied>amount)problem='The amounts applied add up to more than the amount received.';
+  $('#booksReceiptCheck').textContent=problem||(amount?`Applied ${moneyDisplay(applied)} · left as customer credit ${moneyDisplay(amount-applied)}`:'');
+  $('#booksReceiptCheck').className=problem?'error':'muted';
+  return {amount,problem};
+ };
+ const showOpen=()=>{
+  const open=openFor(form.organization.value);
+  $('#booksAllocation').innerHTML=!form.organization.value?'<p class="muted">Choose a customer to see what they owe.</p>':open.length?`<h3>Apply to invoices</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Due</th><th>Owed</th><th>Apply (TZS)</th></tr></thead><tbody>${open.map(i=>`<tr><td>${esc(i.invoice_number)}</td><td>${esc(i.due_date)}</td><td>${booksMoney(i.outstanding)}</td><td><input data-books-allocate="${esc(i.id)}" inputmode="decimal" aria-label="Amount applied to ${esc(i.invoice_number)}"></td></tr>`).join('')}</tbody></table></div><button type="button" id="booksOldestFirst">Apply to oldest invoices first</button>`:'<p class="muted">This customer has no unpaid invoices. The receipt will be kept as a customer credit.</p>';
+  const oldest=$('#booksOldestFirst');
+  if(oldest)oldest.onclick=()=>{const {amount,problem}=check();if(problem&&!amount)return;const plan=booksAllocateOldest(amount,open);allocationInputs().forEach(input=>{const v=plan.get(input.dataset.booksAllocate);input.value=v?(v/100).toFixed(2):'';});check();};
+  allocationInputs().forEach(input=>input.oninput=check);check();
+ };
+ form.organization.onchange=showOpen;form.amount.oninput=check;showOpen();
+ form.onsubmit=event=>{event.preventDefault();const {amount,problem}=check();if(problem){message(problem,true);return;}if(!amount){message('Enter the amount received.',true);return;}
+  const allocations=allocationInputs().filter(i=>i.value.trim()).map(i=>({invoice_id:i.dataset.booksAllocate,amount_minor:moneyMinor(i.value)}));
+  run(async()=>{const r=await booksRpc('record_receipt',{p_id:id,p_organization_id:form.organization.value,p_date:form.date.value,p_amount_minor:amount,p_method:form.method.value,p_reference:form.reference.value,p_deposit_account_id:form.deposit.value,p_allocations:allocations});
+   message(`${r.receipt_number} recorded.`);await booksWorkspace();});};
+ document.querySelectorAll('[data-books-void-receipt]').forEach(b=>b.onclick=()=>booksVoidPrompt('receipt',d.receipts.find(r=>r.id===b.dataset.booksVoidReceipt)));
+ $('#booksReceiptsCsv').onclick=()=>booksDownload(`receipts-${d.today}.csv`,booksCsv([['receipt_number','Receipt'],['receipt_date','Date'],['customer','Customer'],['method','Method'],['reference','Reference'],['amount','Amount'],['status','Status']],
+  d.receipts.map(r=>({...r,customer:booksCustomer(r.organization_id),amount:(Number(r.amount_minor)/100).toFixed(2),status:r.voided_at?'Void':'Recorded'}))));
+}
+async function booksJournal(actor,current){
+ const d=booksData;
+ const entries=await booksSelect('acc_journal_entries','*',q=>q.order('entry_date',{ascending:false}).order('entry_number',{ascending:false}).limit(100));
+ const lines=entries.length?await booksSelect('acc_journal_lines','*',q=>q.in('entry_id',entries.map(e=>e.id)).order('line_no')):[];
+ if(!current())return;
+ const reversed=new Set(entries.filter(e=>e.reverses_entry_id).map(e=>e.reverses_entry_id));
+ const draft=booksDraft?.journal||{date:d.today,memo:'',lines:[{},{}]};
+ const active=d.accounts.filter(a=>a.active);
+ const lineRow=(line,i)=>`<tr><td><select data-jl="accountId" data-i="${i}" aria-label="Account, line ${i+1}"><option value="">Choose account</option>${booksTypes.map(([type,label])=>`<optgroup label="${label}">${active.filter(a=>a.account_type===type).map(a=>`<option value="${esc(a.id)}"${a.id===line.accountId?' selected':''}>${esc(booksAccountLabel(a))}</option>`).join('')}</optgroup>`).join('')}</select></td><td><input data-jl="debit" data-i="${i}" inputmode="decimal" value="${esc(line.debit||'')}" aria-label="Debit, line ${i+1}"></td><td><input data-jl="credit" data-i="${i}" inputmode="decimal" value="${esc(line.credit||'')}" aria-label="Credit, line ${i+1}"></td><td><input data-jl="description" data-i="${i}" maxlength="300" value="${esc(line.description||'')}" aria-label="Note, line ${i+1}"></td></tr>`;
+ $('#booksBody').innerHTML=`<section class="card"><h2>New journal entry</h2><p class="muted">For anything that is not a customer invoice or receipt: expenses, supplier bills, salaries, opening balances, depreciation. Debits must equal credits.</p><form id="booksJournalForm"><div class="grid"><label><span>Date</span><input name="date" type="date" required value="${esc(draft.date)}"></label><label><span>Description</span><input name="memo" required minlength="3" maxlength="500" value="${esc(draft.memo)}" placeholder="e.g. October office rent"></label></div>
+ <div class="table-wrap"><table><thead><tr><th>Account</th><th>Debit (TZS)</th><th>Credit (TZS)</th><th>Note</th></tr></thead><tbody id="booksJournalLines">${draft.lines.map(lineRow).join('')}</tbody></table></div>
+ <p id="booksJournalCheck" class="muted"></p><div class="actions"><button type="button" id="booksAddLine">Add line</button><button type="submit">Post entry</button></div></form></section>
+ <section class="card"><h2>Recent entries</h2>${entries.length?entries.map(e=>`<article class="contact"><div class="heading"><div><strong>${esc(e.entry_number)} · ${esc(e.entry_date)}</strong><p>${esc(e.memo)}</p><small>${esc({manual:'Journal entry',invoice:'Customer invoice',receipt:'Customer receipt',reversal:'Reversal'}[e.source_type])} · by ${esc(typeof employeeName==='function'?employeeName(e.created_by):'')}</small></div>${e.source_type==='manual'&&!reversed.has(e.id)?`<button type="button" data-books-reverse="${esc(e.id)}">Reverse</button>`:reversed.has(e.id)?'<span class="tag">Reversed</span>':''}</div><div class="table-wrap"><table><tbody>${lines.filter(l=>l.entry_id===e.id).map(l=>`<tr><td>${esc(booksAccountLabel(d.accounts.find(a=>a.id===l.account_id)))}${l.organization_id?`<small>${esc(booksCustomer(l.organization_id))}</small>`:''}</td><td>${Number(l.debit_minor)?booksMoney(l.debit_minor):''}</td><td>${Number(l.credit_minor)?booksMoney(l.credit_minor):''}</td><td><small>${esc(l.description)}</small></td></tr>`).join('')}</tbody></table></div></article>`).join(''):'<p class="empty">No entries yet.</p>'}</section>`;
+ const form=$('#booksJournalForm'),id=crypto.randomUUID();
+ const read=()=>{const out=[];document.querySelectorAll('[data-jl]').forEach(input=>{const i=Number(input.dataset.i);out[i]=out[i]||{};out[i][input.dataset.jl]=input.value;});return out;};
+ const check=()=>{const result=booksJournalCheck(read());$('#booksJournalCheck').textContent=result.problem||`Balanced: ${moneyDisplay(result.debit)} debit and credit.`;$('#booksJournalCheck').className=result.problem?'error':'muted';return result;};
+ const save=()=>{booksDraft={journal:{date:form.date.value,memo:form.memo.value,lines:read()}};};
+ form.oninput=check;check();
+ $('#booksAddLine').onclick=()=>{save();booksDraft.journal.lines.push({});booksJournal(actor,current);};
+ form.onsubmit=event=>{event.preventDefault();const result=check();if(result.problem){message(result.problem,true);return;}
+  const posted=read().filter(l=>l.accountId||String(l.debit||'').trim()||String(l.credit||'').trim()).map(l=>({account_id:l.accountId,debit_minor:String(l.debit||'').trim()?moneyMinor(l.debit):0,credit_minor:String(l.credit||'').trim()?moneyMinor(l.credit):0,description:l.description||''}));
+  run(async()=>{const r=await booksRpc('post_manual_journal',{p_id:id,p_date:form.date.value,p_memo:form.memo.value,p_lines:posted});booksDraft=null;message(`${r.entry_number} posted.`);await booksWorkspace();});};
+ document.querySelectorAll('[data-books-reverse]').forEach(b=>b.onclick=()=>{
+  const entry=entries.find(e=>e.id===b.dataset.booksReverse);const box=document.createElement('form');box.className='card';
+  box.innerHTML=`<h3>Reverse ${esc(entry.entry_number)}</h3><div class="grid"><label><span>Date of the reversal</span><input name="date" type="date" required value="${esc(d.today)}"></label><label><span>Reason (at least 5 characters)</span><input name="reason" required minlength="5" maxlength="300"></label></div><div class="actions"><button type="submit">Post reversal</button></div>`;
+  b.closest('article').append(box);b.disabled=true;const reversalId=crypto.randomUUID();
+  box.onsubmit=event=>{event.preventDefault();run(async()=>{const r=await booksRpc('reverse_journal_entry',{p_id:reversalId,p_entry_id:entry.id,p_date:box.date.value,p_reason:box.reason.value});message(`${r.entry_number} posted.`);await booksWorkspace();});};
+ });
+}
+async function booksAccounts(actor,current){
+ const d=booksData,tb=await booksRpc('acc_trial_balance',{p_as_of:d.today});
+ if(!current())return;
+ const bal=id=>{const r=tb.find(x=>x.account_id===id);return r?Number(r.debit_minor)-Number(r.credit_minor):0;};
+ const editing=booksDraft?.account||null;
+ $('#booksBody').innerHTML=`<section class="card"><h2>${editing?.version?`Edit ${esc(editing.code)}`:'Add an account'}</h2><p class="muted">Standard starting list; ask the accountant to match it to the TallyPrime ledgers. Accounts used by automatic postings cannot be switched off.</p><form id="booksAccountForm"><div class="grid">
+  <label><span>Code (4 to 6 digits)</span><input name="code" required pattern="[0-9]{4,6}" value="${esc(editing?.code||'')}"></label>
+  <label><span>Name</span><input name="name" required minlength="2" maxlength="120" value="${esc(editing?.name||'')}"></label>
+  <label><span>Type</span><select name="type">${booksTypes.map(([k,l])=>`<option value="${k}"${k===(editing?.account_type||'expense')?' selected':''}>${esc(l.replace(/s$/,''))}</option>`).join('')}</select></label>
+  <label><span>In use</span><select name="active"><option value="true"${editing?.active===false?'':' selected'}>Yes</option><option value="false"${editing?.active===false?' selected':''}>No (hidden from new entries)</option></select></label></div>
+  <div class="actions"><button type="submit">${editing?.version?'Save changes':'Add account'}</button>${editing?'<button type="button" id="booksAccountCancel">Cancel</button>':''}</div></form></section>
+ ${d.settings&&(()=>{try{return typeof me}catch{return 'undefined'}})()!=='undefined'&&me?.role==='owner'?`<section class="card"><h2>Lock the books</h2><p class="muted">Nothing can be posted on or before the lock date. Owner only.</p><form id="booksLockForm" class="actions"><input name="date" type="date" value="${esc(d.settings.locked_through||'')}" aria-label="Locked through"><button type="submit">Save lock date</button></form></section>`:''}
+ ${booksTypes.map(([type,label])=>`<section class="card"><h2>${esc(label)}</h2><div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Balance today</th><th></th></tr></thead><tbody>${d.accounts.filter(a=>a.account_type===type).map(a=>`<tr${a.active?'':' class="muted"'}><td>${esc(a.code)}</td><td>${esc(a.name)}${a.system_key?'<small>Used by automatic postings</small>':''}${a.active?'':'<small>Not in use</small>'}</td><td>${booksMoney(['asset','expense'].includes(type)?bal(a.id):-bal(a.id))}</td><td><button type="button" data-books-edit-account="${esc(a.id)}">Edit</button> <button type="button" data-books-account-ledger="${esc(a.id)}">Ledger</button></td></tr>`).join('')}</tbody></table></div></section>`).join('')}`;
+ const form=$('#booksAccountForm'),id=editing?.id||crypto.randomUUID();
+ form.onsubmit=event=>{event.preventDefault();run(async()=>{await booksRpc('save_ledger_account',{p_id:id,p_expected_version:editing?.version??null,p_code:form.code.value,p_name:form.name.value,p_type:form.type.value,p_active:form.active.value==='true'});booksDraft=null;message('Account saved.');await booksWorkspace();});};
+ if($('#booksAccountCancel'))$('#booksAccountCancel').onclick=()=>run(()=>{booksDraft=null;return booksWorkspace();});
+ const lock=$('#booksLockForm');if(lock)lock.onsubmit=event=>{event.preventDefault();run(async()=>{await booksRpc('set_books_lock',{p_expected_version:d.settings.version,p_locked_through:lock.date.value||null});message(lock.date.value?`Books locked through ${lock.date.value}.`:'Lock date removed.');await booksWorkspace();});};
+ document.querySelectorAll('[data-books-edit-account]').forEach(b=>b.onclick=()=>run(()=>{booksDraft={account:d.accounts.find(a=>a.id===b.dataset.booksEditAccount)};return booksWorkspace();}));
+ document.querySelectorAll('[data-books-account-ledger]').forEach(b=>b.onclick=()=>run(()=>{booksSection='reports';booksReport={...booksReport,kind:'ledger',accountId:b.dataset.booksAccountLedger};booksDraft=null;syncWorkspaceNavigation();return booksWorkspace();}));
+}
+const booksReportKinds=[['trial','Trial balance'],['pl','Profit and loss'],['bs','Balance sheet'],['ageing','Customer ageing'],['ledger','Account ledger']];
+async function booksReports(actor,current){
+ const d=booksData,today=d.today,r=booksReport;
+ r.asOf=r.asOf||today;r.from=r.from||booksMonthStart(today);r.to=r.to||today;
+ const ranged=r.kind==='pl'||r.kind==='ledger';
+ let columns=[],rows=[],totals='';
+ if(r.kind==='trial'){rows=await booksRpc('acc_trial_balance',{p_as_of:r.asOf});columns=[['code','Code'],['name','Account'],['debit','Debit'],['credit','Credit']];
+  const dr=rows.reduce((s,x)=>s+Number(x.debit_minor),0),cr=rows.reduce((s,x)=>s+Number(x.credit_minor),0);rows=rows.map(x=>({...x,debit:Number(x.debit_minor)?booksMoney(x.debit_minor):'',credit:Number(x.credit_minor)?booksMoney(x.credit_minor):''}));
+  totals=`Total debits ${booksMoney(dr)} · total credits ${booksMoney(cr)}${dr===cr?' · balanced':' · NOT BALANCED'}`;}
+ if(r.kind==='pl'){const raw=await booksRpc('acc_profit_and_loss',{p_from:r.from,p_to:r.to});const inc=raw.filter(x=>x.account_type==='income'),exp=raw.filter(x=>x.account_type==='expense');
+  const ti=inc.reduce((s,x)=>s+Number(x.amount_minor),0),te=exp.reduce((s,x)=>s+Number(x.amount_minor),0);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
+  rows=[...inc.map(x=>({...x,section:'Income',amount:booksMoney(x.amount_minor)})),{section:'Income',name:'Total income',amount:booksMoney(ti)},...exp.map(x=>({...x,section:'Expenses',amount:booksMoney(x.amount_minor)})),{section:'Expenses',name:'Total expenses',amount:booksMoney(te)},{section:'Result',name:ti-te>=0?'Net profit':'Net loss',amount:booksMoney(ti-te)}];}
+ if(r.kind==='bs'){const raw=await booksRpc('acc_balance_sheet',{p_as_of:r.asOf});const sum=t=>raw.filter(x=>x.account_type===t).reduce((s,x)=>s+Number(x.amount_minor),0);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
+  rows=booksTypes.slice(0,3).flatMap(([t,label])=>[...raw.filter(x=>x.account_type===t).map(x=>({...x,section:label,amount:booksMoney(x.amount_minor)})),{section:label,name:`Total ${label.toLowerCase()}`,amount:booksMoney(sum(t))}]);
+  totals=`Assets ${booksMoney(sum('asset'))} · liabilities and equity ${booksMoney(sum('liability')+sum('equity'))}${sum('asset')===sum('liability')+sum('equity')?' · balanced':' · NOT BALANCED'}`;}
+ if(r.kind==='ageing'){const raw=await booksRpc('acc_receivables_ageing',{p_as_of:r.asOf});columns=[['customer','Customer'],['cur','Not yet due'],['d30','1–30 days'],['d60','31–60'],['d90','61–90'],['d91','Over 90'],['credit','Unapplied credit'],['bal','Balance']];
+  rows=raw.map(x=>({customer:x.customer,cur:booksMoney(x.current_minor),d30:booksMoney(x.days_1_30_minor),d60:booksMoney(x.days_31_60_minor),d90:booksMoney(x.days_61_90_minor),d91:booksMoney(x.days_over_90_minor),credit:booksMoney(x.unapplied_credit_minor),bal:booksMoney(x.balance_minor)}));
+  totals=`Total owed ${booksMoney(raw.reduce((s,x)=>s+Number(x.balance_minor),0))}`;}
+ if(r.kind==='ledger'){r.accountId=r.accountId||d.accounts.find(a=>a.system_key==='bank')?.id||'';const raw=r.accountId?await booksRpc('acc_account_ledger',{p_account_id:r.accountId,p_from:r.from,p_to:r.to}):[];
+  columns=[['entry_date','Date'],['entry_number','Entry'],['memo','Description'],['debit','Debit'],['credit','Credit'],['balance','Balance']];
+  rows=raw.map(x=>({...x,debit:Number(x.debit_minor)?booksMoney(x.debit_minor):'',credit:Number(x.credit_minor)?booksMoney(x.credit_minor):'',balance:booksMoney(x.balance_minor)}));}
+ if(!current())return;
+ const title=booksReportKinds.find(([k])=>k===r.kind)[1];
+ $('#booksBody').innerHTML=`<section class="card"><form id="booksReportForm" class="grid"><label><span>Report</span><select name="kind">${booksReportKinds.map(([k,l])=>`<option value="${k}"${k===r.kind?' selected':''}>${esc(l)}</option>`).join('')}</select></label>
+ ${r.kind==='ledger'?`<label><span>Account</span><select name="account">${d.accounts.map(a=>`<option value="${esc(a.id)}"${a.id===r.accountId?' selected':''}>${esc(booksAccountLabel(a))}</option>`).join('')}</select></label>`:''}
+ ${ranged?`<label><span>From</span><input name="from" type="date" value="${esc(r.from)}"></label><label><span>To</span><input name="to" type="date" value="${esc(r.to)}"></label>`:`<label><span>As at</span><input name="asOf" type="date" value="${esc(r.asOf)}"></label>`}
+ <div class="actions wide"><button type="submit">Show report</button><button type="button" id="booksReportCsv">Download CSV</button><button type="button" id="booksReportPrint">Print / PDF</button></div></form></section>
+ <section class="card books-report"><h2>${esc(title)}</h2><p class="muted">${ranged?`${esc(r.from)} to ${esc(r.to)}`:`As at ${esc(r.asOf)}`} · TZS</p>${rows.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,l])=>`<th>${esc(l)}</th>`).join('')}</tr></thead><tbody>${rows.map(x=>`<tr${x.code||x.entry_number||x.customer?'':' class="books-total"'}>${columns.map(([k])=>`<td>${esc(x[k]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<p class="empty">Nothing posted for this report yet.</p>'}${totals?`<p><strong>${esc(totals)}</strong></p>`:''}</section>`;
+ const form=$('#booksReportForm');
+ form.onsubmit=event=>{event.preventDefault();run(()=>{booksReport={kind:form.kind.value,asOf:form.asOf?.value||r.asOf,from:form.from?.value||r.from,to:form.to?.value||r.to,accountId:form.account?.value||r.accountId};return booksWorkspace();});};
+ form.kind.onchange=()=>form.requestSubmit();
+ $('#booksReportCsv').onclick=()=>booksDownload(`${title.toLowerCase().replace(/\s+/g,'-')}-${ranged?r.to:r.asOf}.csv`,booksCsv(columns,rows));
+ $('#booksReportPrint').onclick=()=>{document.body.classList.add('books-printing-report');window.print();document.body.classList.remove('books-printing-report');};
+}
 ;// employee-names.js
 'use strict';
 let employeeDirectory=new Map(),employeeNamesEpoch=0;
@@ -4760,8 +5090,15 @@ function openEmployeeNameEditor(){
 async function twoStepNeeded(){
  try{
   const level=await client.auth.mfa.getAuthenticatorAssuranceLevel();
-  return !level.error&&level.data?.nextLevel==='aal2'&&level.data?.currentLevel!=='aal2';
+  if(level.error)return false;
+  if(level.data?.nextLevel==='aal2'&&level.data?.currentLevel!=='aal2')return true;
+  // The database accepts a code for 30 days (migration 088); after that it asks again, even on a trusted device.
+  return level.data?.currentLevel==='aal2'&&twoStepCodeStale(level.data?.currentAuthenticationMethods);
  }catch{return false;}
+}
+function twoStepCodeStale(methods,now=Date.now()){
+ const last=Math.max(0,...(methods||[]).filter(m=>m?.method==='totp').map(m=>Number(m.timestamp)||0));
+ return last*1000<now-30*86400000;
 }
 async function twoStepFactor(){
  const factors=await client.auth.mfa.listFactors();
@@ -4772,14 +5109,15 @@ function twoStepCodeField(label='6-digit code'){return `<label><span>${label}</s
 function twoStepCode(value){const code=String(value||'').replace(/\s/g,'');if(!/^\d{6}$/.test(code))throw Error('Type the 6 numbers shown in your authenticator app.');return code;}
 // Sign-in step two. onDone runs load() again once the code is accepted.
 function showTwoStepPrompt(onDone){
- $('#content').innerHTML=`<form id="twoStepLogin" class="login card"><small>ANUDHA WORKSPACE</small><h1>Enter your code</h1><p class="muted">Open the authenticator app on your phone and type the 6 numbers shown for Anudha ERP.</p>${twoStepCodeField()}<button type="submit">Continue</button><button type="button" id="twoStepSignOut">Sign out</button><p class="muted">Lost your phone? Ask the owner to reset your two-step sign-in.</p></form>`;
+ $('#content').innerHTML=`<form id="twoStepLogin" class="login card"><small>ANUDHA WORKSPACE</small><h1>Enter your code</h1><p class="muted">Open the authenticator app on your phone and type the 6 numbers shown for Anudha ERP.</p>${twoStepCodeField()}${typeof deviceTrustField==='function'?deviceTrustField():''}<button type="submit">Continue</button><button type="button" id="twoStepSignOut">Sign out</button><p class="muted">Lost your phone? Ask the owner to reset your two-step sign-in.</p></form>`;
  $('#twoStepLogin [name="code"]').focus();
- $('#twoStepSignOut').onclick=()=>run(async()=>{await client.auth.signOut();login();});
+ $('#twoStepSignOut').onclick=()=>run(async()=>{if(typeof forgetThisDevice==='function')forgetThisDevice();await client.auth.signOut();login();});
  $('#twoStepLogin').onsubmit=event=>{event.preventDefault();run(async()=>{
   const code=twoStepCode(new FormData(event.target).get('code')),factor=await twoStepFactor();
   if(!factor)throw Error('No authenticator is set up for this login. Ask the owner.');
   const result=await client.auth.mfa.challengeAndVerify({factorId:factor.id,code});
   if(result.error)throw Error(/invalid|expired/i.test(result.error.message)?'That code is not right or has expired. Type the new code.':result.error.message);
+  if(event.target.trustDevice?.checked&&typeof trustThisDevice==='function')trustThisDevice();
   await onDone();
  });};
 }
@@ -4805,7 +5143,7 @@ async function twoStepSetupRequired(){try{const r=await client.rpc('two_step_set
 // Sign-in for someone who must use two-step sign-in but has not set it up. onDone runs load() again afterwards.
 function showTwoStepSetupRequired(onDone){
  $('#content').innerHTML=`<section class="login card" id="twoStepRequired"><small>ANUDHA WORKSPACE</small><h1>Set up two-step sign-in</h1><p class="muted">Owners and accounts staff must sign in with a code from their phone as well as their password. This keeps company money and records safe if a password is stolen. It takes about two minutes.</p><div class="actions"><button type="button" id="twoStepStart" class="primary-action">Set up now</button><button type="button" id="twoStepSignOut">Sign out</button></div></section>`;
- $('#twoStepSignOut').onclick=()=>run(async()=>{await client.auth.signOut();login();});
+ $('#twoStepSignOut').onclick=()=>run(async()=>{if(typeof forgetThisDevice==='function')forgetThisDevice();await client.auth.signOut();login();});
  $('#twoStepStart').onclick=()=>run(()=>startTwoStepSetup($('#twoStepRequired'),onDone));
 }
 async function startTwoStepSetup(box,onDone=null){
@@ -4815,13 +5153,14 @@ async function startTwoStepSetup(box,onDone=null){
  const enrolled=await client.auth.mfa.enroll({factorType:'totp',friendlyName:`Anudha ERP ${new Date().toISOString().slice(0,16)}`,issuer:'Anudha ERP'});
  if(enrolled.error)throw Error(enrolled.error.message);
  const {id,totp}=enrolled.data;
- box.innerHTML=`<h2>Turn on two-step sign-in</h2><ol class="howto-steps"><li>On your phone, install <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>.</li><li>In the app, add an account and scan this picture.</li><li>Type the 6 numbers the app shows, then press Confirm.</li></ol><img class="two-step-qr" src="${esc(totp.qr_code)}" alt="Code to scan with the authenticator app" width="200" height="200"><p class="muted">Cannot scan? Type this key into the app instead: <code>${esc(totp.secret)}</code></p><form id="twoStepConfirm">${twoStepCodeField()}<div class="actions"><button type="submit">Confirm</button><button type="button" id="twoStepCancel">Cancel</button></div></form>`;
+ box.innerHTML=`<h2>Turn on two-step sign-in</h2><ol class="howto-steps"><li>On your phone, install <strong>Google Authenticator</strong> or <strong>Microsoft Authenticator</strong>.</li><li>In the app, add an account and scan this picture.</li><li>Type the 6 numbers the app shows, then press Confirm.</li></ol><img class="two-step-qr" src="${esc(totp.qr_code)}" alt="Code to scan with the authenticator app" width="200" height="200"><p class="muted">Cannot scan? Type this key into the app instead: <code>${esc(totp.secret)}</code></p><form id="twoStepConfirm">${twoStepCodeField()}${typeof deviceTrustField==='function'?deviceTrustField():''}<div class="actions"><button type="submit">Confirm</button><button type="button" id="twoStepCancel">Cancel</button></div></form>`;
  $('#twoStepConfirm [name="code"]').focus();
  $('#twoStepCancel').onclick=()=>run(async()=>{await client.auth.mfa.unenroll({factorId:id});if(onDone)showTwoStepSetupRequired(onDone);else settingsWorkspace();});
  $('#twoStepConfirm').onsubmit=event=>{event.preventDefault();run(async()=>{
   const code=twoStepCode(new FormData(event.target).get('code'));
   const result=await client.auth.mfa.challengeAndVerify({factorId:id,code});
   if(result.error)throw Error(/invalid|expired/i.test(result.error.message)?'That code is not right. Wait for a new code in the app and try again.':result.error.message);
+  if(event.target.trustDevice?.checked&&typeof trustThisDevice==='function')trustThisDevice();
   if(onDone)await onDone();else settingsWorkspace();message('Two-step sign-in is on. You will need your phone each time you sign in.');
  });};
 }
@@ -5054,7 +5393,7 @@ function employeeLoginEmail(input){
  if(value.includes('@'))return value;
  // "Tanisha Hassija" is accepted as tanisha.hassija.
  if(/\s/.test(value))value=value.split(/\s+/).map(employeeIdPart).filter(Boolean).join('.');
- if(value.length<2||value.length>40||!employeeIdPattern.test(value))throw Error('Enter your employee ID (for example jagroop) or your work email.');
+ if(value.length<2||value.length>40||!employeeIdPattern.test(value))throw Error('Enter your employee ID or your work email.');
  return `${value}@${employeeLoginDomain()}`;
 }
 function employeeIdPart(word){return String(word??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');}
@@ -5193,7 +5532,7 @@ function openChangePassword({required=false}={}){
 const howToRoles=[['all','All'],['everyone','Everyone'],['sales','Sales'],['accounts','Accounts'],['stores','Packing & delivery'],['service','Service'],['owner','Owner']];
 const howToTopics=[
  {id:'start',role:'everyone',title:'Sign in and find your way around',screens:['contacts'],steps:[
-  'Sign in with your employee ID (your name, for example jagroop) and your password.',
+  'Sign in with your employee ID and your password.',
   'The first time you sign in, choose your own password. You can change it later with **Change password** at the top of the page.',
   'Use the menu on the left to move between pages.',
   'Open **My tasks** every morning. Tasks and order steps given to you are there, most urgent first.',
@@ -5201,7 +5540,7 @@ const howToTopics=[
  {id:'dashboard',role:'everyone',title:'See the day at a glance on the Dashboard',screens:['dashboard'],steps:[
   'The **Dashboard** opens first after you sign in. Open counts everything still open now. Overdues and Due Today count lead follow-ups, tasks, order steps and service visits.',
   'Press a period at the top: Today, This week, This month, This quarter or This year. Custom lets you pick two dates. Periodic counts what came in during that period; Result counts what was finished in it. The Dashboard remembers your choice on this computer or phone.',
-  'Owner and heads of department: **Team tasks** shows each person\'s tasks in the period, for example "Jagroop: 4 open · 11 completed · 1 late". Heads see only their own department. Press a name to see that person\'s tasks and what they wrote when each was done.',
+  'Owner and heads of department: **Team tasks** shows each person\'s tasks in the period: how many are open, completed and late. Heads see only their own department. Press a name to see that person\'s tasks and what they wrote when each was done.',
   'The **bell** at the top shows what is new for you: tasks given to you, work handed to you, and results of tasks you gave in the last 7 days. Press an item to go to it. Opening My tasks marks them as seen.',
   'Press a card to open its list. Cards that are not buttons have no single list to open.',
   'You only see cards for the parts of the software you can use. The Dashboard shows counts only, never amounts.']},
@@ -5243,6 +5582,27 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
+ {id:'books-invoice',role:'accounts',title:'Invoice an accepted Pro forma in the Books',screens:['books:overview','books:invoices'],steps:[
+  'Open **Books overview**. Accepted Pro formas that still need an invoice are listed there.',
+  'Press **Create invoice**, or open **Customer invoices** and choose the Pro forma.',
+  'Check the invoice date and due date, type the TallyPrime or EFD tax invoice number if you have it, and press **Post invoice**.',
+  'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. Press **Print** for a copy.',
+  'A wrong invoice is never edited: press **Void**, give the reason, and invoice the Pro forma again.']},
+ {id:'books-receipt',role:'accounts',title:'Record money received from a customer',screens:['books:receipts'],steps:[
+  'Open **Customer receipts**. Choose the customer, the date, the amount, how they paid and the account it went into.',
+  'Their unpaid invoices appear. Type how much goes to each, or press **Apply to oldest invoices first**.',
+  'Press **Record receipt**. Anything not applied stays as a credit for that customer.',
+  'If a cheque bounces or a receipt was wrong, press **Void** next to it and give the reason.']},
+ {id:'books-journal',role:'accounts',title:'Post expenses, bills and other entries',screens:['books:journal','books:accounts'],steps:[
+  'Open **Journal entries**. Write a description and the date.',
+  'Choose an account on each line and type the debit or the credit. Press **Add line** for more lines.',
+  'When debits and credits are equal, press **Post entry**. A posted entry is never changed: use **Reverse** to undo it.',
+  'Open **Chart of accounts** to add or rename accounts, and press **Ledger** next to any account to see every movement.']},
+ {id:'books-reports',role:'accounts',title:'See the financial reports',screens:['books:reports'],steps:[
+  'Open **Financial reports** and choose a report: trial balance, profit and loss, balance sheet, customer ageing or account ledger.',
+  'Choose the dates and press **Show report**.',
+  'Press **Download CSV** to open it in Excel, or **Print / PDF** for a copy.',
+  'TallyPrime stays the official books until the accountant has checked these figures against it.']},
  {id:'packing',role:'stores',title:'Pack orders from the packing queue',screens:['packing:queue','packing:screen'],steps:[
   'Open **Packing queue** on your phone. Orders in red have the customer waiting in the lobby and always go first; then delivery orders, oldest first.',
   'Press **Take next**. You get the top order with its client and items; the stock to use is picked for you. Nobody else can get the same order.',
@@ -5330,7 +5690,7 @@ const howToTopics=[
   'Press **Download CSV** to open it in Excel.']},
  {id:'staff',role:'owner',owner:true,title:'Add a staff member or department head',screens:['staff'],steps:[
   'Open **Staff** and press **Add employee**.',
-  'Type the full name. The login is made from the name, for example jagroop.hassija, and a temporary password is shown once.',
+  'Type the full name. The login is made from the name and a temporary password is shown once.',
   'Choose the **Role**: Staff, or **Department head** for someone who will add and manage their own team.',
   'Choose the **Department**. The usual parts for that department are ticked; change the ticks under **What this person can use**.',
   'Give the person their login and temporary password. They choose their own password the first time.',
@@ -5362,7 +5722,7 @@ const howToTopics=[
 let howToRole='all',howToQuery='',howToFocus='',howToWalk=null;
 
 function howToScreenKey(){
- const sections={sales:typeof salesEditing!=='undefined'&&salesEditing==='new'?'new':typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:''};
+ const sections={sales:typeof salesEditing!=='undefined'&&salesEditing==='new'?'new':typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:'',books:typeof booksSection!=='undefined'?booksSection:''};
  const section=sections[view];return section?`${view}:${section}`:view;
 }
 function howToForScreen(topic,key){const base=String(key).split(':')[0];return topic.screens.includes(key)||topic.screens.includes(base)}
@@ -5640,7 +6000,7 @@ function message(s,error=false){$('#notice').textContent=s;$('#notice').classNam
 function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
 function field(name,label,value='',type='text',required=false){return `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} maxlength="200"></label>`}
 function setup(){clear();$('#content').innerHTML='<div class="login card"><small>ANUDHA · FIRST RELEASE</small><h1>Connect your workspace</h1><p>Contacts and inventory, with individual staff logins.</p><p class="warning">The secure backend is not connected yet. Real records and staff access are not live.</p><p>Your administrator must complete the free Supabase setup and add the public project URL and publishable key to config.js.</p><a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open Supabase setup ↗</a></div>'}
-function login(){clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID (for example jagroop) or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
+function login(){clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
 // filter (optional) narrows the rows on the server, e.g. q=>q.eq('status','open'); paging stays by id.
 // The first page also brings the row count, so every later page is asked for at once rather than four per round
 // trip (contacts: two round trips instead of six). Reading still stops only at a short page, so a count that is
@@ -5691,7 +6051,7 @@ function inContactView(c,v){if(c.status==='incorrect')return false;return v==='r
 // for the reason and holds its first contact's id; a list is made only when a second contact shares it.
 const duplicateReasons={P:'Phone',E:'Email',N:'Same name at organisation'};
 function scan(){indexCompleteness();duplicates.clear();const groups=new Map(),add=(key,id)=>{const seen=groups.get(key);if(seen===undefined)groups.set(key,id);else if(Array.isArray(seen))seen.push(id);else groups.set(key,[seen,id]);};for(const c of contacts){if(c.status==='incorrect')continue;const phone=(c.country_code+c.phone).replace(/\D/g,'');if(phone.length>=7)add('P'+c.organization_id+':'+phone,c.id);if(c.email)add('E'+c.organization_id+':'+c.email.trim().toLowerCase(),c.id);const name=normalize(c.first_name+c.last_name);if(name.length>=3)add('N'+c.organization_id+':'+name,c.id);}for(const [key,ids] of groups)if(Array.isArray(ids))for(const id of ids){const list=duplicates.get(id)||[];list.push({reason:duplicateReasons[key[0]],ids:ids.filter(x=>x!==id)});duplicates.set(id,list)}for(const c of contacts)if(duplicates.has(c.id)&&c.status==='kept'&&!(contactIssues.get(c.id)||[]).length)accountReviewCounts.set(c.organization_id,(accountReviewCounts.get(c.organization_id)||0)+1);rollupReviewCounts()}
-function render(){if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='packing')return packingWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
+function render(){if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();if(view==='books')return booksWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='packing')return packingWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
 function reviewQueue(){
  const rows=contactReviewQueue(contacts,organizations,duplicates),q=search.trim().toLowerCase(),matches=rows.filter(({contact,organization,reasons})=>`${contact.first_name||''} ${contact.last_name||''} ${organization.name||''} ${organization.location||''} ${reasons.join(' ')}`.toLowerCase().includes(q));
  const pages=Math.max(1,Math.ceil(matches.length/30));page=Math.min(Math.max(page,0),pages-1);
@@ -5785,7 +6145,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.group)return openBranchForm(orgIndex.get(b.dataset.parent),orgIndex.get(b.dataset.group));
  if(b.dataset.linkParent)return openBranchForm(orgIndex.get(b.dataset.linkParent));
  run(async()=>{
- if(b.id==='logout'){await client.auth.signOut();login()}
+ if(b.id==='logout'){if(typeof forgetThisDevice==='function')forgetThisDevice();await client.auth.signOut();login()}
  else if(b.id==='refresh'){inventoryLoaded=false;await load();}
  else if(b.dataset.approveOrg){const r=await client.rpc('approve_organization',{p_id:b.dataset.approveOrg});if(r.error)throw r.error;const row=Array.isArray(r.data)?r.data[0]:r.data;Object.assign(orgIndex.get(row.id),row);render();message('Client profile approved.');}
  else if(b.dataset.keep)await save({...contacts.find(x=>x.id===b.dataset.keep),status:'kept'});
@@ -5793,7 +6153,7 @@ document.addEventListener('click',e=>{
  else if(b.id==='ungroupAccount'){const r=await client.rpc('set_organization_parent',{p_id:selected,p_parent_id:null});if(r.error)throw r.error;invalidateLocalApproval(orgIndex.get(selected).parent_id);orgIndex.get(selected).parent_id=null;invalidateLocalApproval(selected);scan();render();message('Branch removed from group.');}
  });
 });
-(async()=>{const cfg=window.ERP_CONFIG;if(!cfg?.url||!cfg?.key)return setup();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(cfg.url))return setup();client=supabase.createClient(cfg.url,cfg.key,{auth:{storage:sessionStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},global:{fetch:timedFetch}});client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){clear();login()}});await run(load)})();
+(async()=>{const cfg=window.ERP_CONFIG;if(!cfg?.url||!cfg?.key)return setup();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(cfg.url))return setup();client=supabase.createClient(cfg.url,cfg.key,{auth:{storage:typeof deviceSessionStorage!=='undefined'?deviceSessionStorage:sessionStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},global:{fetch:timedFetch}});client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT'){clear();login()}});await run(load)})();
 
 async function checklist(){
  const r=await client.from('feature_checklist').select('*').order('id');if(r.error)throw r.error;
