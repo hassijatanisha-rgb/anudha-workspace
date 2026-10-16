@@ -45,22 +45,11 @@ const howToTopics=[
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
   'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. This also makes the invoice in the Books.',
   'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
- {id:'tally-send',role:'accounts',title:'Send an accepted order to TallyPrime',screens:['sales:proformas','tallyinvoices'],steps:[
-  'Open **Pro formas** and find the accepted Pro forma.',
-  'Press **Send to Tally**.',
-  'Check the customer name and each item name. They must be spelled exactly as in TallyPrime. The ERP remembers them for next time.',
-  'Press **Save**. A file downloads to your computer.',
-  'In TallyPrime choose Import Data, then Vouchers, and pick the downloaded file. The order appears as a Sales Order.',
-  'Make the tax invoice in TallyPrime from that Sales Order. Keep the Pro forma number (for example PF-2026-000012) in Order No.']},
- {id:'tally-upload',role:'accounts',title:'Bring Tally invoices into the ERP',screens:['tallyinvoices'],steps:[
-  'In TallyPrime, export the Day Book or Sales Register as XML.',
-  'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
-  'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
-  'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
  {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
   'When Sales presses **Submit to accounting**, the Pro forma becomes an invoice by itself. Open **Customer invoices** to see it; press **Print** for a copy.',
   'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. The due date comes from the payment terms.',
-  'If **Books overview** lists a Pro forma as waiting for an invoice, it could not be invoiced automatically. Press **Create invoice**, check the dates, type the TallyPrime or EFD tax invoice number if you have it, and press **Post invoice**.',
+  'If **Books overview** lists a Pro forma as waiting for an invoice, it could not be invoiced automatically. Press **Create invoice**, check the dates and press **Post invoice**.',
+  'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
   'A wrong invoice is never edited: press **Void**, give the reason, and invoice the Pro forma again.']},
  {id:'books-receipt',role:'accounts',title:'Record money received from a customer',screens:['books:receipts'],steps:[
   'Open **Customer receipts**. Choose the customer, the date, the amount, how they paid and the account it went into.',
@@ -76,7 +65,7 @@ const howToTopics=[
   'Open **Financial reports** and choose a report: trial balance, profit and loss, balance sheet, customer ageing or account ledger.',
   'Choose the dates and press **Show report**.',
   'Press **Download CSV** to open it in Excel, or **Print / PDF** for a copy.',
-  'TallyPrime stays the official books until the accountant has checked these figures against it.']},
+  'These are the company books: tax invoices, receipts and reports are all made here.']},
  {id:'packing',role:'stores',title:'Pack orders from the packing queue',screens:['packing:queue','packing:screen'],steps:[
   'Open **Packing queue** on your phone. Orders in red have the customer waiting in the lobby and always go first; then delivery orders, oldest first.',
   'Press **Take next**. You get the top order with its client and items; the stock to use is picked for you. Nobody else can get the same order.',

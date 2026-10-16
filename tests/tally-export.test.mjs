@@ -38,8 +38,7 @@ test('default Tally item name comes from the original Tally export; new products
  assert.equal(c.tallyDefaultItemName({source:{origin:'Anudha product list'}},null),'');
  assert.equal(c.tallyDefaultItemName({source:{source_file:'x',raw:['Old']}},{item_name:'Confirmed name'}),'Confirmed name','a confirmed name wins');
 });
-test('Send to Tally is offered on accepted Pro formas and wired',()=>{
- const sd=read('sales-delivery.js'),html=read('index.src.html');
- assert.match(sd,/record\.status==='accepted'&&typeof openSendToTally==='function'/);assert.match(sd,/\[data-send-tally\]/);
- assert.ok(html.indexOf('tally-export.js')>0&&html.indexOf('tally-export.js')<html.indexOf('app.js'));
+test('Send to Tally is no longer offered: tax invoices are made in the ERP (16 Oct 2026)',()=>{
+ const sd=read('sales-delivery.js');
+ assert.doesNotMatch(sd,/>Send to Tally</);assert.doesNotMatch(sd,/data-send-tally="\$\{/);
 });
