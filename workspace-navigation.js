@@ -7,7 +7,7 @@ const workspaceGroups=[
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
+  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],['Tally invoices','tallyinvoices'],
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Accounts',tone:'accounts',items:[
@@ -79,7 +79,7 @@ function syncWorkspaceNavigation(){
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&typeof booksSection!=='undefined'?booksSection:null;
+  const current=target==='sales'?salesSection:target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&typeof booksSection!=='undefined'?booksSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
