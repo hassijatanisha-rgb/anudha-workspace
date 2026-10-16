@@ -4,6 +4,7 @@
 // reschedule_team_task only. A task may be moved later at most 3 times, with a reason each time: by the owner directly,
 // or by the person doing it with their department head's approval (deadline-requests.js, migration 083).
 let teamTasks=[],teamTaskMoves=new Map(),teamTaskEpoch=0;
+function clearTeamTasks(){teamTaskEpoch++;teamTasks=[];teamTaskMoves.clear();teamTaskMore.clear();}
 const teamTaskMoveLimit=3;
 const teamTaskUrgency=[['do_now','Do now'],['urgent','Urgent'],['normal','Normal']];
 const teamTaskRank={do_now:0,urgent:1,normal:2};
@@ -28,18 +29,14 @@ function teamTaskCard(row){
  return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)}">${esc(teamTaskUrgencyLabel(row.urgency))}</span>${moved?` <span class="urgency-tag moved-tag">Rescheduled ${moved} of ${teamTaskMoveLimit}</span>`:''}<h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}`}</p>${!open&&row.close_note?`<p class="team-task-result"><small>Result</small>${esc(row.close_note)}</p>`:''}${open&&mine&&!gave&&moved>=teamTaskMoveLimit?`<p class="muted">Already moved ${teamTaskMoveLimit} times. Mark it done, or ask ${esc(employeeName(row.assigned_by))} to change it.</p>`:''}${teamTaskHistory(teamTaskMoves.get(row.id)||[])}${buttons.length?`<div class="actions">${buttons.join('')}</div>`:''}</article>`;
 }
 async function loadTeamTasks(){
- const actor=me?.user_id,since=new Date(Date.now()-30*86400000).toISOString();
- // Only tasks given to or by this person are shown; the owner can read everyone's, so filter here or a busy
- // company's tasks would push the person's own past the row limit.
- const result=await client.from('team_tasks').select('id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count').or(`assignee_user_id.eq.${actor},assigned_by.eq.${actor}`).or(`status.eq.open,closed_at.gte.${since}`).order('due_at').limit(1000);
- if(me?.user_id!==actor)return null;
- if(result.error)throw Error(result.error.message);
- const rows=result.data||[],moved=rows.filter(row=>row.reschedule_count>0).map(row=>row.id),moves=new Map();
+ const actor=me,epoch=teamTaskEpoch,since=new Date(Date.now()-30*86400000).toISOString();
+ const rows=await all('team_tasks','id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count',q=>q.or(`assignee_user_id.eq.${actor.user_id},assigned_by.eq.${actor.user_id}`).or(`status.eq.open,closed_at.gte.${since}`));
+ if(me!==actor||epoch!==teamTaskEpoch)return null;
+ const moved=rows.filter(row=>row.reschedule_count>0).map(row=>row.id),moves=new Map();
  for(let i=0;i<moved.length;i+=100){
-  const events=await client.from('team_task_events').select('task_id,old_due_at,new_due_at,note,actor_user_id,created_at').eq('action','reschedule').in('task_id',moved.slice(i,i+100)).order('created_at');
-  if(me?.user_id!==actor)return null;
-  if(events.error)throw Error(events.error.message);
-  for(const e of events.data||[])moves.set(e.task_id,[...(moves.get(e.task_id)||[]),e]);
+  const events=await all('team_task_events','id,task_id,old_due_at,new_due_at,note,actor_user_id,created_at',q=>q.eq('action','reschedule').in('task_id',moved.slice(i,i+100)));
+  if(me!==actor||epoch!==teamTaskEpoch)return null;
+  for(const e of events.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id))))moves.set(e.task_id,[...(moves.get(e.task_id)||[]),e]);
  }
  return {rows,moves};
 }
@@ -54,7 +51,7 @@ function teamTaskCards(rows){
 async function teamTasksWorkspace(){
  const epoch=++teamTaskEpoch,actor=me?.user_id,target=$('#content');
  target.innerHTML='<p role="status">Loading your tasks…</p>';
- let loaded;try{loaded=await loadTeamTasks();}catch(error){if(epoch!==teamTaskEpoch)return;target.innerHTML=`<h1>My tasks</h1><p role="alert">Tasks could not load: ${esc(error.message)}</p><button type="button" id="teamTaskRetry">Retry</button>`;$('#teamTaskRetry').onclick=()=>run(teamTasksWorkspace);return;}
+ let loaded;try{loaded=await loadTeamTasks();}catch(error){if(epoch!==teamTaskEpoch||me?.user_id!==actor||view!=='personal'||personalSection!=='task')return;target.innerHTML=`<h1>My tasks</h1><p role="alert">Tasks could not load: ${esc(error.message)}</p><button type="button" id="teamTaskRetry">Retry</button>`;$('#teamTaskRetry').onclick=()=>run(teamTasksWorkspace);return;}
  if(epoch!==teamTaskEpoch||loaded===null||me?.user_id!==actor||view!=='personal'||personalSection!=='task')return;
  teamTasks=teamTaskOrder(loaded.rows);teamTaskMoves=loaded.moves;teamTaskMore=new Map();
  const forMe=teamTasks.filter(row=>row.status==='open'&&row.assignee_user_id===actor),gave=teamTasks.filter(row=>row.status==='open'&&row.assigned_by===actor&&row.assignee_user_id!==actor),results=teamTasks.filter(row=>row.status!=='open'&&row.assigned_by===actor&&row.assignee_user_id!==actor&&Date.parse(row.closed_at)>Date.now()-7*86400000).sort((a,b)=>Date.parse(b.closed_at)-Date.parse(a.closed_at)),finished=teamTasks.filter(row=>row.status!=='open'&&(row.assignee_user_id===actor||row.assigned_by===actor)&&!results.includes(row));
@@ -90,15 +87,16 @@ function openTeamTaskEditor(row){
  const employees=[...employeeDirectory.values()].filter(e=>e.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  const assignee=row?.assignee_user_id||me.user_id,id=row?.id||crypto.randomUUID(),actor=me?.user_id;
  const fields=`<label><span>What needs doing?</span><input name="title" required minlength="2" maxlength="200" value="${esc(row?.title||'')}" placeholder="For example: send the service report to Aga Khan"></label>
+ ${row&&me.role!=='owner'?'<p class="muted">To change the deadline, close this editor and use Ask for more time.</p>':''}
  <label><span>Who does it?</span><select name="assignee" required>${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
  <fieldset class="urgency-choice"><legend>How urgent?</legend>${teamTaskUrgency.map(([key,label])=>`<label class="urgency-${key}"><input type="radio" name="urgency" value="${key}" required${row?.urgency===key?' checked':''}> ${label}</label>`).join('')}</fieldset>
- <label><span>Due</span><input type="datetime-local" name="due" required value="${teamTaskLocalInput(row?new Date(row.due_at):teamTaskDefaultDue())}"></label>
+ <label><span>Due</span><input type="datetime-local" name="due" required ${row&&me.role!=='owner'?'readonly':''} value="${teamTaskLocalInput(row?new Date(row.due_at):teamTaskDefaultDue())}"></label>
  <label><span>Details · optional</span><textarea name="details" maxlength="4000">${esc(row?.details||'')}</textarea></label>`;
  actionForm(row?'Edit task':'New task',fields,async values=>{
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the task.');
   if(!values.urgency)throw Error('Choose how urgent it is.');
-  const due=new Date(values.due);if(!Number.isFinite(due.getTime()))throw Error('Choose the due date and time.');
-  const result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:due.toISOString(),p_assignee:values.assignee});
+  const due=new Date(row&&me.role!=='owner'?row.due_at:values.due);if(!Number.isFinite(due.getTime()))throw Error('Choose the due date and time.');
+  const result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:row&&me.role!=='owner'?row.due_at:due.toISOString(),p_assignee:values.assignee});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
   await teamTasksWorkspace();message(row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`);

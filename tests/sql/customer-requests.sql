@@ -1,4 +1,4 @@
--- Website customer requests (migration 062). Disposable database with the schema and migrations 060-062; rolled back.
+-- Website customer requests (migrations 062/098). Disposable database with the current schema; rolled back.
 --   psql -d <disposable> -v ON_ERROR_STOP=1 -f tests/sql/customer-requests.sql   (prints passed/failed)
 begin;
 create temp table results(name text, ok boolean, detail text) on commit drop;
@@ -26,7 +26,7 @@ exception when others then insert into results values(p_name,false,sqlerrm); end
 set local role service_role;
 create temp table sub as select * from public.submit_customer_request('quote','Asha Fixture','+255 712 000 111','asha@example.com','Fixture Clinic','Baby incubator','2','Please send a price for two incubators','whatsapp','client-a');
 select pg_temp.equals('request number format','select (request_number ~ ''^REQ-[0-9]{4}-[0-9]{6}$'')::text from sub','true');
-select pg_temp.equals('same message twice returns the first number','select (s.request_number=(select request_number from sub) and s.duplicate)::text from public.submit_customer_request(''quote'',''Asha Fixture'',''+255712000111'','''','''','''','''',''Please send a price for two incubators'',''whatsapp'',''client-a'') s','true');
+select pg_temp.equals('same normalized request returns the first number','select (s.request_number=(select request_number from sub) and s.duplicate)::text from public.submit_customer_request(''quote'',''Asha Fixture'',''+255712000111'',''asha@example.com'',''Fixture Clinic'',''Baby incubator'',''2'',''Please send a price for two incubators'',''whatsapp'',''client-a'') s','true');
 select pg_temp.check('complaint accepted','select public.submit_customer_request(''complaint'',''Baraka Fixture'',''0755123456'','''','''',''Autoclave'','''',''The autoclave door leaks steam'',''phone'',''client-b'')');
 select pg_temp.fails('phone is required','select public.submit_customer_request(''inquiry'',''No Phone'',''abc'','''','''','''','''',''Hello there'',''email'',''client-c'')','phone number');
 select pg_temp.fails('unknown kind refused','select public.submit_customer_request(''spam'',''X Y'',''0755000000'','''','''','''','''',''Hello'',''phone'',''client-c'')','Choose what');

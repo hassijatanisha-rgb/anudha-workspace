@@ -46,28 +46,28 @@ export function confirmationText(name: string, kind: string, number: string) {
     `Your request number is ${number}. Please keep it; our team will contact you soon. Phone: +255 783 523 777.`;
 }
 
-async function sendWhatsApp(phone: string, name: string, number: string) {
+async function sendWhatsApp(phone: string, name: string, number: string, signal: AbortSignal) {
   const token = Deno.env.get('WHATSAPP_TOKEN'), phoneId = Deno.env.get('WHATSAPP_PHONE_ID'), template = Deno.env.get('WHATSAPP_TEMPLATE');
   if (!token || !phoneId || !template) return { status: 'not_set_up', detail: 'WhatsApp is not connected yet' };
   const res = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: 'POST', signal: AbortSignal.timeout(15000),
+    method: 'POST', signal,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to: internationalPhone(phone), type: 'template',
       template: { name: template, language: { code: Deno.env.get('WHATSAPP_LANGUAGE') || 'en' },
         components: [{ type: 'body', parameters: [{ type: 'text', text: name.slice(0, 60) }, { type: 'text', text: number }] }] } }),
   });
-  return res.ok ? { status: 'sent', detail: 'WhatsApp sent' } : { status: 'failed', detail: `WhatsApp ${res.status}: ${(await res.text()).slice(0, 200)}` };
+  return res.ok ? { status: 'sent', detail: 'WhatsApp sent' } : { status: 'failed', detail: `WhatsApp sending failed (${res.status})` };
 }
-async function sendEmail(email: string, name: string, kind: string, number: string) {
+async function sendEmail(email: string, name: string, kind: string, number: string, signal: AbortSignal) {
   const key = Deno.env.get('RESEND_API_KEY'), from = Deno.env.get('EMAIL_FROM');
   if (!key || !from) return { status: 'not_set_up', detail: 'Email sending is not set up yet' };
   const body = confirmationText(name, kind, number);
   const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST', signal: AbortSignal.timeout(15000),
+    method: 'POST', signal,
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from, to: [email], subject: `We received your request ${number}`, text: body }),
   });
-  return res.ok ? { status: 'sent', detail: 'Email sent' } : { status: 'failed', detail: `Email ${res.status}: ${(await res.text()).slice(0, 200)}` };
+  return res.ok ? { status: 'sent', detail: 'Email sent' } : { status: 'failed', detail: `Email sending failed (${res.status})` };
 }
 
 Deno.serve(async (req) => {
@@ -109,14 +109,20 @@ Deno.serve(async (req) => {
   }
   const row = (saved.data ?? [])[0];
   if (!row) return reply(req, 500, { error: 'Your request could not be saved. Please call +255 783 523 777.' });
-  if (row.duplicate) return reply(req, 200, { request_number: row.request_number, kind, confirmation: 'already_received' });
+  if (row.duplicate) return reply(req, 200, { request_number: row.request_number, kind: row.kind, confirmation: 'already_received' });
 
-  // Send the request number. WhatsApp first when that is how they want to be reached, email when they gave one.
-  const results: { status: string; detail: string }[] = [];
-  try { if (channel === 'whatsapp') results.push(await sendWhatsApp(phone, name, row.request_number)); } catch (e) { results.push({ status: 'failed', detail: `WhatsApp: ${(e as Error).message}` }); }
-  try { if (email) results.push(await sendEmail(email, name, kind, row.request_number)); } catch (e) { results.push({ status: 'failed', detail: `Email: ${(e as Error).message}` }); }
+  // Both channels share eight seconds; optional confirmations must not hide the saved request number.
+  const signal = AbortSignal.timeout(8000), pending: Promise<{ status: string; detail: string }>[] = [];
+  if (channel === 'whatsapp') pending.push(sendWhatsApp(phone, name, row.request_number, signal)
+    .catch(() => ({ status: 'failed', detail: 'WhatsApp sending failed or timed out' })));
+  if (email) pending.push(sendEmail(email, name, row.kind, row.request_number, signal)
+    .catch(() => ({ status: 'failed', detail: 'Email sending failed or timed out' })));
+  const results = await Promise.all(pending);
   const status = results.some((r) => r.status === 'sent') ? 'sent' : results.some((r) => r.status === 'failed') ? 'failed' : 'not_set_up';
   const detail = results.map((r) => r.detail).join('; ') || 'No email given and WhatsApp not chosen';
-  await db.rpc('record_customer_request_confirmation', { p_id: row.id, p_status: status, p_detail: detail });
-  return reply(req, 200, { request_number: row.request_number, kind, confirmation: status });
+  try {
+    await db.rpc('record_customer_request_confirmation', { p_id: row.id, p_status: status, p_detail: detail })
+      .abortSignal(AbortSignal.timeout(5000));
+  } catch { /* The request is already saved; staff can follow up when status recording is unavailable. */ }
+  return reply(req, 200, { request_number: row.request_number, kind: row.kind, confirmation: status });
 });

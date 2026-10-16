@@ -1,5 +1,6 @@
 'use strict';
-let productMachineLinks=new Map(),productMachineLinksError='';
+let productMachineLinks=new Map(),productMachineLinksError='',machineLinksEpoch=0;
+function clearProductMachineLinks(){machineLinksEpoch++;productMachineLinks.clear();productMachineLinksError='';}
 function machineLinkImportedIds(product){
  const ids=product.source?.machine_ids;
  return Array.isArray(ids)&&ids.every(id=>typeof id==='string'&&id.trim()&&id===id.trim())?[...ids]:[];
@@ -9,11 +10,12 @@ function machineLinkReviewedProduct(product){
  return review?{...product,source:{...product.source,machine_ids:[...review.machine_ids]}}:product;
 }
 async function loadProductMachineLinks(){
+ const epoch=++machineLinksEpoch,actor=me;
  try{
   const rows=await all('product_machine_link_reviews','*'),latest=new Map();
   for(const row of rows)if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);
-  productMachineLinks=latest;productMachineLinksError='';
- }catch(error){productMachineLinksError=error.message||'Connection unavailable';}
+  if(epoch!==machineLinksEpoch||me!==actor)return;productMachineLinks=latest;productMachineLinksError='';
+ }catch(error){if(epoch!==machineLinksEpoch||me!==actor)return;productMachineLinksError=error.message||'Connection unavailable';}
 }
 async function openProductMachineLinks(id){
  if(!canEditRecords())throw Error(recordsLockedText);

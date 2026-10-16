@@ -87,6 +87,7 @@ Deno.serve(async (req) => {
       let userId = '', employeeId = '';
       for (const id of employeeIdCandidates(fullName)) {
         const created = await admin.auth.admin.createUser({ email: `${id}@${DOMAIN}`, password, email_confirm: true,
+          app_metadata: { must_change_password: true, password_reset_nonce: crypto.randomUUID() },
           user_metadata: { full_name: fullName, employee_id: id, must_change_password: true } });
         if (created.error) {
           if (/already|registered|exists/i.test(created.error.message)) continue;
@@ -124,6 +125,7 @@ Deno.serve(async (req) => {
       if (existing.error || !existing.data.user) return reply(req, 404, { error: 'Login not found' });
       const password = temporaryPassword();
       const updated = await admin.auth.admin.updateUserById(target, { password,
+        app_metadata: { ...(existing.data.user.app_metadata ?? {}), must_change_password: true, password_reset_nonce: crypto.randomUUID() },
         user_metadata: { ...(existing.data.user.user_metadata ?? {}), must_change_password: true } });
       if (updated.error) throw new Error(updated.error.message);
       const logged = await asOwner.rpc('record_staff_account_event', { p_user_id: target, p_action: 'password_reset', p_note: '' });

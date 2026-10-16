@@ -86,7 +86,7 @@ function reportPurchasing(orders){
 // Service and installation jobs created in the period, per engineer; "late now" counts open jobs past their date.
 function reportService(cases,now=Date.now()){
  const out=new Map();
- for(const c of cases){const k=c.assigned_user_id||'';if(!out.has(k))out.set(k,{actor:k,installations:0,services:0,completed:0,open:0,late:0,doneMs:0});const r=out.get(k);if(c.case_type==='installation')r.installations++;else r.services++;if(c.status==='completed'){r.completed++;r.doneMs+=Math.max(0,Date.parse(c.completed_at)-Date.parse(c.created_at));}else if(c.status!=='cancelled'){r.open++;if(c.scheduled_for&&Date.parse(c.scheduled_for)<now)r.late++;}}
+ for(const c of cases){const k=c.assigned_user_id||'';if(!out.has(k))out.set(k,{actor:k,installations:0,services:0,completed:0,open:0,late:0,doneMs:0});const r=out.get(k);if(c.case_type==='installation')r.installations++;else r.services++;if(c.status==='completed'){r.completed++;r.doneMs+=Math.max(0,Date.parse(c.completed_at)-Date.parse(c.created_at));}else if(c.status!=='cancelled'){r.open++;if(c.scheduled_for&&c.scheduled_for<companyDate(0,new Date(now)))r.late++;}}
  return [...out.values()].map(r=>({...r,avgMs:r.completed?r.doneMs/r.completed:null}));
 }
 // Team tasks due in the period, per person given the task.
