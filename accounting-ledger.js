@@ -112,7 +112,7 @@ async function booksOverview(actor,current){
   <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
   <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
   <div><small>Profit this month</small><strong>${booksMoney(income-expense)}</strong></div></div>
- <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
+ <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2><p class="muted">A Pro forma becomes an invoice by itself when Sales presses Submit to accounting. Any listed here could not be invoiced then (for example the books were locked for that date, or it is not in TZS).</p>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
  <section class="card"><h2>Overdue invoices (${overdue.length})</h2>${overdue.length?booksInvoiceTable(overdue.slice(0,20)):'<p class="empty">No overdue invoices.</p>'}</section>`;
  document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};return booksWorkspace();}));
  wireBooksInvoiceActions();
@@ -138,7 +138,7 @@ function booksVoidPrompt(kind,record){
 }
 async function booksInvoices(){
  const d=booksData,chosen=booksDraft?.proformaId||'';
- $('#booksBody').innerHTML=`<section class="card"><h2>Create an invoice from an accepted Pro forma</h2>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
+ $('#booksBody').innerHTML=`<section class="card"><h2>Invoice a waiting Pro forma</h2><p class="muted">Normally not needed: Submit to accounting makes the invoice. Use this only for an accepted Pro forma still waiting.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
   <label class="wide"><span>Accepted Pro forma</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · ${esc(booksMoney(p.total_minor))}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
