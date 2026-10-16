@@ -71,18 +71,19 @@ async function booksSelect(table,columns,build){
  return r.data||[];
 }
 async function loadBooksData(){
- const [accounts,settings,invoices,receipts,allocations,proformas]=await Promise.all([
+ const [accounts,settings,invoices,receipts,allocations,proformas,taxIds]=await Promise.all([
   booksSelect('acc_accounts','*',q=>q.order('code')),
   booksSelect('acc_settings','*'),
   booksSelect('acc_invoices','*',q=>q.order('invoice_date',{ascending:false}).order('invoice_number',{ascending:false}).limit(1000)),
   booksSelect('acc_receipts','*',q=>q.order('receipt_date',{ascending:false}).order('receipt_number',{ascending:false}).limit(1000)),
   booksSelect('acc_receipt_allocations','*'),
-  booksSelect('sales_proformas','id,document_number,organization_id,status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,accepted_at,acceptance_reference,deleted_at',q=>q.eq('status','accepted').is('deleted_at',null).order('accepted_at',{ascending:false}).limit(500))
+  booksSelect('sales_proformas','id,document_number,organization_id,status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,accepted_at,acceptance_reference,deleted_at',q=>q.eq('status','accepted').is('deleted_at',null).order('accepted_at',{ascending:false}).limit(1000)),
+  booksSelect('acc_customer_tax_ids','*')
  ]);
  const today=booksToday();
  for(const invoice of invoices){invoice.paid=booksInvoicePaid(invoice,allocations,receipts);invoice.outstanding=invoice.voided_at?0:Number(invoice.total_minor)-invoice.paid;invoice.state=booksInvoiceStatus(invoice,invoice.paid,today);}
  const invoiced=new Set(invoices.filter(i=>!i.voided_at).map(i=>i.proforma_id));
- return {accounts,settings:settings[0]||{version:1,locked_through:null},invoices,receipts,allocations,toInvoice:proformas.filter(p=>!invoiced.has(p.id)),today};
+ return {accounts,settings:settings[0]||{version:1,locked_through:null},invoices,receipts,allocations,proformaNumbers:new Map(proformas.map(p=>[p.id,p.document_number])),taxIds:new Map(taxIds.map(t=>[t.organization_id,t])),toInvoice:proformas.filter(p=>!invoiced.has(p.id)),today};
 }
 async function booksWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
@@ -118,11 +119,30 @@ async function booksOverview(actor,current){
  wireBooksInvoiceActions();
 }
 function booksInvoiceTable(rows){
- return `<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date · due</th><th>Customer</th><th>Total</th><th>Paid</th><th>Owed</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.invoice_number)}<small>${esc(booksData.toInvoice.find(p=>p.id===i.proforma_id)?.document_number||'')}${i.tax_invoice_reference?` · Tax inv. ${esc(i.tax_invoice_reference)}`:''}</small></td><td>${esc(i.invoice_date)}<small>due ${esc(i.due_date)}</small></td><td>${esc(booksCustomer(i.organization_id))}</td><td>${booksMoney(i.total_minor)}</td><td>${booksMoney(i.paid)}</td><td>${booksMoney(i.outstanding)}</td><td><span class="tag books-${i.state.key}">${esc(i.state.label)}</span></td><td class="actions"><button type="button" data-books-print-invoice="${esc(i.id)}">Print</button>${i.voided_at?'':`<button type="button" class="danger" data-books-void-invoice="${esc(i.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+ return `<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date · due</th><th>Customer</th><th>Total</th><th>Paid</th><th>Owed</th><th>Status</th><th>TRA receipt</th><th></th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.invoice_number)}<small>${esc(booksData.proformaNumbers?.get(i.proforma_id)||'')}</small></td><td>${esc(i.invoice_date)}<small>due ${esc(i.due_date)}</small></td><td>${esc(booksCustomer(i.organization_id))}</td><td>${booksMoney(i.total_minor)}</td><td>${booksMoney(i.paid)}</td><td>${booksMoney(i.outstanding)}</td><td><span class="tag books-${i.state.key}">${esc(i.state.label)}</span></td><td>${i.tra_receipt_number?esc(i.tra_receipt_number):i.voided_at?'':'<span class="tag books-overdue">Not recorded</span>'}</td><td class="actions"><button type="button" data-books-print-invoice="${esc(i.id)}">Print</button>${i.voided_at?'':`<button type="button" data-books-fiscal="${esc(i.id)}">${i.tra_receipt_number?'Edit TRA receipt':'Record TRA receipt'}</button><button type="button" class="danger" data-books-void-invoice="${esc(i.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function wireBooksInvoiceActions(){
  document.querySelectorAll('[data-books-print-invoice]').forEach(b=>b.onclick=()=>booksPrintInvoice(booksData.invoices.find(i=>i.id===b.dataset.booksPrintInvoice)));
+ document.querySelectorAll('[data-books-fiscal]').forEach(b=>b.onclick=()=>booksFiscalPrompt(booksData.invoices.find(i=>i.id===b.dataset.booksFiscal)));
  document.querySelectorAll('[data-books-void-invoice]').forEach(b=>b.onclick=()=>booksVoidPrompt('invoice',booksData.invoices.find(i=>i.id===b.dataset.booksVoidInvoice)));
+}
+// The TRA receipt for an invoice and the customer's TIN and VRN, as printed on the tax invoice.
+function booksFiscalPrompt(invoice){
+ if(!invoice)return;
+ const saved=booksData.taxIds?.get(invoice.organization_id)||{};
+ const box=document.createElement('section');box.className='card books-void';
+ box.innerHTML=`<h2>TRA receipt for ${esc(invoice.invoice_number)}</h2><p class="muted">${esc(booksCustomer(invoice.organization_id))} · ${booksMoney(invoice.total_minor)}. Type the receipt as issued by the TRA system. The customer's TIN and VRN are saved for their next invoice too.</p><form id="booksFiscalForm"><div class="grid">
+  <label><span>TRA receipt number</span><input name="receipt" required maxlength="60" value="${esc(invoice.tra_receipt_number||'')}"></label>
+  <label><span>Verification code · optional</span><input name="code" maxlength="60" value="${esc(invoice.tra_verification_code||'')}"></label>
+  <label><span>Customer TIN</span><input name="tin" maxlength="16" placeholder="100-113-473" value="${esc(invoice.buyer_tin||saved.tin||'')}"></label>
+  <label><span>Customer VRN · if VAT registered</span><input name="vrn" maxlength="20" placeholder="10-001061-P" value="${esc(invoice.buyer_vrn||saved.vrn||'')}"></label></div>
+  <div class="actions"><button type="submit">Save TRA receipt</button><button type="button" id="booksFiscalCancel">Cancel</button></div></form>`;
+ $('#booksBody').prepend(box);box.scrollIntoView({block:'start'});
+ $('#booksFiscalCancel').onclick=()=>box.remove();
+ $('#booksFiscalForm').onsubmit=event=>{event.preventDefault();const f=new FormData(event.target);run(async()=>{
+  await booksRpc('record_invoice_fiscal',{p_invoice_id:invoice.id,p_receipt_number:f.get('receipt'),p_verification_code:f.get('code'),p_buyer_tin:f.get('tin'),p_buyer_vrn:f.get('vrn')});
+  message(`TRA receipt saved on ${invoice.invoice_number}.`);await booksWorkspace();
+ });};
 }
 function booksVoidPrompt(kind,record){
  if(!record)return;
@@ -142,7 +162,7 @@ async function booksInvoices(){
   <label class="wide"><span>Accepted Pro forma</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · ${esc(booksMoney(p.total_minor))}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
-  <label class="wide"><span>Tax invoice number (TallyPrime / EFD) · optional</span><input name="taxref" maxlength="80"></label></div>
+  <label class="wide"><span>Reference · optional</span><input name="taxref" maxlength="80"></label></div>
   <p class="muted">Posts: customer owes the total; sales gets the amount after discount; VAT goes to VAT output payable.</p>
   <div class="actions"><button type="submit">Post invoice</button></div></form>`:'<p class="empty">No accepted Pro formas are waiting for an invoice.</p>'}</section>
  <section class="card"><div class="heading"><h2>Invoices (${d.invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${d.invoices.length?booksInvoiceTable(d.invoices):'<p class="empty">No invoices yet.</p>'}</section>`;
@@ -151,18 +171,26 @@ async function booksInvoices(){
   const r=await booksRpc('create_invoice_from_proforma',{p_id:id,p_proforma_id:f.get('proforma'),p_invoice_date:f.get('date'),p_due_date:f.get('due'),p_tax_reference:f.get('taxref')||''});
   booksDraft=null;message(`${r.invoice_number} posted.`);await booksWorkspace();
  });};}
- $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tax_invoice_reference','Tax invoice'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
+ $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
   d.invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
  wireBooksInvoiceActions();
+}
+// One invoice line: amount after discount and its VAT, from the snapshot taken when the invoice was made.
+function booksInvoiceLineAmounts(line){
+ const gross=Number(line.quantity||0)*Number(line.unit_price_minor||0),discount=Math.round(gross*Number(line.discount_basis_points||0)/10000),net=gross-discount;
+ return {net,vat:Math.round(net*Number(line.tax_basis_points||0)/10000)};
 }
 function booksPrintInvoice(invoice){
  if(!invoice)return;
  const lines=Array.isArray(invoice.lines)?invoice.lines:[];
+ const brand=typeof companyFormBrand==='function'?companyFormBrand('sales'):'<header><strong>ANUDHA LIMITED</strong><br>TIN: 100-113-473 · VRN: 10-001061-P</header>';
  const area=document.createElement('section');area.className='books-print';
- area.innerHTML=`<header><img src="assets/anudha-logo.svg" alt="Anudha Limited" width="160"><div><strong>INVOICE ${esc(invoice.invoice_number)}</strong>${invoice.voided_at?'<b>VOID</b>':''}<small>Date ${esc(invoice.invoice_date)} · Due ${esc(invoice.due_date)}${invoice.tax_invoice_reference?` · Tax invoice ${esc(invoice.tax_invoice_reference)}`:''}</small></div></header>
- <p><small>Bill to</small><strong>${esc(booksCustomer(invoice.organization_id))}</strong></p>
- <table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>VAT</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.description)}</td><td>${esc(l.quantity)} ${esc(l.uom||'')}</td><td>${booksMoney(l.unit_price_minor)}</td><td>${Number(l.discount_basis_points||0)/100}%</td><td>${Number(l.tax_basis_points||0)/100}%</td></tr>`).join('')}</tbody></table>
- <dl><dt>Subtotal</dt><dd>${booksMoney(invoice.subtotal_minor)}</dd><dt>Discount</dt><dd>${booksMoney(invoice.discount_minor)}</dd><dt>VAT</dt><dd>${booksMoney(invoice.tax_minor)}</dd><dt>Total</dt><dd><strong>${booksMoney(invoice.total_minor)}</strong></dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Balance due</dt><dd><strong>${booksMoney(invoice.outstanding)}</strong></dd></dl>
+ area.innerHTML=`${brand}<div class="books-print-title"><h2>TAX INVOICE ${esc(invoice.invoice_number)}</h2>${invoice.voided_at?'<b>VOID</b>':''}</div>
+ <div class="books-print-parties"><div><small>Bill to</small><strong>${esc(booksCustomer(invoice.organization_id))}</strong><span>TIN: ${esc(invoice.buyer_tin||booksData.taxIds?.get(invoice.organization_id)?.tin||'—')}</span><span>VRN: ${esc(invoice.buyer_vrn||booksData.taxIds?.get(invoice.organization_id)?.vrn||'—')}</span></div>
+ <div><small>Invoice</small><span>Date: ${esc(invoice.invoice_date)}</span><span>Due: ${esc(invoice.due_date)}</span><span>Pro forma: ${esc(booksData.proformaNumbers?.get(invoice.proforma_id)||'')}</span></div></div>
+ <table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>Amount</th><th>VAT</th><th>VAT amount</th></tr></thead><tbody>${lines.map(l=>{const a=booksInvoiceLineAmounts(l);return `<tr><td>${esc(l.description)}</td><td>${esc(l.quantity)} ${esc(l.uom||'')}</td><td>${booksMoney(l.unit_price_minor)}</td><td>${Number(l.discount_basis_points||0)/100}%</td><td>${booksMoney(a.net)}</td><td>${Number(l.tax_basis_points||0)/100}%</td><td>${booksMoney(a.vat)}</td></tr>`;}).join('')}</tbody></table>
+ <dl><dt>Subtotal</dt><dd>${booksMoney(invoice.subtotal_minor)}</dd><dt>Discount</dt><dd>${booksMoney(invoice.discount_minor)}</dd><dt>Amount before VAT</dt><dd>${booksMoney(Number(invoice.subtotal_minor)-Number(invoice.discount_minor))}</dd><dt>VAT</dt><dd>${booksMoney(invoice.tax_minor)}</dd><dt>Total</dt><dd><strong>${booksMoney(invoice.total_minor)}</strong></dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Balance due</dt><dd><strong>${booksMoney(invoice.outstanding)}</strong></dd></dl>
+ <p class="books-print-fiscal">${invoice.tra_receipt_number?`TRA receipt: <strong>${esc(invoice.tra_receipt_number)}</strong>${invoice.tra_verification_code?` · Verification code: ${esc(invoice.tra_verification_code)}`:''}`:'<span class="error">TRA receipt not yet recorded</span>'}</p>
  <div class="actions no-print"><button type="button" id="booksPrintNow">Print / PDF</button><button type="button" id="booksPrintClose">Close</button></div>`;
  $('#booksBody').prepend(area);area.scrollIntoView({block:'start'});
  $('#booksPrintClose').onclick=()=>{document.body.classList.remove('books-printing');area.remove();};

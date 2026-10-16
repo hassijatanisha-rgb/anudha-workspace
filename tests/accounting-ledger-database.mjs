@@ -18,7 +18,7 @@ try{
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
  create table staff(user_id uuid primary key,active boolean,role text,department text);
  create table organizations(id uuid primary key,name text);
- create table sales_proformas(id uuid primary key,document_number text,organization_id uuid,status text,currency text,subtotal_minor bigint,discount_minor bigint,tax_minor bigint,total_minor bigint,revision integer,deleted_at timestamptz);
+ create table sales_proformas(id uuid primary key,document_number text,organization_id uuid,status text,currency text,subtotal_minor bigint,discount_minor bigint,tax_minor bigint,total_minor bigint,revision integer,deleted_at timestamptz,payment_terms text default '30 days',accepted_at timestamptz);
  create table sales_proforma_lines(id uuid primary key default gen_random_uuid(),proforma_id uuid,product_id uuid,sort_order integer,description text,quantity integer,uom text,unit_price_minor bigint,discount_basis_points integer,tax_basis_points integer);
  create table accounting_memberships(user_id uuid primary key,active boolean);
  create function mfa_satisfied() returns boolean language sql stable as $$select true$$;
@@ -38,6 +38,8 @@ try{
  grant select on all tables in schema public to authenticated;`);
  await db.exec(migration);
  await db.exec(migration); // re-runnable
+ // Later accounting migrations must keep every rule below.
+ for(const later of ['202610160090_invoice_on_submit.sql','202610160091_erp_tax_invoice.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+later,import.meta.url),'utf8'));
  const as=async actor=>db.exec(`reset role;set test.actor='${actor}';set role authenticated`);
  const q=(sql,params)=>db.query(sql,params);
  const one=async(sql,params)=>(await q(sql,params)).rows[0];

@@ -24,10 +24,9 @@ test('register lists newest first and searches invoice, customer, Pro forma and 
  assert.deepEqual(ids('all'),['c','b','a'],'date then invoice number, newest first');assert.deepEqual(ids('unmatched'),['b']);
  assert.deepEqual(ids('all','pf-2026-000012'),['a']);assert.deepEqual(ids('all','blood'),['a']);assert.deepEqual(ids('all','cash'),['c','b']);
 });
-test('menu, router, sign-out, help and script order are wired; nothing writes stock',()=>{
- const app=read('app.js'),html=read('index.src.html'),src=read('tally-invoices.js');
- assert.match(read('workspace-navigation.js'),/\['Tally invoices','tallyinvoices'\]/);assert.match(app,/view==='tallyinvoices'\)return tallyInvoicesWorkspace\(\)/);
- assert.match(app,/typeof clearTallyInvoices==='function'\)clearTallyInvoices\(\)/);assert.match(readFileSync(new URL('../how-to-use.js',import.meta.url),'utf8'),/Bring Tally invoices into the ERP/);
+test('Tally invoices left the menu and guides (tax invoices are made in the ERP); nothing writes stock',()=>{
+ const html=read('index.src.html'),src=read('tally-invoices.js');
+ assert.doesNotMatch(read('workspace-navigation.js'),/'tallyinvoices'/);assert.doesNotMatch(readFileSync(new URL('../how-to-use.js',import.meta.url),'utf8'),/Bring Tally invoices into the ERP/);
  assert.ok(html.indexOf('tally-invoices.js')>0&&html.indexOf('tally-invoices.js')<html.indexOf('app.js'));
  assert.doesNotMatch(src,/inventory_lots|advance_sales_delivery|\.insert\(|\.update\(/);
 });

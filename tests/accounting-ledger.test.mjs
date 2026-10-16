@@ -58,3 +58,11 @@ test('Tanzania date and section selection',()=>{
  run(ctx,"openBooksSection('reports')");assert.equal(run(ctx,'booksSection'),'reports');
  run(ctx,"openBooksSection('nonsense')");assert.equal(run(ctx,'booksSection'),'overview');
 });
+
+test('tax invoice lines show the amount after discount and its VAT',()=>{
+ const ctx=load();
+ const a=vm.runInContext('booksInvoiceLineAmounts({quantity:2,unit_price_minor:50000,discount_basis_points:1000,tax_basis_points:1800})',ctx);
+ assert.equal(a.net,90000);assert.equal(a.vat,16200);
+ const b=vm.runInContext('booksInvoiceLineAmounts({quantity:1,unit_price_minor:333,discount_basis_points:0,tax_basis_points:0})',ctx);
+ assert.equal(b.net,333);assert.equal(b.vat,0);
+});

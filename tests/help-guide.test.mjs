@@ -26,12 +26,13 @@ test('every guide points at a real menu page and has steps',()=>{
 });
 test('guides use plain language and no technical or back-end words',()=>{
  assert.doesNotMatch(source.replace(/^\/\/.*$/gm,''),/Supabase|database|RPC|JSON|backend|immutable|snapshot|uuid|ChatGPT|Other staff cannot read|colleagues see it/i);
- for(const menu of ['Create Pro forma','Delivery progress','Machines to install','Deleted items','Send to Tally','Mark my step done'])assert.match(source,new RegExp(menu));
+ for(const menu of ['Create Pro forma','Delivery progress','Machines to install','Deleted items','Mark my step done'])assert.match(source,new RegExp(menu));
 });
 test('search and role filters narrow the guides; owner guides are hidden from staff',()=>{
  const ctx=load();
- const tally=ctx.topics.filter(topic=>ctx.howToMatches(topic,'tally',''));
- assert.ok(tally.some(topic=>topic.id==='tally-send')&&tally.every(topic=>/tally/i.test(topic.title+topic.steps.join(' '))));
+ // Tax invoices are made in the ERP (16 Oct 2026): no guide sends staff to TallyPrime to make one.
+ assert.ok(ctx.topics.every(topic=>!/tax invoice in TallyPrime|Send to Tally|Tally invoices/i.test(topic.title+topic.steps.join(' '))));
+ assert.ok(ctx.topics.some(topic=>/Record TRA receipt/.test(topic.steps.join(' '))));
  assert.ok(ctx.topics.filter(topic=>ctx.howToMatches(topic,'','service')).every(topic=>topic.role==='service'));
  assert.equal(ctx.topics.filter(ctx.howToVisible).some(topic=>topic.id==='staff'),false);
  assert.equal(load('owner').topics.filter(load('owner').howToVisible).length>ctx.topics.filter(ctx.howToVisible).length,true);
