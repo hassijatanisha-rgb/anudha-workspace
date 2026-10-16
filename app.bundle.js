@@ -4454,7 +4454,7 @@ const workspaceGroups=[
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas · all','sales','proformas'],['Create Pro forma','sales','new'],['Tally invoices','tallyinvoices'],
+  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],['Tally invoices','tallyinvoices'],
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Accounts',tone:'accounts',items:[
@@ -4526,7 +4526,7 @@ function syncWorkspaceNavigation(){
  if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
-  const current=target==='sales'?(salesEditing==='new'?'new':salesSection):target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&(()=>{try{return typeof booksSection}catch{return 'undefined'}})()!=='undefined'?booksSection:null;
+  const current=target==='sales'?salesSection:target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&(()=>{try{return typeof booksSection}catch{return 'undefined'}})()!=='undefined'?booksSection:null;
   const active=target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
@@ -5563,15 +5563,15 @@ const howToTopics=[
   'To give a lead to a colleague (for example the ultrasound specialist), press **Hand over**, choose them and write a short note of at least 5 words. It goes on their Work handed to me list.',
   'When they want a quote, press **Create Pro forma**. The client is filled in for you.',
   'When they buy, press **Mark won** and choose the Pro forma. If they do not, press **Mark lost** and give the reason.']},
- {id:'proforma',role:'sales',title:'Make a Pro forma and send it to accounts',screens:['sales:new','sales:proformas'],steps:[
-  'Open **Create Pro forma**.',
+ {id:'proforma',role:'sales',title:'Make a Pro forma and send it to accounts',screens:['sales:proformas'],steps:[
+  'Open **Pro formas** and press **+ New Pro forma**.',
   'Choose the client, the contact person and the items with their quantities and prices. Press **Save Pro forma invoice**.',
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
   'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference.',
-  'Find any Pro forma under **Pro formas · all**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
+  'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
  {id:'tally-send',role:'accounts',title:'Send an accepted order to TallyPrime',screens:['sales:proformas','tallyinvoices'],steps:[
-  'Open **Pro formas · all** and find the accepted Pro forma.',
+  'Open **Pro formas** and find the accepted Pro forma.',
   'Press **Send to Tally**.',
   'Check the customer name and each item name. They must be spelled exactly as in TallyPrime. The ERP remembers them for next time.',
   'Press **Save**. A file downloads to your computer.',
@@ -5722,7 +5722,7 @@ const howToTopics=[
 let howToRole='all',howToQuery='',howToFocus='',howToWalk=null;
 
 function howToScreenKey(){
- const sections={sales:typeof salesEditing!=='undefined'&&salesEditing==='new'?'new':typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:'',books:typeof booksSection!=='undefined'?booksSection:''};
+ const sections={sales:typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:'',books:typeof booksSection!=='undefined'?booksSection:''};
  const section=sections[view];return section?`${view}:${section}`:view;
 }
 function howToForScreen(topic,key){const base=String(key).split(':')[0];return topic.screens.includes(key)||topic.screens.includes(base)}
