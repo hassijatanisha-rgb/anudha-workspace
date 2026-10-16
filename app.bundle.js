@@ -5987,6 +5987,52 @@ const navDropdownWatch=new MutationObserver(()=>{const nav=document.getElementBy
  new MutationObserver(navDropdownSync).observe(nav,{subtree:true,attributes:true,attributeFilter:['class']});navDropdownSync();});
 navDropdownWatch.observe(document.documentElement,{childList:true,subtree:true});
 document.addEventListener('DOMContentLoaded',navDropdownSetup);
+;// list-cache.js
+'use strict';
+// A copy of the client, contact and product lists kept in this browser, so the next visit asks the server only for
+// rows changed since (migration 089) instead of downloading all ~34,000 again. The server stays the source of truth:
+// every load still fetches the changes, a copy older than 7 days is replaced in full, and the copy is wiped whenever
+// the sign-in page is shown (sign-out, closed tab on a shared computer) or another person signs in.
+const listCacheName='anudha-lists',listCacheSchema=1,listCacheMaxAge=7*86400000,listCacheOverlap=5*60000;
+function listCacheOpen(){
+ return new Promise((resolve,reject)=>{
+  if(typeof indexedDB==='undefined')return reject(Error('No browser storage'));
+  const request=indexedDB.open(listCacheName,1);
+  request.onupgradeneeded=()=>request.result.createObjectStore('lists');
+  request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+ });
+}
+async function listCacheRun(mode,fn){
+ const db=await listCacheOpen();
+ try{return await new Promise((resolve,reject)=>{const tx=db.transaction('lists',mode),store=tx.objectStore('lists');let result;const request=fn(store);if(request)request.onsuccess=()=>{result=request.result};tx.oncomplete=()=>resolve(result);tx.onerror=tx.onabort=()=>reject(tx.error);});}
+ finally{db.close();}
+}
+// Returns the saved lists for this person, or null (none, too old, another person, or the browser refused).
+async function listCacheRead(userId,now=Date.now()){
+ try{
+  const saved=await Promise.race([listCacheRun('readonly',store=>store.get('lists')),new Promise(resolve=>setTimeout(()=>resolve(null),1500))]);
+  if(!saved||saved.schema!==listCacheSchema||saved.userId!==userId||!(now-saved.savedAt<listCacheMaxAge))return null;
+  if(!Array.isArray(saved.organizations)||!Array.isArray(saved.contacts)||!Array.isArray(saved.products)||!saved.since)return null;
+  return saved;
+ }catch{return null;}
+}
+async function listCacheWrite(record){try{await listCacheRun('readwrite',store=>store.put({...record,schema:listCacheSchema},'lists'));}catch{}}
+async function listCacheClear(){try{await listCacheRun('readwrite',store=>store.clear());}catch{}}
+// Latest change time in a set of rows, as an ISO string; '' when there are none.
+function listCacheLatest(rows,previous=''){
+ let best=Date.parse(previous)||0;
+ for(const row of rows){const t=Date.parse(row.updated_at);if(t>best)best=t;}
+ return best?new Date(best).toISOString():'';
+}
+// Ask from a little before the last change seen, so a save that committed late is not missed.
+function listCacheFrom(since){const t=Date.parse(since);return Number.isFinite(t)?new Date(t-listCacheOverlap).toISOString():'1970-01-01T00:00:00.000Z';}
+// Apply changed rows: archived clients and contacts leave the list; products keep archived rows as before.
+function listCacheMerge(rows,changes,keepArchived){
+ if(!changes.length)return rows;
+ const byId=new Map(rows.map(row=>[row.id,row]));
+ for(const row of changes){if(row.deleted_at&&!keepArchived)byId.delete(row.id);else byId.set(row.id,row);}
+ return [...byId.values()];
+}
 ;// app.js
 'use strict';
 const $=s=>document.querySelector(s),esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -6000,7 +6046,7 @@ function message(s,error=false){$('#notice').textContent=s;$('#notice').classNam
 function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
 function field(name,label,value='',type='text',required=false){return `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} maxlength="200"></label>`}
 function setup(){clear();$('#content').innerHTML='<div class="login card"><small>ANUDHA · FIRST RELEASE</small><h1>Connect your workspace</h1><p>Contacts and inventory, with individual staff logins.</p><p class="warning">The secure backend is not connected yet. Real records and staff access are not live.</p><p>Your administrator must complete the free Supabase setup and add the public project URL and publishable key to config.js.</p><a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open Supabase setup ↗</a></div>'}
-function login(){clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
+function login(){if(typeof listCacheClear==='function')listCacheClear();clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
 // filter (optional) narrows the rows on the server, e.g. q=>q.eq('status','open'); paging stays by id.
 // The first page also brings the row count, so every later page is asked for at once rather than four per round
 // trip (contacts: two round trips instead of six). Reading still stops only at a short page, so a count that is
@@ -6008,14 +6054,36 @@ function login(){clear();message('');$('#content').innerHTML=`<form id="login" c
 async function all(table,columns,filter){const out=[];for(let offset=0,size=4,round=0;;round++){const batches=await Promise.all(Array.from({length:size},(_,n)=>{let query=client.from(table).select(columns,round===0&&n===0?{count:'exact'}:undefined);if(filter)query=filter(query);return query.order('id').range(offset+n*1000,offset+n*1000+999);}));for(const r of batches){if(r.error)throw r.error;}for(const r of batches){out.push(...r.data);if(r.data.length<1000)return out;}offset+=size*1000;size=round===0&&batches[0].count!=null?Math.max(1,Math.floor((batches[0].count-4000)/1000)+1):4;}}
 // Clients, contacts and products (~34,000 rows) are needed by every page but the Dashboard, the first one after
 // sign-in. They load once the Dashboard is on screen, so they do not slow it down; render() holds any other page
-// until they are in.
+// until they are in. A copy kept in this browser (list-cache.js) means later visits fetch only what changed.
 let listsLoaded=false,listsLoading=null,listsEpoch=0;
+const listColumns={organizations:'id,name,location,type,parent_id,approval_status',contacts:'id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status,reason,revision',products:'id,name,sku,source,match_id,match_status,revision,deleted_at'};
+async function fetchLists(userId){
+ const C=listColumns,cached=typeof listCacheRead==='function'?await listCacheRead(userId):null;
+ try{
+  if(cached){
+   // Changed rows only, archived ones included so they can leave the list.
+   const changed=(table,cols)=>all(table,cols,q=>q.gte('updated_at',listCacheFrom(cached.since[table])));
+   const [od,cd,pd]=await Promise.all([changed('organizations',C.organizations+',deleted_at,updated_at'),changed('contacts',C.contacts+',deleted_at,updated_at'),changed('products',C.products+',updated_at')]);
+   const o=listCacheMerge(cached.organizations,od,false),c=listCacheMerge(cached.contacts,cd,false),p=listCacheMerge(cached.products,pd,true);
+   return {o,c,p,record:{userId,savedAt:cached.savedAt,since:{organizations:listCacheLatest(od,cached.since.organizations),contacts:listCacheLatest(cd,cached.since.contacts),products:listCacheLatest(pd,cached.since.products)},organizations:o,contacts:c,products:p}};
+  }
+  // Deleted clients and contacts are left on the server (they were dropped here anyway), so deleted_at is not sent.
+  const [o,c,p]=await Promise.all([all('organizations',C.organizations+',updated_at',q=>q.is('deleted_at',null)),all('contacts',C.contacts+',updated_at',q=>q.is('deleted_at',null)),all('products',C.products+',updated_at')]);
+  return {o,c,p,record:typeof listCacheLatest==='function'?{userId,savedAt:Date.now(),since:{organizations:listCacheLatest(o),contacts:listCacheLatest(c),products:listCacheLatest(p)},organizations:o,contacts:c,products:p}:null};
+ }catch(e){
+  if(!/updated_at/i.test(e?.message||''))throw e;
+  // The server does not have change times yet (before migration 089): the original full download, nothing kept.
+  const [o,c,p]=await Promise.all([all('organizations',C.organizations,q=>q.is('deleted_at',null)),all('contacts',C.contacts,q=>q.is('deleted_at',null)),all('products',C.products)]);
+  return {o,c,p,record:null};
+ }
+}
 function loadLists(){
  const epoch=++listsEpoch,actor=me;listsLoaded=false;
- // Deleted clients and contacts are left on the server (they were dropped here anyway), so deleted_at is not sent.
- listsLoading=Promise.all([all('organizations','id,name,location,type,parent_id,approval_status',q=>q.is('deleted_at',null)),all('contacts','id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status,reason,revision',q=>q.is('deleted_at',null)),all('products','id,name,sku,source,match_id,match_status,revision,deleted_at')]).then(([o,c,p])=>{
+ listsLoading=fetchLists(actor?.user_id).then(({o,c,p,record})=>{
   if(epoch!==listsEpoch||me!==actor)return false;
-  organizations=o.filter(x=>!x.deleted_at);contacts=c.filter(x=>!x.deleted_at);products=p;organizations.sort((a,b)=>a.name.localeCompare(b.name));scan();listsLoaded=true;return true;
+  organizations=o.filter(x=>!x.deleted_at);contacts=c.filter(x=>!x.deleted_at);products=p;organizations.sort((a,b)=>a.name.localeCompare(b.name));scan();listsLoaded=true;
+  if(record&&typeof listCacheWrite==='function')listCacheWrite(record);
+  return true;
  },e=>{if(epoch===listsEpoch)listsLoading=null;throw e;});
  return listsLoading;
 }
