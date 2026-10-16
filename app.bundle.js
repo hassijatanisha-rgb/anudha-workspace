@@ -4849,7 +4849,7 @@ async function booksOverview(actor,current){
   <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
   <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
   <div><small>Profit this month</small><strong>${booksMoney(income-expense)}</strong></div></div>
- <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
+ <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2><p class="muted">A Pro forma becomes an invoice by itself when Sales presses Submit to accounting. Any listed here could not be invoiced then (for example the books were locked for that date, or it is not in TZS).</p>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
  <section class="card"><h2>Overdue invoices (${overdue.length})</h2>${overdue.length?booksInvoiceTable(overdue.slice(0,20)):'<p class="empty">No overdue invoices.</p>'}</section>`;
  document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};return booksWorkspace();}));
  wireBooksInvoiceActions();
@@ -4875,7 +4875,7 @@ function booksVoidPrompt(kind,record){
 }
 async function booksInvoices(){
  const d=booksData,chosen=booksDraft?.proformaId||'';
- $('#booksBody').innerHTML=`<section class="card"><h2>Create an invoice from an accepted Pro forma</h2>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
+ $('#booksBody').innerHTML=`<section class="card"><h2>Invoice a waiting Pro forma</h2><p class="muted">Normally not needed: Submit to accounting makes the invoice. Use this only for an accepted Pro forma still waiting.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
   <label class="wide"><span>Accepted Pro forma</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · ${esc(booksMoney(p.total_minor))}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
@@ -5568,7 +5568,7 @@ const howToTopics=[
   'Choose the client, the contact person and the items with their quantities and prices. Press **Save Pro forma invoice**.',
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
-  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference.',
+  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. This also makes the invoice in the Books.',
   'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
  {id:'tally-send',role:'accounts',title:'Send an accepted order to TallyPrime',screens:['sales:proformas','tallyinvoices'],steps:[
   'Open **Pro formas** and find the accepted Pro forma.',
@@ -5582,11 +5582,10 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
- {id:'books-invoice',role:'accounts',title:'Invoice an accepted Pro forma in the Books',screens:['books:overview','books:invoices'],steps:[
-  'Open **Books overview**. Accepted Pro formas that still need an invoice are listed there.',
-  'Press **Create invoice**, or open **Customer invoices** and choose the Pro forma.',
-  'Check the invoice date and due date, type the TallyPrime or EFD tax invoice number if you have it, and press **Post invoice**.',
-  'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. Press **Print** for a copy.',
+ {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
+  'When Sales presses **Submit to accounting**, the Pro forma becomes an invoice by itself. Open **Customer invoices** to see it; press **Print** for a copy.',
+  'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. The due date comes from the payment terms.',
+  'If **Books overview** lists a Pro forma as waiting for an invoice, it could not be invoiced automatically. Press **Create invoice**, check the dates, type the TallyPrime or EFD tax invoice number if you have it, and press **Post invoice**.',
   'A wrong invoice is never edited: press **Void**, give the reason, and invoice the Pro forma again.']},
  {id:'books-receipt',role:'accounts',title:'Record money received from a customer',screens:['books:receipts'],steps:[
   'Open **Customer receipts**. Choose the customer, the date, the amount, how they paid and the account it went into.',
