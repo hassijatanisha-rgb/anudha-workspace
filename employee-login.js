@@ -7,7 +7,7 @@ function employeeLoginEmail(input){
  if(value.includes('@'))return value;
  // "Tanisha Hassija" is accepted as tanisha.hassija.
  if(/\s/.test(value))value=value.split(/\s+/).map(employeeIdPart).filter(Boolean).join('.');
- if(value.length<2||value.length>40||!employeeIdPattern.test(value))throw Error('Enter your employee ID (for example jagroop) or your work email.');
+ if(value.length<2||value.length>40||!employeeIdPattern.test(value))throw Error('Enter your employee ID or your work email.');
  return `${value}@${employeeLoginDomain()}`;
 }
 function employeeIdPart(word){return String(word??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');}

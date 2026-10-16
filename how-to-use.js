@@ -7,7 +7,7 @@
 const howToRoles=[['all','All'],['everyone','Everyone'],['sales','Sales'],['accounts','Accounts'],['stores','Packing & delivery'],['service','Service'],['owner','Owner']];
 const howToTopics=[
  {id:'start',role:'everyone',title:'Sign in and find your way around',screens:['contacts'],steps:[
-  'Sign in with your employee ID (your name, for example jagroop) and your password.',
+  'Sign in with your employee ID and your password.',
   'The first time you sign in, choose your own password. You can change it later with **Change password** at the top of the page.',
   'Use the menu on the left to move between pages.',
   'Open **My tasks** every morning. Tasks and order steps given to you are there, most urgent first.',
@@ -15,7 +15,7 @@ const howToTopics=[
  {id:'dashboard',role:'everyone',title:'See the day at a glance on the Dashboard',screens:['dashboard'],steps:[
   'The **Dashboard** opens first after you sign in. Open counts everything still open now. Overdues and Due Today count lead follow-ups, tasks, order steps and service visits.',
   'Press a period at the top: Today, This week, This month, This quarter or This year. Custom lets you pick two dates. Periodic counts what came in during that period; Result counts what was finished in it. The Dashboard remembers your choice on this computer or phone.',
-  'Owner and heads of department: **Team tasks** shows each person\'s tasks in the period, for example "Jagroop: 4 open · 11 completed · 1 late". Heads see only their own department. Press a name to see that person\'s tasks and what they wrote when each was done.',
+  'Owner and heads of department: **Team tasks** shows each person\'s tasks in the period: how many are open, completed and late. Heads see only their own department. Press a name to see that person\'s tasks and what they wrote when each was done.',
   'The **bell** at the top shows what is new for you: tasks given to you, work handed to you, and results of tasks you gave in the last 7 days. Press an item to go to it. Opening My tasks marks them as seen.',
   'Press a card to open its list. Cards that are not buttons have no single list to open.',
   'You only see cards for the parts of the software you can use. The Dashboard shows counts only, never amounts.']},
@@ -57,6 +57,27 @@ const howToTopics=[
   'Open **Tally invoices** and press **Upload Tally XML export**. Choose the file.',
   'Invoices with a Pro forma number link to their order by themselves, and packing is sent to the next person.',
   'Anything the ERP could not link is under the needs linking list. Press **Link to Pro forma** and choose the order, or press **Not from a Pro forma**.']},
+ {id:'books-invoice',role:'accounts',title:'Invoice an accepted Pro forma in the Books',screens:['books:overview','books:invoices'],steps:[
+  'Open **Books overview**. Accepted Pro formas that still need an invoice are listed there.',
+  'Press **Create invoice**, or open **Customer invoices** and choose the Pro forma.',
+  'Check the invoice date and due date, type the TallyPrime or EFD tax invoice number if you have it, and press **Post invoice**.',
+  'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. Press **Print** for a copy.',
+  'A wrong invoice is never edited: press **Void**, give the reason, and invoice the Pro forma again.']},
+ {id:'books-receipt',role:'accounts',title:'Record money received from a customer',screens:['books:receipts'],steps:[
+  'Open **Customer receipts**. Choose the customer, the date, the amount, how they paid and the account it went into.',
+  'Their unpaid invoices appear. Type how much goes to each, or press **Apply to oldest invoices first**.',
+  'Press **Record receipt**. Anything not applied stays as a credit for that customer.',
+  'If a cheque bounces or a receipt was wrong, press **Void** next to it and give the reason.']},
+ {id:'books-journal',role:'accounts',title:'Post expenses, bills and other entries',screens:['books:journal','books:accounts'],steps:[
+  'Open **Journal entries**. Write a description and the date.',
+  'Choose an account on each line and type the debit or the credit. Press **Add line** for more lines.',
+  'When debits and credits are equal, press **Post entry**. A posted entry is never changed: use **Reverse** to undo it.',
+  'Open **Chart of accounts** to add or rename accounts, and press **Ledger** next to any account to see every movement.']},
+ {id:'books-reports',role:'accounts',title:'See the financial reports',screens:['books:reports'],steps:[
+  'Open **Financial reports** and choose a report: trial balance, profit and loss, balance sheet, customer ageing or account ledger.',
+  'Choose the dates and press **Show report**.',
+  'Press **Download CSV** to open it in Excel, or **Print / PDF** for a copy.',
+  'TallyPrime stays the official books until the accountant has checked these figures against it.']},
  {id:'packing',role:'stores',title:'Pack orders from the packing queue',screens:['packing:queue','packing:screen'],steps:[
   'Open **Packing queue** on your phone. Orders in red have the customer waiting in the lobby and always go first; then delivery orders, oldest first.',
   'Press **Take next**. You get the top order with its client and items; the stock to use is picked for you. Nobody else can get the same order.',
@@ -144,7 +165,7 @@ const howToTopics=[
   'Press **Download CSV** to open it in Excel.']},
  {id:'staff',role:'owner',owner:true,title:'Add a staff member or department head',screens:['staff'],steps:[
   'Open **Staff** and press **Add employee**.',
-  'Type the full name. The login is made from the name, for example jagroop.hassija, and a temporary password is shown once.',
+  'Type the full name. The login is made from the name and a temporary password is shown once.',
   'Choose the **Role**: Staff, or **Department head** for someone who will add and manage their own team.',
   'Choose the **Department**. The usual parts for that department are ticked; change the ticks under **What this person can use**.',
   'Give the person their login and temporary password. They choose their own password the first time.',
@@ -176,7 +197,7 @@ const howToTopics=[
 let howToRole='all',howToQuery='',howToFocus='',howToWalk=null;
 
 function howToScreenKey(){
- const sections={sales:typeof salesEditing!=='undefined'&&salesEditing==='new'?'new':typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:''};
+ const sections={sales:typeof salesEditing!=='undefined'&&salesEditing==='new'?'new':typeof salesSection!=='undefined'?salesSection:'',service:typeof serviceSection!=='undefined'?serviceSection:'',inventory:typeof inventorySection!=='undefined'?inventorySection:'',personal:typeof personalSection!=='undefined'?personalSection:'',leads:typeof leadSection!=='undefined'?leadSection:'',purchasing:typeof purchaseSection!=='undefined'?purchaseSection:'',stockcount:typeof countTab!=='undefined'?countTab:'',books:typeof booksSection!=='undefined'?booksSection:''};
  const section=sections[view];return section?`${view}:${section}`:view;
 }
 function howToForScreen(topic,key){const base=String(key).split(':')[0];return topic.screens.includes(key)||topic.screens.includes(base)}
