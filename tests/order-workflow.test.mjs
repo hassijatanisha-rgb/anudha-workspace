@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../order-workflow.js',import.meta.url),'utf8');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function fixture({permission=true,serviceAccess=true,invoiceError=false,serviceError=false,invoiceRows=[],serviceRows=[]}={}){
+function fixture({permission=true,serviceAccess=true,invoiceError=false,serviceError=false,invoiceRows=[],serviceRows=[],quantities=null}={}){
  const reads=[],calls=[],invoices={textContent:'',innerHTML:'',querySelector:()=>null},service={textContent:'',innerHTML:'',querySelectorAll:()=>[]};
  const panel={dataset:{orderWorkflow:'pf'},isConnected:true,querySelector:s=>s==='[data-order-invoices]'?invoices:service};
- const ctx=vm.createContext({me:{user_id:'actor'},view:'sales',salesEpoch:1,salesFocusedProforma:'pf',salesDeliveryNotes:[{id:'dn',proforma_id:'pf',status:'delivered',delivery_number:'DN-1',packer_user_id:'actor',tracking_reference:'TRK'}],
+ const ctx=vm.createContext({me:{user_id:'actor'},view:'sales',salesEpoch:1,salesFocusedProforma:'pf',salesProformas:[{id:'pf',status:'accepted'}],salesDeliveryLines:[],salesDeliveryNotes:[{id:'dn',proforma_id:'pf',status:'delivered',delivery_number:'DN-1',packer_user_id:'actor',tracking_reference:'TRK'}],
   rowsWhere:(rows,k,v)=>rows.filter(r=>r[k]===v),salesFulfillment:()=> 'partial',salesStatus:s=>s,esc,employeeName:id=>id||'Not recorded',moneyDisplay:(n,c)=>c+' '+n/100,hasArea:()=>serviceAccess,
-  client:{rpc:async(name)=>{calls.push(name);return {data:permission}},from:table=>{reads.push(table);let ids=[],bounds=[];const query={select(){return this},in(k,v){ids=v;return this},order(){return this},range(a,b){bounds=[a,b];return this},then(resolve,reject){const rows=table==='acc_invoices'?invoiceRows:serviceRows,error=table==='acc_invoices'?invoiceError:serviceError;return Promise.resolve(error?{error:{message:'Offline'}}:{data:rows.slice(bounds[0],bounds[1]+1)}).then(resolve,reject)}};return query;}},document:{querySelectorAll:()=>[]}});
+  client:{rpc:async(name)=>{calls.push(name);return {data:name==='accounting_access'?permission:quantities}},from:table=>{reads.push(table);let ids=[],bounds=[];const query={select(){return this},in(k,v){ids=v;return this},order(){return this},range(a,b){bounds=[a,b];return this},then(resolve,reject){const rows=table==='acc_invoices'?invoiceRows:serviceRows,error=table==='acc_invoices'?invoiceError:serviceError;return Promise.resolve(error?{error:{message:'Offline'}}:{data:rows.slice(bounds[0],bounds[1]+1)}).then(resolve,reject)}};return query;}},document:{querySelectorAll:()=>[]}});
  vm.runInContext(source,ctx);return {ctx,reads,calls,invoices,service,panel};
 }
 test('Whole order retains partial delivery warning and escapes linked identity text',()=>{
@@ -47,4 +47,25 @@ test('Opening a different task replaces delivery focus and opening a proforma cl
  vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);
  await ctx.workOpenRecord({record_type:'delivery',record_id:'new'});assert.equal(ctx.salesFocusedDelivery,'new');assert.equal(ctx.salesFocusedProforma,'');
  await ctx.workOpenRecord({record_type:'proforma',record_id:'pf'});assert.equal(ctx.salesFocusedDelivery,'');assert.equal(ctx.salesFocusedProforma,'pf');
+});
+
+test('A split order shows invoiced and signed delivered quantities independently',async()=>{
+ const f=fixture({invoiceRows:[{id:'inv',invoice_number:'INV-2',total_minor:23600,currency:'TZS'}],quantities:{proforma_id:'pf',lines:[{proforma_line_id:'line',description:'X-ray <machine>',uom:'pcs',ordered_quantity:4,invoiced_quantity:2,remaining_quantity:2}]}});
+ f.ctx.salesDeliveryLines=[{proforma_line_id:'line',delivery_note_id:'dn',quantity:2},{proforma_line_id:'line',delivery_note_id:'cancelled',quantity:9}];
+ await f.ctx.loadOrderWorkflow(f.panel);
+ assert.match(f.invoices.innerHTML,/X-ray &lt;machine&gt;/);assert.match(f.invoices.innerHTML,/<td>4<\/td><td>2<\/td><td>2<\/td><td>2<\/td>/);
+ assert.match(f.invoices.innerHTML,/Pending invoice/);assert.match(f.invoices.innerHTML,/all quantities have signed delivery proof/);
+});
+test('Invoiced units still in packing are not shown as delivered',()=>{
+ const f=fixture();f.ctx.salesDeliveryNotes[0].status='packing';f.ctx.salesDeliveryLines=[{proforma_line_id:'line',delivery_note_id:'dn',quantity:2}];
+ const html=f.ctx.orderQuantityHtml({proforma_id:'pf',lines:[{proforma_line_id:'line',description:'Machine',ordered_quantity:4,invoiced_quantity:2,remaining_quantity:2}]});
+ assert.match(html,/<td>4<\/td><td>2<\/td><td>0<\/td><td>2<\/td>/);
+});
+
+test('Cancelled split deliveries can be recreated while another invoice is still in packing',()=>{
+ const ctx=vm.createContext({hasRemainingDelivery:()=>true,openDelivery:()=>({id:'other',status:'packing'})});
+ vm.runInContext(readFileSync(new URL('../sales-delivery.js',import.meta.url),'utf8'),ctx);
+ ctx.hasRemainingDelivery=()=>true;ctx.openDelivery=()=>({id:'other',status:'packing'});
+ assert.equal(ctx.canCreateDelivery({id:'pf',status:'accepted'}),true);
+ ctx.hasRemainingDelivery=()=>false;assert.equal(ctx.canCreateDelivery({id:'pf',status:'accepted'}),false);
 });

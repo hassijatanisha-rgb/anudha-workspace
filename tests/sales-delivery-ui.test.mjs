@@ -21,7 +21,7 @@ assert.match(source,/create_sales_delivery_note/);
 assert.match(source,/advance_sales_delivery/);
 assert.match(source,/Print \/ PDF/);
 assert.match(source,/No loose Haadi stock is available for this item/);
-assert.match(source,/Accounts approval does not depend on stock availability/);
+assert.match(source,/For a new invoice, use Books → Customer invoices → Review quantities/);
 assert.match(source,/start_sales_delivery_packing/);
 assert.doesNotMatch(source,/>Dispatch \/ out for delivery</);
 assert.match(source,/equipment-handover-installation-report\.pdf/);

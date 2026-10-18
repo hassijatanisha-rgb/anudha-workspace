@@ -102,3 +102,29 @@ test('only the selected Books print root is active and print exceptions clean up
  run(ctx,"booksData={secret:'balance'};booksDraft={receipt:{}};booksSection='receipts';booksReport.kind='ageing';booksEpoch=4;clearBooks()");
  assert.equal(run(ctx,'booksData'),null);assert.equal(run(ctx,'booksDraft'),null);assert.equal(run(ctx,'booksEpoch'),5);assert.equal(run(ctx,'booksSection'),'overview');assert.equal(run(ctx,'booksReport.kind'),'trial');
 });
+
+
+test('split invoice printing uses stored rounding components and keeps the legacy fallback',()=>{
+ const ctx=load();
+ const stored=run(ctx,'booksInvoiceLineAmounts({quantity:1,unit_price_minor:1,discount_basis_points:5000,tax_basis_points:5000,subtotal_minor:1,discount_minor:0,tax_minor:0,total_minor:1})');
+ assert.equal(stored.net,1);assert.equal(stored.vat,0);
+ const legacy=run(ctx,'booksInvoiceLineAmounts({quantity:1,unit_price_minor:1,discount_basis_points:5000,tax_basis_points:5000})');
+ assert.equal(legacy.net,0);assert.equal(legacy.vat,0);
+ const strings=run(ctx,"booksInvoiceLineAmounts({subtotal_minor:'999',discount_minor:'99',tax_minor:'162'})");
+ assert.equal(strings.net,900);assert.equal(strings.vat,162);
+});
+
+test('invoice quantity selection omits zeroes and enforces remaining, shared availability and whole-unit bounds',()=>{
+ const ctx=load();ctx.lines=[{proforma_line_id:'machine',product_id:'p',remaining_quantity:4,available_quantity:2},{proforma_line_id:'spare',product_id:'s',remaining_quantity:3,available_quantity:3}];
+ ctx.values=['2','0'];
+ assert.equal(JSON.stringify(run(ctx,'booksInvoiceQuantitySelection(lines,values)')),JSON.stringify([{proforma_line_id:'machine',quantity:2}]));
+ for(const value of ['-1','1.5','1e0','','1000001','9007199254740992']){
+  ctx.values=[value,'0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/whole quantity/);
+ }
+ ctx.values=['5','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/uninvoiced balance/);
+ ctx.values=['3','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/available Haadi stock/);
+ ctx.values=['0','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/at least one/);
+ ctx.lines=[{proforma_line_id:'a',product_id:'p',remaining_quantity:4,available_quantity:2},{proforma_line_id:'b',product_id:'p',remaining_quantity:4,available_quantity:2}];
+ ctx.values=['2','1'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/available Haadi stock/);
+ ctx.values=['1','1'];assert.equal(run(ctx,'booksInvoiceQuantitySelection(lines,values)').length,2);
+});
