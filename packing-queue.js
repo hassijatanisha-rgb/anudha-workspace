@@ -55,6 +55,7 @@ function orderLiveText(s,now=Date.now(),proformaStatus=''){
   delivered:`Delivered${s.delivered_at?' '+packingTime(s.delivered_at,now):''}`,
   cancelled:'Delivery cancelled'
  })[s.status]||String(s.status||'').replaceAll('_',' ');
+ if(s.status==='delivered'&&s.remaining_quantity>0)text=`Partly delivered · ${s.remaining_quantity} units still to deliver`;
  if(s.status==='sent_to_sales'&&s.customer_waiting)text+=' · customer waiting';
  if(s.status==='sent_to_sales'&&s.blocked_reason)text+=` · ${s.blocked_reason}`;
  if(s.call_customer)text+=' · Call the customer';
@@ -88,7 +89,7 @@ function packingCard(row,mine=false){
   ${level==='red'?`<p class="packing-alert" role="alert">Over ${esc(packingBoard.overdue_minutes)} minutes. The stores head and the owner have been told.</p>`:level==='amber'?`<p class="packing-warn">Over ${esc(packingBoard.amber_minutes)} minutes. Finish soon or tell the stores head.</p>`:''}
   ${row.call_customer?'<p class="packing-call">Call the customer: more than 2 days past the promise.</p>':''}
   <p class="muted">${esc(packingPromiseText(row,now))}</p>
-  <div class="actions">${mine?`<button type="button" class="primary-action packing-big" data-packing-packed="${esc(row.id)}" data-version="${esc(row.version)}">Packed</button>`:''}${packingBoard.can_release?`<button type="button" data-packing-release="${esc(row.id)}" data-version="${esc(row.version)}">Put back in queue</button>`:''}</div>
+  <div class="actions">${mine||packingBoard.can_release?`<button type="button" class="primary-action packing-big" data-packing-packed="${esc(row.id)}" data-version="${esc(row.version)}">Packed</button>`:''}${packingBoard.can_release?`<button type="button" data-packing-release="${esc(row.id)}" data-version="${esc(row.version)}">Put back in queue</button>`:''}</div>
  </article>`;
 }
 function packingWaitingRow(row,index){
@@ -183,7 +184,7 @@ function bindPackingQueue(){
  });
  document.querySelectorAll('[data-packing-release]').forEach(b=>b.onclick=()=>{
   const row=packingBoard?.packing.find(r=>r.id===b.dataset.packingRelease);
-  actionForm('Put back in the packing queue',`<p><strong>${esc(row?.delivery_number||'')}</strong>${row?.packer_name?` · with ${esc(row.packer_name)}`:''}</p><p class="muted">It goes back to its place in the queue. Stock picked for it is freed again.</p><label><span>Why?</span><textarea name="reason" required minlength="3" maxlength="500"></textarea></label>`,async values=>{
+  actionForm('Put back in the packing queue',`<p><strong>${esc(row?.delivery_number||'')}</strong>${row?.packer_name?` · with ${esc(row.packer_name)}`:''}</p><p class="muted">It goes back to its place in the queue. Tax invoice stock stays reserved. Stock selected when packing started is released, and its serial numbers must be entered again.</p><label><span>Why?</span><textarea name="reason" required minlength="3" maxlength="500"></textarea></label>`,async values=>{
    await packingAct(()=>client.rpc('packing_release',{p_id:b.dataset.packingRelease,p_expected_version:Number(b.dataset.version),p_reason:values.reason}),'Put back in the packing queue.');
   });
  });

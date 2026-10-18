@@ -8,7 +8,7 @@ assert.match(html,/sales-delivery\.js/);
 assert.match(app,/view==='sales'.*salesDeliveryWorkspace/);
 assert.match(source,/Pro forma submitted/);
 assert.match(source,/Accounts approved/);
-assert.match(source,/Tax invoice created/);
+assert.match(source,/Invoice linked · stock reserved/);
 assert.match(source,/Sent to downstairs sales/);
 assert.match(source,/Packing in progress/);
 assert.match(source,/Ready for delivery/);

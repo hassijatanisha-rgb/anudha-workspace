@@ -13,14 +13,16 @@ const workSuggestedTasks={
 };
 const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service / installation',lead:'Lead',pending:'Pending order',purchase:'Purchase',tally_invoice:'Invoiced — to pack'};
 // Steps the owner gives a default person; the database hands records on to them automatically.
-const workSteps=[['invoice','Tax invoice in TallyPrime','After the customer accepts a Pro forma'],['packing','Packing','After the Tally invoice is linked, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
+const workSteps=[['invoice','Customer invoice and TRA receipt','After the customer accepts a Pro forma'],['packing','Packing','After invoice approval, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
+function workCanAssign(type){const area={proforma:'proformas',delivery:'deliveries',tally_invoice:'deliveries',service:'service',lead:'leads',purchase:'purchasing',pending:null};return !!me?.user_id&&me.active!==false&&Object.hasOwn(area,type)&&(!area[type]||me.role==='owner'||(me.access||[]).includes(area[type]));}
+function workRecordClosed(type,record){return ({proforma:['rejected','cancelled'],delivery:['delivered','cancelled'],service:['completed','cancelled']}[type]||[]).includes(record?.status);}
 function clearWorkAssignments(){workEpoch++;workPendingHandoff=null;}
 // A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
 function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
  const cards=[];
- document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
- document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number});});
+ document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note){const type=proforma?'proforma':'delivery';cards.push({card,type,id,label:proforma?.document_number||note.delivery_number,closed:workRecordClosed(type,proforma||note)});}});
+ document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number,closed:workRecordClosed('service',record)});});
  document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=workRow(typeof leadRows!=='undefined'?leadRows:[],card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
  document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=workRow(typeof pendingRows!=='undefined'?pendingRows:[],card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
  document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=workRow(typeof purchaseOrders!=='undefined'?purchaseOrders:[],card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
@@ -118,26 +120,29 @@ async function decorateWorkHandoffs(){
   if(epoch!==workEpoch||me!==actor)return;
   for(const item of items){
    const box=item.card.querySelector('[data-work-handoff]');if(!box?.isConnected)continue;
-   const current=open.get(item.id)||null,canClose=current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
+   const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
    const delay=current?delays.get(current.id):null,timeline=workTimeline(history.get(item.id)||[]),level=workAgeLevel(current,delay);
    box.classList.toggle('quality-yellow',level==='yellow');box.classList.toggle('quality-red',level==='red');
-   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)} <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
+   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)}${canAssign?` <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign to me</button>':''}`:''}${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
    box.querySelector('[data-work-delay]')?.addEventListener('click',()=>openWorkDelay({...current,record_label:item.label}));
-   box.querySelector('[data-work-assign]').onclick=()=>openWorkHandoff({...item,current});
+   box.querySelector('[data-work-assign]')?.addEventListener('click',()=>openWorkHandoff({...item,current}));
+   box.querySelector('[data-work-self]')?.addEventListener('click',()=>openWorkHandoff({...item,current,self:true}));
    box.querySelector('[data-work-done]')?.addEventListener('click',()=>openWorkClose(current,'done'));
   }
  }
 }
-function workEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>`<option value="${esc(row.user_id)}" ${row.user_id===selected?'selected':''}>${esc(employeeName(row.user_id))}</option>`).join('');}
+function workEmployeeOptions(selected=''){const rows=[...employeeDirectory.values()];if(me?.user_id&&!rows.some(row=>row.user_id===me.user_id))rows.push(me);return rows.filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>`<option value="${esc(row.user_id)}" ${row.user_id===selected?'selected':''}>${esc(employeeName(row.user_id))}</option>`).join('');}
 let workPendingHandoff=null;
-function openWorkHandoff({type,id,label,current}){
- const listId=`workTasks-${type}`;
- const fields=`<p><strong>${esc(label)}</strong>${current?` · currently ${esc(employeeName(current.assignee_user_id))}: ${esc(current.task)}`:''}</p><label><span>Hand to</span><select name="assignee" required><option value="">Choose employee</option>${workEmployeeOptions()}</select></label><label><span>What should they do?</span><input name="task" required minlength="2" maxlength="300" list="${listId}" autocomplete="off"><datalist id="${listId}">${(workSuggestedTasks[type]||[]).map(task=>`<option value="${esc(task)}"></option>`).join('')}</datalist></label><label><span>Due date · optional</span><input name="due" type="date" min="${new Date().toISOString().slice(0,10)}"></label><label><span>Note · optional</span><textarea name="note" maxlength="2000"></textarea></label><p class="muted">The person you choose will see this on their To-do tasks. Your name is recorded as the sender and cannot be changed.</p>`;
- actionForm(current?'Hand to next person':'Assign responsible person',fields,async values=>{
+function openWorkHandoff({type,id,label,current,self=false}){
+ if(!workCanAssign(type))return message('You do not have access to assign this step. Ask your department head.',true);
+ const actor=me.user_id,listId=`workTasks-${type}`,task=self?(current?.task||workSuggestedTasks[type]?.[0]||'Review the current step'):'';
+ const fields=`<p><strong>${esc(label)}</strong>${current?` · currently ${esc(employeeName(current.assignee_user_id))}: ${esc(current.task)}`:''}</p><label><span>Hand to</span><select name="assignee" required><option value="">Choose employee</option>${workEmployeeOptions(self||!current?actor:'')}</select></label><label><span>What should they do?</span><input name="task" required minlength="2" maxlength="300" list="${listId}" value="${esc(task)}" autocomplete="off"><datalist id="${listId}">${(workSuggestedTasks[type]||[]).map(task=>`<option value="${esc(task)}"></option>`).join('')}</datalist></label><label><span>Due date · optional</span><input name="due" type="date" min="${workToday()}"></label><label><span>Note · optional</span><textarea name="note" maxlength="2000"></textarea></label><p class="muted">This assigns responsibility for the current step and records the handoff history. The person you choose will see it on their To-do tasks.${type==='service'?' Assign the engineer and work date separately in the service job.':type==='delivery'?' Assign the packer and record packing progress separately in the delivery.':''} Your name is recorded as the sender.</p>`;
+ actionForm(self?'Assign this step to me':current?'Hand to next person':'Assign responsible person',fields,async values=>{
+  if(me?.user_id!==actor)throw Error('Login changed. Reopen the assignment form.');
   const key=`${type}:${id}:${values.assignee}:${values.task}:${current?.id||''}`;
   // Keep one request ID for the same handoff until confirmed, so a retry after a lost response cannot duplicate it.
   if(workPendingHandoff?.key!==key)workPendingHandoff={key,id:crypto.randomUUID()};
-  const actor=me?.user_id,result=await client.rpc('hand_off_work',{p_id:workPendingHandoff.id,p_record_type:type,p_record_id:id,p_record_label:label,p_task:String(values.task||'').trim(),p_assignee_user_id:values.assignee,p_due_on:values.due||null,p_note:values.note||'',p_expected_open_id:current?.id||null});
+  const result=await client.rpc('hand_off_work',{p_id:workPendingHandoff.id,p_record_type:type,p_record_id:id,p_record_label:label,p_task:String(values.task||'').trim(),p_assignee_user_id:values.assignee,p_due_on:values.due||null,p_note:values.note||'',p_expected_open_id:current?.id||null});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
   workPendingHandoff=null;await render();message(`${label} handed to ${employeeName(values.assignee)}.`);
@@ -154,7 +159,7 @@ function openWorkClose(row,action){
 }
 async function workOpenRecord(row){
  if(!row)return;
- if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(row.record_type==='proforma'&&typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_id;}
+ if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
  else if(row.record_type==='service')return focusServiceCase(row.record_id);
  else if(row.record_type==='lead'){if(typeof focusLead==='function')focusLead(row.record_id);else view='leads';}
  else if(row.record_type==='pending'){view='pending';pendingFilter='all';pendingSearch=row.record_label;}

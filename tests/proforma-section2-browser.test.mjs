@@ -183,3 +183,37 @@ acceptance('Saved revision identities escape malicious names when reloaded for p
  await p.evaluate(async()=>{salesRevisionSnapshots.clear();await salesDeliveryWorkspace(true)});
  assert.ok((await p.locator('[data-document-card] .heading').innerText()).includes(malicious));assert.equal(await p.locator('#snapshot-injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
 });
+
+acceptance('Whole-order view opens the matching delivery and engineering case, and self-assignment uses the signed-in employee',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(()=>{
+  window.employeeName=id=>id==='actor'?'Test Operator':id||'Not recorded';
+  window.employeeDirectory=new Map([['actor',{user_id:'actor',active:true,role:'owner',access:['proformas','deliveries','service']}]]);
+  me.role='owner';me.access=['proformas','deliveries','service'];window.hasArea=()=>true;
+  window.render=()=>salesDeliveryWorkspace();window.focusServiceCase=id=>{window.openedService=id};
+ });
+ for(const file of ['work-assignments.js','order-workflow.js'])await p.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ await fillEntry(p);await save(p);await p.waitForSelector('[data-work-self]');
+ assert.equal(await p.locator('[data-order-workflow]').count(),1);
+ await p.locator('[data-work-self]').click();
+ assert.equal(await p.locator('#actionEditor [name="assignee"]').inputValue(),'actor');
+ assert.notEqual(await p.locator('#actionEditor [name="task"]').inputValue(),'');
+ await p.locator('#actionCancel').click();
+ await p.evaluate(()=>{
+  const pf=salesProformas[0];
+  salesDeliveryNotes=[{id:'dn-old',proforma_id:pf.id,delivery_number:'DN-TEST-OLD',organization_id:'branch',contact_id:'contact',status:'delivered',version:4,accounts_reference:'APPROVAL',tax_invoice_reference:'INV-TEST',expected_delivery_date:'2026-10-18',recipient_name:'Test Customer',proof_reference:'TEST signed copy',packer_user_id:'actor'}];
+  salesDeliveryLines=[{id:'dl',delivery_note_id:'dn-old',proforma_line_id:salesLines(pf.id)[0].id,product_id:'product',quantity:1,lot_id:'lot'}];
+  const original=client.from;
+  client.from=table=>{
+   if(!['acc_invoices','service_cases'].includes(table))return original(table);
+   const q={select(){return this},in(){return this},order(){return this},range(){return this},then(ok,bad){return Promise.resolve({data:table==='acc_invoices'?[{id:'invoice',invoice_number:'INV-TEST',currency:'TZS',total_minor:10000}]:[{id:'engineering-case',case_number:'INS-TEST',status:'awaiting_assignment',assigned_user_id:null}]}).then(ok,bad)}};return q;
+  };
+  return salesDeliveryWorkspace();
+ });
+ await p.waitForSelector('[data-order-service-case="engineering-case"]');
+ await p.locator('[data-order-service-case="engineering-case"]').click();assert.equal(await p.evaluate(()=>openedService),'engineering-case');
+ await p.locator('[data-order-delivery="dn-old"]').click();
+ await p.waitForSelector('[data-document-card="dn-old"]');assert.equal(await p.locator('[data-document-card]').count(),1);
+ await p.locator('[data-order-proforma]').click();await p.waitForSelector('[data-order-workflow]');
+ assert.match(await p.locator('[data-order-invoices]').innerText(),/INV-TEST/);
+});

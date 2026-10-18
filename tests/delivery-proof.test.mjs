@@ -11,8 +11,8 @@ test('the deliver form tells staff to upload the signed delivery note first',()=
  assert.match(deliver,/name="recipient"/);assert.match(deliver,/name="proof"/);
 });
 
-test('the newest advance_sales_delivery requires a delivery file uploaded after dispatch',()=>{
- const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(name=>/advance_sales_delivery/.test(read('supabase/migrations/'+name))).sort();
+test('the newest full advance_sales_delivery definition requires a delivery file uploaded after dispatch',()=>{
+ const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(name=>/create or replace function public\.advance_sales_delivery\(/i.test(read('supabase/migrations/'+name))).sort();
  const latest=read('supabase/migrations/'+files.at(-1));
  assert.ok(files.at(-1)>='202610150081_delivery_proof_required.sql','081 or a later migration holds the current definition');
  assert.match(latest,/record_type='delivery' and a\.record_id=v_row\.id and a\.uploaded_at>=coalesce\(v_row\.dispatched_at/);

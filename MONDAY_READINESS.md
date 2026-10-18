@@ -1,10 +1,12 @@
 # Anudha workspace — Monday release candidate
 
-Prepared 16 October 2026 for Monday 19 October. Base: `c9cf493532c45dc7adca47c7eabf0d71639ee21a`.
+Prepared 16 October 2026; updated 18 October for the order-workflow release. Base: `c9cf493532c45dc7adca47c7eabf0d71639ee21a`.
 
 **Status: implemented and locally tested; not deployed or certified ready for live operation.** The GitHub Pages site deploys from `main`. This branch must be released with its Supabase migrations and two Edge functions. GitHub access is available; the production Supabase administration connection and authenticated live acceptance session are not available in this task yet.
 
 ## What changed
+
+- The 18 October order fixes and their executable acceptance evidence are described in `ORDER_WORKFLOW_ACCEPTANCE.md`. The same operator can explicitly take each authorized step; a whole-order panel links the Pro forma, ERP invoices, packing/delivery and automatically created machine installation cases.
 
 - Sign-out invalidates cached business data and late responses. Temporary-password replacement is enforced by the database; existing MFA challenges happen first. Attachment access follows the parent work area's permission. Service completion, purchasing edits, task deadlines and public-request assignments enforce the relevant permissions.
 - Sales loads complete paginated registers and related records, preserves unsaved forms and retry identities, reports partial deliveries correctly, and snapshots customer/contact/product identities for new proforma revisions. Historical revisions without those fields are labelled unavailable rather than rewritten.
@@ -43,6 +45,13 @@ Use a staging copy with the deployed schema first. These tests use focused dispo
    | 097 | `202610160097_deadline_identity.sql` | Narrow approval-task identity RPC |
    | 098 | `202610160098_public_request_integrity.sql` | Full-content deduplication and eligible assignees |
    | 099 | `202610160099_password_replacement.sql` | Server-controlled password replacement and preserved MFA |
+   | 100 | `202610180100_work_assignment_access.sql` | Actor and assignee workflow access |
+   | 101 | `202610180101_service_assignee_access.sql` | Engineer eligibility and self-assignment |
+   | 102 | `202610180102_packing_shipping_handoffs.sql` | Shared packing claims, completion and partial balances |
+   | 103 | `202610180103_erp_invoice_delivery_link.sql` | Canonical ERP invoice linked to reservation |
+   | 104 | `202610180104_active_invoice_dispatch.sql` | Dispatch and invoice-void consistency |
+   | 105 | `202610180105_work_handoff_parent_state.sql` | Canonical task labels and terminal-record guards |
+   | 106 | `202610180106_order_stock_expiry.sql` | Exclude expired lots through dispatch |
 
 4. Deploy `supabase/functions/website-request/index.ts`, preserving its existing public-endpoint JWT configuration and server-only secrets.
 5. Run the acceptance sequence below in staging. Then repeat the backend deployment during a controlled release window and merge this branch to `main`. GitHub Pages publishes the committed `index.html` and generated bundles. Do not publish the frontend before the new RPCs and views exist.
@@ -68,11 +77,11 @@ Email, WhatsApp, direct Tally and VFD were reported unconnected in that review. 
 
 ## Verification and security status
 
-- Node suite: **481 passed, 0 failed, 50 browser-gated cases skipped** in the ordinary run.
-- Separate real Chrome run: **50 passed, 0 failed, 0 skipped**. Covers accounting editors, attachments, personal workspace, proformas and the new Excel importer with synthetic data and external networking blocked.
+- Node suite: **497 passed, 0 failed, 51 browser-gated cases skipped** in the ordinary run.
+- Separate real Chrome run: **51 passed, 0 failed, 0 skipped**. Covers accounting editors, attachments, personal workspace, proformas and the new Excel importer with synthetic data and external networking blocked.
 - Eight relevant PGlite database suites: **243 checks passed**. Workflow authorization 33; accounting 59; proforma identity 21; operations 35; financial import 26; deadline identity 24; public requests 34; password replacement 11.
 - Generated full bundle starts the login page in Chrome with zero uncaught page errors. Build consistency, syntax and whitespace checks pass. A blank Excel template was generated and reopened successfully.
 - Changed-source manual security reviews covered authorization, stale sessions, SQL privileges/search paths, input escaping, CSV formulas, import limits/atomicity/idempotency, private password metadata, and provider failures. Review findings were fixed, including MFA/password ordering, exact protected deadline timestamps, permission-aware branch links and late service responses.
-- **Semgrep and CodeQL have not run.** The installed Semgrep skill requires “User must approve scan plan”; CodeQL requires scan-plan confirmation. Approval was requested but not received. Planned Semgrep OSS scope: changed JS/TS, `p/security-audit`, `p/secrets`, `p/javascript`, `p/typescript` and Trail of Bits rules, all findings, telemetry disabled. Planned CodeQL: application JS/TS with necessary shared flows, excluding vendor/generated assets, official security-and-quality plus security-experimental, remote/local sources, no added models. CodeQL 2.27.2 is installed but official JS query packs need downloading; no database or analysis was created. Semgrep OSS is available, Pro is absent; prerequisite logging was redirected locally after a sandbox log-path error. No SARIF findings exist to triage, and no completed scanner coverage is claimed. SQL received manual review and executable database tests.
+- **Semgrep OSS 1.180.0 ran with user approval, telemetry disabled, on the six JavaScript source files changed on 18 October.** Rules: `p/security-audit`, `p/secrets`, `p/javascript`, Trail of Bits, elttam and Apiiro. All 63 findings were retained and manually triaged as false positives (61 dense-line heuristics, two obfuscation heuristics). Coverage is partial: elttam has 12 Java rule compilation errors; Apiiro has three errors including an applicable JavaScript rule; the runner also excludes one unsupported elttam join-mode rule. This does not cover every file in the earlier release commit. CodeQL 2.27.2 has no installed official query packs, so no database or analysis was run. SQL received manual review and executable tests; no SQL scanner coverage is claimed.
 
 Residual limits: production Auth/PostgREST behavior, the entire migration chain, multi-connection PostgreSQL contention, real financial files, integration-provider delivery, and complete print/PDF pagination remain unverified. Passing local fixtures does not certify production readiness.
