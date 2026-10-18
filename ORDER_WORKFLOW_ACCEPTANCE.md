@@ -1,6 +1,6 @@
 # Order workflow acceptance — 18 October 2026
 
-Partial invoicing is implemented and passes local acceptance tests for four machines delivered as **2 + 2** or **2 + 1 + 1**. Live deployment is in progress; its completion and authenticated acceptance are **pending verification**. This is scoped order-workflow evidence, not certification of the whole ERP.
+Partial invoicing is implemented and passes local acceptance tests for four machines delivered as **2 + 2** or **2 + 1 + 1**. The Supabase database release and `staff-accounts` Edge function are deployed. GitHub Pages publication and the authenticated live walkthrough are **pending**. This is scoped order-workflow evidence, not certification of the whole ERP.
 
 ## Implemented behavior
 
@@ -31,6 +31,7 @@ Partial invoicing is implemented and passes local acceptance tests for four mach
 | Combined Node and Chrome evidence | **566 passed, 0 failed, 0 unexecuted/skipped across the completed runs** |
 | New real-migration database suites | **29 passed**: 15 delivery/integration scenarios and 14 accounting scenarios |
 | Existing complete-order database rehearsal | 23 checks passed after shared-fixture extraction |
+| Missing reservation prerequisite repair | Disposable-database regression and rollback-only live preflight passed |
 
 The 12 new Chrome cases are included in the 63 browser cases, not additional to 566. Database scenarios are a separate test surface; these counts are assertions/scenarios, not independent business processes.
 
@@ -48,9 +49,13 @@ Browser tests use isolated synthetic data and their documented flags. They do no
 
 ## Deployment and remaining boundaries
 
-Live Supabase preflight found missing dependencies from original migration **010**, including the reservation functions/triggers expected by later migrations. The deployment process is preparing an exact prerequisite catch-up before forward migrations **092–108**, with atomic rollback verification. Neither that verification nor the live release is marked successful here. Backend prerequisites, Edge functions, frontend version and authenticated sample acceptance must all be verified together.
+The database release was successfully applied through the Supabase SQL editor to project `udncxdbrbaptcefvjucj` after a successful rollback-only preflight. It restores the missing original **010** reservation dependencies and applies forward migrations **092–108**; all **18 migration-history entries** include their exact source. The prerequisite repair also has a passing disposable-database regression. The `staff-accounts` Edge function is deployed.
 
-Local fixtures substitute auth claims and uploaded-file metadata. They do not establish real MFA/authentication, file upload/download transport, concurrent PostgreSQL-session behavior, the complete live schema, TRA issuance, messages or payment settlement. Default assignees and actual user permissions still require live verification.
+GitHub Pages merge/publication and authenticated live sample acceptance remain pending. Database deployment alone does not establish that users are running the matching frontend or that the complete order walkthrough has passed live.
+
+Automatic approval blocked the `website-request` Edge-function update because that endpoint can send external email/WhatsApp and is outside the order-demo scope. Its existing deployment remains unchanged.
+
+Local fixtures substitute auth claims and uploaded-file metadata. They do not establish real MFA/authentication, file upload/download transport, concurrent PostgreSQL-session behavior, all live schema behavior, TRA issuance, messages or payment settlement. Default assignees and actual user permissions still require live verification.
 
 Changed SQL received peer/manual review and executable acceptance tests. The companion `partial-order-security-review.md` records the scoped Semgrep review: all 86 reported findings were triaged as false positives, but 15 rule errors leave automated coverage incomplete. CodeQL did not run because its official query packs were unavailable. This is not a full security audit.
 
