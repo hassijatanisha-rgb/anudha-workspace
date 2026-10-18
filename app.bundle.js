@@ -2391,12 +2391,14 @@ function pendingCard({row,state}){
 function pendingForm(){
  return `<section class="card document-editor"><div class="heading"><div><small>NEW</small><h2>Pending stock order</h2></div><button type="button" id="closePendingForm">Close</button></div><form id="pendingForm"><p class="muted">Use this when a customer wants more than is in stock. It does not reserve stock. You will see here when stock arrives.</p><div class="grid"><label><span>Client</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions()}</select></label><label><span>Contact · optional</span><select name="contactId"><option value="">No named contact</option></select></label><label class="wide"><span>Product</span><input name="productChoice" list="pendingProductChoices" required autocomplete="off" placeholder="Type to search products"><datalist id="pendingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist></label><label><span>Quantity still needed (pieces)</span><input name="quantity" type="number" min="1" max="1000000" step="1" required></label><label><span>Pro forma · optional</span><select name="proformaId"><option value="">Not linked</option></select></label><label><span>Salesperson</span><select name="salesperson" required>${leadEmployeeOptions(me?.user_id||'')}</select></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000"></textarea></label></div><p role="alert" id="pendingFormError"></p><div class="actions"><button type="submit">Save pending order</button></div></form></section>`;
 }
-async function loadPendingStock(){
+async function loadPendingStock(force=true){
  const epoch=++pendingEpoch,actor=me,actorId=me?.user_id;
  const current=()=>epoch===pendingEpoch&&me===actor&&me?.user_id===actorId;
- const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
- if(!current())return false;
- pendingRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;
+ if(force||!pendingLoaded){
+  const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
+  if(!current())return false;
+  pendingRows=rows;if(proformas&&!salesLoaded)salesProformas=proformas;
+ }
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
   const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
@@ -2410,10 +2412,9 @@ async function pendingStockWorkspace(force=false){
  const current=()=>!!actor&&me===actor&&me?.user_id===actorId&&view==='pending'&&epoch===pendingRenderEpoch;
  if(!current())return;
  syncWorkspaceNavigation();
- if(force||!pendingLoaded||pendingAvailabilityDay!==pendingToday()){
-  $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
-  try{if(!(await loadPendingStock()))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
- }
+ // Stock may change in another workspace during the same day; check it on every entry.
+ $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
+ try{if(!(await loadPendingStock(force||pendingAvailabilityDay!==pendingToday())))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  if(!current())return;
  renderPendingStock();
 }
