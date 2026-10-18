@@ -54,6 +54,26 @@ test('reopening pending orders after midnight forces a fresh load',async()=>{
  vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingLoaded=true;`,ctx);
  await ctx.pendingStockWorkspace();assert.equal(loads,1);
 });
+test('returning to pending orders rechecks same-day stock arrivals and depletion',async()=>{
+ const ctx=load(),content={innerHTML:''},reads=[];let quantity=0;
+ ctx.$=()=>content;ctx.bindPendingStock=()=>{};ctx.syncWorkspaceNavigation=()=>{};ctx.salesLoaded=true;ctx.salesProformas=[];ctx.view='pending';
+ vm.runInContext(`pendingToday=()=> '2026-10-02';`,ctx);
+ ctx.all=async table=>{
+  reads.push(table);
+  return {
+   pending_stock_requests:[{id:'r',request_number:'PS-1',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:2,expires_on:'2027-01-01',extension_count:0}],
+   inventory_lots:[{product_id:'p1',location_id:'main',pack_definition_id:'box10',sealed_cartons:0,loose_units:quantity,reserved_units:0,stock_status:'available'}],
+   product_pack_definitions:[{id:'box10',units_per_carton:10}],inventory_locations:[{id:'main',active:true}]
+  }[table]||[];
+ };
+ await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Waiting for stock/);
+ ctx.view='inventory';quantity=2;ctx.view='pending';
+ await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Stock arrived: 2 available/);assert.match(content.innerHTML,/Stock has arrived for 1/);
+ ctx.view='inventory';quantity=0;ctx.view='pending';
+ await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Waiting for stock/);assert.doesNotMatch(content.innerHTML,/Stock arrived: 2 available|Stock has arrived for/);
+ assert.equal(reads.filter(table=>table==='inventory_lots').length,3);
+ assert.equal(reads.filter(table=>table==='pending_stock_requests').length,1,'returning only refreshes availability; request rows retain their existing cache');
+});
 test('state labels: arrived, partial, waiting, due and unknown availability',()=>{
  const ctx=load(),waiting={status:'waiting',quantity:10,expires_on:'2027-03-30'},today='2026-09-30';
  assert.equal(ctx.pendingStockState(waiting,12,today).key,'arrived');
