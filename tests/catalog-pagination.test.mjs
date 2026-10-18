@@ -16,7 +16,7 @@ test('Filtering clamps old page and empty results have a valid page',()=>{
 });
 test('Forced catalog refresh reloads shared database corrections',()=>{
  const source=readFileSync(new URL('../inventory-operations.js',import.meta.url),'utf8');
- assert.match(source,/inventorySection==='catalog'\)\{if\(!inventoryLoaded\|\|force\)/);
+ assert.match(source,/loading=!inventoryLoaded\|\|force\?loadInventoryOperations\(\)/);
 });
 test('Visible Refresh data button invalidates cached inventory before reloading',()=>{
  const source=readFileSync(new URL('../app.js',import.meta.url),'utf8');

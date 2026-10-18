@@ -111,7 +111,7 @@ function bindStaffList(rows=[]){
  document.querySelectorAll('[data-staff-role]').forEach(select=>select.onchange=()=>run(()=>setStaffRole(row(select.dataset.staffRole),select.value,reload).catch(error=>{select.value=row(select.dataset.staffRole)?.role||'staff';throw error;})));
 }
 // required: first sign-in with a temporary password; the dialog cannot be dismissed until a new password is saved.
-function requirePasswordChange(user){if(user?.user_metadata?.must_change_password&&!document.querySelector('dialog.change-password'))openChangePassword({required:true});}
+function requirePasswordChange(user){if(!user?.app_metadata?.must_change_password&&!user?.user_metadata?.must_change_password)return false;if(!document.querySelector('dialog.change-password')){clear();me={user_id:user.id};$('#content').innerHTML='<section class="card"><h1>Choose your own password</h1><p>Complete password replacement to open your workspace.</p></section>';openChangePassword({required:true});}return true;}
 function openChangePassword({required=false}={}){
  if(!me?.user_id)throw Error('Sign in first.');
  const actor=me.user_id,dialog=document.createElement('dialog');dialog.className='change-password';dialog.setAttribute('aria-label','Change my password');
@@ -131,7 +131,7 @@ function openChangePassword({required=false}={}){
    const result=await client.auth.updateUser({password,data:{must_change_password:false}});
    if(me?.user_id!==actor||!dialog.isConnected)return;
    if(result.error)throw result.error;
-   form.reset();if(required){dialog.close();message('Password saved. Use it from now on.');return;}alert.textContent='Password changed. Use it next time you sign in.';
+   form.reset();if(required){dialog.close();await load();message('Password saved. Use it from now on.');return;}alert.textContent='Password changed. Use it next time you sign in.';
   }catch(error){if(dialog.isConnected)alert.textContent=`Not changed: ${error.message}`;}
   finally{button.disabled=false;}
  };

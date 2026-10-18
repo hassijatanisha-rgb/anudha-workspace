@@ -43,14 +43,14 @@ const howToTopics=[
   'Choose the client, the contact person and the items with their quantities and prices. Press **Save Pro forma invoice**.',
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
-  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. This also makes the invoice in the Books.',
+  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Books.',
   'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
  {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
-  'When Sales presses **Submit to accounting**, the Pro forma becomes an invoice by itself. Open **Customer invoices** to see it; press **Print** for a copy.',
-  'The customer now owes the total, sales gets the amount after discount and VAT goes to VAT output payable. The due date comes from the payment terms.',
-  'If **Books overview** lists a Pro forma as waiting for an invoice, it could not be invoiced automatically. Press **Create invoice**, check the dates and press **Post invoice**.',
+  'After Sales presses **Submit to accounting**, open **Customer invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
+  'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units; the remaining quantities appear automatically in **Pending stock orders**.',
+  'The delivery note is created with those reserved units. Pack and deliver it, then return to the same Pro forma when more stock arrives to invoice the balance. Use **Print** next to each invoice for a copy.',
   'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
-  'A wrong invoice is never edited: press **Void**, give the reason, and invoice the Pro forma again.']},
+  'A wrong invoice is never edited. Cancel its delivery before dispatch, void any allocated receipts, then **Void** the invoice with a reason. Its quantities return to the pending balance. Dispatched deliveries prevent voiding.']},
  {id:'books-receipt',role:'accounts',title:'Record money received from a customer',screens:['books:receipts'],steps:[
   'Open **Customer receipts**. Choose the customer, the date, the amount, how they paid and the account it went into.',
   'Their unpaid invoices appear. Type how much goes to each, or press **Apply to oldest invoices first**.',
@@ -81,10 +81,10 @@ const howToTopics=[
   'Press **Upload / view documents** to keep a photo or scan of the signed note with the order.',
   'A machine delivery creates an installation job for the service team by itself.']},
  {id:'pending',role:'sales',title:'Customer wants more than we have',screens:['pending'],steps:[
-  'Open **Pending stock orders** and press **New pending order**.',
-  'Choose the client and product and type the quantity still needed. Press **Save pending order**.',
+  'For an accepted Pro forma, invoice the units available now in Books. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
+  'For a manual request, choose the client and product and type the quantity still needed, then press **Save pending order**.',
   'The list shows when the stock has arrived, so you can call the customer back.',
-  'To buy it in, press **Order from supplier**. When the customer has received it, press **Mark fulfilled**.']},
+  'To buy it in, press **Order from supplier**. For linked order balances, press **Open order / invoice balance** and invoice from the original Pro forma. Manual requests can be marked fulfilled after delivery.']},
  {id:'purchase',role:'sales',title:'Buy from a supplier',screens:['purchasing:orders','purchasing:suppliers'],steps:[
   'Open **Purchasing** and press **New purchase request**.',
   'Choose the supplier, for example Polymed. Then type each item and its quantity. Press **Add item** for more lines.',

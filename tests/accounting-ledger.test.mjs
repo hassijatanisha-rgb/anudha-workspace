@@ -33,16 +33,29 @@ test('receipts are spread over the oldest due invoices first and never beyond wh
  assert.equal(run(ctx,'booksAllocateOldest(0,open)').size,0);
 });
 
-test('paid amounts ignore void receipts and status follows the due date',()=>{
- const ctx=load();
- ctx.inv={id:'i1',total_minor:1000,due_date:'2026-10-10',voided_at:null};
- ctx.allocs=[{invoice_id:'i1',receipt_id:'r1',amount_minor:300},{invoice_id:'i1',receipt_id:'r2',amount_minor:700},{invoice_id:'x',receipt_id:'r1',amount_minor:50}];
- ctx.rcpts=[{id:'r1',voided_at:null},{id:'r2',voided_at:'2026-10-12T00:00:00Z'}];
- assert.equal(run(ctx,'booksInvoicePaid(inv,allocs,rcpts)'),300);
- assert.equal(run(ctx,"booksInvoiceStatus(inv,300,'2026-10-11').label"),'Part paid · overdue');
- assert.equal(run(ctx,"booksInvoiceStatus(inv,0,'2026-10-10').key"),'open');
- assert.equal(run(ctx,"booksInvoiceStatus(inv,1000,'2026-12-01').key"),'paid');
- assert.equal(run(ctx,"booksInvoiceStatus({...inv,voided_at:'x'},0,'2026-12-01').key"),'void');
+test('Books pages every choice and uses database balances, independent of receipt slices',async()=>{
+ const ctx=load(),requests=[];
+ const datasets={
+  acc_accounts:[{id:'bank',code:'1200'}],acc_settings:[{version:1}],acc_customer_tax_ids:[],
+  acc_invoice_balances:Array.from({length:1005},(_,n)=>({id:`i${n}`,proforma_id:`p${n}`,proforma_number:`PF-${n}`,paid_minor:730,outstanding_minor:270,status_key:'part',status_label:'Part paid'})),
+  acc_receipts:Array.from({length:1006},(_,n)=>({id:`r${n}`})),
+  acc_receipt_allocations:Array.from({length:1007},(_,n)=>({invoice_id:`i${n}`,receipt_id:`r${n}`,amount_minor:1})),
+  acc_waiting_proformas:Array.from({length:501},(_,n)=>({id:`waiting${n}`,currency:'USD',total_minor:500}))
+ };
+ ctx.client={from(table){let start=0,end=Infinity;return {
+  select(){return this;},order(){return this;},range(a,b){start=a;end=Math.min(b,a+210);return this;},
+  then(resolve){requests.push([table,start]);resolve({data:datasets[table].slice(start,end+1)});}
+ };}};
+ const data=await run(ctx,'loadBooksData()');
+ assert.equal(data.invoices.length,1005);assert.equal(data.receipts.length,1006);assert.equal(data.allocations.length,1007);assert.equal(data.toInvoice.length,501);
+ assert.equal(data.invoices[0].paid,730);assert.equal(data.invoices[0].outstanding,270);assert.equal(data.invoices[0].state.label,'Part paid');
+ assert.equal(data.proformaNumbers.get('p1004'),'PF-1004');assert.equal(data.toInvoice.at(-1).id,'waiting500');
+ assert.ok(requests.some(([table,start])=>table==='acc_invoice_balances'&&start===1005),'fetches through the terminal empty page');
+});
+
+test('paging fails visibly rather than returning a partial ledger',async()=>{
+ const ctx=load();ctx.client={from(){return {select(){return this;},range(start){this.start=start;return this;},then(resolve){resolve(this.start?{error:{message:'Connection lost'}}:{data:[{id:'first'}]});}};}};
+ await assert.rejects(run(ctx,"booksSelectAll('acc_receipts','*')"),/receipts could not load: Connection lost/);
 });
 
 test('CSV quotes commas, quotes and line breaks',()=>{
@@ -65,4 +78,53 @@ test('tax invoice lines show the amount after discount and its VAT',()=>{
  assert.equal(a.net,90000);assert.equal(a.vat,16200);
  const b=vm.runInContext('booksInvoiceLineAmounts({quantity:1,unit_price_minor:333,discount_basis_points:0,tax_basis_points:0})',ctx);
  assert.equal(b.net,333);assert.equal(b.vat,0);
+});
+
+test('CSV neutralizes spreadsheet formulas, controls and whitespace prefixes',()=>{
+ const ctx=load();ctx.values=['=HYPERLINK("bad")',' +SUM(1,2)','-1+2','@SUM(A1)','\tformula','\rformula','\nformula',' \t=1','normal',-25];
+ const csv=run(ctx,"booksCsv([['value','Value']],values.map(value=>({value})))");
+ assert.equal(csv,'Value\n"\'=HYPERLINK(""bad"")"\n"\' +SUM(1,2)"\n\'-1+2\n\'@SUM(A1)\n\'\tformula\n"\'\rformula"\n"\'\nformula"\n\' \t=1\nnormal\n-25');
+});
+
+test('waiting Pro forma money retains its source currency without conversion',()=>{
+ const ctx=load();
+ assert.equal(run(ctx,"booksMoney(12345,'USD')"),new Intl.NumberFormat('en-TZ',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(123.45));
+ assert.match(run(ctx,"booksMoney(12345)"),/TSh/);
+});
+
+test('only the selected Books print root is active and print exceptions clean up',()=>{
+ const ctx=load(),classes=()=>{const values=new Set();return {add:v=>values.add(v),remove:v=>values.delete(v),contains:v=>values.has(v)};};
+ const previous={classList:classes()},chosen={classList:classes()},body={classList:classes()};previous.classList.add('books-print-active');
+ ctx.area=chosen;ctx.document={body,querySelectorAll(){return [previous,chosen].filter(area=>area.classList.contains('books-print-active'));}};
+ ctx.window={print(){assert.equal(previous.classList.contains('books-print-active'),false);assert.equal(chosen.classList.contains('books-print-active'),true);assert.equal(body.classList.contains('books-printing'),true);throw Error('Print failed');}};
+ assert.throws(()=>run(ctx,'booksPrint(area)'),/Print failed/);
+ assert.equal(chosen.classList.contains('books-print-active'),false);assert.equal(body.classList.contains('books-printing'),false);
+ run(ctx,"booksData={secret:'balance'};booksDraft={receipt:{}};booksSection='receipts';booksReport.kind='ageing';booksEpoch=4;clearBooks()");
+ assert.equal(run(ctx,'booksData'),null);assert.equal(run(ctx,'booksDraft'),null);assert.equal(run(ctx,'booksEpoch'),5);assert.equal(run(ctx,'booksSection'),'overview');assert.equal(run(ctx,'booksReport.kind'),'trial');
+});
+
+
+test('split invoice printing uses stored rounding components and keeps the legacy fallback',()=>{
+ const ctx=load();
+ const stored=run(ctx,'booksInvoiceLineAmounts({quantity:1,unit_price_minor:1,discount_basis_points:5000,tax_basis_points:5000,subtotal_minor:1,discount_minor:0,tax_minor:0,total_minor:1})');
+ assert.equal(stored.net,1);assert.equal(stored.vat,0);
+ const legacy=run(ctx,'booksInvoiceLineAmounts({quantity:1,unit_price_minor:1,discount_basis_points:5000,tax_basis_points:5000})');
+ assert.equal(legacy.net,0);assert.equal(legacy.vat,0);
+ const strings=run(ctx,"booksInvoiceLineAmounts({subtotal_minor:'999',discount_minor:'99',tax_minor:'162'})");
+ assert.equal(strings.net,900);assert.equal(strings.vat,162);
+});
+
+test('invoice quantity selection omits zeroes and enforces remaining, shared availability and whole-unit bounds',()=>{
+ const ctx=load();ctx.lines=[{proforma_line_id:'machine',product_id:'p',remaining_quantity:4,available_quantity:2},{proforma_line_id:'spare',product_id:'s',remaining_quantity:3,available_quantity:3}];
+ ctx.values=['2','0'];
+ assert.equal(JSON.stringify(run(ctx,'booksInvoiceQuantitySelection(lines,values)')),JSON.stringify([{proforma_line_id:'machine',quantity:2}]));
+ for(const value of ['-1','1.5','1e0','','1000001','9007199254740992']){
+  ctx.values=[value,'0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/whole quantity/);
+ }
+ ctx.values=['5','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/uninvoiced balance/);
+ ctx.values=['3','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/available Haadi stock/);
+ ctx.values=['0','0'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/at least one/);
+ ctx.lines=[{proforma_line_id:'a',product_id:'p',remaining_quantity:4,available_quantity:2},{proforma_line_id:'b',product_id:'p',remaining_quantity:4,available_quantity:2}];
+ ctx.values=['2','1'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/available Haadi stock/);
+ ctx.values=['1','1'];assert.equal(run(ctx,'booksInvoiceQuantitySelection(lines,values)').length,2);
 });

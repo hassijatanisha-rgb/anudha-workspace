@@ -22,8 +22,8 @@ async function purchaseSearchOlder(text){
  const box=$('#purchaseSearch');if(box)renderSearchPreservingPosition(box,renderPurchasing);else renderPurchasing();
 }
 function clearPurchasing(){purchaseEpoch++;purchaseLoaded=false;purchaseOrders=[];purchaseLines=[];suppliers=[];purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;supplierPendingSave=null;}
-function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';}
-function purchaseToday(){return new Date().toISOString().slice(0,10);}
+function openPurchaseSection(section){purchaseSection=section||'orders';purchasePage=0;purchaseEditing='';supplierEditing='';purchasePrefill=null;purchasePendingSave=null;}
+function purchaseToday(){return companyDate();}
 function purchaseOverdue(order,today=purchaseToday()){return order.status==='ordered'&&!!order.expected_on&&order.expected_on<today;}
 function purchaseSupplier(id){return suppliers.find(s=>s.id===id);}
 function purchaseProductName(id){const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
@@ -54,16 +54,18 @@ function purchaseSupplierOptions(selected=''){return suppliers.filter(s=>s.activ
 function purchaseLineRow(line={}){
  const product=line.product_id?products.find(p=>p.id===line.product_id):null,choice=product&&typeof inventoryProductChoice==='function'?inventoryProductChoice(typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product):'';
  // Prices are no longer asked for; a price saved before is carried through unchanged.
- return `<tr data-purchase-line data-pending="${esc(line.pending_request_id||'')}" data-price="${line.unit_price_minor==null?'':esc(line.unit_price_minor)}"><td><input name="productChoice" list="purchaseProductChoices" required autocomplete="off" value="${esc(choice)}" placeholder="Start typing the product" aria-label="Item"></td><td><input name="quantity" type="number" min="1" max="1000000" step="1" required value="${esc(line.quantity||'')}" aria-label="Quantity"></td><td><input name="note" maxlength="500" value="${esc(line.note||'')}" placeholder="Optional" aria-label="Note"></td><td><button type="button" data-remove-purchase-line aria-label="Remove item">Remove</button></td></tr>`;
+ return `<tr data-purchase-line data-pending="${esc(line.pending_request_id||'')}" data-product="${esc(line.product_id||'')}" data-price="${line.unit_price_minor==null?'':esc(line.unit_price_minor)}"><td><input name="productChoice" list="purchaseProductChoices" required autocomplete="off" value="${esc(choice)}" placeholder="Start typing the product" aria-label="Item">${line.pending_request_id?`<small data-purchase-pending>For pending order ${esc(line.pending_request_label||(typeof pendingRows!=='undefined'?pendingRows:[]).find(row=>row.id===line.pending_request_id)?.request_number||line.pending_request_id)}</small>`:''}</td><td><input name="quantity" type="number" min="1" max="1000000" step="1" required value="${esc(line.quantity||'')}" aria-label="Quantity"></td><td><input name="note" maxlength="500" value="${esc(line.note||'')}" placeholder="Optional" aria-label="Note"></td><td><button type="button" data-remove-purchase-line aria-label="Remove item">Remove</button></td></tr>`;
 }
 function purchaseEditor(order){
  const lines=order?purchaseOrderLines(order.id):(purchasePrefill?.lines||[{}]);
  return `<section class="card document-editor"><div class="heading"><div><small>${order?esc(order.po_number):'NEW'}</small><h2>${order?'Edit purchase request':'New purchase request'}</h2></div><button type="button" id="closePurchaseEditor">Close</button></div><form id="purchaseForm" data-id="${esc(order?.id||'')}" data-version="${order?.version||0}"><input type="hidden" name="currency" value="${esc(order?.currency||'TZS')}"><label class="purchase-supplier"><span>1. Supplier</span><select name="supplierId" required><option value="">Choose the supplier, for example Polymed</option>${purchaseSupplierOptions(order?.supplier_id||'')}</select></label><h3>2. Items we need from them</h3><datalist id="purchaseProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><div class="table-wrap"><table class="purchase-lines"><thead><tr><th>Item</th><th>Quantity</th><th>Note</th><th></th></tr></thead><tbody id="purchaseLines">${lines.map(purchaseLineRow).join('')}</tbody></table></div><div class="actions"><button type="button" id="addPurchaseLine">Add item</button></div><details class="purchase-more"${order?.expected_on||order?.notes||purchasePrefill?.notes?' open':''}><summary>Needed by date or a note (optional)</summary><div class="grid"><label><span>Needed by</span><input name="expectedOn" type="date" value="${esc(order?.expected_on||'')}"></label><label class="wide"><span>Note for the owner</span><textarea name="notes" maxlength="4000">${esc(order?.notes||purchasePrefill?.notes||'')}</textarea></label></div></details><p role="alert" id="purchaseFormError"></p><div class="actions"><button type="submit">${order?'Save changes':'Send for approval'}</button></div></form></section>`;
 }
+function purchaseClearPendingLine(row){row.dataset.pending='';const label=row.querySelector('[data-purchase-pending]');if(label)label.textContent='For stock';}
 function purchaseFormValues(form){
  const f=new FormData(form),lines=[...form.querySelectorAll('[data-purchase-line]')].map((row,index)=>{
   const choice=row.querySelector('[name="productChoice"]').value,product=inventoryProductFromChoice(choice),quantity=Number(row.querySelector('[name="quantity"]').value);
   if(!product)throw Error(`Item ${index+1}: choose a product from the list.`);
+  if(row.dataset.pending&&product.id!==row.dataset.product)purchaseClearPendingLine(row);
   if(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000000)throw Error(`Item ${index+1}: enter a whole quantity of at least 1.`);
   const unit_price_minor=row.dataset.price===''||row.dataset.price===undefined?null:Number(row.dataset.price);
   return {product_id:product.id,quantity,unit_price_minor,pending_request_id:row.dataset.pending||null,note:row.querySelector('[name="note"]').value.trim()};
@@ -142,12 +144,13 @@ function renderPurchasing(){
 function supplierCard(row){return `<article class="card supplier-card" data-supplier-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.supplier_number)}${row.country?' · '+esc(row.country):''}</small><h2>${esc(row.name)}</h2></div><span class="tag">${row.active?'Active':'Inactive'}</span></div><div class="details"><div><small>Contact</small>${esc(row.contact_name||'—')}</div><div><small>Phone</small>${esc(row.phone||'—')}</div><div><small>Email</small>${esc(row.email||'—')}</div><div><small>TIN</small>${esc(row.tin||'—')}</div><div><small>Payment terms</small>${esc(row.payment_terms||'—')}</div><div><small>Purchase orders</small>${purchaseOrders.filter(o=>o.supplier_id===row.id).length}</div></div><div class="actions"><button type="button" data-supplier-edit="${esc(row.id)}">Edit</button></div></article>`;}
 function bindPurchasing(){
  $('#purchaseRefresh').onclick=()=>run(()=>purchasingWorkspace(true));
- $('#newPurchase')?.addEventListener('click',()=>{purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
+ $('#newPurchase')?.addEventListener('click',()=>{purchasePrefill=null;purchaseEditing='new';purchasePendingSave=null;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
  $('#newSupplier')?.addEventListener('click',()=>{supplierEditing='new';supplierPendingSave=null;renderPurchasing();$('#supplierForm [name="name"]')?.focus();});
  $('#closePurchaseEditor')?.addEventListener('click',()=>{purchaseEditing='';purchasePrefill=null;purchasePendingSave=null;renderPurchasing();});
  $('#closeSupplierEditor')?.addEventListener('click',()=>{supplierEditing='';supplierPendingSave=null;renderPurchasing();});
  const form=$('#purchaseForm');
  if(form){
+  form.addEventListener('input',event=>{if(event.target.name!=='productChoice')return;const row=event.target.closest('[data-purchase-line]');if(row?.dataset.pending&&inventoryProductFromChoice(event.target.value)?.id!==row.dataset.product)purchaseClearPendingLine(row);});
   $('#addPurchaseLine').onclick=()=>$('#purchaseLines').insertAdjacentHTML('beforeend',purchaseLineRow());
   $('#purchaseLines').addEventListener('click',event=>{const remove=event.target.closest('[data-remove-purchase-line]');if(!remove)return;if(form.querySelectorAll('[data-purchase-line]').length>1)remove.closest('tr').remove();else $('#purchaseFormError').textContent='A purchase request needs at least one item.';});
   form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#purchaseFormError').textContent='';
@@ -159,7 +162,7 @@ function bindPurchasing(){
  $('#purchaseSearch').oninput=event=>{purchaseSearch=event.target.value;purchasePage=0;renderSearchPreservingPosition(event.target,renderPurchasing,150);clearTimeout(purchaseSearchTimer);const text=purchaseSearch;if(purchaseSection==='orders')purchaseSearchTimer=setTimeout(()=>purchaseSearchOlder(text).catch(()=>{}),400);};
  if($('#purchasePrev'))$('#purchasePrev').onclick=()=>{purchasePage--;renderPurchasing();};if($('#purchaseNext'))$('#purchaseNext').onclick=()=>{purchasePage++;renderPurchasing();};
  document.querySelectorAll('[data-purchase-filter]').forEach(button=>button.onclick=()=>{purchaseFilter=button.dataset.purchaseFilter;purchasePage=0;renderPurchasing();});
- document.querySelectorAll('[data-purchase-edit]').forEach(button=>button.onclick=()=>{purchaseEditing=button.dataset.purchaseEdit;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
+ document.querySelectorAll('[data-purchase-edit]').forEach(button=>button.onclick=()=>{purchasePrefill=null;purchaseEditing=button.dataset.purchaseEdit;renderPurchasing();$('#purchaseForm')?.scrollIntoView({block:'start'});});
  document.querySelectorAll('[data-supplier-edit]').forEach(button=>button.onclick=()=>{supplierEditing=button.dataset.supplierEdit;renderPurchasing();$('#supplierForm')?.scrollIntoView({block:'start'});});
  document.querySelectorAll('[data-purchase-action]').forEach(button=>button.onclick=()=>openPurchaseAction(purchaseOrders.find(o=>o.id===button.dataset.id),button.dataset.purchaseAction));
  document.querySelectorAll('[data-purchase-history]').forEach(button=>button.onclick=()=>run(()=>showPurchaseHistory(button.dataset.purchaseHistory)));
@@ -177,16 +180,22 @@ function openPurchaseAction(order,action){
  });
 }
 async function showPurchaseHistory(id){
- const output=document.querySelector(`[data-purchase-history-output="${CSS.escape(id)}"]`),actor=me?.user_id;if(!output)return;
+ const output=document.querySelector(`[data-purchase-history-output="${CSS.escape(id)}"]`),actor=me,epoch=purchaseEpoch;if(!output)return;
+ const current=()=>me===actor&&purchaseEpoch===epoch&&output.isConnected;
  output.textContent='Loading history…';
- const result=await client.from('purchase_order_events').select('action,from_status,to_status,note,actor_user_id,created_at').eq('purchase_order_id',id).order('created_at').limit(200);
- if(me?.user_id!==actor||!output.isConnected)return;
- if(result.error){output.textContent=`History could not load: ${result.error.message}`;return;}
- output.innerHTML=`<ol class="lead-history">${(result.data||[]).map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(event.action)}${event.from_status&&event.from_status!==event.to_status?` · ${esc(purchaseStatuses[event.from_status]||event.from_status)} → ${esc(purchaseStatuses[event.to_status]||event.to_status)}`:''}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
+ const events=[];
+ for(let offset=0;;offset+=1000){
+  const result=await client.from('purchase_order_events').select('id,action,from_status,to_status,note,actor_user_id,created_at').eq('purchase_order_id',id).order('created_at').order('id').range(offset,offset+999);
+  if(!current())return;
+  if(result.error){output.textContent=`History could not load: ${result.error.message}`;return;}
+  events.push(...(result.data||[]));if((result.data||[]).length<1000)break;
+ }
+ output.innerHTML=`<ol class="lead-history">${events.map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(event.action)}${event.from_status&&event.from_status!==event.to_status?` · ${esc(purchaseStatuses[event.from_status]||event.from_status)} → ${esc(purchaseStatuses[event.to_status]||event.to_status)}`:''}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
 }
 // Called from a pending stock order: opens a new purchase request with that product and quantity.
 function startPurchaseFromPending(row){
  if(!row)return;
- purchasePrefill={lines:[{product_id:row.product_id,quantity:row.quantity,pending_request_id:row.id,note:`For ${row.request_number}`}],notes:`Customer pending order ${row.request_number}`};
- view='purchasing';openPurchaseSection('orders');purchaseEditing='new';purchasePendingSave=null;render();
+ view='purchasing';openPurchaseSection('orders');
+ purchasePrefill={lines:[{product_id:row.product_id,quantity:row.quantity,pending_request_id:row.id,pending_request_label:row.request_number,note:`For ${row.request_number}`}],notes:`Customer pending order ${row.request_number}`};
+ purchaseEditing='new';purchasePendingSave=null;render();
 }

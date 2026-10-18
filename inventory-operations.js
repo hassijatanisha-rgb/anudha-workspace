@@ -1,5 +1,6 @@
 'use strict';
-let inventoryProductId='';
+let inventoryProductId='',inventoryEpoch=0;
+function clearInventoryOperations(){inventoryEpoch++;inventoryLoaded=false;inventoryLoadError='';inventoryProductId='';inventorySearch='';inventoryLocations=[];inventoryPacks=[];inventoryLots=[];inventoryTransfers=[];inventoryIssues=[];inventoryMovements=[];inventoryClassifications=[];inventoryLatestPacks.clear();inventoryLatestClassifications.clear();inventoryImportPreview=null;inventoryImportFileName='';if(typeof productDetailReviews!=='undefined')productDetailReviews.clear();if(typeof productReviewLoadError!=='undefined')productReviewLoadError='';if(typeof clearProductMachineLinks==='function')clearProductMachineLinks();}
 
 let inventorySection='stock',inventoryLoaded=false,inventoryLoadError='',inventorySearch='',inventoryLocations=[],inventoryPacks=[],inventoryLots=[],inventoryTransfers=[],inventoryIssues=[],inventoryMovements=[],inventoryClassifications=[],inventoryImportPreview=null,inventoryImportFileName='';
 const inventoryTabs=[['stock','Stock'],['review','Tally stock review'],['transfers','Move cartons'],['locations','Locations'],['catalog','Products']];
@@ -13,7 +14,7 @@ function inventoryLatestBy(rows){const latest=new Map();for(const row of rows)if
 function inventoryLatestPack(productId){return inventoryLatestPacks.get(productId)}
 function inventoryClassification(productId){return inventoryLatestClassifications.get(productId)}
 function inventoryOption(value,label,selected=false){return `<option value="${esc(value)}" ${selected?'selected':''}>${esc(label)}</option>`}
-function inventoryDate(){return new Date().toISOString().slice(0,10)}
+function inventoryDate(){return companyDate()}
 function inventoryProductIdentity(product){const source=product.source||{};return `${product.name} · ${source.company||'Manufacturer needs review'} · ${source.specification||source.model||'Specification needs review'}${product.sku?' · '+product.sku:''}`}
 function inventoryProductChoice(product){return `${inventoryProductIdentity(product)} · ${product.id}`}
 // Product suggestions: with the search box loaded (smart-lookup.js) a <datalist data-lookup-values="products"> stays
@@ -22,26 +23,29 @@ function inventoryProductValues(){return inventorySelectableProducts().map(inven
 function inventoryProductChoices(){return (typeof lookupRowSources==='undefined'?inventorySelectableProducts():[]).map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
 function inventoryProductFromChoice(choice){return inventorySelectableProducts().find(product=>inventoryProductChoice(product)===choice)}
 async function loadInventoryOperations(){
+ const epoch=++inventoryEpoch,actor=me,current=()=>epoch===inventoryEpoch&&me===actor;
  inventoryLoadError='';
  productReviewLoadError='Product corrections are loading. Please wait.';
  if(typeof loadProductMachineLinks==='function')await loadProductMachineLinks();
- try{const reviews=await all('product_detail_reviews','*'),latest=new Map();for(const row of reviews){if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);}productDetailReviews=latest;productReviewLoadError='';}catch(error){productReviewLoadError=error.message||'Connection unavailable';}
+ if(!current())return false;
+ try{const reviews=await all('product_detail_reviews','*'),latest=new Map();for(const row of reviews){if((latest.get(row.product_id)?.version||0)<row.version)latest.set(row.product_id,row);}if(!current())return false;productDetailReviews=latest;productReviewLoadError='';}catch(error){if(!current())return false;productReviewLoadError=error.message||'Connection unavailable';}
  const requests=await Promise.all([
   // Paged loads: these tables can pass the server's 1,000-rows-per-request limit.
   all('inventory_locations','*').then(data=>({data:data.sort((a,b)=>String(a.name).localeCompare(String(b.name)))}),error=>({error})),
   all('product_pack_definitions','*').then(data=>({data:data.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))}),error=>({error})),
   all('inventory_lots','*').then(data=>({data:data.sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)))}),error=>({error})),
-  client.from('inventory_transfers').select('*').order('created_at',{ascending:false}).limit(200),
+  all('inventory_transfers','*').then(data=>({data:data.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))||String(a.id).localeCompare(String(b.id)))}),error=>({error})),
   client.from('inventory_issues').select('*').order('issued_on',{ascending:false}).limit(200),
   client.from('inventory_movements').select('*').order('created_at',{ascending:false}).limit(200),
   all('product_inventory_classifications','*').then(data=>({data}),error=>({error}))
  ]);
+ if(!current())return false;
  const failed=requests.find(result=>result.error);
  if(failed){inventoryLoaded=false;inventoryLoadError=failed.error.message||'Inventory schema has not been installed.';return;}
- [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryMovements,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLatestPacks=inventoryLatestBy(inventoryPacks);inventoryLatestClassifications=inventoryLatestBy(inventoryClassifications);inventoryLoaded=true;
+ [inventoryLocations,inventoryPacks,inventoryLots,inventoryTransfers,inventoryIssues,inventoryMovements,inventoryClassifications]=requests.map(result=>result.data||[]);inventoryLatestPacks=inventoryLatestBy(inventoryPacks);inventoryLatestClassifications=inventoryLatestBy(inventoryClassifications);inventoryLoaded=true;return true;
 }
 function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY</small><h1>${({stock:'Stock & availability',transfers:'Move stock',locations:'Godowns & locations',review:'Tally stock review',catalog:'Products'})[inventorySection]||'Stock'}</h1></div><button id="inventoryRefresh" type="button">Refresh list</button></div>`}
-function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory database setup required</h2><p class="warning">The inventory schema has not been installed in Supabase yet. Client sorting stays available, and no fake stock balance will be shown.</p><p class="muted">${esc(inventoryLoadError)}</p><p>An owner must run <code>supabase/migrations/202609210001_inventory_foundation.sql</code> once in the project SQL editor, then refresh this page.</p></section>`}
+function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory could not load</h2><p role="alert">${esc(inventoryLoadError)}</p><p>Check your connection and access, then refresh. Stock actions remain unavailable until the data loads.</p></section>`}
 function inventoryLocationOptions(selected='',exclude=''){return inventoryLocations.filter(x=>x.active&&x.id!==exclude).map(x=>inventoryOption(x.id,`${x.name} · ${x.code}${x.is_dispatch_hub?' · dispatch hub':''}`,x.id===selected)).join('')}
 function inventoryProductOptions(selected=''){return inventorySelectableProducts().map(x=>inventoryOption(x.id,inventoryProductChoice(x),x.id===selected)).join('')}
 function inventoryPackOptions(selected=''){return inventoryPacks.map(x=>{const p=inventoryProduct(x.product_id);return inventoryOption(x.id,`${inventoryProductIdentity(p)} · ${x.units_per_carton} ${x.base_unit}/carton · v${x.version}`,x.id===selected)}).join('')}
@@ -88,12 +92,15 @@ function inventoryTransferCard(t){
 function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='owner'?`<section class="card"><h2>Add godown or Haadi dispatch hub</h2><form data-inventory-action="location"><div class="grid"><label><span>Name</span><input name="name" required maxlength="120" placeholder="Haadi"></label><label><span>Short code</span><input name="code" required maxlength="30" placeholder="HAA"></label><label><span>Type</span><select name="locationType"><option value="godown">Godown · sealed-carton storage</option><option value="dispatch_hub">Dispatch hub · may open cartons</option></select></label></div><button type="submit">Save location</button></form></section>`:''}<section class="card"><h2>Storage locations</h2>${inventoryLocations.map(x=>`<article class="contact"><div class="heading"><div><h3>${esc(x.name)}</h3><p>${esc(x.code)} · ${x.is_dispatch_hub?'Dispatch hub; cartons can be opened here':'Godown; sealed-carton storage'}</p></div><span class="tag">${x.active?'Active':'Inactive'}</span></div></article>`).join('')||'<p class="empty">No godowns have been entered yet.</p>'}</section>`}
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
- if(inventorySection==='review'){if(!inventoryLoaded||force)await loadInventoryOperations();await tallyStockScreen();return;}
- if(inventorySection==='catalog'){if(!inventoryLoaded||force)await loadInventoryOperations();catalogInventory();return;}
+ const actor=me,section=inventorySection;if(!actor||view!=='inventory')return;
  $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
- if(force||!inventoryLoaded)await loadInventoryOperations();
+ const loading=!inventoryLoaded||force?loadInventoryOperations():null,epoch=inventoryEpoch;
+ if(loading)await loading;
+ if(me!==actor||epoch!==inventoryEpoch||view!=='inventory'||inventorySection!==section)return;
  if(!inventoryLoaded){$('#content').innerHTML=inventoryUnavailable();bindInventoryWorkspace();return;}
- $('#content').innerHTML=inventorySection==='locations'?inventoryLocationsScreen():inventorySection==='transfers'?inventoryTransferScreen():inventoryStock();bindInventoryWorkspace();
+ if(section==='review'){await tallyStockScreen();return;}
+ if(section==='catalog'){catalogInventory();return;}
+ $('#content').innerHTML=section==='locations'?inventoryLocationsScreen():section==='transfers'?inventoryTransferScreen():inventoryStock();bindInventoryWorkspace();
 }
 function bindInventoryWorkspace(){
  document.querySelectorAll('[data-inventory-section]').forEach(button=>button.onclick=()=>{inventorySection=button.dataset.inventorySection;inventoryWorkspace()});

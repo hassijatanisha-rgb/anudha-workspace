@@ -94,7 +94,9 @@ function lookupAttach(source){
   // The <select> stays the required field (forms check it by name); when the browser flags it, the message is
   // shown on the search box instead of the hidden list.
   source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity('Choose one from the list');input.reportValidity();});
-  input.setAttribute('aria-label',source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
+  const labelledBy=source.getAttribute('aria-labelledby');
+  if(labelledBy)input.setAttribute('aria-labelledby',labelledBy);
+  else input.setAttribute('aria-label',source.getAttribute('aria-label')||[...(source.labels||[])].map(label=>label.textContent.trim()).join(' ')||source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
   source.classList.add('lookup-source');source.tabIndex=-1;source.setAttribute('aria-hidden','true');
   source.parentNode.insertBefore(box,source);box.append(input,source);
  }else{

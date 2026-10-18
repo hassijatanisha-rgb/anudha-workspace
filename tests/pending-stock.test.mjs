@@ -90,3 +90,14 @@ test('menu, router, sign-out and script order are wired',()=>{
  assert.match(read('app.js'),/view==='pending'\)return pendingStockWorkspace\(\)/);assert.match(read('app.js'),/typeof clearPendingStock==='function'\)clearPendingStock\(\)/);
  assert.ok(html.indexOf('pending-stock.js')>html.indexOf('sales-leads.js')&&html.indexOf('pending-stock.js')<html.indexOf('app.js'));
 });
+
+test('Linked pending balances cannot be manually fulfilled, cancelled or expired',()=>{
+ const ctx=load();ctx.me={user_id:'a',role:'owner'};
+ const row={id:'pending',proforma_id:'pf',proforma_line_id:'line',status:'waiting',salesperson_user_id:'a',expires_on:'2020-01-01',extension_count:0};
+ const html=ctx.pendingActions(row);
+ assert.match(html,/data-pending-order="pf"/);assert.match(html,/data-pending-action="extend"/);
+ assert.doesNotMatch(html,/data-pending-action="(?:fulfil|cancel|expire)"/);
+ assert.throws(()=>ctx.openPendingAction(row,'fulfil'),/original order/);
+ assert.match(ctx.pendingStockState(row,0,'2026-10-18').label,/order remains pending/);
+ assert.equal(ctx.pendingStockState({...row,status:'fulfilled'},0).label,'Allocated to invoice');
+});

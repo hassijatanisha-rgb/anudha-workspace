@@ -2,7 +2,7 @@
 // The phone or browser Back button goes to the previous ERP page instead of leaving the ERP (which meant signing in
 // again). Each menu choice is recorded as #/go/<view>/<section>; going Back presses that menu choice again.
 // Client and branch pages keep their own #/clients… addresses (client-profile-pages.js).
-let navReplaying=false,navReplayPending=false;
+let navReplaying=false,navReplayPending=false,navLastHash=location.hash;
 function navHash(button){return `#/go/${button.dataset.view}${button.dataset.workspaceSection?'/'+button.dataset.workspaceSection:''}`;}
 function navButtonFor(hash){
  const m=String(hash||'').match(/^#\/go\/([a-z]+)(?:\/([a-z-]+))?$/);
@@ -19,16 +19,19 @@ document.addEventListener('click',event=>{
  const button=event.target.closest?.('#nav [data-view]');
  if(!button||navReplaying||(typeof busy!=='undefined'&&busy))return;
  const hash=navHash(button);
- if(location.hash!==hash)history.pushState({erp:1},'',hash);
+ if(location.hash!==hash)history.pushState({erp:1},'',hash);navLastHash=hash;
 },true);
 // A page opened by a button rather than the menu (Create Pro forma on a lead, Order from supplier, Open on My tasks)
 // is recorded too, so Back returns to the page the button was on. Called when the menu highlights the open page.
 function navRecordOpenPage(button){
  if(!button||navReplaying||navReplayPending||/^#\/(clients|client|branch)\b/.test(location.hash))return;
  const hash=navHash(button);if(location.hash===hash)return;
- if(/^#\/go\//.test(location.hash))history.pushState({erp:1},'',hash);else history.replaceState(history.state,'',hash);
+ if(/^#\/go\//.test(location.hash))history.pushState({erp:1},'',hash);else history.replaceState(history.state,'',hash);navLastHash=hash;
 }
 window.addEventListener('popstate',()=>{
+ if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ navLastHash=location.hash;
  if(/^#\/(clients|client|branch)\b/.test(location.hash))return;
  navReplay(location.hash);
 });

@@ -14,7 +14,7 @@ test.before(async()=>{
 test.after(async()=>{await browser?.close()});
 const acceptance=(name,fn)=>test(name,{skip:!enabled&&'Set PERSONAL_BROWSER_QA=1 with local Playwright and Chrome'},fn);
 async function fixture(t,kind='event',role='staff'){
- const page=await browser.newPage({timezoneId:'UTC'});t.after(()=>page.close());
+ const page=await browser.newPage({timezoneId:'UTC'});t.after(()=>page.close());page.setDefaultTimeout(3000);
  await page.route('**/*',route=>route.abort());
  await page.setContent('<section id="content"></section><div id="notice"></div>');
  await page.addStyleTag({content:readFileSync(new URL('../personal-workspace.css',import.meta.url),'utf8')});
@@ -27,8 +27,8 @@ async function fixture(t,kind='event',role='staff'){
   window.client={from:()=>{
    let kind;const query={};
    for(const method of ['select','is','order','gte','lt'])query[method]=()=>query;
-   query.eq=(key,value)=>{if(key==='kind')kind=value;return query};
-   query.range=async()=>{loads++;return window.loadError?{error:{message:loadError}}:{data:structuredClone(rows.filter(row=>row.kind===kind))}};
+   query.eq=(key,value)=>{if(key==='kind')kind=[value];return query};query.in=(key,value)=>{if(key==='kind')kind=value;return query};
+   query.range=async()=>{loads++;return window.loadError?{error:{message:loadError}}:{data:structuredClone(rows.filter(row=>kind.includes(row.kind)))}};
    return query;
   },rpc:async(name,args)=>{
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
@@ -38,17 +38,16 @@ async function fixture(t,kind='event',role='staff'){
   }};
  },{role});
  for(const source of sources)await page.addScriptTag({content:source});
- await page.evaluate(async kind=>{personalSection=kind;personalMonth='2026-09';await personalWorkspace()},kind);
+ await page.evaluate(async kind=>{personalSection=kind==='task'?'note':kind;personalMonth='2026-09';await personalWorkspace()},kind);
  return page;
 }
 async function fillEntry(page,kind){
- await page.locator('#personalNew').click();
+ await page.locator(kind==='note'?'#personalNewNote':'#personalNew').click();
  await page.locator('[name="title"]').fill('Fixture '+kind);
  await page.locator('[name="body"]').fill('Private detail');
- if(kind!=='note')await page.locator('[name="starts"]').fill('2026-09-25T10:00');
+ if(kind==='event')await page.locator('[name="starts"]').fill('2026-09-25T10:00');
  if(kind==='event')await page.locator('[name="ends"]').fill('2026-09-25T11:00');
- await page.locator('[name="reminder"]').fill('2026-09-25T09:00');
- await page.locator('[name="priority"]').selectOption('urgent');
+ if(kind==='task'){await page.locator('[name="reminder"]').fill('2026-09-25T09:00');await page.locator('[name="urgent"]').check();}
 }
 for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, edit and save use actual form values and original revision`,async t=>{
  const p=await fixture(t,kind);await fillEntry(p,kind);
@@ -58,19 +57,19 @@ for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, e
  const call=await p.evaluate(()=>calls[0]);
  assert.equal(call.name,'save_workspace_entry');
  assert.equal(call.args.p_expected_version,0);assert.equal(call.args.p_kind,kind);
- assert.equal(call.args.p_visibility,'personal');assert.equal(call.args.p_remind_at,'2026-09-25T09:00:00.000Z');
- assert.equal(call.args.p_starts_at,kind==='note'?null:'2026-09-25T10:00:00.000Z');
- assert.equal(call.args.p_body,'Private detail');assert.equal(call.args.p_priority,'urgent');
+ assert.equal(call.args.p_visibility,'personal');assert.equal(call.args.p_remind_at,kind==='task'?'2026-09-25T09:00:00.000Z':null);
+ assert.equal(call.args.p_starts_at,kind==='note'?null:kind==='task'?'2026-09-25T09:00:00.000Z':'2026-09-25T10:00:00.000Z');
+ assert.equal(call.args.p_body,'Private detail');assert.equal(call.args.p_priority,kind==='task'?'urgent':'normal');
  assert.ok(await p.evaluate(()=>loads>=2));
  assert.equal(await p.locator('.personal-entry h2').textContent(),'Fixture '+kind);
  await p.locator('[data-personal-edit]').click();
  assert.equal(await p.locator('[name="body"]').inputValue(),'Private detail');
  await p.locator('[name="title"]').fill('Updated '+kind);
- if(kind!=='event')await p.locator('[name="completed"]').selectOption('true');
+ if(kind==='task')await p.locator('[name="completed"]').check();
  await p.locator('#actionEditor [type="submit"]').click();
  await p.waitForFunction(()=>calls.length===2&&!document.querySelector('#actionEditor').open);
  assert.equal(await p.evaluate(()=>calls[1].args.p_expected_version),1);
- assert.equal(await p.evaluate(()=>calls[1].args.p_completed),kind!=='event');
+ assert.equal(await p.evaluate(()=>calls[1].args.p_completed),kind==='task');
  assert.equal(await p.locator('.personal-entry h2').textContent(),'Updated '+kind);
 });
 acceptance('Company events render green and personal entries white; staff cannot edit shared events',async t=>{

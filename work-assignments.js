@@ -13,14 +13,16 @@ const workSuggestedTasks={
 };
 const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service / installation',lead:'Lead',pending:'Pending order',purchase:'Purchase',tally_invoice:'Invoiced — to pack'};
 // Steps the owner gives a default person; the database hands records on to them automatically.
-const workSteps=[['invoice','Tax invoice in TallyPrime','After the customer accepts a Pro forma'],['packing','Packing','After the Tally invoice is linked, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
-function clearWorkAssignments(){workEpoch++;}
+const workSteps=[['invoice','Customer invoice and TRA receipt','After the customer accepts a Pro forma'],['packing','Packing','After invoice approval, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
+function workCanAssign(type){const area={proforma:'proformas',delivery:'deliveries',tally_invoice:'deliveries',service:'service',lead:'leads',purchase:'purchasing',pending:null};return !!me?.user_id&&me.active!==false&&Object.hasOwn(area,type)&&(!area[type]||me.role==='owner'||(me.access||[]).includes(area[type]));}
+function workRecordClosed(type,record){return ({proforma:['rejected','cancelled'],delivery:['delivered','cancelled'],service:['completed','cancelled']}[type]||[]).includes(record?.status);}
+function clearWorkAssignments(){workEpoch++;workPendingHandoff=null;}
 // A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
 function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
  const cards=[];
- document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note)cards.push({card,type:proforma?'proforma':'delivery',id,label:proforma?.document_number||note.delivery_number});});
- document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number});});
+ document.querySelectorAll('[data-document-card]').forEach(card=>{const id=card.dataset.documentCard,proforma=typeof salesProforma==='function'?salesProforma(id):null,note=workRow(typeof salesDeliveryNotes!=='undefined'?salesDeliveryNotes:[],id);if(proforma||note){const type=proforma?'proforma':'delivery';cards.push({card,type,id,label:proforma?.document_number||note.delivery_number,closed:workRecordClosed(type,proforma||note)});}});
+ document.querySelectorAll('[data-service-card]').forEach(card=>{const record=typeof serviceCase==='function'?serviceCase(card.dataset.serviceCard):null;if(record)cards.push({card,type:'service',id:record.id,label:record.case_number,closed:workRecordClosed('service',record)});});
  document.querySelectorAll('[data-lead-card]').forEach(card=>{const row=workRow(typeof leadRows!=='undefined'?leadRows:[],card.dataset.leadCard);if(row)cards.push({card,type:'lead',id:row.id,label:row.lead_number});});
  document.querySelectorAll('[data-pending-card]').forEach(card=>{const row=workRow(typeof pendingRows!=='undefined'?pendingRows:[],card.dataset.pendingCard);if(row)cards.push({card,type:'pending',id:row.id,label:row.request_number});});
  document.querySelectorAll('[data-purchase-card]').forEach(card=>{const row=workRow(typeof purchaseOrders!=='undefined'?purchaseOrders:[],card.dataset.purchaseCard);if(row)cards.push({card,type:'purchase',id:row.id,label:row.po_number});});
@@ -48,10 +50,22 @@ function workTimeline(rows,now=Date.now()){
  const first=steps[0]?Date.parse(steps[0].from):null,openStep=steps.find(s=>s.status==='open'),last=steps.length?Math.max(...steps.map(s=>Date.parse(s.to||new Date(now).toISOString()))):null;
  return {steps,totalMs:first==null?0:(openStep?now:last)-first,finished:!openStep&&steps.length>0};
 }
-function workLatestDelays(delays){const out=new Map();for(const d of [...delays].sort((a,b)=>String(b.recorded_at).localeCompare(String(a.recorded_at))))if(!out.has(d.assignment_id))out.set(d.assignment_id,d);return out;}
+function workLatestDelays(delays){const out=new Map();for(const d of [...delays].sort((a,b)=>String(b.recorded_at).localeCompare(String(a.recorded_at))||String(b.id).localeCompare(String(a.id))))if(!out.has(d.assignment_id))out.set(d.assignment_id,d);return out;}
+async function workPageRows(table,columns,filter,order='created_at'){
+ const actor=me,epoch=workEpoch,rows=[];
+ for(let offset=0;;offset+=1000){
+  const result=await filter(client.from(table).select(columns)).order(order).order('id').range(offset,offset+999);
+  if(me!==actor||workEpoch!==epoch)return [];
+  if(result.error)throw Error(result.error.message);
+  rows.push(...(result.data||[]));if((result.data||[]).length<1000)return rows;
+ }
+}
 async function loadWorkDelays(assignmentIds){
- const out=[];
- for(let i=0;i<assignmentIds.length;i+=100){const r=await client.from('work_delays').select('assignment_id,reason,expected_on,recorded_by,recorded_at').in('assignment_id',assignmentIds.slice(i,i+100));if(r.error)throw Error(r.error.message);out.push(...(r.data||[]));}
+ const out=[],actor=me,epoch=workEpoch;
+ for(let i=0;i<assignmentIds.length;i+=100){
+  out.push(...await workPageRows('work_delays','id,assignment_id,reason,expected_on,recorded_by,recorded_at',query=>query.in('assignment_id',assignmentIds.slice(i,i+100)),'recorded_at'));
+  if(me!==actor||workEpoch!==epoch)return [];
+ }
  return out;
 }
 function openWorkDelay(row){
@@ -73,26 +87,26 @@ function workTimelineHtml(timeline){
  return `<details class="work-timeline"><summary>Step times · ${timeline.steps.length} step${timeline.steps.length===1?'':'s'}</summary><ol>${timeline.steps.map(s=>`<li><strong>${esc(employeeName(s.person))}</strong> · ${esc(s.task)} · ${esc(workDuration(s.ms))}${s.status==='open'?' so far':''} <small>${esc(new Date(s.from).toLocaleString())}${s.to?' → '+esc(new Date(s.to).toLocaleString()):''}${s.status!=='open'?' · '+esc(s.status.replace('_',' ')):''}</small></li>`).join('')}</ol></details>`;
 }
 async function loadWorkHistory(type,ids){
- const out=[];
+ const out=[],actor=me,epoch=workEpoch;
  for(let i=0;i<ids.length;i+=100){
-  const result=await client.from('work_assignments').select('id,record_id,task,assignee_user_id,status,created_at,closed_at,close_note').eq('record_type',type).in('record_id',ids.slice(i,i+100)).order('created_at').limit(2000);
-  if(result.error)throw Error(result.error.message);out.push(...(result.data||[]));
+  out.push(...await workPageRows('work_assignments','id,record_id,task,assignee_user_id,status,created_at,closed_at,close_note',query=>query.eq('record_type',type).in('record_id',ids.slice(i,i+100))));
+  if(me!==actor||workEpoch!==epoch)return [];
  }
  return out;
 }
 async function loadOpenWork(type,ids){
- const out=new Map();
+ const out=new Map(),actor=me,epoch=workEpoch;
  for(let i=0;i<ids.length;i+=100){
-  const result=await client.from('work_assignments').select('id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at').eq('record_type',type).eq('status','open').in('record_id',ids.slice(i,i+100));
-  if(result.error)throw Error(result.error.message);
-  for(const row of result.data||[])out.set(row.record_id,row);
+  const rows=await workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at',query=>query.eq('record_type',type).eq('status','open').in('record_id',ids.slice(i,i+100)));
+  if(me!==actor||workEpoch!==epoch)return new Map();
+  for(const row of rows)out.set(row.record_id,row);
  }
  return out;
 }
 // Adds the responsible person and handoff buttons to whichever record cards are on screen.
 async function decorateWorkHandoffs(){
  const cards=workRecordCards();if(!cards.length||!me?.user_id)return;
- const epoch=++workEpoch,actor=me.user_id,byType=new Map();
+ const epoch=++workEpoch,actor=me,byType=new Map();
  for(const item of cards){if(!byType.has(item.type))byType.set(item.type,[]);byType.get(item.type).push(item);}
  for(const item of cards){const box=document.createElement('div');box.className='work-handoff';box.dataset.workHandoff=item.id;box.innerHTML='<span>Responsible: loading…</span>';(item.card.querySelector('.actions')||item.card).before(box);}
  for(const [type,items] of byType){
@@ -102,30 +116,33 @@ async function decorateWorkHandoffs(){
    const all=await loadWorkHistory(type,items.map(item=>item.id));for(const row of all){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
    delays=workLatestDelays(await loadWorkDelays([...open.values()].map(row=>row.id)));
   }
-  catch(error){if(epoch!==workEpoch||me?.user_id!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(error.message)}</span>`;});continue;}
-  if(epoch!==workEpoch||me?.user_id!==actor)return;
+  catch(error){if(epoch!==workEpoch||me!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(error.message)}</span>`;});continue;}
+  if(epoch!==workEpoch||me!==actor)return;
   for(const item of items){
    const box=item.card.querySelector('[data-work-handoff]');if(!box?.isConnected)continue;
-   const current=open.get(item.id)||null,canClose=current&&(current.assignee_user_id===actor||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor||current.assigned_by===actor||me.role==='owner');
+   const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
    const delay=current?delays.get(current.id):null,timeline=workTimeline(history.get(item.id)||[]),level=workAgeLevel(current,delay);
    box.classList.toggle('quality-yellow',level==='yellow');box.classList.toggle('quality-red',level==='red');
-   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)} <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
+   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)}${canAssign?` <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign to me</button>':''}`:''}${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
    box.querySelector('[data-work-delay]')?.addEventListener('click',()=>openWorkDelay({...current,record_label:item.label}));
-   box.querySelector('[data-work-assign]').onclick=()=>openWorkHandoff({...item,current});
+   box.querySelector('[data-work-assign]')?.addEventListener('click',()=>openWorkHandoff({...item,current}));
+   box.querySelector('[data-work-self]')?.addEventListener('click',()=>openWorkHandoff({...item,current,self:true}));
    box.querySelector('[data-work-done]')?.addEventListener('click',()=>openWorkClose(current,'done'));
   }
  }
 }
-function workEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>`<option value="${esc(row.user_id)}" ${row.user_id===selected?'selected':''}>${esc(employeeName(row.user_id))}</option>`).join('');}
+function workEmployeeOptions(selected=''){const rows=[...employeeDirectory.values()];if(me?.user_id&&!rows.some(row=>row.user_id===me.user_id))rows.push(me);return rows.filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>`<option value="${esc(row.user_id)}" ${row.user_id===selected?'selected':''}>${esc(employeeName(row.user_id))}</option>`).join('');}
 let workPendingHandoff=null;
-function openWorkHandoff({type,id,label,current}){
- const listId=`workTasks-${type}`;
- const fields=`<p><strong>${esc(label)}</strong>${current?` · currently ${esc(employeeName(current.assignee_user_id))}: ${esc(current.task)}`:''}</p><label><span>Hand to</span><select name="assignee" required><option value="">Choose employee</option>${workEmployeeOptions()}</select></label><label><span>What should they do?</span><input name="task" required minlength="2" maxlength="300" list="${listId}" autocomplete="off"><datalist id="${listId}">${(workSuggestedTasks[type]||[]).map(task=>`<option value="${esc(task)}"></option>`).join('')}</datalist></label><label><span>Due date · optional</span><input name="due" type="date" min="${new Date().toISOString().slice(0,10)}"></label><label><span>Note · optional</span><textarea name="note" maxlength="2000"></textarea></label><p class="muted">The person you choose will see this on their To-do tasks. Your name is recorded as the sender and cannot be changed.</p>`;
- actionForm(current?'Hand to next person':'Assign responsible person',fields,async values=>{
+function openWorkHandoff({type,id,label,current,self=false}){
+ if(!workCanAssign(type))return message('You do not have access to assign this step. Ask your department head.',true);
+ const actor=me.user_id,listId=`workTasks-${type}`,task=self?(current?.task||workSuggestedTasks[type]?.[0]||'Review the current step'):'';
+ const fields=`<p><strong>${esc(label)}</strong>${current?` · currently ${esc(employeeName(current.assignee_user_id))}: ${esc(current.task)}`:''}</p><label><span>Hand to</span><select name="assignee" required><option value="">Choose employee</option>${workEmployeeOptions(self||!current?actor:'')}</select></label><label><span>What should they do?</span><input name="task" required minlength="2" maxlength="300" list="${listId}" value="${esc(task)}" autocomplete="off"><datalist id="${listId}">${(workSuggestedTasks[type]||[]).map(task=>`<option value="${esc(task)}"></option>`).join('')}</datalist></label><label><span>Due date · optional</span><input name="due" type="date" min="${workToday()}"></label><label><span>Note · optional</span><textarea name="note" maxlength="2000"></textarea></label><p class="muted">This assigns responsibility for the current step and records the handoff history. The person you choose will see it on their To-do tasks.${type==='service'?' Assign the engineer and work date separately in the service job.':type==='delivery'?' Assign the packer and record packing progress separately in the delivery.':''} Your name is recorded as the sender.</p>`;
+ actionForm(self?'Assign this step to me':current?'Hand to next person':'Assign responsible person',fields,async values=>{
+  if(me?.user_id!==actor)throw Error('Login changed. Reopen the assignment form.');
   const key=`${type}:${id}:${values.assignee}:${values.task}:${current?.id||''}`;
   // Keep one request ID for the same handoff until confirmed, so a retry after a lost response cannot duplicate it.
   if(workPendingHandoff?.key!==key)workPendingHandoff={key,id:crypto.randomUUID()};
-  const actor=me?.user_id,result=await client.rpc('hand_off_work',{p_id:workPendingHandoff.id,p_record_type:type,p_record_id:id,p_record_label:label,p_task:String(values.task||'').trim(),p_assignee_user_id:values.assignee,p_due_on:values.due||null,p_note:values.note||'',p_expected_open_id:current?.id||null});
+  const result=await client.rpc('hand_off_work',{p_id:workPendingHandoff.id,p_record_type:type,p_record_id:id,p_record_label:label,p_task:String(values.task||'').trim(),p_assignee_user_id:values.assignee,p_due_on:values.due||null,p_note:values.note||'',p_expected_open_id:current?.id||null});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
   workPendingHandoff=null;await render();message(`${label} handed to ${employeeName(values.assignee)}.`);
@@ -140,29 +157,30 @@ function openWorkClose(row,action){
   await render();message(action==='done'?`${row.record_label}: your step is marked done.`:`${row.record_label}: handoff cancelled.`);
  });
 }
-function workOpenRecord(row){
- if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(row.record_type==='proforma'&&typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_id;}
- else if(row.record_type==='service'){view='service';serviceSection='installations';}
+async function workOpenRecord(row){
+ if(!row)return;
+ if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
+ else if(row.record_type==='service')return focusServiceCase(row.record_id);
  else if(row.record_type==='lead'){if(typeof focusLead==='function')focusLead(row.record_id);else view='leads';}
  else if(row.record_type==='pending'){view='pending';pendingFilter='all';pendingSearch=row.record_label;}
  else if(row.record_type==='purchase'){view='purchasing';if(typeof openPurchaseSection==='function')openPurchaseSection('orders');purchaseFilter='all';purchaseSearch=row.record_label;}
  else if(row.record_type==='tally_invoice'){view='tallyinvoices';tallyInvoiceFilter='all';tallyInvoiceSearch=String(row.record_label).split(' · ')[0];}
- render();
+ return render();
 }
 // Work handed to the signed-in employee, shown at the top of To-do tasks. Overdue first, then by due date.
 async function renderMyHandoffs(target){
- const epoch=++workEpoch,actor=me?.user_id;if(!actor||!target)return;
+ const epoch=++workEpoch,actor=me;if(!actor?.user_id||!target)return;
  const box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
- const result=await client.from('work_assignments').select('id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at').eq('assignee_user_id',actor).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}).order('created_at').limit(200);
- if(epoch!==workEpoch||me?.user_id!==actor||!box.isConnected)return;
+ let result;try{result={data:await workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at',query=>query.eq('assignee_user_id',actor.user_id).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}))};}catch(error){result={error};}
+ if(epoch!==workEpoch||me!==actor||!box.isConnected)return;
  if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return;}
  let delays=new Map();try{delays=workLatestDelays(await loadWorkDelays((result.data||[]).map(r=>r.id)));}catch{}
- if(epoch!==workEpoch||me?.user_id!==actor||!box.isConnected)return;
+ if(epoch!==workEpoch||me!==actor||!box.isConnected)return;
  const levelRank=row=>({red:2,yellow:1}[workAgeLevel(row,delays.get(row.id))]||0);
- const rows=[...(result.data||[])].sort((a,b)=>levelRank(b)-levelRank(a)||Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at)));
+ const rows=[...(result.data||[])].sort((a,b)=>levelRank(b)-levelRank(a)||Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
  box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>{const delay=delays.get(row.id),level=workAgeLevel(row,delay);return `<li class="${level?'quality-'+level:workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(row.created_at)))}</strong>${delay?` · expected ${esc(delay.expected_on)}: ${esc(delay.reason)}`:''}${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open</button> <button type="button" data-work-finish="${esc(row.id)}">Mark done</button> <button type="button" data-work-delay-row="${esc(row.id)}">Report delay</button></li>`;}).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
- box.querySelectorAll('[data-work-open]').forEach(button=>button.onclick=()=>workOpenRecord(rows.find(row=>row.id===button.dataset.workOpen)));
+ box.querySelectorAll('[data-work-open]').forEach(button=>button.onclick=()=>run(()=>workOpenRecord(rows.find(row=>row.id===button.dataset.workOpen))));
  box.querySelectorAll('[data-work-finish]').forEach(button=>button.onclick=()=>openWorkClose(rows.find(row=>row.id===button.dataset.workFinish),'done'));
  box.querySelectorAll('[data-work-delay-row]').forEach(button=>button.onclick=()=>openWorkDelay(rows.find(row=>row.id===button.dataset.workDelayRow)));
 }
@@ -175,7 +193,7 @@ async function renderWorkNotices(target){
  const box=document.createElement('section');box.className='card work-notices';
  box.innerHTML=`<h2>Updates · ${result.data.length}</h2><ol class="handoff-list">${result.data.map(n=>`<li><strong>${esc(n.record_label)}</strong> · ${esc(n.message)}<br><small>${esc(workSince(n.created_at))} ago</small> <button type="button" data-notice-open="${esc(n.id)}">Open</button> <button type="button" data-notice-dismiss="${esc(n.id)}">Got it</button></li>`).join('')}</ol>`;
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
- box.querySelectorAll('[data-notice-open]').forEach(b=>b.onclick=()=>{const n=result.data.find(x=>x.id===b.dataset.noticeOpen);workOpenRecord({record_type:n.record_type,record_id:n.record_id,record_label:n.record_label});});
+ box.querySelectorAll('[data-notice-open]').forEach(b=>b.onclick=()=>{const n=result.data.find(x=>x.id===b.dataset.noticeOpen);run(()=>workOpenRecord({record_type:n.record_type,record_id:n.record_id,record_label:n.record_label}));});
  box.querySelectorAll('[data-notice-dismiss]').forEach(b=>b.onclick=()=>run(async()=>{const r=await client.rpc('dismiss_work_notice',{p_id:b.dataset.noticeDismiss});if(r.error)throw Error(r.error.message);b.closest('li').remove();if(!box.querySelector('li'))box.remove();}));
 }
 // Open orders and jobs that nobody is responsible for. Everyone sees them, so nothing waits unseen.
@@ -189,7 +207,7 @@ async function renderUnownedWork(target){
   const rows=result.data||[];if(!rows.length)return;
   box.classList.add('attention');
   box.innerHTML=`<h2>Nobody responsible · ${rows.length}</h2><p class="muted">These are waiting with no one assigned. Assign someone, or set the default person for the step in Staff → Who does each step.</p><ol class="handoff-list">${rows.slice(0,100).map((r,i)=>`<li><strong>${esc(r.record_label)}</strong> · ${esc(workTypeLabels[r.record_type]||r.record_type)} · ${esc(String(r.status).replace(/_/g,' '))}${r.waiting_since?` · waiting ${esc(workSince(r.waiting_since))}`:''} <button type="button" data-unowned-open="${i}">Open</button> <button type="button" data-unowned-assign="${i}">Assign</button></li>`).join('')}</ol>`;
-  box.querySelectorAll('[data-unowned-open]').forEach(b=>b.onclick=()=>workOpenRecord(rows[Number(b.dataset.unownedOpen)]));
+  box.querySelectorAll('[data-unowned-open]').forEach(b=>b.onclick=()=>run(()=>workOpenRecord(rows[Number(b.dataset.unownedOpen)])));
   box.querySelectorAll('[data-unowned-assign]').forEach(b=>b.onclick=()=>{const r=rows[Number(b.dataset.unownedAssign)];openWorkHandoff({type:r.record_type,id:r.record_id,label:r.record_label,current:null});});
  }
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);

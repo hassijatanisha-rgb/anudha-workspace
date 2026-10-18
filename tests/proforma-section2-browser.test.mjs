@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.PROFORMA_BROWSER_QA==='1';
-const sources=['row-index.js','company-forms.js','sales-domain.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['business-date.js','row-index.js','company-forms.js','sales-domain.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -29,12 +29,12 @@ async function fixture(t){
   window.products=[{id:'product',name:'Fixture Product',sku:'SKU'}];window.inventoryLocations=[];window.inventoryLots=[];
   window.inventoryOption=(id,label,selected=false)=>`<option value="${esc(id)}" ${selected?'selected':''}>${esc(label)}</option>`;
   window.inventoryProductChoice=p=>p.name;window.inventoryProductFromChoice=value=>products.find(p=>p.name===value);
-  window.rows=[];window.lines=[];window.calls=[];window.loads=0;window.accountingAllowed=true;window.accessChecks=0;window.reads=[];
+  window.rows=[];window.lines=[];window.revisions=[];window.calls=[];window.loads=0;window.accountingAllowed=true;window.accessChecks=0;window.reads=[];
   window.client={from:table=>{
    const query={},filters=[];let bounds=null,limit=null,single=false;
    for(const method of ['select','order'])query[method]=()=>query;
    query.eq=(key,value)=>{filters.push([key,value]);return query};query.in=(key,values)=>{filters.push([key,values,'in']);return query};query.range=(start,end)=>{bounds=[start,end];return query};query.limit=value=>{limit=value;return query};query.single=()=>{single=true;return query};
-   query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:[];data=data.filter(row=>filters.every(([key,value,kind])=>kind==='in'?value.includes(row[key]):row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
+   query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:table==='sales_proforma_revisions'?revisions:[];data=data.filter(row=>filters.every(([key,value,kind])=>kind==='in'?value.includes(row[key]):row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
   },rpc:async(name,args)=>{
    if(name==='accounting_access'){accessChecks++;return {data:accountingAllowed}}
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
@@ -45,8 +45,14 @@ async function fixture(t){
    }
    const row={id:args.p_id,version:args.p_expected_version+1,revision:args.p_expected_version+1,document_number:'PF-FIXTURE',status:'draft',organization_id:args.p_organization_id,contact_id:args.p_contact_id,currency:args.p_currency,valid_until:args.p_valid_until,delivery_period:args.p_delivery_period,payment_terms:args.p_payment_terms,notes:args.p_notes,subtotal_minor:10000,discount_minor:0,tax_minor:0,total_minor:10000};
    row.revision=(rows.find(r=>r.id===row.id)?.revision||0)+1;
+   const totals=args.p_lines.map(proformaLineTotal);row.subtotal_minor=totals.reduce((sum,line)=>sum+line.gross,0);row.discount_minor=totals.reduce((sum,line)=>sum+line.discount,0);row.tax_minor=totals.reduce((sum,line)=>sum+line.tax,0);row.total_minor=row.subtotal_minor-row.discount_minor+row.tax_minor;
    rows=rows.filter(r=>r.id!==row.id).concat(row);
-   lines=args.p_lines.map((l,i)=>({id:'line-'+i,proforma_id:row.id,product_id:l.productId,sort_order:i,description:l.description,quantity:l.quantity,uom:l.uom,unit_price_minor:l.unitPriceMinor,discount_basis_points:l.discountBasisPoints,tax_basis_points:l.taxBasisPoints}));
+   lines=lines.filter(l=>l.proforma_id!==row.id).concat(args.p_lines.map((l,i)=>({id:row.id+'-line-'+i,proforma_id:row.id,product_id:l.productId,sort_order:i,description:l.description,quantity:l.quantity,uom:l.uom,unit_price_minor:l.unitPriceMinor,discount_basis_points:l.discountBasisPoints,tax_basis_points:l.taxBasisPoints})));
+   const organization=organizations.find(o=>o.id===row.organization_id),contact=contacts.find(c=>c.id===row.contact_id);
+   const snapshot={documentNumber:row.document_number,revision:row.revision,organizationId:row.organization_id,contactId:row.contact_id,organizationName:organization.name,organizationLocation:organization.location,contactName:[contact.title==='N/A'?'':contact.title,contact.first_name,contact.last_name].filter(Boolean).join(' '),currency:row.currency,validUntil:row.valid_until,deliveryPeriod:row.delivery_period,paymentTerms:row.payment_terms,notes:row.notes,subtotalMinor:row.subtotal_minor,discountMinor:row.discount_minor,taxMinor:row.tax_minor,totalMinor:row.total_minor,lines:args.p_lines.map(line=>({...line,productName:products.find(p=>p.id===line.productId).name}))};
+   const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
+   if(revisions.some(revision=>revision.proforma_id===row.id&&revision.revision===row.revision))throw Error('Revision already exists');
+   revisions.push(freeze(structuredClone({proforma_id:row.id,revision:row.revision,snapshot})));
    return {data:row};
   }};
  });
@@ -89,6 +95,14 @@ acceptance('Confirmed create closes editor and prints the saved document',async 
  await p.evaluate(()=>window.print=()=>{window.printed=document.querySelector('.print-document')?.dataset.documentCard});
  await p.locator('[data-print-document]').click();assert.equal(await p.evaluate(()=>window.printed),await p.evaluate(()=>calls[0].args.p_id));
 });
+acceptance('Sent revision prints saved identities after live customer, contact and product renames',async t=>{
+ const p=await fixture(t);await fillEntry(p);await save(p);
+ await p.locator('[data-proforma-action="send"]').click();await p.locator('#actionEditor [type="submit"]').click();await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+ await p.evaluate(async()=>{organizations[0].name='Renamed hospital';organizations[0].location='Mwanza';contacts[0].first_name='Renamed';contacts[0].last_name='Person';products[0].name='Renamed product';salesRevisionSnapshots.clear();await salesDeliveryWorkspace(true);window.print=()=>{window.printedText=document.querySelector('.print-document')?.innerText}});
+ await p.locator('[data-print-document]').click();const printed=await p.evaluate(()=>window.printedText);
+ assert.match(printed,/Fixture Hospital · Dar/);assert.match(printed,/Named Contact/);assert.match(printed,/Fixture Product/);assert.doesNotMatch(printed,/Renamed|Mwanza/);
+ assert.ok(await p.evaluate(()=>reads.some(read=>read.table==='sales_proforma_revisions'&&read.single&&read.filters.some(([key,value])=>key==='revision'&&value===1))));
+});
 acceptance('Record-sent action acknowledges manual sending; accepted submission targets accounting',async t=>{
  const p=await fixture(t);await fillEntry(p);await save(p);
  assert.match(await p.locator('[data-proforma-action="send"]').textContent(),/record.*sent|mark.*sent/i);
@@ -109,10 +123,11 @@ acceptance('Sent proforma returns for revision and saves changes under its origi
  await p.locator('#actionEditor [type="submit"]').click();await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
  await p.locator('[data-edit-proforma]').click();assert.equal(await p.locator('[name="description"]').inputValue(),'Fixture description');
  await p.locator('[name="quantity"]').fill('3');await save(p,4);
- const result=await p.evaluate(()=>({rows,calls,lines}));assert.equal(result.rows.length,1);
+ const result=await p.evaluate(()=>({rows,calls,lines,revisions}));assert.equal(result.rows.length,1);
  assert.equal(result.rows[0].id,original.id);assert.equal(result.rows[0].revision,2);assert.equal(result.rows[0].version,4);
  assert.equal(result.calls[2].args.p_action,'revise');assert.equal(result.calls[2].args.p_reference,'Customer requested revised quantity');
  assert.equal(result.calls[3].args.p_id,original.id);assert.equal(result.calls[3].args.p_expected_version,3);assert.equal(result.calls[3].args.p_lines[0].quantity,3);
+ assert.equal(result.revisions.length,2);assert.equal(result.revisions[0].snapshot.lines[0].quantity,1);assert.equal(result.revisions[1].snapshot.lines[0].quantity,3);
  assert.equal(await p.locator('[data-document-card]').count(),1);assert.match(await p.locator('[data-document-card]').innerText(),/Revision 2/);
 });
 acceptance('Stale save rejection preserves edited values and original expected version',async t=>{
@@ -160,5 +175,45 @@ acceptance('Queue and opened record escape malicious customer names and acceptan
  assert.ok((await p.locator('#proformaAccountingQueue').innerText()).includes(malicious));
  assert.equal(await p.locator('#content script, #injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
  await p.locator('[data-proforma-accounting-open]').click();await p.waitForFunction(()=>pending===0&&view==='sales');
- assert.ok((await p.locator('[data-document-card]').innerText()).includes(malicious));assert.equal(await p.locator('#content script, #injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
+ assert.ok((await p.locator('[data-document-card]').innerText()).includes(malicious));assert.match(await p.locator('[data-document-card] .heading').innerText(),/Fixture Hospital/);assert.ok(!(await p.locator('[data-document-card] .heading').innerText()).includes(malicious));assert.equal(await p.locator('#content script, #injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
+});
+acceptance('Saved revision identities escape malicious names when reloaded for printing',async t=>{
+ const p=await fixture(t);const malicious='<img id="snapshot-injected" src=x onerror="window.injected=true">';
+ await p.evaluate(value=>{organizations[0].name=value;contacts[0].first_name=value},malicious);await fillEntry(p);await save(p);
+ await p.evaluate(async()=>{salesRevisionSnapshots.clear();await salesDeliveryWorkspace(true)});
+ assert.ok((await p.locator('[data-document-card] .heading').innerText()).includes(malicious));assert.equal(await p.locator('#snapshot-injected').count(),0);assert.equal(await p.evaluate(()=>window.injected),undefined);
+});
+
+acceptance('Whole-order view opens the matching delivery and engineering case, and self-assignment uses the signed-in employee',async t=>{
+ const p=await fixture(t);
+ await p.evaluate(()=>{
+  window.employeeName=id=>id==='actor'?'Test Operator':id||'Not recorded';
+  window.employeeDirectory=new Map([['actor',{user_id:'actor',active:true,role:'owner',access:['proformas','deliveries','service']}]]);
+  me.role='owner';me.access=['proformas','deliveries','service'];window.hasArea=()=>true;
+  window.render=()=>salesDeliveryWorkspace();window.focusServiceCase=id=>{window.openedService=id};
+ });
+ for(const file of ['work-assignments.js','order-workflow.js'])await p.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ await fillEntry(p);await save(p);await p.waitForSelector('[data-work-self]');
+ assert.equal(await p.locator('[data-order-workflow]').count(),1);
+ await p.locator('[data-work-self]').click();
+ assert.equal(await p.locator('#actionEditor [name="assignee"]').inputValue(),'actor');
+ assert.notEqual(await p.locator('#actionEditor [name="task"]').inputValue(),'');
+ await p.locator('#actionCancel').click();
+ await p.evaluate(()=>{
+  const pf=salesProformas[0];
+  salesDeliveryNotes=[{id:'dn-old',proforma_id:pf.id,delivery_number:'DN-TEST-OLD',organization_id:'branch',contact_id:'contact',status:'delivered',version:4,accounts_reference:'APPROVAL',tax_invoice_reference:'INV-TEST',expected_delivery_date:'2026-10-18',recipient_name:'Test Customer',proof_reference:'TEST signed copy',packer_user_id:'actor'}];
+  salesDeliveryLines=[{id:'dl',delivery_note_id:'dn-old',proforma_line_id:salesLines(pf.id)[0].id,product_id:'product',quantity:1,lot_id:'lot'}];
+  const original=client.from;
+  client.from=table=>{
+   if(!['acc_invoices','service_cases'].includes(table))return original(table);
+   const q={select(){return this},in(){return this},order(){return this},range(){return this},then(ok,bad){return Promise.resolve({data:table==='acc_invoices'?[{id:'invoice',invoice_number:'INV-TEST',currency:'TZS',total_minor:10000}]:[{id:'engineering-case',case_number:'INS-TEST',status:'awaiting_assignment',assigned_user_id:null}]}).then(ok,bad)}};return q;
+  };
+  return salesDeliveryWorkspace();
+ });
+ await p.waitForSelector('[data-order-service-case="engineering-case"]');
+ await p.locator('[data-order-service-case="engineering-case"]').click();assert.equal(await p.evaluate(()=>openedService),'engineering-case');
+ await p.locator('[data-order-delivery="dn-old"]').click();
+ await p.waitForSelector('[data-document-card="dn-old"]');assert.equal(await p.locator('[data-document-card]').count(),1);
+ await p.locator('[data-order-proforma]').click();await p.waitForSelector('[data-order-workflow]');
+ assert.match(await p.locator('[data-order-invoices]').innerText(),/INV-TEST/);
 });

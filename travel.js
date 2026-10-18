@@ -90,7 +90,7 @@ function openTravelAction(row,action){
  if(!row)return;
  const titles={approve:'Approve trip',decline:'Decline trip',done:'Trip done',cancel:'Cancel trip'};
  const label={approve:'Note · optional',decline:'Why is it declined?',done:'How did it go?',cancel:'Why is it cancelled? · optional'}[action];
- const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(travelPlace(row))} · ${esc(travelDuration(row.depart_at,row.return_at))}</p><label><span>${label}</span><textarea name="note" maxlength="2000"${['decline','done'].includes(action)?' required minlength="3"':''}></textarea></label>`;
+ const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(travelPlace(row))} · ${esc(travelDuration(row.depart_at,row.return_at))}</p><label><span>${label}</span><textarea name="note" maxlength="${['approve','decline'].includes(action)?1000:2000}"${['decline','done'].includes(action)?' required minlength="3"':''}></textarea></label>`;
  actionForm(titles[action],fields,async values=>{
   const actor=me?.user_id,result=await client.rpc('advance_travel_request',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the trip.');

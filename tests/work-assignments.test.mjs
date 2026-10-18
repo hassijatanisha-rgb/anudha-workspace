@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-function load(){
- const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String});
+function load(overrides={}){
+ const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String,...overrides});
  vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 test('elapsed time reads in minutes, hours, then days',()=>{
@@ -35,4 +35,61 @@ test('every workflow screen, the task list, sign-out and print are wired',()=>{
  assert.match(read('app.js'),/typeof clearWorkAssignments==='function'\)clearWorkAssignments\(\)/);
  assert.match(read('style.css'),/@media print\{\.work-handoff\{display:none!important\}\}/);
  const html=read('index.src.html');assert.ok(html.indexOf('work-assignments.js')>html.indexOf('pending-stock.js')&&html.indexOf('work-assignments.js')<html.indexOf('app.js'));
+});
+test('current-step assignment controls follow the signed-in employee areas',()=>{
+ const ctx=load({me:{user_id:'a',active:true,role:'staff',access:['proformas','deliveries']}});
+ for(const type of ['proforma','delivery','tally_invoice','pending'])assert.equal(ctx.workCanAssign(type),true,type);
+ for(const type of ['service','lead','purchase','unknown'])assert.equal(ctx.workCanAssign(type),false,type);
+ ctx.me={user_id:'a',active:true,role:'owner',access:[]};assert.equal(ctx.workCanAssign('service'),true);
+ ctx.me.active=false;assert.equal(ctx.workCanAssign('service'),false);
+ ctx.me=null;assert.equal(ctx.workCanAssign('proforma'),false);
+});
+test('Assign to me opens a prefilled current-step form, then records a retry-safe handoff',async()=>{
+ let form,calls=[],attempt=0,request=0;
+ const current={id:'previous',record_id:'delivery-1',assignee_user_id:'b',task:'Pack <carefully>',created_at:new Date().toISOString(),assigned_by:'b',status:'open'};
+ const handlers=new Map(),box={dataset:{},isConnected:true,classList:{toggle(){}},innerHTML:'',querySelector(selector){return this.innerHTML.includes(selector.slice(1,-1))?{addEventListener:(event,handler)=>handlers.set(selector,handler)}:null;}};
+ const card={querySelector:selector=>selector==='[data-work-handoff]'?box:{before(){}}};
+ const ctx=load({me:{user_id:'a',active:true,role:'staff',access:['deliveries']},employeeDirectory:new Map([['b',{user_id:'b',active:true}]]),document:{createElement:()=>box},
+  actionForm:(title,fields,submit)=>{form={title,fields,submit};},crypto:{randomUUID:()=>`request-${++request}`},render:async()=>{},message:()=>{},
+  client:{rpc:async(name,payload)=>{calls.push({name,payload});return ++attempt===1?{error:{message:'Response lost'}}:{data:{id:payload.p_id}};}}});
+ ctx.workRecordCards=()=>[{card,type:'delivery',id:'delivery-1',label:'DN-1'}];
+ ctx.loadOpenWork=async()=>new Map([['delivery-1',current]]);ctx.loadWorkHistory=async()=>[];ctx.loadWorkDelays=async()=>[];
+ await ctx.decorateWorkHandoffs();
+ assert.match(box.innerHTML,/data-work-self>Assign to me/);
+ handlers.get('[data-work-self]')();
+ assert.equal(calls.length,0,'click requires the employee to review and submit the form');
+ assert.equal(form.title,'Assign this step to me');
+ assert.match(form.fields,/<option value="a" selected>Asha<\/option>/,'self remains selectable when the directory does not include them');
+ assert.match(form.fields,/value="Pack &#60;carefully&#62;"/);
+ assert.match(form.fields,/current step/);assert.match(form.fields,/Assign the packer.*separately/);
+ const values={assignee:'a',task:current.task,due:'',note:'I will handle packing'};
+ await assert.rejects(form.submit(values),/Response lost/);
+ await form.submit(values);
+ assert.equal(calls.length,2);assert.equal(calls[0].name,'hand_off_work');
+ assert.equal(calls[0].payload.p_id,calls[1].payload.p_id,'lost response retries keep their request ID');
+ assert.equal(calls[1].payload.p_expected_open_id,'previous');assert.equal(calls[1].payload.p_assignee_user_id,'a');
+ assert.equal(calls[1].payload.p_task,current.task);assert.equal(calls[1].payload.p_record_type,'delivery');
+ ctx.me={user_id:'b',active:true,role:'staff',access:['deliveries']};
+ await assert.rejects(form.submit(values),/Login changed/);assert.equal(calls.length,2,'an old form cannot save as a different employee');
+});
+test('new handoffs select self by default and unowned self-assignment suggests the current work',()=>{
+ let form;
+ const ctx=load({me:{user_id:'a',active:true,role:'staff',access:['service']},employeeDirectory:new Map(),message:()=>{},actionForm:(title,fields)=>{form={title,fields};}});
+ ctx.openWorkHandoff({type:'service',id:'service-1',label:'SC-1',current:null});
+ assert.match(form.fields,/<option value="a" selected>Asha<\/option>/);
+ ctx.openWorkHandoff({type:'service',id:'service-1',label:'SC-1',current:null,self:true});
+ assert.match(form.fields,/value="Assign engineer"/);assert.match(form.fields,/engineer and work date separately/);
+});
+test('finished delivery and service records retain history without offering new current-step work',async()=>{
+ const box={dataset:{},isConnected:true,classList:{toggle(){}},innerHTML:'',querySelector:()=>null};
+ const card={querySelector:selector=>selector==='[data-work-handoff]'?box:{before(){}}};
+ const ctx=load({me:{user_id:'a',active:true,role:'owner'},document:{createElement:()=>box}});
+ for(const [type,status] of [['proforma','cancelled'],['proforma','rejected'],['delivery','delivered'],['delivery','cancelled'],['service','completed'],['service','cancelled']])assert.equal(ctx.workRecordClosed(type,{status}),true);
+ assert.equal(ctx.workRecordClosed('proforma',{status:'accepted'}),false);
+ assert.equal(ctx.workRecordClosed('delivery',{status:'packing'}),false);
+ ctx.workRecordCards=()=>[{card,type:'delivery',id:'delivery-1',label:'DN-1',closed:true}];
+ ctx.loadOpenWork=async()=>new Map();ctx.loadWorkHistory=async()=>[{id:'old',record_id:'delivery-1',assignee_user_id:'a',task:'Deliver the order',status:'done',created_at:'2026-10-18T09:00:00Z',closed_at:'2026-10-18T10:00:00Z'}];ctx.loadWorkDelays=async()=>[];
+ await ctx.decorateWorkHandoffs();
+ assert.doesNotMatch(box.innerHTML,/data-work-self|data-work-assign/);
+ assert.match(box.innerHTML,/Deliver the order/);assert.match(box.innerHTML,/finished/);
 });

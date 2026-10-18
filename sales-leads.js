@@ -5,13 +5,13 @@ let leadSection='leads',leadFilter='open',leadSearch='',leadPage=0,leadRows=[],l
 let leadFocusId='';
 // Open one lead from elsewhere (e.g. a task): the section is chosen from its stage once the list has loaded.
 function focusLead(id){leadFocusId=id;leadEditing='';leadPage=0;view='leads';}
-function openLeadSection(section){leadSection='leads';leadPage=0;if(section==='new'){leadEditing='new';leadPendingSave=null;}else leadEditing='';}
-function clearLeads(){leadEpoch++;leadHandoverEpoch++;leadHandovers=new Map();leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';leadPendingSave=null;if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
+function openLeadSection(section){leadSection='leads';leadPage=0;if(section==='new'){leadEditing='new';}else leadEditing='';}
+function clearLeads(){leadEpoch++;leadHandoverEpoch++;leadHandovers=new Map();leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
 const leadStages={inquiry:'Needs a salesperson',lead:'Following up',opportunity:'Following up',won:'Won',lost:'Lost'};
 const leadSources={phone:'Phone call',email:'Email',walk_in:'Walk-in',whatsapp:'WhatsApp',referral:'Referral',website:'Website',other:'Other'};
 // The role of the person we spoke to changes how sales handles the lead (a buyer wants a price, a doctor a demo).
 const leadRoles={doctor:'Doctor / user',head_of_department:'Head of department',procurement:'Procurement / purchasing',management:'Management / director',biomedical:'Biomedical engineer',other:'Other'};
-function leadToday(){return new Date().toISOString().slice(0,10);}
+function leadToday(){return companyDate();}
 function leadDay(date){return date?new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}).replace(',',''):'';}
 function leadWords(text){return String(text||'').trim().split(/\s+/).filter(Boolean).length;}
 // Who we spoke to: the linked contact when there is one, otherwise the name and phone typed on the lead.
@@ -140,18 +140,44 @@ function leadFormValues(form){
  if(!fields.caller_role)throw Error('Choose the role of the person we spoke to.');
  return fields;
 }
-let leadPendingSave=null;
+function leadSavedMatches(saved,fields){return Object.keys(fields).every(key=>String(saved[key]??'')===String(fields[key]??''));}
 async function saveLeadForm(form){
- const fields=leadFormValues(form),id=form.dataset.id||'',version=Number(form.dataset.version||0);
- // Keep one request ID for a new inquiry until it is confirmed, so a retry cannot create a duplicate.
- if(!id&&(!leadPendingSave||leadPendingSave.subject!==fields.subject))leadPendingSave={id:crypto.randomUUID(),subject:fields.subject};
- const requestId=id||leadPendingSave.id,actor=me?.user_id;
- const result=await client.rpc('save_sales_lead',{p_id:requestId,p_expected_version:version,p_fields:fields});
- if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
- if(result.error)throw Error(result.error.message);
- const saved=Array.isArray(result.data)?result.data[0]:result.data;
- if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press Save again to retry safely.');
- leadPendingSave=null;leadEditing='';await leadRefreshOne(saved.id);message(`${saved.lead_number} saved.`);
+ if(form.dataset.saving==='true')return;
+ const actor=me,epoch=leadEpoch,current=()=>me===actor&&leadEpoch===epoch&&view==='leads'&&form.isConnected;
+ if(!actor?.user_id||!current())throw Error('Reopen the inquiry before saving.');
+ const fields=leadFormValues(form),version=Number(form.dataset.version||0);
+ // The form owns its creation identity, including when fields change after an uncertain response.
+ const requestId=form.dataset.id||(form.dataset.requestId ||= crypto.randomUUID());
+ const controls=[...form.querySelectorAll('input,select,textarea,button')],disabled=controls.map(control=>control.disabled);
+ const button=form.querySelector('[type="submit"]'),label=button.textContent;
+ form.dataset.saving='true';controls.forEach(control=>{control.disabled=true;});button.textContent='Saving…';
+ try{
+  let saved,error;
+  try{
+   const result=await client.rpc('save_sales_lead',{p_id:requestId,p_expected_version:version,p_fields:fields});
+   if(result.error)error=Error(result.error.message);else saved=Array.isArray(result.data)?result.data[0]:result.data;
+  }catch(cause){error=cause;}
+  if(!current())return;
+  const confirmed=row=>row?.id===requestId&&Number.isInteger(row.version)&&row.version>0;
+  if(error||!confirmed(saved)||!leadSavedMatches(saved,fields)){
+   let persisted;
+   try{persisted=await client.from('sales_leads').select(leadColumns).eq('id',requestId).maybeSingle();}
+   catch{if(!current())return;throw Error('The save could not be confirmed. Your entries are kept. Press Save again to retry this same inquiry.');}
+   if(!current())return;
+   if(persisted.error)throw Error('The save could not be confirmed. Your entries are kept. Press Save again to retry this same inquiry.');
+   saved=persisted.data;
+  }
+  if(!confirmed(saved))throw error||Error('The server did not confirm the save. Your entries are kept. Press Save again to retry this same inquiry.');
+  if(!leadSavedMatches(saved,fields)){
+   if(version===0){
+    form.dataset.id=requestId;form.dataset.version=String(saved.version);
+    throw Error(`${saved.lead_number} already exists. Your latest entries are still in this form. Press Save again to update that inquiry. A different salesperson must be changed with Hand over on the saved lead.`);
+   }
+   throw error||Error('The saved inquiry does not match these entries. Your changes are kept. Refresh and compare before retrying; use Hand over to change its salesperson.');
+  }
+  form.dataset.id=requestId;form.dataset.version=String(saved.version);leadEditing='';await leadRefreshOne(saved.id);
+  if(me===actor&&view==='leads')message(`${saved.lead_number} saved.`);
+ }finally{form.dataset.saving='false';controls.forEach((control,index)=>{control.disabled=disabled[index];});button.textContent=label;}
 }
 // Every open lead is loaded; won and lost leads only from the last six months, so the page stays fast as years
 // of leads build up. Typing in Search also looks up older leads on the server.
@@ -207,16 +233,16 @@ function bindLeads(){
  $('#leadRefresh').onclick=()=>run(()=>leadsWorkspace(true));
  // A won lead shows where its order is now (packing queue, delivery).
  if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
- $('#newLead')?.addEventListener('click',()=>{leadEditing='new';leadPendingSave=null;renderLeads();$('#leadForm [name="subject"]')?.focus();});
- $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';leadPendingSave=null;renderLeads();});
+ $('#newLead')?.addEventListener('click',()=>{leadEditing='new';renderLeads();$('#leadForm [name="subject"]')?.focus();});
+ $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';renderLeads();});
  const form=$('#leadForm');
  if(form){
   const callerExtra=()=>form.querySelectorAll('[data-caller-extra]').forEach(label=>label.hidden=!!form.elements.contactId.value);
   form.elements.organizationId.onchange=event=>{form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);callerExtra();};
   form.elements.contactId.onchange=callerExtra;
   form.querySelectorAll('[name="who"]').forEach(input=>input.onchange=()=>form.querySelectorAll('[data-who]').forEach(group=>group.hidden=group.dataset.who!==input.value));
-  form.onsubmit=event=>{event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;button.disabled=true;$('#leadFormError').textContent='';
-   run(async()=>{try{await saveLeadForm(form)}catch(error){if($('#leadFormError'))$('#leadFormError').textContent=error.message;throw error;}finally{if(button.isConnected)button.disabled=false;}});};
+  form.onsubmit=event=>{event.preventDefault();if(form.dataset.saving==='true')return;form.querySelector('#leadFormError').textContent='';
+   run(async()=>{try{await saveLeadForm(form)}catch(error){if(form.isConnected)form.querySelector('#leadFormError').textContent=error.message;throw error;}});};
  }
  $('#leadSearch').oninput=event=>{leadSearch=event.target.value;leadPage=0;renderSearchPreservingPosition(event.target,renderLeads,150);clearTimeout(leadSearchTimer);const text=leadSearch;leadSearchTimer=setTimeout(()=>leadSearchOlder(text).catch(()=>{}),400);};
  if($('#leadPrev')){$('#leadPrev').onclick=()=>{leadPage--;renderLeads();};$('#leadNext').onclick=()=>{leadPage++;renderLeads();};}

@@ -10,7 +10,7 @@ const requestFilters=[['open','Open'],['new','New, nobody yet'],['mine','Mine'],
 const requestSections={inquiries:{title:'Inquiries',kinds:['inquiry','quote'],intro:'Questions and quote requests from the website. Each one is also in Leads as "Needs a salesperson".'},
  complaints:{title:'Complaints',kinds:['complaint','support'],intro:'Complaints and support requests from the website. Take one, sort it out, and write what was done.'}};
 const requestRecentDays=183;
-function clearCustomerRequests(){requestEpoch++;requestRows=[];requestLoaded=false;}
+function clearCustomerRequests(){requestEpoch++;requestRows=[];requestLoaded=false;requestSearch='';requestFilter='open';}
 function openRequestSection(section){requestSection=requestSections[section]?section:'inquiries';requestFilter='open';requestSearch='';}
 function requestMatches(row,filter,actor){
  const open=['received','in_progress'].includes(row.status);
@@ -44,14 +44,14 @@ function requestCard(row){
  ${buttons.length?`<div class="actions">${buttons.join('')}</div>`:''}</article>`;
 }
 async function customerRequestsWorkspace(force=false){
- const epoch=++requestEpoch,actor=me?.user_id;syncWorkspaceNavigation();
+ const epoch=++requestEpoch,actor=me;if(!actor||view!=='requests')return;syncWorkspaceNavigation();
  if(force||!requestLoaded){
   $('#content').innerHTML='<p role="status">Loading requests…</p>';
   const since=new Date(Date.now()-requestRecentDays*864e5).toISOString();
-  try{requestRows=await all('customer_requests','*',q=>q.or(`status.in.(received,in_progress),updated_at.gte.${since}`));}
-  catch(error){if(epoch!==requestEpoch||me?.user_id!==actor)return;$('#content').innerHTML=`<h1>${esc(requestSections[requestSection].title)}</h1><p role="alert">Requests could not load: ${esc(error.message)}</p><button type="button" id="requestRetry">Try again</button>`;$('#requestRetry').onclick=()=>run(()=>customerRequestsWorkspace(true));return;}
-  if(epoch!==requestEpoch||me?.user_id!==actor||view!=='requests')return;
-  requestLoaded=true;
+  let rows;try{rows=await all('customer_requests','*',q=>q.or(`status.in.(received,in_progress),updated_at.gte.${since}`));}
+  catch(error){if(epoch!==requestEpoch||me!==actor||view!=='requests')return;$('#content').innerHTML=`<h1>${esc(requestSections[requestSection].title)}</h1><p role="alert">Requests could not load: ${esc(error.message)}</p><button type="button" id="requestRetry">Try again</button>`;$('#requestRetry').onclick=()=>run(()=>customerRequestsWorkspace(true));return;}
+  if(epoch!==requestEpoch||me!==actor||view!=='requests')return;
+  requestRows=rows;requestLoaded=true;
  }
  renderCustomerRequests();
 }
@@ -66,17 +66,24 @@ function renderCustomerRequests(){
  $('#requestRefresh').onclick=()=>run(()=>customerRequestsWorkspace(true));
  document.querySelectorAll('[data-request-filter]').forEach(button=>button.onclick=()=>{requestFilter=button.dataset.requestFilter;renderCustomerRequests();});
  $('#requestSearch').oninput=event=>{requestSearch=event.target.value;renderSearchPreservingPosition(event.target,renderCustomerRequests,150);};
- document.querySelectorAll('[data-request-action]').forEach(button=>button.onclick=()=>openRequestAction(requestRows.find(row=>row.id===button.dataset.id),button.dataset.requestAction));
+ document.querySelectorAll('[data-request-action]').forEach(button=>button.onclick=()=>run(()=>openRequestAction(requestRows.find(row=>row.id===button.dataset.id),button.dataset.requestAction)));
  document.querySelectorAll('[data-request-lead]').forEach(button=>button.onclick=()=>{if(typeof focusLead==='function'){focusLead(button.dataset.requestLead);render();}});
 }
-function openRequestAction(row,action){
+async function openRequestAction(row,action){
  if(!row)return;
+ const openingActor=me,epoch=requestEpoch;let employees=[];
+ if(action==='assign'){
+  const result=await client.rpc('customer_request_assignees',{p_request_id:row.id});
+  if(me!==openingActor||requestEpoch!==epoch||view!=='requests')return;
+  if(result.error)throw Error(result.error.message);
+  employees=(result.data||[]).sort((a,b)=>String(a.display_name||'').localeCompare(String(b.display_name||'')));
+ }
  const titles={take:'Take this request',assign:'Give to someone',resolve:'Mark resolved',close:'Close request',reopen:'Reopen request'};
- const employees=[...employeeDirectory.values()].filter(e=>e.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
- const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(row.name)}</p>${action==='assign'?`<label><span>Who handles it</span><select name="assignee" required><option value="">Choose employee</option>${employees.map(e=>`<option value="${esc(e.user_id)}">${esc(employeeName(e.user_id))}</option>`).join('')}</select></label>`:''}${['resolve','close','assign'].includes(action)?`<label><span>${action==='resolve'?'What was done for the customer':action==='close'?'Why it is closed':'Note (optional)'}</span><textarea name="note" ${action==='assign'?'':row.status==='resolved'&&action==='close'?'':'required minlength="3"'} maxlength="2000"></textarea></label>`:''}`;
+ const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(row.name)}</p>${action==='assign'?`<label><span>Who handles it</span><select name="assignee" required><option value="">Choose employee</option>${employees.map(e=>`<option value="${esc(e.user_id)}">${esc(e.display_name||employeeName(e.user_id))}</option>`).join('')}</select></label>`:''}${['resolve','close','assign'].includes(action)?`<label><span>${action==='resolve'?'What was done for the customer':action==='close'?'Why it is closed':'Note (optional)'}</span><textarea name="note" ${action==='assign'?'':row.status==='resolved'&&action==='close'?'':'required minlength="3"'} maxlength="2000"></textarea></label>`:''}`;
  actionForm(titles[action],fields,async values=>{
-  const actor=me?.user_id,result=await client.rpc('advance_customer_request',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||''});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the request.');
+  if(me!==openingActor)throw Error('Login changed. Reopen the request.');
+  const actor=me,result=await client.rpc('advance_customer_request',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||''});
+  if(me!==actor)throw Error('Login changed. Reopen the request.');
   if(result.error)throw Error(result.error.message);
   const saved=Array.isArray(result.data)?result.data[0]:result.data;
   if(saved){requestRows=requestRows.map(r=>r.id===saved.id?saved:r);}

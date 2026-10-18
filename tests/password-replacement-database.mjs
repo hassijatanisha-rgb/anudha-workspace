@@ -1,0 +1,30 @@
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(process.env.PGLITE_MODULE);
+const db=new PGlite(),id='00000000-0000-4000-8000-000000000001';
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create table auth.users(id uuid primary key,encrypted_password text,raw_app_meta_data jsonb,raw_user_meta_data jsonb);
+ create table auth.mfa_factors(user_id uuid,status text);
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('test.jwt',true),''),'{}')::jsonb$$;
+ create function public.two_step_required() returns boolean language sql stable as $$select current_setting('test.required',true)='yes'$$;
+ grant usage on schema auth to authenticated;
+ insert into auth.users values('${id}','initial','{}','{"must_change_password":true}');
+ set test.actor='${id}';set test.required='no';`);
+ const sql=readFileSync(new URL('../supabase/migrations/202610160099_password_replacement.sql',import.meta.url),'utf8');await db.exec(sql);await db.exec(sql);
+ const allowed=async()=>{await db.exec('set role authenticated');const r=await db.query('select public.mfa_satisfied() allowed');await db.exec('reset role');return r.rows[0].allowed;};
+ assert.equal(await allowed(),false,'temporary credentials blocked');
+ await db.exec(`update auth.users set raw_user_meta_data='{"must_change_password":false}'`);
+ assert.equal(await allowed(),false,'user metadata cannot bypass server gate');
+ await db.exec(`update auth.users set encrypted_password='initial'`);assert.equal(await allowed(),false,'unchanged hash remains blocked');
+ await db.exec(`update auth.users set encrypted_password='new-personal-password-hash'`);assert.equal(await allowed(),true,'auth password update unlocks optional-MFA staff');
+ await db.exec(`update auth.users set encrypted_password='reset1',raw_app_meta_data='{"must_change_password":true,"password_reset_nonce":"one"}'`);assert.equal(await allowed(),false,'admin reset locks');
+ await db.exec(`update auth.users set encrypted_password='reset2',raw_app_meta_data='{"must_change_password":true,"password_reset_nonce":"two"}'`);assert.equal(await allowed(),false,'repeated admin reset remains locked');
+ await db.exec(`update auth.users set encrypted_password='final-personal-password-hash';set test.required='yes'`);assert.equal(await allowed(),false,'required MFA preserved after password replacement');
+ await db.query("select set_config('test.jwt',$1,false)",[JSON.stringify({aal:'aal2',amr:[{method:'totp',timestamp:Math.floor(Date.now()/1000)}]})]);assert.equal(await allowed(),true,'recent verified authenticator succeeds');
+ await db.query("select set_config('test.jwt',$1,false)",[JSON.stringify({aal:'aal2',amr:[{method:'totp',timestamp:Math.floor(Date.now()/1000)-31*86400}]})]);assert.equal(await allowed(),false,'expired authenticator trust still blocked');
+ await db.exec("set test.actor=''");assert.equal(await allowed(),false,'missing identity fails closed');
+ await db.exec('set role authenticated');await assert.rejects(db.exec("update auth.users set raw_app_meta_data='{}'"),/permission denied/);await db.exec('reset role');
+ console.log('PASS: 11 password replacement / MFA checks; migration rerunnable.');
+}finally{await db.close();}

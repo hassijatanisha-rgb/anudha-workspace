@@ -295,9 +295,10 @@ body.packing-tv{background:#0f1f19}
 .books-print dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:520px){.books-metrics{grid-template-columns:1fr}}
 @media print{
- body.books-printing>*:not(main),body.books-printing #nav,body.books-printing main>#notice,body.books-printing .books>*:not(#booksBody),body.books-printing #booksBody>*:not(.books-print),body.books-printing .no-print{display:none!important}
- body.books-printing .books-print{border:0;padding:0;margin:0}
- body.books-printing-report>*:not(main),body.books-printing-report #nav,body.books-printing-report main>#notice,body.books-printing-report .books>*:not(#booksBody),body.books-printing-report #booksBody>*:not(.books-report){display:none!important}
+ body.books-printing *{visibility:hidden!important}
+ body.books-printing .books-print-active,body.books-printing .books-print-active *{visibility:visible!important}
+ body.books-printing>*:not(main),body.books-printing #nav,body.books-printing main>#notice,body.books-printing .books>*:not(#booksBody),body.books-printing #booksBody>*:not(.books-print-active),body.books-printing .no-print{display:none!important}
+ body.books-printing .books-print-active{position:absolute;inset:0;width:100%;max-width:none;border:0;padding:0;margin:0;box-shadow:none}
 }
 .two-step-trust{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:600}.two-step-trust input{width:auto}.two-step-trust small{flex-basis:100%;font-weight:400}
 .books-print-title{display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px}.books-print-title h2{margin:0}.books-print-title b{color:#8a2222}

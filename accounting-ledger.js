@@ -2,30 +2,19 @@
 // Books (migration 087): chart of accounts, journal entries, customer invoices from accepted Pro formas, customer
 // receipts, lock date and reports. The database checks access, balance and permanence; this page only shows and asks.
 let booksSection='overview',booksData=null,booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''},booksDraft=null,booksEpoch=0;
-const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports']];
+const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel']];
 const booksTypes=[['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['income','Income'],['expense','Expenses']];
 const booksMethods=[['bank','Bank transfer'],['cash','Cash'],['mobile_money','Mobile money'],['cheque','Cheque']];
 
 function openBooksSection(section){booksSection=booksSections.some(([key])=>key===section)?section:'overview';booksDraft=null;}
+function clearBooks(){booksEpoch++;booksData=null;booksDraft=null;booksSection='overview';booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''};booksClearPrint();}
 function booksToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function booksAddDays(date,days){const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function booksMonthStart(date){return `${date.slice(0,7)}-01`;}
-function booksMoney(minor){return minor==null?'—':moneyDisplay(Number(minor));}
+function booksMoney(minor,currency='TZS'){return minor==null?'—':moneyDisplay(Number(minor),currency);}
 function booksCustomer(id){return (typeof orgIndex!=='undefined'&&orgIndex.get(id)?.name)||(organizations||[]).find(o=>o.id===id)?.name||'Customer not loaded';}
 function booksAccountLabel(account){return account?`${account.code} · ${account.name}`:'Unknown account';}
 
-// Money still owed on an invoice: total less allocations from receipts that are not void.
-function booksInvoicePaid(invoice,allocations,receipts){
- const live=new Set(receipts.filter(r=>!r.voided_at).map(r=>r.id));
- return allocations.filter(a=>a.invoice_id===invoice.id&&live.has(a.receipt_id)).reduce((sum,a)=>sum+Number(a.amount_minor),0);
-}
-function booksInvoiceStatus(invoice,paid,today){
- if(invoice.voided_at)return {key:'void',label:'Void'};
- const left=Number(invoice.total_minor)-paid;
- if(left<=0)return {key:'paid',label:'Paid'};
- if(invoice.due_date<today)return {key:'overdue',label:paid?'Part paid · overdue':'Overdue'};
- return {key:paid?'part':'open',label:paid?'Part paid':'Unpaid'};
-}
 // A journal draft: lines [{accountId, debit, credit, description}] with amounts as typed. Returns totals and the first problem.
 function booksJournalCheck(lines){
  let debit=0,credit=0,used=0,problem='';
@@ -53,7 +42,7 @@ function booksAllocateOldest(amountMinor,openInvoices){
  return out;
 }
 function booksCsv(columns,rows){
- const cell=v=>{const s=String(v??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
+ const cell=v=>{let s=String(v??'');if(typeof v==='string'&&(/^[\s\u0000-\u001f]*[=+@-]/.test(s)||/^[\t\r\n]/.test(s)))s="'"+s;return /[",\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
  return [columns.map(([,label])=>cell(label)).join(','),...rows.map(row=>columns.map(([key])=>cell(row[key])).join(','))].join('\n');
 }
 function booksDownload(name,text){
@@ -70,20 +59,24 @@ async function booksSelect(table,columns,build){
  const r=await query;if(r.error)throw Error(`${table.replace('acc_','').replace(/_/g,' ')} could not load: ${r.error.message}`);
  return r.data||[];
 }
+// Keep requesting pages until empty, including when the server caps a page below our requested size.
+async function booksSelectAll(table,columns,build){
+ const rows=[];
+ for(;;){const page=await booksSelect(table,columns,q=>(build?build(q):q).range(rows.length,rows.length+499));if(!page.length)return rows;rows.push(...page);}
+}
 async function loadBooksData(){
- const [accounts,settings,invoices,receipts,allocations,proformas,taxIds]=await Promise.all([
-  booksSelect('acc_accounts','*',q=>q.order('code')),
+ const [accounts,settings,invoices,receipts,allocations,toInvoice,taxIds]=await Promise.all([
+  booksSelectAll('acc_accounts','*',q=>q.order('code')),
   booksSelect('acc_settings','*'),
-  booksSelect('acc_invoices','*',q=>q.order('invoice_date',{ascending:false}).order('invoice_number',{ascending:false}).limit(1000)),
-  booksSelect('acc_receipts','*',q=>q.order('receipt_date',{ascending:false}).order('receipt_number',{ascending:false}).limit(1000)),
-  booksSelect('acc_receipt_allocations','*'),
-  booksSelect('sales_proformas','id,document_number,organization_id,status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,accepted_at,acceptance_reference,deleted_at',q=>q.eq('status','accepted').is('deleted_at',null).order('accepted_at',{ascending:false}).limit(1000)),
-  booksSelect('acc_customer_tax_ids','*')
+  booksSelectAll('acc_invoice_balances','*',q=>q.order('invoice_date',{ascending:false}).order('invoice_number',{ascending:false})),
+  booksSelectAll('acc_receipts','*',q=>q.order('receipt_date',{ascending:false}).order('receipt_number',{ascending:false})),
+  booksSelectAll('acc_receipt_allocations','*',q=>q.order('receipt_id').order('invoice_id')),
+  booksSelectAll('acc_waiting_proformas','*',q=>q.order('accepted_at',{ascending:false}).order('id')),
+  booksSelectAll('acc_customer_tax_ids','*',q=>q.order('organization_id'))
  ]);
  const today=booksToday();
- for(const invoice of invoices){invoice.paid=booksInvoicePaid(invoice,allocations,receipts);invoice.outstanding=invoice.voided_at?0:Number(invoice.total_minor)-invoice.paid;invoice.state=booksInvoiceStatus(invoice,invoice.paid,today);}
- const invoiced=new Set(invoices.filter(i=>!i.voided_at).map(i=>i.proforma_id));
- return {accounts,settings:settings[0]||{version:1,locked_through:null},invoices,receipts,allocations,proformaNumbers:new Map(proformas.map(p=>[p.id,p.document_number])),taxIds:new Map(taxIds.map(t=>[t.organization_id,t])),toInvoice:proformas.filter(p=>!invoiced.has(p.id)),today};
+ for(const invoice of invoices){invoice.paid=Number(invoice.paid_minor);invoice.outstanding=Number(invoice.outstanding_minor);invoice.state={key:invoice.status_key,label:invoice.status_label};}
+ return {accounts,settings:settings[0]||{version:1,locked_through:null},invoices,receipts,allocations,proformaNumbers:new Map(invoices.map(i=>[i.proforma_id,i.proforma_number])),taxIds:new Map(taxIds.map(t=>[t.organization_id,t])),toInvoice,today};
 }
 async function booksWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
@@ -93,11 +86,11 @@ async function booksWorkspace(){
  const data=await loadBooksData();
  if(!current())return;
  booksData=data;
- const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports}[booksSection]||booksOverview;
+ const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace}[booksSection]||booksOverview;
  $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>Books</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
  <div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>
  <div id="booksBody"></div></section>`;
- document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
+ document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{if(button.dataset.booksSection!==booksSection&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
  await body(actor,current);
 }
 async function booksOverview(actor,current){
@@ -113,7 +106,7 @@ async function booksOverview(actor,current){
   <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
   <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
   <div><small>Profit this month</small><strong>${booksMoney(income-expense)}</strong></div></div>
- <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2><p class="muted">A Pro forma becomes an invoice by itself when Sales presses Submit to accounting. Any listed here could not be invoiced then (for example the books were locked for that date, or it is not in TZS).</p>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma has an invoice.</p>'}</section>
+ <section class="card"><h2>Accepted Pro formas waiting for an invoice (${d.toInvoice.length})</h2><p class="muted">Review the quantities Accounts can invoice and reserve now. Any uninvoiced balance stays linked to the accepted order for a later invoice.</p>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th>Quote total</th><th></th></tr></thead><tbody>${d.toInvoice.slice(0,20).map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td>${booksMoney(p.total_minor,p.currency)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma is fully invoiced.</p>'}</section>
  <section class="card"><h2>Overdue invoices (${overdue.length})</h2>${overdue.length?booksInvoiceTable(overdue.slice(0,20)):'<p class="empty">No overdue invoices.</p>'}</section>`;
  document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};return booksWorkspace();}));
  wireBooksInvoiceActions();
@@ -151,32 +144,126 @@ function booksVoidPrompt(kind,record){
  box.innerHTML=`<h2>Void ${esc(number)}</h2><p>Voiding posts a reversing entry dated below. The original stays in the books.${kind==='invoice'?' Void its receipts first if any were paid against it.':''}</p><form id="booksVoidForm"><div class="grid"><label><span>Date of the reversal</span><input name="date" type="date" required value="${esc(booksData.today)}"></label><label><span>Reason (at least 5 characters)</span><input name="reason" required minlength="5" maxlength="300"></label></div><div class="actions"><button type="submit">Void ${esc(number)}</button><button type="button" id="booksVoidCancel">Cancel</button></div></form>`;
  $('#booksBody').prepend(box);box.scrollIntoView({block:'start'});
  $('#booksVoidCancel').onclick=()=>box.remove();
- $('#booksVoidForm').onsubmit=event=>{event.preventDefault();const f=new FormData(event.target);run(async()=>{
+ const form=$('#booksVoidForm'),session=me,epoch=booksEpoch,current=()=>me===session&&view==='books'&&booksEpoch===epoch&&form.isConnected;
+ form.onsubmit=event=>{event.preventDefault();if(!current())return;const f=new FormData(form);run(async()=>{
+  if(!current())return;
   await booksRpc(kind==='invoice'?'void_invoice':'void_receipt',kind==='invoice'?{p_invoice_id:record.id,p_date:f.get('date'),p_reason:f.get('reason')}:{p_receipt_id:record.id,p_date:f.get('date'),p_reason:f.get('reason')});
+  if(me!==session)return;
+  if(kind==='invoice'&&typeof pendingLoaded!=='undefined')pendingLoaded=false;
+  if(!current())return;
   message(`${number} voided.`);await booksWorkspace();
  });};
 }
-async function booksInvoices(){
- const d=booksData,chosen=booksDraft?.proformaId||'';
- $('#booksBody').innerHTML=`<section class="card"><h2>Invoice a waiting Pro forma</h2><p class="muted">Normally not needed: Submit to accounting makes the invoice. Use this only for an accepted Pro forma still waiting.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><div class="grid">
-  <label class="wide"><span>Accepted Pro forma</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · ${esc(booksMoney(p.total_minor))}</option>`).join('')}</select></label>
+// Select whole, available units; repeated product lines share the same Haadi stock.
+function booksInvoiceQuantitySelection(lines,values){
+ const selected=[],used=new Map();
+ lines.forEach((line,index)=>{
+  const raw=String(values[index]??'').trim(),quantity=Number(raw),label=`Line ${index+1}`;
+  if(!/^\d+$/.test(raw)||!Number.isSafeInteger(quantity)||quantity>1000000)throw Error(`${label}: enter a whole quantity from 0 to 1,000,000.`);
+  if(quantity>Number(line.remaining_quantity))throw Error(`${label}: quantity exceeds the uninvoiced balance.`);
+  const total=(used.get(line.product_id)||0)+quantity;
+  if(total>Number(line.available_quantity))throw Error(`${label}: selected quantities exceed available Haadi stock for this product.`);
+  used.set(line.product_id,total);
+  if(quantity>0)selected.push({proforma_line_id:line.proforma_line_id,quantity});
+ });
+ if(!selected.length)throw Error('Choose at least one available unit to invoice.');
+ return selected;
+}
+async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
+ const d=booksData,chosen=booksDraft?.proformaId||'',session=me,epoch=booksEpoch;
+ $('#booksBody').innerHTML=`<section class="card"><h2>Invoice available order quantities</h2><p class="muted">Review the accepted order and choose what to invoice now. Posting creates one invoice and delivery note, reserves those Haadi units, and keeps the remaining quantities linked as pending stock for a later invoice. Accounting and delivery access are required.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><fieldset id="booksInvoiceFields"><legend>Invoice details and quantities</legend><div class="grid">
+  <label class="wide"><span>Accepted Pro forma · quote total</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · Quote total ${esc(booksMoney(p.total_minor,p.currency))}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
-  <label class="wide"><span>Reference · optional</span><input name="taxref" maxlength="80"></label></div>
-  <p class="muted">Posts: customer owes the total; sales gets the amount after discount; VAT goes to VAT output payable.</p>
-  <div class="actions"><button type="submit">Post invoice</button></div></form>`:'<p class="empty">No accepted Pro formas are waiting for an invoice.</p>'}</section>
+  <label><span>Accounts approval reference</span><input name="accountsref" required maxlength="120"></label>
+  <label><span>Expected delivery date</span><input name="deliverydate" type="date" required min="${esc(d.today)}" value="${esc(d.today)}"></label>
+  <label class="wide"><span>Tax reference · optional</span><input name="taxref" maxlength="80"></label></div>
+  <div id="booksInvoiceQuantities"><p class="muted">Choose an accepted Pro forma to review its quantities.</p></div>
+  <button type="button" id="booksInvoiceReload" disabled>Refresh quantities</button></fieldset>
+  <p class="muted">The quote total is for the whole order. This invoice charges only the selected quantities; any balance remains pending.</p>
+  <p id="booksInvoiceReview" role="status"></p><p id="booksInvoiceStatus" role="status"></p>
+  <div class="actions"><button type="submit" id="booksInvoicePost" disabled>Post invoice & reserve stock</button></div></form>`:'<p class="empty">No accepted Pro formas have quantities waiting for an invoice.</p>'}</section>
  <section class="card"><div class="heading"><h2>Invoices (${d.invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${d.invoices.length?booksInvoiceTable(d.invoices):'<p class="empty">No invoices yet.</p>'}</section>`;
  const form=$('#booksInvoiceForm');
- if(form){const id=crypto.randomUUID();form.onsubmit=event=>{event.preventDefault();const f=new FormData(form);run(async()=>{
-  const r=await booksRpc('create_invoice_from_proforma',{p_id:id,p_proforma_id:f.get('proforma'),p_invoice_date:f.get('date'),p_due_date:f.get('due'),p_tax_reference:f.get('taxref')||''});
-  booksDraft=null;message(`${r.invoice_number} posted.`);await booksWorkspace();
- });};}
+ if(form){
+  const current=()=>workspaceCurrent()&&me===session&&me?.user_id===actor&&view==='books'&&booksEpoch===epoch&&form.isConnected;
+  const fields=$('#booksInvoiceFields'),button=$('#booksInvoicePost'),status=$('#booksInvoiceStatus'),review=$('#booksInvoiceReview'),reload=$('#booksInvoiceReload'),quantities=$('#booksInvoiceQuantities');
+  let snapshot=null,request=0,posting=false,attempt=null,uncertain=false;
+  const inputs=()=>[...form.querySelectorAll('[data-books-invoice-quantity]')];
+  const selection=()=>booksInvoiceQuantitySelection(snapshot.lines,inputs().map(input=>input.value));
+  const reviewSelection=()=>{
+   if(!snapshot||posting||uncertain)return;
+   try{const lines=selection(),count=lines.reduce((sum,line)=>sum+line.quantity,0),remaining=snapshot.lines.reduce((sum,line)=>sum+Number(line.remaining_quantity),0)-count;
+    review.textContent=`${count} units selected for this invoice; ${remaining} units remain pending on this order.`;button.disabled=false;
+   }catch(error){review.textContent=error.message;button.disabled=true;}
+  };
+  const loadQuantities=async()=>{
+   if(!current()||posting||uncertain)return;
+   const id=form.elements.proforma.value,sequence=++request;snapshot=null;button.disabled=true;review.textContent='';status.textContent='';reload.disabled=!id;
+   quantities.innerHTML=id?'<p role="status">Loading current order quantities and Haadi stock…</p>':'<p class="muted">Choose an accepted Pro forma to review its quantities.</p>';
+   if(!id)return;
+   try{
+    const result=await booksRpc('order_invoice_quantities',{p_proforma_id:id});
+    if(!current()||sequence!==request||form.elements.proforma.value!==id)return;
+    if(result?.proforma_id!==id||!Number.isSafeInteger(Number(result.version))||Number(result.version)<1||!Array.isArray(result.lines))throw Error('Order quantities could not be verified. Refresh quantities before posting.');
+    snapshot=result;const available=new Map();
+    quantities.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Already invoiced</th><th>Remaining</th><th>Haadi available</th><th>Invoice now</th></tr></thead><tbody>${result.lines.map((line,index)=>{
+     const stock=Number(line.available_quantity),left=available.has(line.product_id)?available.get(line.product_id):stock,max=Math.min(1000000,Number(line.remaining_quantity),stock),value=Math.min(max,left);available.set(line.product_id,left-value);
+     return `<tr><td>${esc(line.description)}<small>${esc(line.uom)}</small></td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${esc(line.remaining_quantity)}</td><td>${esc(line.available_quantity)}</td><td><input type="number" min="0" max="${esc(max)}" step="1" required value="${esc(value)}" data-books-invoice-quantity="${esc(line.proforma_line_id)}" aria-label="Invoice now: ${esc(line.description)} (line ${index+1})"${max===0?' readonly':''}></td></tr>`;
+    }).join('')}</tbody></table></div><p class="muted">Haadi availability is shared by lines for the same product and is checked again when posting.</p>`;
+    inputs().forEach(input=>input.oninput=reviewSelection);reviewSelection();
+   }catch(error){if(current()&&sequence===request){snapshot=null;quantities.textContent='Quantities could not load.';status.textContent=error.message;}}
+  };
+  form.elements.proforma.onchange=loadQuantities;reload.onclick=loadQuantities;
+  form.onsubmit=event=>{event.preventDefault();if(!current()||posting||!snapshot)return;
+   run(async()=>{
+    if(!current()||posting)return;
+    try{
+     if(!uncertain){
+      if(form.elements.proforma.value!==snapshot.proforma_id)throw Error('Refresh quantities for the selected Pro forma before posting.');
+      const f=new FormData(form),reference=String(f.get('accountsref')||'').trim(),delivery=String(f.get('deliverydate')||''),today=booksToday();
+      if(!reference)throw Error('Enter the Accounts approval reference.');
+      if(!delivery||delivery<today)throw Error('Expected delivery must be today or later.');
+      if(!form.reportValidity())return;
+      const args={p_proforma_id:snapshot.proforma_id,p_expected_version:Number(snapshot.version),p_invoice_date:f.get('date'),p_due_date:f.get('due'),p_lines:selection(),p_accounts_reference:reference,p_expected_delivery_date:delivery,p_tax_reference:String(f.get('taxref')||'').trim()},key=JSON.stringify(args);
+      if(!attempt||attempt.key!==key)attempt={id:crypto.randomUUID(),key,args};
+     }
+     posting=true;fields.disabled=true;button.disabled=true;status.textContent='Posting invoice and reserving selected stock…';
+     let result;
+     try{
+      result=await client.rpc('invoice_order_quantities',{p_id:attempt.id,...attempt.args});
+      // Connection and unknown-completion errors keep the original request locked for retry.
+      if(result.error){uncertain=!(['P0001','42501','40001','40P01'].includes(result.error.code)||/^(22|23)[0-9A-Z]{3}$/.test(result.error.code||''));throw Error(result.error.message);}
+      if(!result.data?.invoice_number){uncertain=true;throw Error('The server did not confirm an invoice number.');}
+     }catch(error){if(!result?.error)uncertain=true;throw error;}
+     if(me!==session||me?.user_id!==actor)return;
+     if(typeof pendingLoaded!=='undefined')pendingLoaded=false;
+     if(typeof salesLoaded!=='undefined')salesLoaded=false;
+     if(typeof inventoryLoaded!=='undefined')inventoryLoaded=false;
+     if(!current())return;
+     booksDraft=null;message(`${result.data.invoice_number} posted. Selected stock is reserved; any remaining quantities stay linked in Pending stock.`);await booksWorkspace();
+    }catch(error){if(current())status.textContent=uncertain?`Invoice result not confirmed: ${error.message} Retry this same invoice to check the result safely. Its submitted details stay locked until confirmed.`:error.message;
+    }finally{posting=false;if(current()){fields.disabled=uncertain;button.textContent=uncertain?'Retry same invoice':'Post invoice & reserve stock';if(uncertain)button.disabled=false;else reviewSelection();}}
+   });
+  };
+  if(chosen)await loadQuantities();
+ }
+ if(!workspaceCurrent()||me!==session||view!=='books'||booksEpoch!==epoch)return;
  $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
   d.invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
  wireBooksInvoiceActions();
 }
+function booksClearPrint(){
+ document.body.classList.remove('books-printing');
+ document.querySelectorAll('.books-print-active').forEach(area=>area.classList.remove('books-print-active'));
+}
+function booksPrint(area){
+ booksClearPrint();area.classList.add('books-print-active');document.body.classList.add('books-printing');
+ try{window.print();}finally{booksClearPrint();}
+}
 // One invoice line: amount after discount and its VAT, from the snapshot taken when the invoice was made.
 function booksInvoiceLineAmounts(line){
+ if(line.subtotal_minor!=null&&line.discount_minor!=null&&line.tax_minor!=null)return {net:Number(line.subtotal_minor)-Number(line.discount_minor),vat:Number(line.tax_minor)};
  const gross=Number(line.quantity||0)*Number(line.unit_price_minor||0),discount=Math.round(gross*Number(line.discount_basis_points||0)/10000),net=gross-discount;
  return {net,vat:Math.round(net*Number(line.tax_basis_points||0)/10000)};
 }
@@ -184,6 +271,7 @@ function booksPrintInvoice(invoice){
  if(!invoice)return;
  const lines=Array.isArray(invoice.lines)?invoice.lines:[];
  const brand=typeof companyFormBrand==='function'?companyFormBrand('sales'):'<header><strong>ANUDHA LIMITED</strong><br>TIN: 100-113-473 · VRN: 10-001061-P</header>';
+ document.querySelectorAll('.books-print').forEach(area=>area.remove());
  const area=document.createElement('section');area.className='books-print';
  area.innerHTML=`${brand}<div class="books-print-title"><h2>TAX INVOICE ${esc(invoice.invoice_number)}</h2>${invoice.voided_at?'<b>VOID</b>':''}</div>
  <div class="books-print-parties"><div><small>Bill to</small><strong>${esc(booksCustomer(invoice.organization_id))}</strong><span>TIN: ${esc(invoice.buyer_tin||booksData.taxIds?.get(invoice.organization_id)?.tin||'—')}</span><span>VRN: ${esc(invoice.buyer_vrn||booksData.taxIds?.get(invoice.organization_id)?.vrn||'—')}</span></div>
@@ -193,8 +281,8 @@ function booksPrintInvoice(invoice){
  <p class="books-print-fiscal">${invoice.tra_receipt_number?`TRA receipt: <strong>${esc(invoice.tra_receipt_number)}</strong>${invoice.tra_verification_code?` · Verification code: ${esc(invoice.tra_verification_code)}`:''}`:'<span class="error">TRA receipt not yet recorded</span>'}</p>
  <div class="actions no-print"><button type="button" id="booksPrintNow">Print / PDF</button><button type="button" id="booksPrintClose">Close</button></div>`;
  $('#booksBody').prepend(area);area.scrollIntoView({block:'start'});
- $('#booksPrintClose').onclick=()=>{document.body.classList.remove('books-printing');area.remove();};
- $('#booksPrintNow').onclick=()=>{document.body.classList.add('books-printing');window.print();document.body.classList.remove('books-printing');};
+ $('#booksPrintClose').onclick=()=>{booksClearPrint();area.remove();};
+ $('#booksPrintNow').onclick=()=>booksPrint(area);
 }
 // Money accounts: cash, bank and mobile money (codes 1100–1299), never receivables.
 function booksDepositAccounts(){return booksData.accounts.filter(a=>a.active&&a.account_type==='asset'&&a.system_key!=='receivables'&&/^1[12]\d\d$/.test(a.code));}
@@ -243,7 +331,7 @@ async function booksReceipts(){
 async function booksJournal(actor,current){
  const d=booksData;
  const entries=await booksSelect('acc_journal_entries','*',q=>q.order('entry_date',{ascending:false}).order('entry_number',{ascending:false}).limit(100));
- const lines=entries.length?await booksSelect('acc_journal_lines','*',q=>q.in('entry_id',entries.map(e=>e.id)).order('line_no')):[];
+ const lines=entries.length?await booksSelectAll('acc_journal_lines','*',q=>q.in('entry_id',entries.map(e=>e.id)).order('entry_id').order('line_no')):[];
  if(!current())return;
  const reversed=new Set(entries.filter(e=>e.reverses_entry_id).map(e=>e.reverses_entry_id));
  const draft=booksDraft?.journal||{date:d.today,memo:'',lines:[{},{}]};
@@ -321,5 +409,5 @@ async function booksReports(actor,current){
  form.onsubmit=event=>{event.preventDefault();run(()=>{booksReport={kind:form.kind.value,asOf:form.asOf?.value||r.asOf,from:form.from?.value||r.from,to:form.to?.value||r.to,accountId:form.account?.value||r.accountId};return booksWorkspace();});};
  form.kind.onchange=()=>form.requestSubmit();
  $('#booksReportCsv').onclick=()=>booksDownload(`${title.toLowerCase().replace(/\s+/g,'-')}-${ranged?r.to:r.asOf}.csv`,booksCsv(columns,rows));
- $('#booksReportPrint').onclick=()=>{document.body.classList.add('books-printing-report');window.print();document.body.classList.remove('books-printing-report');};
+ $('#booksReportPrint').onclick=()=>booksPrint(document.querySelector('.books-report'));
 }
