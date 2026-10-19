@@ -36,6 +36,8 @@ async function accountingEditor(row,actor){
  attachments.title=row.version?'Documents linked to this saved accounting draft':'Save the draft before attaching documents';
  attachments.onclick=()=>run(()=>openDocumentAttachments('accounting',row.id,row.body.number||companyFormDefinition(row.kind).title));
  if(typeof openDocumentAttachments==='function')status.after(attachments);
+ const posting=document.createElement('div');status.after(posting);
+ if(typeof mountReturnCreditPosting==='function')mountReturnCreditPosting(posting,row);
  function linkOptions(prefix,records,selectedId,kind){
   const result=accountingSearchLinks(records,$(`#${prefix}Search`).value,selectedId,kind);
   const unavailable=selectedId&&!result.rows.some(record=>record.id===selectedId);
@@ -53,7 +55,7 @@ async function accountingEditor(row,actor){
  $('#accountingCustomerSearch').oninput=()=>linkOptions('accountingCustomer',organizations,$('#accountingCustomer').value,'organization');
  $('#accountingContactSearch').oninput=()=>contactOptions($('#accountingContact').value);
  $('#accountingCustomer').onchange=()=>{$('#accountingContactSearch').value='';contactOptions('');};
- $('#accountingBack').onclick=()=>run(()=>accountingWorkspace());
+ $('#accountingBack').onclick=()=>run(()=>{if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave())return;return accountingWorkspace();});
  $('#accountingSave').onclick=async()=>{
   const button=$('#accountingSave');if(button.disabled)return;button.disabled=true;
   try{
@@ -66,7 +68,7 @@ async function accountingEditor(row,actor){
    if(me?.user_id!==actor||view!=='accounting'||!target.isConnected)return;
    if(result.error)throw result.error;
    const saved=Array.isArray(result.data)?result.data[0]:result.data;if(!saved?.version)throw Error('Server did not confirm the saved revision.');
-   row=saved;attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
+   row=saved;if(typeof mountReturnCreditPosting==='function')mountReturnCreditPosting(posting,row);attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
    target.querySelector('[role="status"]').textContent='Draft editor. Use Save draft after each change. Printing does not save changes.';
   }catch(error){if(me?.user_id===actor&&target.isConnected)status.textContent=`Not confirmed saved: ${error.message}. Reopen the saved list to check before retrying.`;}
   finally{button.disabled=false;}

@@ -11,7 +11,7 @@ const workspaceGroups=[
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Accounts',tone:'accounts',items:[
-  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import']
+  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -49,6 +49,8 @@ function installWorkspaceNavigation(){
   const button=event.target.closest('#nav [data-view]');
   // A menu press while a screen is still loading used to be dropped silently; it is kept and done when loading ends.
   if(button&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(button&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(button&&typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&busy){navWhileBusy=button;return;}
   if(!button)return;

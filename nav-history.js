@@ -30,6 +30,8 @@ function navRecordOpenPage(button){
 }
 window.addEventListener('popstate',()=>{
  if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  navLastHash=location.hash;
  if(/^#\/(clients|client|branch)\b/.test(location.hash))return;

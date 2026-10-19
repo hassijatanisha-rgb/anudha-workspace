@@ -177,6 +177,8 @@ function readProfileRoute(){
 }
 function goProfile(kind='clients',id=''){
  if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;
+ if(typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave())return;
+ if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave())return;
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
  const hash=kind==='clients'?'#/clients':`#/${kind}/${encodeURIComponent(id)}`;
  view='contacts';filter='all';page=0;profileTab='contacts';
@@ -186,6 +188,8 @@ window.addEventListener('hashchange',()=>{
  // Other pages' addresses (#/go/…, set by nav-history.js) are not client pages.
  if(!/^#\/(clients|client|branch)\b/.test(location.hash))return;
  if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  const route=readProfileRoute();view='contacts';selected=route.id;filter='all';page=0;profileTab='contacts';if(me)render();
 });
@@ -4764,7 +4768,7 @@ const workspaceGroups=[
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Accounts',tone:'accounts',items:[
-  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import']
+  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
@@ -4802,6 +4806,8 @@ function installWorkspaceNavigation(){
   const button=event.target.closest('#nav [data-view]');
   // A menu press while a screen is still loading used to be dropped silently; it is kept and done when loading ends.
   if(button&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(button&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
+  if(button&&typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&busy){navWhileBusy=button;return;}
   if(!button)return;
@@ -5007,6 +5013,8 @@ async function accountingEditor(row,actor){
  attachments.title=row.version?'Documents linked to this saved accounting draft':'Save the draft before attaching documents';
  attachments.onclick=()=>run(()=>openDocumentAttachments('accounting',row.id,row.body.number||companyFormDefinition(row.kind).title));
  if(typeof openDocumentAttachments==='function')status.after(attachments);
+ const posting=document.createElement('div');status.after(posting);
+ if(typeof mountReturnCreditPosting==='function')mountReturnCreditPosting(posting,row);
  function linkOptions(prefix,records,selectedId,kind){
   const result=accountingSearchLinks(records,$(`#${prefix}Search`).value,selectedId,kind);
   const unavailable=selectedId&&!result.rows.some(record=>record.id===selectedId);
@@ -5024,7 +5032,7 @@ async function accountingEditor(row,actor){
  $('#accountingCustomerSearch').oninput=()=>linkOptions('accountingCustomer',organizations,$('#accountingCustomer').value,'organization');
  $('#accountingContactSearch').oninput=()=>contactOptions($('#accountingContact').value);
  $('#accountingCustomer').onchange=()=>{$('#accountingContactSearch').value='';contactOptions('');};
- $('#accountingBack').onclick=()=>run(()=>accountingWorkspace());
+ $('#accountingBack').onclick=()=>run(()=>{if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave())return;return accountingWorkspace();});
  $('#accountingSave').onclick=async()=>{
   const button=$('#accountingSave');if(button.disabled)return;button.disabled=true;
   try{
@@ -5037,7 +5045,7 @@ async function accountingEditor(row,actor){
    if(me?.user_id!==actor||view!=='accounting'||!target.isConnected)return;
    if(result.error)throw result.error;
    const saved=Array.isArray(result.data)?result.data[0]:result.data;if(!saved?.version)throw Error('Server did not confirm the saved revision.');
-   row=saved;attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
+   row=saved;if(typeof mountReturnCreditPosting==='function')mountReturnCreditPosting(posting,row);attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
    target.querySelector('[role="status"]').textContent='Draft editor. Use Save draft after each change. Printing does not save changes.';
   }catch(error){if(me?.user_id===actor&&target.isConnected)status.textContent=`Not confirmed saved: ${error.message}. Reopen the saved list to check before retrying.`;}
   finally{button.disabled=false;}
@@ -5048,7 +5056,7 @@ async function accountingEditor(row,actor){
 // Books (migration 087): chart of accounts, journal entries, customer invoices from accepted Pro formas, customer
 // receipts, lock date and reports. The database checks access, balance and permanence; this page only shows and asks.
 let booksSection='overview',booksData=null,booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''},booksDraft=null,booksEpoch=0;
-const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel']];
+const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel'],['opening','Opening receivables']];
 const booksTypes=[['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['income','Income'],['expense','Expenses']];
 const booksMethods=[['bank','Bank transfer'],['cash','Cash'],['mobile_money','Mobile money'],['cheque','Cheque']];
 
@@ -5132,11 +5140,11 @@ async function booksWorkspace(){
  const data=await loadBooksData();
  if(!current())return;
  booksData=data;
- const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace}[booksSection]||booksOverview;
+ const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace,opening:(actor,current)=>openingReceivablesWorkspace(actor,current)}[booksSection]||booksOverview;
  $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>Books</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
  <div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>
  <div id="booksBody"></div></section>`;
- document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{if(button.dataset.booksSection!==booksSection&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
+ document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{if(button.dataset.booksSection!==booksSection&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;if(button.dataset.booksSection!==booksSection&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
  await body(actor,current);
 }
 async function booksOverview(actor,current){
@@ -5158,7 +5166,7 @@ async function booksOverview(actor,current){
  wireBooksInvoiceActions();
 }
 function booksInvoiceTable(rows){
- return `<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date · due</th><th>Customer</th><th>Total</th><th>Paid</th><th>Owed</th><th>Status</th><th>TRA receipt</th><th></th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.invoice_number)}<small>${esc(booksData.proformaNumbers?.get(i.proforma_id)||'')}</small></td><td>${esc(i.invoice_date)}<small>due ${esc(i.due_date)}</small></td><td>${esc(booksCustomer(i.organization_id))}</td><td>${booksMoney(i.total_minor)}</td><td>${booksMoney(i.paid)}</td><td>${booksMoney(i.outstanding)}</td><td><span class="tag books-${i.state.key}">${esc(i.state.label)}</span></td><td>${i.tra_receipt_number?esc(i.tra_receipt_number):i.voided_at?'':'<span class="tag books-overdue">Not recorded</span>'}</td><td class="actions"><button type="button" data-books-print-invoice="${esc(i.id)}">Print</button>${i.voided_at?'':`<button type="button" data-books-fiscal="${esc(i.id)}">${i.tra_receipt_number?'Edit TRA receipt':'Record TRA receipt'}</button><button type="button" class="danger" data-books-void-invoice="${esc(i.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+ return `<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date · due</th><th>Customer</th><th>Total</th><th>Paid</th><th>Credits</th><th>Owed</th><th>Status</th><th>TRA receipt</th><th></th></tr></thead><tbody>${rows.map(i=>`<tr><td>${esc(i.invoice_number)}<small>${esc(i.opening_import_id?`Opening balance · ${i.opening_reference} · cutover ${i.opening_cutover_date}`:booksData.proformaNumbers?.get(i.proforma_id)||'')}</small></td><td>${esc(i.invoice_date)}<small>due ${esc(i.due_date)}</small></td><td>${esc(booksCustomer(i.organization_id))}</td><td>${booksMoney(i.total_minor)}</td><td>${booksMoney(i.paid)}</td><td>${booksMoney(i.credited_minor||0)}${Number(i.customer_credit_minor)>0?`<small>Customer credit ${booksMoney(i.customer_credit_minor)}</small>`:''}</td><td>${booksMoney(i.outstanding)}</td><td><span class="tag books-${i.state.key}">${esc(i.state.label)}</span></td><td>${i.opening_import_id?'Opening balance':i.tra_receipt_number?esc(i.tra_receipt_number):i.voided_at?'':'<span class="tag books-overdue">Not recorded</span>'}</td><td class="actions">${i.opening_import_id?'':`<button type="button" data-books-print-invoice="${esc(i.id)}">Print</button>`}${i.voided_at||i.opening_import_id?'':`<button type="button" data-books-fiscal="${esc(i.id)}">${i.tra_receipt_number?'Edit TRA receipt':'Record TRA receipt'}</button><button type="button" class="danger" data-books-void-invoice="${esc(i.id)}">Void</button>`}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function wireBooksInvoiceActions(){
  document.querySelectorAll('[data-books-print-invoice]').forEach(b=>b.onclick=()=>booksPrintInvoice(booksData.invoices.find(i=>i.id===b.dataset.booksPrintInvoice)));
@@ -5168,6 +5176,7 @@ function wireBooksInvoiceActions(){
 // The TRA receipt for an invoice and the customer's TIN and VRN, as printed on the tax invoice.
 function booksFiscalPrompt(invoice){
  if(!invoice)return;
+ if(invoice.opening_import_id){message('Opening balances are not new tax invoices.',true);return;}
  const saved=booksData.taxIds?.get(invoice.organization_id)||{};
  const box=document.createElement('section');box.className='card books-void';
  box.innerHTML=`<h2>TRA receipt for ${esc(invoice.invoice_number)}</h2><p class="muted">${esc(booksCustomer(invoice.organization_id))} · ${booksMoney(invoice.total_minor)}. Type the receipt as issued by the TRA system. The customer's TIN and VRN are saved for their next invoice too.</p><form id="booksFiscalForm"><div class="grid">
@@ -5185,6 +5194,7 @@ function booksFiscalPrompt(invoice){
 }
 function booksVoidPrompt(kind,record){
  if(!record)return;
+ if(kind==='invoice'&&record.opening_import_id){message('Opening balances require an Accounts correction review.',true);return;}
  const number=kind==='invoice'?record.invoice_number:record.receipt_number;
  const box=document.createElement('section');box.className='card books-void';
  box.innerHTML=`<h2>Void ${esc(number)}</h2><p>Voiding posts a reversing entry dated below. The original stays in the books.${kind==='invoice'?' Void its receipts first if any were paid against it.':''}</p><form id="booksVoidForm"><div class="grid"><label><span>Date of the reversal</span><input name="date" type="date" required value="${esc(booksData.today)}"></label><label><span>Reason (at least 5 characters)</span><input name="reason" required minlength="5" maxlength="300"></label></div><div class="actions"><button type="submit">Void ${esc(number)}</button><button type="button" id="booksVoidCancel">Cancel</button></div></form>`;
@@ -5315,6 +5325,7 @@ function booksInvoiceLineAmounts(line){
 }
 function booksPrintInvoice(invoice){
  if(!invoice)return;
+ if(invoice.opening_import_id){message('Opening balances are not new tax invoices.',true);return;}
  const lines=Array.isArray(invoice.lines)?invoice.lines:[];
  const brand=typeof companyFormBrand==='function'?companyFormBrand('sales'):'<header><strong>ANUDHA LIMITED</strong><br>TIN: 100-113-473 · VRN: 10-001061-P</header>';
  document.querySelectorAll('.books-print').forEach(area=>area.remove());
@@ -5323,7 +5334,7 @@ function booksPrintInvoice(invoice){
  <div class="books-print-parties"><div><small>Bill to</small><strong>${esc(booksCustomer(invoice.organization_id))}</strong><span>TIN: ${esc(invoice.buyer_tin||booksData.taxIds?.get(invoice.organization_id)?.tin||'—')}</span><span>VRN: ${esc(invoice.buyer_vrn||booksData.taxIds?.get(invoice.organization_id)?.vrn||'—')}</span></div>
  <div><small>Invoice</small><span>Date: ${esc(invoice.invoice_date)}</span><span>Due: ${esc(invoice.due_date)}</span><span>Pro forma: ${esc(booksData.proformaNumbers?.get(invoice.proforma_id)||'')}</span></div></div>
  <table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>Amount</th><th>VAT</th><th>VAT amount</th></tr></thead><tbody>${lines.map(l=>{const a=booksInvoiceLineAmounts(l);return `<tr><td>${esc(l.description)}</td><td>${esc(l.quantity)} ${esc(l.uom||'')}</td><td>${booksMoney(l.unit_price_minor)}</td><td>${Number(l.discount_basis_points||0)/100}%</td><td>${booksMoney(a.net)}</td><td>${Number(l.tax_basis_points||0)/100}%</td><td>${booksMoney(a.vat)}</td></tr>`;}).join('')}</tbody></table>
- <dl><dt>Subtotal</dt><dd>${booksMoney(invoice.subtotal_minor)}</dd><dt>Discount</dt><dd>${booksMoney(invoice.discount_minor)}</dd><dt>Amount before VAT</dt><dd>${booksMoney(Number(invoice.subtotal_minor)-Number(invoice.discount_minor))}</dd><dt>VAT</dt><dd>${booksMoney(invoice.tax_minor)}</dd><dt>Total</dt><dd><strong>${booksMoney(invoice.total_minor)}</strong></dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Balance due</dt><dd><strong>${booksMoney(invoice.outstanding)}</strong></dd></dl>
+ <dl><dt>Subtotal</dt><dd>${booksMoney(invoice.subtotal_minor)}</dd><dt>Discount</dt><dd>${booksMoney(invoice.discount_minor)}</dd><dt>Amount before VAT</dt><dd>${booksMoney(Number(invoice.subtotal_minor)-Number(invoice.discount_minor))}</dd><dt>VAT</dt><dd>${booksMoney(invoice.tax_minor)}</dd><dt>Total</dt><dd><strong>${booksMoney(invoice.total_minor)}</strong></dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Posted credits</dt><dd>${booksMoney(invoice.credited_minor||0)}</dd><dt>Customer credit</dt><dd>${booksMoney(invoice.customer_credit_minor||0)}</dd><dt>Balance due</dt><dd><strong>${booksMoney(invoice.outstanding)}</strong></dd></dl>
  <p class="books-print-fiscal">${invoice.tra_receipt_number?`TRA receipt: <strong>${esc(invoice.tra_receipt_number)}</strong>${invoice.tra_verification_code?` · Verification code: ${esc(invoice.tra_verification_code)}`:''}`:'<span class="error">TRA receipt not yet recorded</span>'}</p>
  <div class="actions no-print"><button type="button" id="booksPrintNow">Print / PDF</button><button type="button" id="booksPrintClose">Close</button></div>`;
  $('#booksBody').prepend(area);area.scrollIntoView({block:'start'});
@@ -5650,6 +5661,180 @@ async function financialImportWorkspace(actor,current){
   catch(error){if(active()){state.uncertain=!!error.uncertain;status.textContent=error.message;}}
   finally{if(active()){state.busy=false;redraw();}}
  };
+}
+;// opening-receivables.js
+'use strict';
+const openingReceivablesHeaders=['Invoice Reference','Customer UUID','Invoice Date','Due Date','Residual Amount','Currency'];
+let openingReceivablesState=null,openingReceivablesEpoch=0;
+function clearOpeningReceivables(){openingReceivablesEpoch++;openingReceivablesState=null;}
+function openingReceivablesConfirmLeave(){
+ if((()=>{try{return typeof view}catch{return 'undefined'}})()==='undefined'||view!=='books'||booksSection!=='opening')return true;
+ const state=openingReceivablesState;
+ if(state?.busy||state?.uncertain){message('Confirm this opening import before leaving. Retry the same import if the connection was lost.',true);return false;}
+ if(state?.preview&&!state.result&&!confirm('Discard this opening receivables preview?'))return false;
+ clearOpeningReceivables();return true;
+}
+function openingReceivablesPreview(sheet,customers,{cutover,date1904=false,today=booksToday()}={}){
+ const rows=[],entries=[],errors=[],known=new Map(customers.filter(c=>!c.deleted_at).map(c=>[c.id.toLowerCase(),c])),seen=new Set();let totalMinor=0;
+ const fail=text=>({rows,entries,errors:[text],totalMinor});
+ try{cutover=financialImportDate(cutover);if(cutover>today)return fail('Cutover must be today or earlier.');}catch(error){return fail('Choose a valid cutover date.');}
+ if(!sheet?.['!ref'])return fail('The selected sheet is empty.');
+ const range=XLSX.utils.decode_range(sheet['!fullref']||sheet['!ref']);
+ if(range.e.r>1000||range.e.c>31)return fail('Use at most 1,000 residual rows and the template columns.');
+ const formula=c=>c?.f||c?.F||c?.t==='e'||(typeof c?.v==='string'&&/^[\s\u0000-\u001f]*[=+@-]/.test(c.v));
+ const headers=openingReceivablesHeaders.map((_,c)=>sheet[XLSX.utils.encode_cell({r:0,c})]);
+ if(headers.some(formula)||headers.some((c,i)=>String(c?.v??'').trim().toLowerCase()!==openingReceivablesHeaders[i].toLowerCase()))return fail('Use the opening receivables template headers in their original order.');
+ for(let r=1;r<=range.e.r;r++){
+  const cells=Array.from({length:range.e.c+1},(_,c)=>sheet[XLSX.utils.encode_cell({r,c})]);
+  if(cells.every(c=>!c||(!formula(c)&&String(c.v??'').trim()==='')))continue;
+  const values=openingReceivablesHeaders.map((_,c)=>cells[c]?.v??''),row={number:r+1,values,errors:[]};rows.push(row);
+  const bad=text=>row.errors.push(text),[rawRef,rawCustomer,rawDate,rawDue,rawAmount,rawCurrency]=values;
+  const reference=String(rawRef).trim(),organization_id=String(rawCustomer).trim().toLowerCase(),currency=String(rawCurrency).trim().toUpperCase();let invoice_date='',due_date='',amount_minor=0;
+  if(cells.some(formula))bad('Formulas and spreadsheet errors are not supported; paste reviewed values only.');
+  if(cells.slice(6).some(c=>String(c?.v??'').trim()!==''))bad('Unexpected data after Currency.');
+  if(!reference||reference.length>80||seen.has(reference))bad('Invoice Reference must be unique and contain 1–80 characters.');seen.add(reference);
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(organization_id)||!known.has(organization_id))bad('Customer UUID must exactly match an active customer from the template.');
+  row.customer=known.get(organization_id)?.name||'';
+  try{invoice_date=financialImportDate(rawDate,date1904);due_date=financialImportDate(rawDue,date1904);if(invoice_date>cutover)bad('Invoice Date must be on or before cutover.');if(due_date<invoice_date)bad('Due Date must be on or after Invoice Date.');}catch(error){bad(error.message);}
+  try{amount_minor=moneyMinor(String(rawAmount));if(amount_minor<=0)bad('Residual Amount must be above zero. Customer credits are not supported.');}catch(error){bad(error.message);}
+  if(currency!=='TZS')bad('Currency must be TZS.');
+  if(!row.errors.length){totalMinor+=amount_minor;if(!Number.isSafeInteger(totalMinor))bad('The total amount is too large.');else entries.push({reference,organization_id,invoice_date,due_date,amount_minor,currency});}
+  errors.push(...row.errors.map(error=>`Row ${row.number}: ${error}`));
+ }
+ if(!rows.length)errors.push('Add at least one outstanding customer invoice to the template.');
+ return {rows,entries,errors,totalMinor};
+}
+function openingReceivablesTemplate(customers){
+ const workbook=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([openingReceivablesHeaders]),'Receivables');
+ XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([
+  ['Customer opening receivables · TZS only'],['One row per outstanding invoice; enter its residual amount AFTER all payments/credits through cutover.'],
+  ['Use the original invoice and due dates. Cutover is an inclusive closing balance; future receipts must be after it.'],
+  ['Copy the exact Customer UUID from Customers. Names are for review only and are never used to match.'],
+  ['Import and reconcile the complete opening GL batch first. Select that batch and the same cutover date in the page.'],
+  ['All residuals in this file must equal the selected opening batch AR amount; overall AR must also reconcile.'],
+  ['Maximum 1,000 rows. Stable source and invoice references prevent duplicate imports. Paste values only.'],
+  ['This adds customer balances to receipts and ageing. It creates no journal, sale, tax invoice, delivery or stock movement.'],
+  ['Supplier/AP balances, customer credits, foreign currencies, historic payment details and corrections to posted opening imports are not supported.'],
+  ['No amounts are supplied in this template. Accounts must review and reconcile the actual source ledger.']
+ ]),'Instructions');
+ XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([['Customer UUID','Customer','Branch / location'],...customers.filter(c=>!c.deleted_at).map(c=>[c.id,c.name,c.location||''])]),'Customers');
+ return workbook;
+}
+async function openingReceivablesPost(backend,request,current){
+ if(!current())return null;let response,failure;
+ const valid=data=>data?.gl_import_id===request.p_gl_import_id&&data?.cutover_date===request.p_cutover&&data?.reconciled===true&&Number(data.difference_minor)===0&&Array.isArray(data.invoices);
+ try{response=await backend.rpc('import_opening_receivables',request);if(response.error)throw Error(response.error.message);if(!valid(response.data))throw Error('The server did not confirm this opening import.');return current()?response.data:null;}catch(error){failure=error;}
+ if(!current())return null;let status;try{status=await backend.rpc('opening_receivables_status',{p_id:request.p_id});}catch{}
+ if(!current())return null;if(status&&!status.error&&valid(status.data))return status.data;
+ const rejected=status&&!status.error&&!status.data&&/^(?:P0001|22[A-Z0-9]{3}|23[A-Z0-9]{3}|42501)$/.test(response?.error?.code||'');
+ const error=Error(failure.message+(rejected?' No import was recorded. Correct the problem and check reconciliation again.':' Result uncertain. Retry this same import to confirm it without duplicating balances.'));error.uncertain=!rejected;throw error;
+}
+async function openingReceivablesWorkspace(actor,current){
+ const session=me,epoch=++openingReceivablesEpoch,identity=actor||await requireAccountingAccess(client,()=>me);
+ const active=()=>me===session&&me?.user_id===identity&&openingReceivablesEpoch===epoch&&(current?current():view==='books'&&booksSection==='opening');
+ if(!active())return;
+ const [customers,imports]=await Promise.all([booksSelectAll('organizations','id,name,location,deleted_at',q=>q.order('id')),booksSelectAll('acc_financial_imports','id,source,created_at',q=>q.eq('import_kind','opening').order('created_at',{ascending:false}).order('id'))]);
+ if(!active())return;
+ const state=openingReceivablesState={workbook:null,preview:null,check:null,request:null,busy:false,uncertain:false,result:null};
+ $('#booksBody').innerHTML=`<section class="card"><h2>Opening customer receivables</h2><p>Add outstanding customer invoices to receipts and ageing using their residual TZS balances at cutover. The opening general ledger must already be imported. This creates no additional journal, sale, tax invoice or stock movement.</p><p class="muted">Supplier/AP balances, customer credits, foreign currencies, historic payment details and corrections to posted opening imports are not supported. Use one complete file of at most 1,000 invoices per opening GL batch.</p><div class="actions"><button type="button" id="openingExcel">Download Excel template</button><button type="button" id="openingCsv">Download CSV template</button></div>
+ <form id="openingForm"><fieldset><legend>Source and cutover</legend><div class="grid"><label><span>Source name · keep on retries</span><input name="source" required maxlength="80"></label><label><span>Cutover · closing balance through this date</span><input name="cutover" type="date" required max="${esc(booksToday())}"></label><label class="wide"><span>Imported opening GL batch</span><select name="gl" required><option value="">Choose the matching opening batch</option>${imports.map(row=>`<option value="${esc(row.id)}">${esc(row.source)} · ${esc(String(row.created_at).slice(0,10))} · ${esc(row.id)}</option>`).join('')}</select></label><label><span>Excel or CSV · maximum 5 MB</span><input name="file" type="file" accept=".xlsx,.csv"></label><label><span>Sheet</span><select name="sheet"></select></label></div></fieldset><div id="openingPreview" aria-live="polite"></div><p id="openingStatus" role="status"></p><div class="actions"><button type="button" id="openingCheck" disabled>Check AR reconciliation</button><button type="submit" id="openingPost" disabled>Import customer residuals</button></div></form></section>`;
+ const form=$('#openingForm'),status=$('#openingStatus'),check=$('#openingCheck'),post=$('#openingPost'),fields=form.querySelector('fieldset');let fileEpoch=0;
+ const args=()=>({p_source:form.elements.source.value.trim(),p_cutover:form.elements.cutover.value,p_gl_import_id:form.elements.gl.value,p_rows:state.preview.entries});
+ const redraw=()=>{const p=state.preview;fields.disabled=state.busy||state.uncertain||!!state.result;check.disabled=fields.disabled||!p||p.errors.length>0||!form.elements.source.value.trim()||!form.elements.gl.value;post.disabled=state.busy||!!state.result||(!state.check&&!state.uncertain);post.textContent=state.busy?'Working…':state.uncertain?'Retry and confirm opening import':'Import customer residuals';
+  $('#openingPreview').innerHTML=!p?'':`<h3>${p.entries.length} residuals · ${booksMoney(p.totalMinor)}</h3>${p.errors.length?`<ul class="error">${p.errors.slice(0,50).map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`:'<p>File validation passed. Check the two AR reconciliations before importing.</p>'}<div class="table-wrap"><table><thead><tr><th>Row</th><th>Customer</th>${openingReceivablesHeaders.map(h=>`<th>${esc(h)}</th>`).join('')}<th>Check</th></tr></thead><tbody>${p.rows.map(r=>`<tr><td>${r.number}</td><td>${esc(r.customer)}</td>${r.values.map(v=>`<td>${esc(v)}</td>`).join('')}<td>${esc(r.errors.join(' ')||'Ready')}</td></tr>`).join('')}</tbody></table></div>`;};
+ const preview=()=>{state.request=null;state.check=null;state.preview=state.workbook?openingReceivablesPreview(state.workbook.Sheets[form.elements.sheet.value],customers,{cutover:form.elements.cutover.value,date1904:!!state.workbook.Workbook?.WBProps?.date1904}):null;status.textContent='';redraw();};
+ $('#openingExcel').onclick=()=>{if(active())XLSX.writeFile(openingReceivablesTemplate(customers),'opening-customer-receivables.xlsx');};
+ $('#openingCsv').onclick=()=>{if(active())booksDownload('opening-customer-receivables.csv',booksCsv(openingReceivablesHeaders.map((h,i)=>[String(i),h]),[]));};
+ for(const name of ['source','cutover','gl','sheet'])form.elements[name].onchange=preview;form.elements.source.oninput=preview;
+ form.elements.file.onchange=async()=>{const generation=++fileEpoch;state.workbook=null;state.preview=null;state.check=null;state.request=null;redraw();status.textContent='Reading locally…';try{const workbook=await financialImportRead(form.elements.file.files[0]);if(!active()||generation!==fileEpoch)return;state.workbook=workbook;form.elements.sheet.innerHTML=workbook.SheetNames.map(name=>`<option>${esc(name)}</option>`).join('');form.elements.sheet.value=workbook.SheetNames.includes('Receivables')?'Receivables':workbook.SheetNames[0];preview();}catch(error){if(active()&&generation===fileEpoch)status.textContent=error.message;}};
+ check.onclick=async()=>{if(!active()||check.disabled)return;state.busy=true;redraw();try{await requireAccountingAccess(client,()=>me);if(!active())return;const response=await client.rpc('opening_receivables_check',args());if(!active())return;if(response.error)throw Error(response.error.message);if(response.data?.reconciled!==true||Number(response.data.difference_minor)!==0)throw Error('AR reconciliation was not confirmed.');state.check=response.data;status.textContent=`AR reconciled: selected opening GL ${booksMoney(state.check.imported_gl_ar_minor)} = file ${booksMoney(state.check.opening_residual_minor)}. Overall AR control ${booksMoney(state.check.control_ar_minor)} = customer balances after import ${booksMoney(state.check.customer_subledger_minor)}.`;}catch(error){if(active()){state.check=null;status.textContent=error.message;}}finally{if(active()){state.busy=false;redraw();}}};
+ form.onsubmit=async event=>{event.preventDefault();if(!active()||post.disabled)return;if(!state.request)state.request={p_id:crypto.randomUUID(),...args()};state.busy=true;redraw();try{await requireAccountingAccess(client,()=>me);if(!active())return;const result=await openingReceivablesPost(client,state.request,active);if(!active())return;state.result=result;state.uncertain=false;status.textContent=`Opening import confirmed: ${result.imported_count} customer residuals${result.already_imported?' already imported':''}. No new GL journal was posted. Use Receipts to settle these balances after cutover.`;}catch(error){if(active()){state.uncertain=!!error.uncertain;if(!state.uncertain)state.check=null;status.textContent=error.message;}}finally{if(active()){state.busy=false;redraw();}}};
+}
+;// return-credit-posting.js
+'use strict';
+let returnCreditPostingEpoch=0,returnCreditPostingRequest=0,returnCreditPostingState=null;
+function clearReturnCreditPosting(){returnCreditPostingEpoch++;returnCreditPostingState=null;document.querySelectorAll('dialog.return-credit-posting').forEach(dialog=>dialog.remove());}
+function returnCreditPostingConfirmLeave(){
+ if(!returnCreditPostingState?.busy&&!returnCreditPostingState?.uncertain)return true;
+ message('Resolve the return credit posting outcome before leaving this page.',true);return false;
+}
+function returnCreditPostingMoney(value){const minor=Number(value);if(!Number.isSafeInteger(minor)||minor<0)throw Error('The saved credit amount is invalid.');return (minor/100).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function returnCreditPostingSnapshot(saved){
+ const body=saved?.body;
+ if(!body?.source?.invoiceId||!body.source.returnId)throw Error('Only returned-goods drafts linked to an ERP invoice can post. External invoices and older drafts need Accounts review.');
+ if(body.currency!=='TZS'||!Array.isArray(body.lines)||!body.lines.length)throw Error('The saved return allocation is unavailable.');
+ let net=0,tax=0;for(const line of body.lines){
+  if(!line.proformaLineId||!Number.isSafeInteger(line.quantityReturned)||line.quantityReturned<1||!Number.isSafeInteger(line.netMinor)||line.netMinor<0||!Number.isSafeInteger(line.taxMinor)||line.taxMinor<0)throw Error('The saved return allocation needs Accounts review.');
+  net+=line.netMinor;tax+=line.taxMinor;
+ }
+ if(!Number.isSafeInteger(net+tax)||net+tax<=0||net+tax!==body.totalMinor)throw Error('The saved return allocation does not balance.');
+ return {net,tax,total:net+tax,source:body.source};
+}
+function mountReturnCreditPosting(target,row){
+ target.querySelector('[data-post-return-credit]')?.remove();
+ if(row?.kind!=='credit_note'||!row.version)return;
+ const button=document.createElement('button');button.type='button';button.dataset.postReturnCredit=row.id;button.textContent='Review / post returned-goods credit';
+ button.onclick=()=>openReturnCreditPosting(row).catch(error=>message(error.message,true));target.append(button);
+}
+async function openReturnCreditPosting(row){
+ if(!row?.id||!row.version||row.kind!=='credit_note')throw Error('Open a saved Credit Note draft first.');
+ if(returnCreditPostingState?.dialog?.isConnected){returnCreditPostingState.dialog.focus();return;}
+ const actor=me,epoch=returnCreditPostingEpoch,request=++returnCreditPostingRequest;
+ const sourceView=(()=>{try{return typeof view}catch{return 'undefined'}})()==='undefined'?null:view,sourceContainer=document.querySelector('#accountingForm')||document.querySelector('#content');
+ const sameSource=()=>me===actor&&epoch===returnCreditPostingEpoch&&request===returnCreditPostingRequest&&(sourceView===null||view===sourceView)&&(!sourceContainer||sourceContainer.isConnected);
+ await requireAccountingAccess(client,()=>me);
+ if(!sameSource())return;
+ const [history,posted]=await Promise.all([
+  client.from('accounting_draft_history').select('body').eq('draft_id',row.id).eq('version',1).maybeSingle(),
+  client.from('acc_credit_notes').select('*').eq('draft_id',row.id).maybeSingle()
+ ]);
+ if(!sameSource())return;
+ if(history.error||posted.error)throw Error((history.error||posted.error).message);
+ const dialog=document.createElement('dialog');dialog.className='return-credit-posting';dialog.setAttribute('aria-label','Post returned-goods credit');
+ const state={dialog,busy:false,uncertain:false,attempt:null};returnCreditPostingState=state;
+ const current=()=>sameSource()&&dialog.isConnected&&returnCreditPostingState===state;
+ const close=()=>{if(state.busy||state.uncertain)return;dialog.close();dialog.remove();if(returnCreditPostingState===state)returnCreditPostingState=null;};
+ dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+ function confirmed(credit){
+  if(!credit?.id||credit.draft_id!==row.id||!credit.credit_number)throw Error('Server did not confirm this return credit.');
+  state.uncertain=false;
+  dialog.innerHTML=`<h2>${esc(credit.credit_number)} posted</h2><p>Accounting date: ${esc(credit.credit_date)} · TZS ${returnCreditPostingMoney(credit.total_minor)}</p><p>Sales and VAT were reversed against customer receivables. Any payment above the revised invoice balance is customer credit; no refund was issued.</p><p>This posting is permanent. The saved form remains a draft and cannot change the posted amounts.</p><button type="button" data-credit-close>Close</button>`;
+  dialog.querySelector('[data-credit-close]').onclick=close;
+  if(typeof clearBooks==='function')clearBooks();
+ }
+ try{
+  if(posted.data){document.body.append(dialog);confirmed(posted.data);dialog.showModal();return;}
+  const snapshot=returnCreditPostingSnapshot(history.data);
+  dialog.innerHTML=`<h2>Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="submit">Post credit to books</button><button type="button" data-credit-close>Cancel</button></div></form>`;
+  document.body.append(dialog);dialog.showModal();
+  const form=dialog.querySelector('form'),fields=form.querySelector('fieldset'),status=form.querySelector('[role="status"]'),button=form.querySelector('[type="submit"]'),cancel=form.querySelector('[data-credit-close]');cancel.onclick=close;
+  form.onsubmit=async event=>{
+   event.preventDefault();if(!current()||state.busy)return;
+   if(!state.attempt){if(!form.reportValidity())return;state.attempt={p_id:crypto.randomUUID(),p_draft_id:row.id,p_expected_version:row.version,p_credit_date:form.elements.date.value};}
+   state.busy=true;fields.disabled=true;button.disabled=true;cancel.disabled=true;status.textContent='Posting the return credit…';
+   try{
+    const result=await client.rpc('post_return_credit_note',state.attempt);if(!current())return;
+    if(result.error)throw result.error;
+    confirmed(Array.isArray(result.data)?result.data[0]:result.data);
+   }catch(error){
+    if(!current())return;
+    const known=/^(?:22|23|42|P0)[A-Z0-9]{3}$/.test(String(error.code||''));
+    if(known&&!state.uncertain){state.attempt=null;status.textContent=`Not posted: ${error.message}`;}
+    else{
+     state.uncertain=true;
+     try{
+      const check=await client.from('acc_credit_notes').select('*').eq('draft_id',row.id).maybeSingle();
+      if(!current())return;
+      if(!check.error&&check.data){confirmed(check.data);return;}
+     }catch(ignored){/* Keep the same identity until the server confirms the outcome. */}
+     if(current())status.textContent='Posting outcome is not confirmed. Retry the same credit to reconcile it. Do not create another draft.';
+    }
+   }finally{
+    state.busy=false;if(current()&&form.isConnected){fields.disabled=state.uncertain;button.disabled=false;cancel.disabled=state.uncertain;button.textContent=state.uncertain?'Retry same credit':'Post credit to books';}
+   }
+  };
+ }catch(error){dialog.remove();if(returnCreditPostingState===state)returnCreditPostingState=null;throw error;}
 }
 ;// employee-names.js
 'use strict';
@@ -6567,6 +6752,8 @@ function navRecordOpenPage(button){
 }
 window.addEventListener('popstate',()=>{
  if(typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
+ if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){history.replaceState(history.state,'',navLastHash);return;}
  navLastHash=location.hash;
  if(/^#\/(clients|client|branch)\b/.test(location.hash))return;
@@ -6656,7 +6843,7 @@ const normalize=s=>String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
 function message(s,error=false){$('#notice').textContent=s;$('#notice').className=s?(error?'notice error':'notice'):''}
 // #editor and #actionEditor are built once when the page loads; every other dialog belongs to one sign-in.
 function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearCoreSession==='function')clearCoreSession();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
-function clearCoreSession(){sessionLoadEpoch++;listsEpoch++;listsLoaded=false;listsLoading=null;selected='';search='';page=0;editing=null;orgIndex.clear();childrenByParent.clear();contactIssues.clear();accountIssues.clear();accountReviewCounts.clear();if(typeof clearInventoryOperations==='function')clearInventoryOperations();if(typeof clearServiceWorkflow==='function')clearServiceWorkflow();if(typeof clearSalesDelivery==='function')clearSalesDelivery();if(typeof clearBooks==='function')clearBooks();if(typeof clearBranchHistory==='function')clearBranchHistory();if(typeof clearPersonalWorkspace==='function')clearPersonalWorkspace();if(typeof clearTeamTasks==='function')clearTeamTasks();if(typeof clearDeadlineRequests==='function')clearDeadlineRequests();if(typeof clearFinancialImport==='function')clearFinancialImport();}
+function clearCoreSession(){sessionLoadEpoch++;listsEpoch++;listsLoaded=false;listsLoading=null;selected='';search='';page=0;editing=null;orgIndex.clear();childrenByParent.clear();contactIssues.clear();accountIssues.clear();accountReviewCounts.clear();if(typeof clearInventoryOperations==='function')clearInventoryOperations();if(typeof clearServiceWorkflow==='function')clearServiceWorkflow();if(typeof clearSalesDelivery==='function')clearSalesDelivery();if(typeof clearBooks==='function')clearBooks();if(typeof clearBranchHistory==='function')clearBranchHistory();if(typeof clearPersonalWorkspace==='function')clearPersonalWorkspace();if(typeof clearTeamTasks==='function')clearTeamTasks();if(typeof clearDeadlineRequests==='function')clearDeadlineRequests();if(typeof clearFinancialImport==='function')clearFinancialImport();if(typeof clearOpeningReceivables==='function')clearOpeningReceivables();if(typeof clearReturnCreditPosting==='function')clearReturnCreditPosting();}
 function field(name,label,value='',type='text',required=false){return `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} maxlength="200"></label>`}
 function setup(){clear();$('#content').innerHTML='<div class="login card"><small>ANUDHA · FIRST RELEASE</small><h1>Connect your workspace</h1><p>Contacts and inventory, with individual staff logins.</p><p class="warning">The secure backend is not connected yet. Real records and staff access are not live.</p><p>Your administrator must complete the free Supabase setup and add the public project URL and publishable key to config.js.</p><a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open Supabase setup ↗</a></div>'}
 function login(){if(typeof listCacheClear==='function')listCacheClear();clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
