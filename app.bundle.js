@@ -6305,7 +6305,7 @@ function requirePasswordChange(user){if(!user?.app_metadata?.must_change_passwor
 function openChangePassword({required=false}={}){
  if(!me?.user_id)throw Error('Sign in first.');
  const actor=me.user_id,dialog=document.createElement('dialog');dialog.className='change-password';dialog.setAttribute('aria-label','Change my password');
- dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<label><span>New password (at least 10 characters)</span><input name="password" type="password" minlength="10" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="10" maxlength="72" required autocomplete="new-password"></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
+ dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<label><span>New password (at least 8 characters)</span><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  if(required){dialog.querySelector('[data-close]').hidden=true;dialog.addEventListener('cancel',event=>event.preventDefault());}
  else dialog.querySelector('[data-close]').onclick=()=>dialog.close();
@@ -6314,7 +6314,7 @@ function openChangePassword({required=false}={}){
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled)return;
   const password=form.elements.password.value,confirm=form.elements.confirm.value;
-  if(password.length<10)return alert.textContent='Use at least 10 characters.';
+  if(password.length<8)return alert.textContent='Use at least 8 characters.';
   if(password!==confirm)return alert.textContent='The two passwords do not match.';
   button.disabled=true;alert.textContent='Saving…';
   try{

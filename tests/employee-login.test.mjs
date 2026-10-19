@@ -51,3 +51,23 @@ test('staff logins are created and reset through the owner-only server function,
  assert.match(fn,/rpc\('is_owner'\)/);assert.match(fn,/must_change_password: true/);assert.match(fn,/ALLOWED_ORIGINS = \['https:\/\/hassijatanisha-rgb\.github\.io'\]/);
  assert.match(src,/data:\{must_change_password:false\}/);assert.match(readFileSync(new URL('../app.js',import.meta.url),'utf8'),/requirePasswordChange\(u\.data\.user\)/);
 });
+test('password changes accept eight characters, reject shorter or mismatched values, and preserve first-login replacement',async()=>{
+ for(const required of [false,true]){
+  const {ctx}=load(),updates=[],events={},button={disabled:false},alert={},cancel={},form={elements:{password:{value:''},confirm:{value:''}},querySelector:s=>s==='[type="submit"]'?button:alert,reset(){this.resetCalled=true;}};
+  const dialog={isConnected:true,setAttribute(){},addEventListener(name,handler){events[name]=handler;},querySelector:s=>s==='form'?form:s==='[data-close]'?cancel:null,showModal(){},close(){this.closed=true;}};
+  ctx.me={user_id:'actor'};ctx.document={createElement:()=>dialog,body:{append(){}}};ctx.message=()=>{};let loaded=false;ctx.load=async()=>{loaded=true;};
+  ctx.client.auth={updateUser:async payload=>{updates.push(payload);return {};}};
+  ctx.openChangePassword({required});
+  assert.equal((dialog.innerHTML.match(/minlength="8"/g)||[]).length,2);
+  assert.equal((dialog.innerHTML.match(/maxlength="72"/g)||[]).length,2);
+  if(required){assert.equal(cancel.hidden,true);let prevented=false;events.cancel({preventDefault(){prevented=true;}});assert.equal(prevented,true);}
+  const submit=()=>form.onsubmit({preventDefault(){}});
+  form.elements.password.value=form.elements.confirm.value='aBcD123';await submit();
+  assert.equal(updates.length,0);assert.match(alert.textContent,/at least 8/);
+  form.elements.password.value='aBcD1234';form.elements.confirm.value='different';await submit();
+  assert.equal(updates.length,0);assert.match(alert.textContent,/do not match/);
+  form.elements.confirm.value='aBcD1234';await submit();
+  assert.equal(updates.length,1);assert.equal(updates[0].password,'aBcD1234');assert.equal(updates[0].data.must_change_password,false);
+  assert.equal(form.resetCalled,true);assert.equal(button.disabled,false);assert.equal(loaded,required);assert.equal(!!dialog.closed,required);
+ }
+});
