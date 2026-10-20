@@ -30,7 +30,6 @@ test('every workflow screen, the task list, sign-out and print are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
  for(const file of ['sales-delivery.js','service-workflow.js','pending-stock.js','purchasing.js'])assert.match(read(file),/typeof decorateWorkHandoffs==='function'\)decorateWorkHandoffs\(\)\.catch/,file);
  assert.match(read('team-tasks.js'),/renderMyHandoffs\(steps\)/);assert.match(read('personal-workspace.js'),/personalSection==='task'&&typeof teamTasksWorkspace==='function'/);
- assert.match(read('team-tasks.js'),/renderUnownedWork\(steps\)/);assert.match(read('team-tasks.js'),/renderWorkNotices\(steps\)/);
  assert.match(read('app.js'),/renderWorkStepOwners\(/);
  assert.match(read('app.js'),/typeof clearWorkAssignments==='function'\)clearWorkAssignments\(\)/);
  assert.match(read('style.css'),/@media print\{\.work-handoff\{display:none!important\}\}/);
@@ -92,4 +91,17 @@ test('finished delivery and service records retain history without offering new 
  await ctx.decorateWorkHandoffs();
  assert.doesNotMatch(box.innerHTML,/data-work-self|data-work-assign/);
  assert.match(box.innerHTML,/Deliver the order/);assert.match(box.innerHTML,/finished/);
+});
+
+test('task layout loads handoffs in their own column and related notices below, with unowned work for owners',async()=>{
+ for(const role of ['owner','staff']){
+  const nodes=new Map(),node=()=>({innerHTML:'',isConnected:true,querySelector:()=>({})}),targets=[];
+  for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew'])nodes.set(key,node());
+  const ctx=load({me:{user_id:'a',role},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),all:async()=>[],run:fn=>fn()});
+  vm.runInContext(readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8'),ctx);
+  ctx.renderMyHandoffs=async target=>{targets.push(['handoffs',target]);return true;};ctx.renderWorkNotices=async target=>targets.push(['notices',target]);ctx.renderUnownedWork=async target=>targets.push(['unowned',target]);
+  await ctx.teamTasksWorkspace();assert.match(nodes.get('#content').innerHTML,/team-task-columns/);
+  assert.equal(targets.find(([name])=>name==='handoffs')[1],nodes.get('#orderSteps'));assert.equal(targets.find(([name])=>name==='notices')[1],nodes.get('#teamTaskRelated'));
+  if(role==='owner')assert.equal(targets.find(([name])=>name==='unowned')[1],nodes.get('#teamTaskRelated'));else assert.equal(targets.some(([name])=>name==='unowned'),false);
+ }
 });

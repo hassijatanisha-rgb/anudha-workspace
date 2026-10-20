@@ -304,6 +304,19 @@ body.packing-tv{background:#0f1f19}
 .books-print-title{display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px}.books-print-title h2{margin:0}.books-print-title b{color:#8a2222}
 .books-print-parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 14px}.books-print-parties span,.books-print-parties strong,.books-print-parties small{display:block}
 .books-print-fiscal{margin-top:10px}
+/* team-task-progress.css */
+.team-task-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.25rem;align-items:start}
+.team-task-column{min-width:0}
+.team-task-column>.my-handoffs{margin-top:0}
+.team-task-progress,.team-task-assignments{border-top:1px solid var(--border,#d9dedb);margin-top:1rem;padding-top:.75rem}
+.team-task-progress h4{margin:0 0 .5rem}
+.team-task-comments,.team-task-assignment-list{padding-left:1.25rem}
+.team-task-comments li,.team-task-assignment-list>li{margin-bottom:.8rem}
+.team-task-comments p,.team-task-snapshot p{white-space:pre-wrap;overflow-wrap:anywhere;margin:.3rem 0}
+.team-task-comments small,.team-task-assignment-list small{display:block}
+.team-task-snapshot{border-left:2px solid var(--border,#d9dedb);padding-left:.7rem;margin:.5rem 0}
+.team-task-assignments summary,.team-task-progress summary{cursor:pointer}
+@media(max-width:850px){.team-task-columns{grid-template-columns:minmax(0,1fr)}}
 /* ui-polish.css */
 /* Interface polish, loaded last. Adds visual hierarchy without changing any workflow markup:
    primary = the usual next step, danger = cancels, rejects, loses or deletes, quiet = look-up actions. */

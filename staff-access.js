@@ -45,6 +45,8 @@ function canManagePerson(row){
 }
 // Menu entry or open screen → area. null means everyone (or owner-only, handled elsewhere).
 function viewArea(target,section){
+ if(target==='contracts')return ['proformas','service'];
+ if(target==='prices')return 'proformas';
  if(target==='leads')return 'leads';
  if(target==='packing')return 'deliveries';
  if(target==='sales')return section==='delivery'?'deliveries':'proformas';

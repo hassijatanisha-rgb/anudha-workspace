@@ -7,7 +7,7 @@ const workspaceGroups=[
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
  {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],
+  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],['Contracts','contracts'],['Product prices','prices'],
   ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
  ]},
  {name:'Accounts',tone:'accounts',items:[
@@ -68,6 +68,7 @@ function installWorkspaceNavigation(){
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
   }
+  if(button.dataset.view==='contracts'){contractFocus='';contractPage=0;}
   if(button.dataset.view==='service')serviceSection=section||'installations';
   if(button.dataset.view==='books'&&typeof openBooksSection==='function')openBooksSection(section);
   if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
