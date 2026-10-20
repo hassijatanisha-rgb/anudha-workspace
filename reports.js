@@ -98,7 +98,7 @@ function reportTasks(tasks,now=Date.now()){
 // Approved or finished trips leaving in the period, per traveller.
 function reportTravel(trips){
  const out=new Map();
- for(const t of trips){if(!['approved','done'].includes(t.status))continue;const ms=Math.max(0,Date.parse(t.return_at)-Date.parse(t.depart_at));for(const p of t.travellers||[]){if(!out.has(p))out.set(p,{actor:p,trips:0,ms:0,clients:new Set()});const r=out.get(p);r.trips++;r.ms+=ms;r.clients.add(t.organization_id||t.destination);}}
+ for(const t of trips){if(!['approved','done'].includes(t.status))continue;const ms=Math.max(0,Date.parse(t.return_at)-Date.parse(t.depart_at));for(const p of t.travellers||[]){if(!out.has(p))out.set(p,{actor:p,trips:0,ms:0,clients:new Set()});const r=out.get(p);r.trips++;r.ms+=ms;for(const stop of t.itinerary?.length?t.itinerary:[t])r.clients.add(stop.organization_id||stop.destination);}}
  return [...out.values()].map(r=>({actor:r.actor,trips:r.trips,days:Number((r.ms/86400000).toFixed(1)),places:r.clients.size})).sort((a,b)=>b.days-a.days);
 }
 function reportProductName(id){if(!id)return 'Unknown product';const product=typeof inventoryProduct==='function'?inventoryProduct(id):products.find(p=>p.id===id);return product?.name||'Unknown product';}
@@ -180,7 +180,7 @@ async function reportsWorkspace(){
    reportRows=reportService(cases).map(r=>({...r,employee:r.actor?employeeName(r.actor):'No engineer yet',avg:reportDays(r.avgMs)}));
    reportColumns=[['employee','Engineer'],['installations','Installations'],['services','Service jobs'],['completed','Completed'],['open','Still open'],['late','Late now'],['avg','Average days to complete']];
   }else if(reportTab==='travel'){
-   const trips=await reportFetchRange('travel_requests','id,travellers,status,organization_id,destination,depart_at,return_at','depart_at',from,to);
+   const trips=await reportFetchRange('travel_requests','id,travellers,status,organization_id,destination,depart_at,return_at,itinerary','depart_at',from,to);
    if(epoch!==reportEpoch||me?.user_id!==actor||view!=='reports')return;
    reportRows=reportTravel(trips).map(r=>({...r,employee:employeeName(r.actor)}));
    reportColumns=[['employee','Employee'],['trips','Trips'],['days','Days away'],['places','Different places']];

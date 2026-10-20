@@ -55,7 +55,8 @@ try{
  const automatic=mig('202610010051_automatic_handoffs.sql');
  const prefix=automatic.slice(0,automatic.indexOf('create function public.handoff_proforma'));
  assert.ok(prefix.includes('create function public.auto_close_work'));await db.exec(prefix+'\ncommit;');installed.push('202610010051_automatic_handoffs.sql:tables and automatic assignment helpers');
- for(const name of ['handoff_proforma','handoff_delivery','handoff_service','handoff_pending'])await loadFunction('202610010051_automatic_handoffs.sql',name);
+ for(const name of ['handoff_proforma','handoff_delivery','handoff_service','handoff_pending','unowned_work'])await loadFunction('202610010051_automatic_handoffs.sql',name);
+ await db.exec('revoke all on function public.unowned_work() from public,anon;grant execute on function public.unowned_work() to authenticated;');
  for(const table of ['sales_proformas','sales_delivery_notes','service_cases','pending_stock_requests']){
   const trigger=automatic.match(new RegExp(`create trigger ${table}_handoff[^;]+;`));assert.ok(trigger);await db.exec(trigger[0]);
  }

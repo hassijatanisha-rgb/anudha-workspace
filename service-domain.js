@@ -12,3 +12,5 @@ function serviceMaintenanceDate(actual,months){
  return new Date(Date.UTC(last.getUTCFullYear(),last.getUTCMonth(),Math.min(day,last.getUTCDate()))).toISOString().slice(0,10);
 }
 function serviceProgress(status){const current=serviceStatuses.indexOf(status);return serviceStatuses.map((name,index)=>({name,label:serviceStatusLabel(name),state:status==='cancelled'?'':index<current?'complete':index===current?'current':''}))}
+
+function serviceSourceLabel(source){return ({erp_delivery:'Signed machine delivery',third_party:'Bought from another supplier',legacy:'Older equipment / historical sale',distributor:'Distributor supplied',customer_request:'Customer request'})[source]||'Equipment request'}

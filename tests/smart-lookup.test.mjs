@@ -15,7 +15,7 @@ test('names starting with the typed text come first',()=>{
  assert.equal(ctx.lookupRank(items,'hospital').rows[0].label,'Hospital Supplies Ltd');
 });
 test('case and punctuation do not matter',()=>{
- assert.equal(ctx.lookupRank(items,'YP90').total,0);
+ assert.equal(ctx.lookupRank(items,'YP90').total,1);
  assert.equal(ctx.lookupRank(items,'yp 90a').total,1);
  assert.equal(ctx.lookupRank(items,'MUHIMBILI').total,1);
 });
@@ -26,4 +26,11 @@ test('task results must say something',()=>{
  const tctx=vm.createContext({});vm.runInContext(readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8').match(/function teamTaskResultProblem[\s\S]*?\n}\n/)[0],tctx);
  for(const bad of ['xxx','XXX XXX XXX','ok done','done','test test test','.....'])assert.ok(tctx.teamTaskResultProblem(bad),bad);
  for(const good of ['Called Nisha, wants 2 ultrasound quotes','Visited Muhimbili, no new needs today'])assert.equal(tctx.teamTaskResultProblem(good),'',good);
+});
+
+test('product search tolerates repeated, omitted and reordered spaces without losing model digits',()=>{
+ for(const query of ['  BABY    incubator  ', 'incubator baby', 'babyincubator', 'YP90A incubator', '90a   yp'])assert.equal(ctx.lookupRank(items,query).total,1,query);
+ for(const query of ['YP91A', 'incubator ultrasound', 'mwanza dar'])assert.equal(ctx.lookupRank(items,query).total,0,query);
+ const products=['Babyincubator supplies','Baby incubator · YP-90A'].map(label=>({label,value:label,search:ctx.lookupNormal(label)}));
+ assert.equal(ctx.lookupRank(products,'babyincubator').rows[0].label,'Babyincubator supplies','literal matches retain priority over compact matches');
 });

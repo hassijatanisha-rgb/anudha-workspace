@@ -11,8 +11,11 @@ function lookupRank(items,query,limit=lookupShown){
  if(!words.length)return {rows:items.slice(0,limit),total:items.length};
  const hits=[];
  for(const item of items){
-  const text=item.search;let ok=true,score=0;
-  for(const word of words){const at=text.indexOf(word);if(at<0){ok=false;break}score+=at===0?0:text[at-1]===' '?1:3;}
+  const text=item.search;let ok=true,score=0,compact;
+  for(const word of words){const at=text.indexOf(word);if(at<0){
+   // Product model numbers and names may be entered without their printed spaces or hyphens.
+   compact??=text.replace(/ /g,'');if(!compact.includes(word)){ok=false;break}score+=4;
+  }else score+=at===0?0:text[at-1]===' '?1:3;}
   if(!ok)continue;
   if(text.startsWith(q))score-=10;
   hits.push([score,item.label.length,item]);

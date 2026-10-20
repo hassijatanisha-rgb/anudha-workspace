@@ -11,7 +11,7 @@ function context(extra={}){
   document:{querySelector:()=>null,querySelectorAll:()=>[]},window:{addEventListener:(name,fn)=>{listeners[name]=fn}},
   $:()=>null,message:text=>messages.push(text),confirm:()=>false,syncWorkspaceNavigation:()=>{},
   ...extra});
- for(const file of ['row-index.js','business-date.js','company-forms.js','sales-domain.js','sales-delivery.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
+ for(const file of ['row-index.js','business-date.js','company-forms.js','sales-domain.js','proforma-commercial.js','sales-delivery.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  return {ctx,listeners,content,messages,run:code=>vm.runInContext(code,ctx)};
 }
 function backend(tables){
@@ -61,7 +61,7 @@ test('dirty editor guards refresh, close/navigation and browser unload without d
  f.ctx.confirm=()=>true;f.ctx.salesNavigate(()=>{closed=true});assert.equal(closed,true);
 });
 function editorFixture(){
- const controls=[{name:'organizationId',value:'branch',disabled:false},{name:'contactId',value:'contact',disabled:false},{name:'notes',value:'Unsaved notes',disabled:false},{name:'disabled',value:'locked',disabled:true},{type:'submit',textContent:'Save',disabled:false}];
+ const controls=[{name:'organizationId',value:'branch',disabled:false},{name:'contactId',value:'contact',disabled:false},{name:'notes',value:'Unsaved notes',disabled:false},{name:'disabled',value:'locked',disabled:true},{name:'commercialKind',value:'placement',disabled:false},{name:'contractId',value:'contract-1',disabled:false},{name:'installationRequired',value:'yes',disabled:false},{name:'installationChargeNotes',value:'Agreed service terms',disabled:false},{name:'internalNotes',value:'Internal planning notes',disabled:false},{type:'submit',textContent:'Save',disabled:false}];
  const form={dataset:{id:'p',version:'3'},isConnected:true,querySelectorAll:()=>controls,querySelector:()=>controls.at(-1)};
  let release,payload;const pending=new Promise(resolve=>{release=resolve});
  const f=context({document:{querySelector:()=>form},FormData:class{constructor(form){this.values=new Map(form.querySelectorAll().filter(control=>!control.disabled&&control.name).map(control=>[control.name,control.value]))}get(name){return this.values.get(name)||''}},
@@ -72,7 +72,7 @@ function editorFixture(){
 }
 test('pending save locks every input, preserves submitted data and blocks leaving until failure',async()=>{
  const f=editorFixture(),save=f.ctx.saveProformaForm(f.form);
- assert.ok(f.controls.every(control=>control.disabled));assert.equal(f.payload.p_notes,'Changed before save');
+ assert.ok(f.controls.every(control=>control.disabled));assert.equal(f.payload.p_notes,'Changed before save');assert.equal(f.payload.p_commercial_kind,'placement');assert.equal(f.payload.p_contract_id,'contract-1');assert.equal(f.payload.p_installation_required,true);assert.equal(f.payload.p_installation_charge_notes,'Agreed service terms');assert.equal(f.payload.p_internal_notes,'Internal planning notes');
  assert.equal(f.ctx.salesConfirmLeave(),false);assert.equal(f.form.dataset.version,'3');
  f.release({error:{message:'Version changed'}});await assert.rejects(save,error=>error.message==='Version changed');
  assert.equal(f.controls[2].disabled,false);assert.equal(f.controls[3].disabled,true);assert.equal(f.controls[2].value,'Changed before save');
@@ -84,12 +84,12 @@ test('late successful save after session reset cannot refocus or reload another 
  assert.equal(reloads,0);assert.equal(f.run('salesFocusedProforma'),'');assert.equal(f.form.dataset.version,'3');
 });
 test('sent print uses saved names, terms and lines after current master data changes',async()=>{
- const snapshot={organizationName:'Original client',organizationLocation:'Original branch',contactName:'Original contact',currency:'TZS',validUntil:'2026-12-01',deliveryPeriod:'Original delivery',paymentTerms:'Original terms',notes:'Original notes',subtotalMinor:10000,discountMinor:0,taxMinor:0,totalMinor:10000,lines:[{productId:'product',productName:'Original product <safe>',description:'Saved item',quantity:1,uom:'unit',unitPriceMinor:10000,discountBasisPoints:0,taxBasisPoints:0}]};
- const record={id:'p',revision:2,organization_id:'branch',contact_id:'contact',status:'sent',document_number:'PF-1'};
+ const snapshot={organizationName:'Original client',organizationLocation:'Original branch',contactName:'Original contact',currency:'TZS',validUntil:'2026-12-01',deliveryPeriod:'Original delivery',paymentTerms:'Original terms',notes:'Original notes',commercialKind:'placement',contractId:'saved-contract',installationRequired:false,installationChargeNotes:'Original service terms',subtotalMinor:10000,discountMinor:0,taxMinor:0,totalMinor:10000,lines:[{productId:'product',productName:'Original product <safe>',description:'Saved item',quantity:1,uom:'unit',unitPriceMinor:10000,discountBasisPoints:0,taxBasisPoints:0}]};
+ const record={id:'p',revision:2,organization_id:'branch',contact_id:'contact',status:'sent',document_number:'PF-1',commercial_kind:'sale',contract_id:'changed-contract',installation_required:true,installation_charge_notes:'Changed service terms',internal_notes:'Internal current remarks'};
  const f=context({client:backend({sales_proforma_revisions:[{proforma_id:'p',revision:2,snapshot}]}),orgIndex:new Map([['branch',{name:'Changed client'}]]),contacts:[{id:'contact',first_name:'Changed contact'}],products:[{id:'product',name:'Changed product'}]});
  await f.ctx.loadSalesRevision(record);const html=f.ctx.proformaCard(record);
- for(const text of ['Original client','Original contact','Original product &lt;safe&gt;','Original terms','Saved item'])assert.ok(html.includes(text));
- assert.doesNotMatch(html,/Changed client|Changed contact|Changed product|<safe>/);
+ for(const text of ['Original client','Original contact','Original product &lt;safe&gt;','Original terms','Saved item','Original service terms','Installation not requested','saved-contract'])assert.ok(html.includes(text));
+ assert.doesNotMatch(html,/Changed client|Changed contact|Changed product|Changed service terms|changed-contract|<safe>/);
  delete snapshot.organizationName;delete snapshot.contactName;delete snapshot.lines[0].productName;
  const legacy=f.ctx.proformaCard(record);assert.match(legacy,/Historical client name not recorded/);assert.match(legacy,/Historical contact name not recorded/);assert.match(legacy,/Historical product name not recorded/);assert.doesNotMatch(legacy,/Changed client|Changed contact|Changed product/);
 });

@@ -82,13 +82,25 @@ test('pressing an item opens the right page and marks that kind seen',()=>{
  assert.equal(ctx.view,'personal');assert.equal(ctx.personalSection,'task');assert.equal(ctx.personalPage,0);
  assert.deepEqual(marks,['work','tasks']);
 });
-test('wired in: header bell refreshes on navigation and every 2 minutes, My tasks marks it seen, cleared on sign-out',()=>{
- const bell=read('notification-bell.js'),nav=read('workspace-navigation.js'),tasks=read('team-tasks.js'),app=read('app.js'),html=read('index.src.html');
+test('wired in: header bell refreshes on navigation and every 2 minutes, and clears on sign-out',()=>{
+ const bell=read('notification-bell.js'),nav=read('workspace-navigation.js'),app=read('app.js'),html=read('index.src.html');
  assert.match(bell,/setInterval\(\(\)=>\{if\(me&&!document\.hidden\)refreshNotificationBell\(true\)\.catch\(\(\)=>\{\}\);\},120000\);/);
  assert.match(nav,/function syncWorkspaceNavigation\(\)\{[\s\S]*?refreshNotificationBell\(\)\.catch/);
- assert.match(tasks,/bellMarkSeen\(actor,\['tasks','work','results'\]\)/);
  assert.match(app.split('\n').find(line=>line.startsWith('function clear()')),/clearNotificationBell\(\)/);
  assert.ok(html.indexOf('notification-bell.js')>0&&html.indexOf('notification-bell.js')<html.indexOf('workspace-navigation.js'));
  assert.match(bell,/getElementById\('identity'\)/,'sits in the top header');
  assert.doesNotMatch(bell,/localStorage\.(get|set)Item/,'storage is only reached through the guarded helpers');
+});
+
+test('My tasks marks each notification kind only after its corresponding pane loads',async()=>{
+ for(const handoffVisible of [true,false]){
+  const nodes=new Map(),seen=[],node=()=>({innerHTML:'',isConnected:true,querySelector:()=>({})});
+  for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew'])nodes.set(key,node());
+  const ctx=load({me:{user_id:'worker',role:'staff'},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),all:async()=>[],run:fn=>fn(),renderMyHandoffs:async()=>handoffVisible});
+  vm.runInContext(read('team-tasks.js'),ctx);ctx.bellMarkSeen=(actor,kinds)=>seen.push({actor,kinds:[...kinds]});ctx.refreshNotificationBell=async()=>{};
+  await ctx.teamTasksWorkspace();
+  assert.equal(seen.length,handoffVisible?2:1);assert.ok(seen.every(item=>item.actor==='worker'));
+  assert.deepEqual(seen.flatMap(item=>item.kinds).sort(),handoffVisible?['results','tasks','work']:['results','tasks']);
+  assert.match(nodes.get('#manualTasks').innerHTML,/Nothing given to you right now/);
+ }
 });

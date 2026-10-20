@@ -23,7 +23,7 @@ async function documentStorageErrorDetails(error){
 }
 
 async function openDocumentAttachments(recordType,recordId,recordLabel){
- if(!['proforma','delivery','service','accounting'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
+ if(!['proforma','delivery','service','accounting','contract'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
  const actor=me?.user_id,openingView=view;
  if(!actor)throw Error('Sign in to open document attachments.');
  let dialog=null,page=0,busy=false,pending=null;

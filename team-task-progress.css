@@ -1,0 +1,12 @@
+.team-task-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.25rem;align-items:start}
+.team-task-column{min-width:0}
+.team-task-column>.my-handoffs{margin-top:0}
+.team-task-progress,.team-task-assignments{border-top:1px solid var(--border,#d9dedb);margin-top:1rem;padding-top:.75rem}
+.team-task-progress h4{margin:0 0 .5rem}
+.team-task-comments,.team-task-assignment-list{padding-left:1.25rem}
+.team-task-comments li,.team-task-assignment-list>li{margin-bottom:.8rem}
+.team-task-comments p,.team-task-snapshot p{white-space:pre-wrap;overflow-wrap:anywhere;margin:.3rem 0}
+.team-task-comments small,.team-task-assignment-list small{display:block}
+.team-task-snapshot{border-left:2px solid var(--border,#d9dedb);padding-left:.7rem;margin:.5rem 0}
+.team-task-assignments summary,.team-task-progress summary{cursor:pointer}
+@media(max-width:850px){.team-task-columns{grid-template-columns:minmax(0,1fr)}}

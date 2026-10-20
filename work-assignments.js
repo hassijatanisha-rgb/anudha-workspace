@@ -123,7 +123,7 @@ async function decorateWorkHandoffs(){
    const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
    const delay=current?delays.get(current.id):null,timeline=workTimeline(history.get(item.id)||[]),level=workAgeLevel(current,delay);
    box.classList.toggle('quality-yellow',level==='yellow');box.classList.toggle('quality-red',level==='red');
-   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)}${canAssign?` <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign to me</button>':''}`:''}${canClose?' <button type="button" data-work-done>Mark my step done</button>':''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
+   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)}${canAssign?` <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign to me</button>':''}`:''}${canClose?` <button type="button" data-work-done>Mark ${current.assignee_user_id===actor.user_id?'my':esc(employeeName(current.assignee_user_id))+"’s"} step done</button>`:''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
    box.querySelector('[data-work-delay]')?.addEventListener('click',()=>openWorkDelay({...current,record_label:item.label}));
    box.querySelector('[data-work-assign]')?.addEventListener('click',()=>openWorkHandoff({...item,current}));
    box.querySelector('[data-work-self]')?.addEventListener('click',()=>openWorkHandoff({...item,current,self:true}));
@@ -150,7 +150,7 @@ function openWorkHandoff({type,id,label,current,self=false}){
 }
 function openWorkClose(row,action){
  if(!row)return;
- actionForm(action==='done'?'Mark my step done':'Cancel handoff',`<p><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}</p><label><span>${action==='done'?'Note · optional':'Why is it cancelled?'}</span><textarea name="note" maxlength="1000" ${action==='cancel'?'required minlength="3"':''}></textarea></label>`,async values=>{
+ actionForm(action==='done'?`Mark ${row.assignee_user_id===me?.user_id?'my':employeeName(row.assignee_user_id)+'’s'} step done`:'Cancel handoff',`<p><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}</p><p>Assigned to ${esc(employeeName(row.assignee_user_id))}. This closes that person’s handoff.</p><label><span>${action==='done'?'Note · optional':'Why is it cancelled?'}</span><textarea name="note" maxlength="1000" ${action==='cancel'?'required minlength="3"':''}></textarea></label>`,async values=>{
   const actor=me?.user_id,result=await client.rpc('close_work_assignment',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
@@ -160,6 +160,7 @@ function openWorkClose(row,action){
 async function workOpenRecord(row){
  if(!row)return;
  if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
+ else if(row.record_type==='contract'){view='contracts';contractFocus=row.record_id;contractPage=0;}
  else if(row.record_type==='service')return focusServiceCase(row.record_id);
  else if(row.record_type==='lead'){if(typeof focusLead==='function')focusLead(row.record_id);else view='leads';}
  else if(row.record_type==='pending'){view='pending';pendingFilter='all';pendingSearch=row.record_label;}
@@ -169,20 +170,21 @@ async function workOpenRecord(row){
 }
 // Work handed to the signed-in employee, shown at the top of To-do tasks. Overdue first, then by due date.
 async function renderMyHandoffs(target){
- const epoch=++workEpoch,actor=me;if(!actor?.user_id||!target)return;
+ const epoch=++workEpoch,actor=me;if(!actor?.user_id||!target)return false;
  const box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
  let result;try{result={data:await workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at',query=>query.eq('assignee_user_id',actor.user_id).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}))};}catch(error){result={error};}
- if(epoch!==workEpoch||me!==actor||!box.isConnected)return;
- if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return;}
+ if(epoch!==workEpoch||me!==actor||!box.isConnected)return false;
+ if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return false;}
  let delays=new Map();try{delays=workLatestDelays(await loadWorkDelays((result.data||[]).map(r=>r.id)));}catch{}
- if(epoch!==workEpoch||me!==actor||!box.isConnected)return;
+ if(epoch!==workEpoch||me!==actor||!box.isConnected)return false;
  const levelRank=row=>({red:2,yellow:1}[workAgeLevel(row,delays.get(row.id))]||0);
  const rows=[...(result.data||[])].sort((a,b)=>levelRank(b)-levelRank(a)||Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
  box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>{const delay=delays.get(row.id),level=workAgeLevel(row,delay);return `<li class="${level?'quality-'+level:workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(row.created_at)))}</strong>${delay?` · expected ${esc(delay.expected_on)}: ${esc(delay.reason)}`:''}${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open</button> <button type="button" data-work-finish="${esc(row.id)}">Mark done</button> <button type="button" data-work-delay-row="${esc(row.id)}">Report delay</button></li>`;}).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
  box.querySelectorAll('[data-work-open]').forEach(button=>button.onclick=()=>run(()=>workOpenRecord(rows.find(row=>row.id===button.dataset.workOpen))));
  box.querySelectorAll('[data-work-finish]').forEach(button=>button.onclick=()=>openWorkClose(rows.find(row=>row.id===button.dataset.workFinish),'done'));
  box.querySelectorAll('[data-work-delay-row]').forEach(button=>button.onclick=()=>openWorkDelay(rows.find(row=>row.id===button.dataset.workDelayRow)));
+ return true;
 }
 
 // Updates for the signed-in employee (for example: your Pro forma was invoiced and sent to packing).

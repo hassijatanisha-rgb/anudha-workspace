@@ -13,7 +13,8 @@ function serialListProblem(serials,quantity){
  if(serials.some(s=>s.length>120))return 'A serial number is too long.';
  return '';
 }
-function serialRequired(productId){return serialSettings.get(productId)===true}
+function machineSerialRequired(productId){return typeof inventoryClassification==='function'&&inventoryClassification(productId)?.category==='machines'}
+function serialRequired(productId){return machineSerialRequired(productId)||serialSettings.get(productId)===true}
 function canFlagSerials(user){return !!user&&(user.role==='owner'||(user.role==='head'&&user.department==='stores'))}
 
 function deliverySerialPanelHtml(note,lines,serials){
@@ -23,7 +24,7 @@ function deliverySerialPanelHtml(note,lines,serials){
   const list=own.length?own.map(s=>`<code>${esc(s.serial_number)}</code>${s.returned_at?' <small>(returned)</small>':''}`).join(', '):'<strong>Not entered yet</strong>';
   return `<li>${esc(salesProduct(line.product_id).name)} × ${esc(line.quantity)} · ${list}</li>`;}).join('');
  const missing=tracked.some(line=>serials.filter(s=>s.delivery_line_id===line.id&&!s.returned_at).length!==line.quantity);
- return `<div class="notice serial-numbers no-print" data-serial-panel="${esc(note.id)}"><h3>Serial numbers</h3><ul>${rows}</ul>${editable&&missing?'<p>This delivery cannot go out until every unit above has its serial number.</p>':''}${editable?`<button type="button" data-serial-record="${esc(note.id)}">${missing?'Enter serial numbers':'Correct serial numbers'}</button>`:''}</div>`;
+ return `<div class="notice serial-numbers no-print" data-serial-panel="${esc(note.id)}"><h3>Serial numbers</h3><ul>${rows}</ul>${editable&&missing?'<p>This delivery cannot go out until every unit above has its serial number. Enter these before marking Packed.</p>':''}${editable?`<button type="button" data-serial-record="${esc(note.id)}">${missing?'Enter serial numbers':'Correct serial numbers'}</button>`:''}</div>`;
 }
 
 async function loadSerialSettings(){
@@ -91,10 +92,10 @@ function openMarkReturnedSerials(line){
 async function decorateSerialTools(){
  const content=$('#content');if(!content||content.querySelector('[data-serial-tools]')||!$('#inventoryRefresh'))return;
  const actor=me?.user_id;if(!(await loadSerialSettings())||me?.user_id!==actor)return;
- const flagged=[...serialSettings].filter(([,on])=>on).map(([productId])=>productId);
+ const flagged=[...new Set([...serialSettings.keys(),...(typeof products!=='undefined'?products:[]).map(product=>product.id)])].filter(serialRequired);
  content.insertAdjacentHTML('beforeend',`<section class="card serial-tools" data-serial-tools><h2>Serial numbers</h2>
   <form id="serialSearch" class="actions"><input name="serial" placeholder="Serial number" minlength="2" maxlength="120" required><button type="submit">Find</button></form><div id="serialResults"></div>
-  ${canFlagSerials(me)?`<h3>Products that need serial numbers · ${flagged.length}</h3><ul>${flagged.map(productId=>`<li>${esc(inventoryProduct(productId).name)} <button type="button" data-serial-unflag="${esc(productId)}">Remove</button></li>`).join('')||'<li>None yet.</li>'}</ul>
+  ${canFlagSerials(me)?`<p>Every machine needs its real serial number before it can be marked Packed or sent out.</p><h3>Products that need serial numbers · ${flagged.length}</h3><ul>${flagged.map(productId=>`<li>${esc(inventoryProduct(productId).name)} ${machineSerialRequired(productId)?'<small>Required for machines</small>':`<button type="button" data-serial-unflag="${esc(productId)}">Remove</button>`}</li>`).join('')||'<li>None yet.</li>'}</ul>
   <form id="serialFlag" class="actions"><input name="product" list="serialProductChoices" placeholder="Product name or code" required><datalist id="serialProductChoices">${(typeof products!=='undefined'?products:[]).filter(p=>!p.deleted_at&&!serialRequired(p.id)).slice(0,2000).map(p=>`<option value="${esc(p.name)}${p.sku?' · '+esc(p.sku):''}"></option>`).join('')}</datalist><button type="submit">Needs serial numbers</button></form>`:''}</section>`);
  $('#serialSearch').onsubmit=event=>{event.preventDefault();run(async()=>{
   const value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});

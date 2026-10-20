@@ -36,3 +36,22 @@ test('only the stores head or the owner flags products',()=>{
  assert.equal(context.canFlagSerials({role:'head',department:'sales'}),false);
  assert.equal(context.canFlagSerials({role:'staff',department:'stores'}),false);
 });
+
+test('classified machines require serials even when the optional setting is absent or false',()=>{
+ context.inventoryClassification=id=>id==='M'?{category:'machines'}:{category:'reagents'};
+ vm.runInContext("serialSettings=new Map([['M',false]])",context);
+ assert.equal(context.serialRequired('M'),true);assert.equal(context.serialRequired('R'),false);
+ const panel=context.deliverySerialPanelHtml({id:'N3',status:'packing'},[{id:'L3',product_id:'M',quantity:1}],[]);
+ assert.match(panel,/Enter serial numbers/);assert.match(panel,/before marking Packed/);
+ context.inventoryClassification=()=>({category:'reagents'});assert.equal(context.serialRequired('M'),false,'the latest classification controls machine requirements');
+});
+
+test('serial tools label machine requirements and only offer removal for optional products',async()=>{
+ let html='';const content={querySelector:()=>null,querySelectorAll:()=>[],insertAdjacentHTML:(_position,value)=>{html=value;}};
+ const ctx=vm.createContext({me:{user_id:'owner',role:'owner'},products:[{id:'M',name:'Analyzer'},{id:'R',name:'Reagent'}],esc:String,
+  inventoryClassification:id=>({category:id==='M'?'machines':'reagents'}),inventoryProduct:id=>({name:id==='M'?'Analyzer':'Reagent'}),
+  $:selector=>selector==='#content'?content:selector==='#inventoryRefresh'?{}:selector==='#serialSearch'?{}:null,
+  client:{from:()=>({select:async()=>({data:[{product_id:'M',serial_required:false},{product_id:'R',serial_required:true}]})})}});
+ vm.runInContext(fs.readFileSync(new URL('../serial-numbers.js',import.meta.url),'utf8'),ctx);await ctx.decorateSerialTools();
+ assert.match(html,/Analyzer <small>Required for machines<\/small>/);assert.doesNotMatch(html,/data-serial-unflag="M"/);assert.match(html,/data-serial-unflag="R"/);
+});
