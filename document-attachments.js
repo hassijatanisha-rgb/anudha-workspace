@@ -22,8 +22,18 @@ async function documentStorageErrorDetails(error){
  return {missing,message:text||(status?`Storage request failed (HTTP ${status}).`:'Storage request failed.')};
 }
 
+async function documentAttachmentBlob(row,checkCurrent){
+ const result=await client.storage.from('erp-documents').download(row.object_path);
+ checkCurrent();
+ if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
+ if(!result.data)throw Error('The server returned no file.');
+ const file=new Blob([result.data],{type:row.mime_type});
+ await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:file.size,slice:(start,end)=>file.slice(start,end)});checkCurrent();
+ return file;
+}
+
 async function openDocumentAttachments(recordType,recordId,recordLabel){
- if(!['proforma','delivery','service','accounting','contract'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
+ if(!['proforma','delivery','service','accounting','contract','product'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
  const actor=me?.user_id,openingView=view;
  if(!actor)throw Error('Sign in to open document attachments.');
  let dialog=null,page=0,busy=false,pending=null;
@@ -42,7 +52,7 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
  }
  await requireAccess();
  dialog=document.createElement('dialog');dialog.className='document-attachments';dialog.setAttribute('aria-label',`Attachments for ${recordLabel}`);
- dialog.innerHTML=`<form><h2>Document attachments</h2><p>${esc(recordLabel)}</p><p>Attach a PDF, JPEG or PNG up to 10 MB to this saved record. Attachments do not issue an invoice, approve an order or change stock.</p><label>File<input type="file" data-attachment-file accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></label><button type="submit">Upload attachment</button></form><p data-attachment-status role="status" aria-live="polite"></p><section data-attachment-list aria-label="Saved attachments"></section><div class="actions"><button type="button" data-attachment-previous>Previous</button><span data-attachment-page>Page 1</span><button type="button" data-attachment-next>Next</button></div><p>Download a saved attachment, then open it in your PDF or image viewer to print. Files remain private to authorized staff. Keep this dialog open to retry an unconfirmed upload.</p><button type="button" data-attachment-close>Close</button>`;
+ dialog.innerHTML=`<form><h2>${recordType==='product'?'Product brochures':'Document attachments'}</h2><p>${esc(recordLabel)}</p><p>${recordType==='product'?'Upload only customer-facing product brochures or specifications. These files are available for selection on quotations containing this product. ':''}Attach a PDF, JPEG or PNG up to 10 MB to this saved record. Attachments do not issue an invoice, approve an order or change stock.</p><label>File<input type="file" data-attachment-file accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></label><button type="submit">Upload attachment</button></form><p data-attachment-status role="status" aria-live="polite"></p><section data-attachment-list aria-label="Saved attachments"></section><div class="actions"><button type="button" data-attachment-previous>Previous</button><span data-attachment-page>Page 1</span><button type="button" data-attachment-next>Next</button></div><p>Download a saved attachment, then open it in your PDF or image viewer to print. Files remain private to authorized staff. Keep this dialog open to retry an unconfirmed upload.</p><button type="button" data-attachment-close>Close</button>`;
  document.body.append(dialog);
  const form=dialog.querySelector('form'),input=dialog.querySelector('[data-attachment-file]'),submit=dialog.querySelector('[type="submit"]'),status=dialog.querySelector('[data-attachment-status]'),list=dialog.querySelector('[data-attachment-list]'),previous=dialog.querySelector('[data-attachment-previous]'),next=dialog.querySelector('[data-attachment-next]');
  dialog.querySelector('[data-attachment-close]').onclick=()=>{if(!busy)dialog.close()};
@@ -55,12 +65,7 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
   try{
    await requireAccess();
    status.textContent='Downloading private attachment…';
-   const result=await client.storage.from('erp-documents').download(row.object_path);
-   checkCurrent();
-   if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
-   if(!result.data)throw Error('The server returned no file.');
-   const safeFile=new Blob([result.data],{type:row.mime_type});
-   await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:safeFile.size,slice:(start,end)=>safeFile.slice(start,end)});checkCurrent();
+   const safeFile=await documentAttachmentBlob(row,checkCurrent);
    const url=URL.createObjectURL(safeFile),link=document.createElement('a');
    try{link.href=url;link.download=row.original_filename;link.rel='noopener';document.body.append(link);link.click();status.textContent='Download requested. Open the downloaded file in your PDF or image viewer to print.';}
    finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}

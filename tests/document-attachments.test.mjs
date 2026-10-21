@@ -36,6 +36,14 @@ test('invalid record type, missing actor and denied access cannot query or uploa
  for(const prepare of [f=>f.ctx.me=null,f=>{}]){const f=fixture({access:async()=>({data:false})});prepare(f);await assert.rejects(f.ctx.openDocumentAttachments('proforma',recordId,'PF-1'));assert.ok(!f.calls.some(c=>c[0]==='range'||c[0]==='upload'))}
  const f=fixture();await assert.rejects(f.ctx.openDocumentAttachments('unknown',recordId,'Unknown'));assert.equal(f.calls.length,0);
 });
+test('product brochure uploads reuse the saved-product access check and private storage request',async()=>{
+ const f=fixture();await f.ctx.openDocumentAttachments('product',recordId,'Analyzer');
+ assert.match(f.dialog.innerHTML,/Product brochures/);assert.match(f.dialog.innerHTML,/customer-facing product brochures/);
+ f.element('[data-attachment-file]').files=[file('Brochure.pdf')];await f.element('form').onsubmit({preventDefault(){}});
+ assert.ok(f.calls.some(call=>call[0]==='rpc'&&call[1]==='document_attachment_parent_access'&&call[2].p_record_type==='product'));
+ assert.ok(f.calls.some(call=>call[0]==='upload'&&call[1]===`product/${recordId}/${requestId}.pdf`));
+ const finalized=f.calls.find(call=>call[1]==='finalize_document_attachment');assert.equal(finalized[2].p_record_type,'product');assert.equal(finalized[2].p_record_id,recordId);
+});
 test('metadata failure is displayed without claiming an empty successful list',async()=>{
  const f=fixture({listError:true});await f.ctx.openDocumentAttachments('proforma',recordId,'PF-1');assert.match(f.element('[data-attachment-status]').textContent,/List unavailable/);
  assert.deepEqual(f.calls.filter(c=>c[0]==='range'),[['range',0,25]]);

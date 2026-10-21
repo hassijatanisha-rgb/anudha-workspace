@@ -159,7 +159,8 @@ function openWorkClose(row,action){
 }
 async function workOpenRecord(row){
  if(!row)return;
- if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
+ if(row.record_type==='proforma'||row.record_type==='delivery'){salesLoaded=false;view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
  else if(row.record_type==='contract'){view='contracts';contractFocus=row.record_id;contractPage=0;}
  else if(row.record_type==='service')return focusServiceCase(row.record_id);
  else if(row.record_type==='lead'){if(typeof focusLead==='function')focusLead(row.record_id);else view='leads';}

@@ -754,10 +754,11 @@ function productWorkbenchTable(rows){
  if(!rows.length)return '<p class="empty">No products match. Clear the search or select another category.</p>';
  return '<div class="table-wrap"><table class="product-quality-table"><caption>Yellow = one thing to fix · Red = two or more</caption><thead><tr><th scope="col">Product / code</th><th scope="col">Manufacturer</th><th scope="col">Specification</th><th scope="col">Sale status</th><th scope="col">Category / data quality</th><th scope="col">Actions</th></tr></thead><tbody>'+(()=>{const duplicates=typeof productDuplicateCounts==='function'?productDuplicateCounts(catalogRows()):null;return rows.map(p=>{
   const s=p.source||{},issues=catalogProductIssues(p),quality=typeof productQuality==='function'?productQuality(p,duplicates):{level:'',issues:[]},status=s.sale_status==='active'?'Active — for sale':s.sale_status==='inactive_serviced'?'Not sold — still serviced':'Needs review';
-  return `<tr class="${quality.level?'quality-'+quality.level:''}"><td><strong>${esc(p.name)}</strong><small>${esc(p.sku||'Stock code missing')}</small>${typeof qualityBadge==='function'?qualityBadge(quality.level,quality.issues):''}</td><td>${esc(s.company||'Needs review')}${!s.company&&s.suggested_company?`<small>Suggested: ${esc(s.suggested_company)} — confirm</small>`:''}${s.company&&s.company_note?`<small>${esc(s.company_note.startsWith('Found online')?'Found online — confirm on the label':s.company_note)}</small>`:''}</td><td>${esc(s.specification||s.model||'Needs review')}</td><td>${esc(status)}</td><td>${esc(catalogLabel(catalogCategoryOf(p)))}<details><summary>${issues.length?`${issues.length} checks needed`:'Details reviewed'}</summary>${issues.length?'<ul>'+issues.map(i=>`<li>${esc(i)}</li>`).join('')+'</ul>':'Stock must still be verified by godown.'}</details></td><td><div class="actions"><button type="button" data-product-review="${esc(p.id)}">Correct details</button>${canEditRecords()?`<button type="button" data-product-edit="${esc(p.id)}">Name / code</button>`:''}<button type="button" data-workbench-detail="${esc(p.id)}">More details</button><button type="button" data-workbench-stock="${esc(p.id)}">Stock by godown</button></div></td></tr>`;
+  return `<tr class="${quality.level?'quality-'+quality.level:''}"><td><strong>${esc(p.name)}</strong><small>${esc(p.sku||'Stock code missing')}</small>${typeof qualityBadge==='function'?qualityBadge(quality.level,quality.issues):''}</td><td>${esc(s.company||'Needs review')}${!s.company&&s.suggested_company?`<small>Suggested: ${esc(s.suggested_company)} — confirm</small>`:''}${s.company&&s.company_note?`<small>${esc(s.company_note.startsWith('Found online')?'Found online — confirm on the label':s.company_note)}</small>`:''}</td><td>${esc(s.specification||s.model||'Needs review')}</td><td>${esc(status)}</td><td>${esc(catalogLabel(catalogCategoryOf(p)))}<details><summary>${issues.length?`${issues.length} checks needed`:'Details reviewed'}</summary>${issues.length?'<ul>'+issues.map(i=>`<li>${esc(i)}</li>`).join('')+'</ul>':'Stock must still be verified by godown.'}</details></td><td><div class="actions"><button type="button" data-product-review="${esc(p.id)}">Correct details</button>${canEditRecords()?`<button type="button" data-product-edit="${esc(p.id)}">Name / code</button>`:''}<button type="button" data-workbench-detail="${esc(p.id)}">More details</button><button type="button" data-workbench-stock="${esc(p.id)}">Stock by godown</button>${typeof productBrochuresButton==='function'?productBrochuresButton(p):''}</div></td></tr>`;
  }).join('');})()+'</tbody></table></div>';
 }
 function bindProductWorkbench(){
+ if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
  document.querySelectorAll('[data-workbench-stock]').forEach(button=>button.onclick=()=>{
   const product=products.find(p=>p.id===button.dataset.workbenchStock);if(!product)return;
   inventoryProductId=product.id;inventorySearch='';inventorySection='stock';run(()=>inventoryWorkspace());
@@ -767,6 +768,7 @@ function bindProductWorkbench(){
   $('#content').innerHTML='<button type="button" id="workbenchBack">← Back to product workbench</button>'+catalogProduct(product,rows);
   $('#workbenchBack').onclick=catalogInventory;
   bindInventoryWorkspace();
+  if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
  });
 }
 ;// catalog-inventory.js
@@ -825,7 +827,7 @@ function catalogSource(p){
 }
 function catalogProduct(p,rows){
  const source=p.source||{},category=catalogCategoryOf(p),machine=category==='machines',issues=catalogProductIssues(p),clues=catalogNameClues(p.name),classification=catalogClassification(p);
- return `<article class="contact ${issues.length?'incomplete':''}"><div class="heading"><h3>${machine?`<button type="button" data-catalog-machine="${esc(p.id)}">${esc(p.name||'Product name missing')}</button>`:esc(p.name||'Product name missing')}</h3><span class="tag">${esc(catalogLabel(category))}</span></div>${issues.length?`<p class="revision-label">Needs review · ${issues.map(esc).join(', ')}</p>`:''}${!classification&&(clues.suggestedCategory||clues.packHint)?`<p class="source-clue"><strong>Source-list clue:</strong> ${clues.suggestedCategory?`${esc(catalogLabel(clues.suggestedCategory))} suggested because ${esc(clues.categoryReason.toLowerCase())}. `:''}${clues.packHint?`Pack wording: “${esc(clues.packHint)}” — review only; this is not a carton conversion.`:''}</p>`:''}<div class="details"><div><small>Company</small>${esc(source.company||'Not supplied')}</div><div><small>Model / specification</small>${esc(source.specification||source.model||'Not supplied')}</div><div><small>Stock code</small>${esc(p.sku||'Not supplied')}</div><div><small>Stock quantity</small>Enter through Stock by godown</div></div>${source.description?`<p>${esc(source.description)}</p>`:''}${!machine?`<div><small>Related machines</small><div class="actions">${catalogMachineLinks(p,rows)}</div></div>`:''}${catalogSource(p)}<button type="button" data-product-review="${esc(p.id)}">Review company, specification &amp; sale status</button>${canEditRecords()?`<details><summary>${classification?'Revise confirmed inventory category':'Confirm inventory category'}</summary><form data-inventory-action="classification" data-product="${p.id}" data-version="${classification?.version||0}"><label><span>Inventory category</span><select name="category" required>${catalogCategories.filter(([id])=>!['review','all'].includes(id)).map(([id,label])=>inventoryOption(id,label,(classification?.category||clues.suggestedCategory||'unclassified')===id)).join('')}</select></label><label><span>Reason / source checked</span><textarea name="reason" minlength="5" required>${esc(classification?.reason||clues.categoryReason||'')}</textarea></label><button type="submit">Save reviewed category</button></form></details>`:''}<div class="actions"><button type="button" data-workbench-stock="${esc(p.id)}">Stock by godown</button>${canEditRecords()?`<button type="button" data-product-edit="${esc(p.id)}">Edit product name / stock code</button>`:''}${canEditRecords()?`<button type="button" class="danger" data-archive-business="product" data-id="${esc(p.id)}">Delete product</button>`:''}</div></article>`;
+ return `<article class="contact ${issues.length?'incomplete':''}"><div class="heading"><h3>${machine?`<button type="button" data-catalog-machine="${esc(p.id)}">${esc(p.name||'Product name missing')}</button>`:esc(p.name||'Product name missing')}</h3><span class="tag">${esc(catalogLabel(category))}</span></div>${issues.length?`<p class="revision-label">Needs review · ${issues.map(esc).join(', ')}</p>`:''}${!classification&&(clues.suggestedCategory||clues.packHint)?`<p class="source-clue"><strong>Source-list clue:</strong> ${clues.suggestedCategory?`${esc(catalogLabel(clues.suggestedCategory))} suggested because ${esc(clues.categoryReason.toLowerCase())}. `:''}${clues.packHint?`Pack wording: “${esc(clues.packHint)}” — review only; this is not a carton conversion.`:''}</p>`:''}<div class="details"><div><small>Company</small>${esc(source.company||'Not supplied')}</div><div><small>Model / specification</small>${esc(source.specification||source.model||'Not supplied')}</div><div><small>Stock code</small>${esc(p.sku||'Not supplied')}</div><div><small>Stock quantity</small>Enter through Stock by godown</div></div>${source.description?`<p>${esc(source.description)}</p>`:''}${!machine?`<div><small>Related machines</small><div class="actions">${catalogMachineLinks(p,rows)}</div></div>`:''}${catalogSource(p)}<button type="button" data-product-review="${esc(p.id)}">Review company, specification &amp; sale status</button>${canEditRecords()?`<details><summary>${classification?'Revise confirmed inventory category':'Confirm inventory category'}</summary><form data-inventory-action="classification" data-product="${p.id}" data-version="${classification?.version||0}"><label><span>Inventory category</span><select name="category" required>${catalogCategories.filter(([id])=>!['review','all'].includes(id)).map(([id,label])=>inventoryOption(id,label,(classification?.category||clues.suggestedCategory||'unclassified')===id)).join('')}</select></label><label><span>Reason / source checked</span><textarea name="reason" minlength="5" required>${esc(classification?.reason||clues.categoryReason||'')}</textarea></label><button type="submit">Save reviewed category</button></form></details>`:''}<div class="actions"><button type="button" data-workbench-stock="${esc(p.id)}">Stock by godown</button>${typeof productBrochuresButton==='function'?productBrochuresButton(p):''}${canEditRecords()?`<button type="button" data-product-edit="${esc(p.id)}">Edit product name / stock code</button>`:''}${canEditRecords()?`<button type="button" class="danger" data-archive-business="product" data-id="${esc(p.id)}">Delete product</button>`:''}</div></article>`;
 }
 function catalogInventory(){
  if(typeof productReviewLoadError!=='undefined'&&productReviewLoadError){
@@ -1048,7 +1050,7 @@ function inventoryStock(){
  const q=inventorySearch.trim().toLowerCase(),shown=available.filter(lot=>{const product=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),source=product.source||{};return `${product.name} ${product.sku||''} ${source.company||''} ${source.specification||source.model||''} ${place.name} ${place.code} ${lot.batch_number||''}`.toLowerCase().includes(q)});
  return `${inventoryHeader()}${inventoryProductId?`<section class="card"><strong>Selected product: ${esc(inventoryProduct(inventoryProductId).name)}</strong><p>Stock code: ${esc(inventoryProduct(inventoryProductId).sku||inventoryProductId)} · This view uses the exact product ID, not a name match.</p><button type="button" id="clearStockProduct">Show all products</button></section>`:''}${me.role==='owner'?inventorySetupProgress()+inventoryImportPanel():''}<div class="inventory-metrics"><div><small>Available sealed cartons</small><strong>${totalCartons}</strong></div><div><small>Available loose units</small><strong>${totalLoose}</strong></div><div><small>Quarantined lots</small><strong>${quarantine.length}</strong></div><div><small>Active locations</small><strong>${inventoryLocations.filter(x=>x.active).length}</strong></div></div>
  ${canEditRecords()?`<details class="card"><summary>1. Set a product carton size</summary><form data-inventory-action="pack"><div class="grid"><label class="wide"><span>Find product</span><input name="productChoice" list="inventoryProductChoices" placeholder="Start typing a product name" autocomplete="off" required><datalist id="inventoryProductChoices" data-lookup-values="products">${inventoryProductChoices()}</datalist></label><label><span>Individual unit name</span><input name="baseUnit" placeholder="piece, bottle, test" required maxlength="40"></label><label><span>Units in one sealed carton</span><input name="unitsPerCarton" type="number" min="1" step="1" required></label><label class="wide"><span>Where was this carton size verified?</span><textarea name="reason" minlength="5" placeholder="Example: supplier carton label checked by…" required></textarea></label></div><button type="submit">Save carton size</button></form></details>`:''}${me.role==='owner'?`
- <details class="card"><summary>2. Enter a verified physical stock count</summary>${inventoryPacks.length?`<form data-inventory-action="opening"><div class="grid"><label><span>Product / carton size</span><select name="packId" required><option value="">Choose saved carton size</option>${inventoryPackOptions()}</select></label><label><span>Location</span><select name="locationId" required><option value="">Choose location</option>${inventoryLocationOptions()}</select></label><label><span>Batch number</span><input name="batchNumber" maxlength="120"></label><label><span>Expiry date</span><input name="expiryDate" type="date"></label><label><span>Sealed cartons counted</span><input name="sealedCartons" type="number" min="0" step="1" value="0" required></label><label><span>Loose individual units counted</span><input name="looseUnits" type="number" min="0" step="1" value="0" required></label><label class="wide"><span>Who counted it, and from what source?</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Record physical count</button></form>`:'<p class="warning">Save at least one product carton size before entering stock.</p>'}</details>`:''}
+ <details class="card"><summary>2. Receive stock / enter a verified physical count</summary>${inventoryPacks.length?`<form data-inventory-action="opening"><div class="grid"><label><span>Product / carton size</span><select name="packId" required><option value="">Choose saved carton size</option>${inventoryPackOptions()}</select></label><label><span>Location</span><select name="locationId" required><option value="">Choose location</option>${inventoryLocationOptions()}</select></label><label><span>Batch number</span><input name="batchNumber" maxlength="120"></label><label><span>Expiry date</span><input name="expiryDate" type="date"></label><label><span>Sealed cartons counted</span><input name="sealedCartons" type="number" min="0" step="1" value="0" required></label><label><span>Loose individual units counted</span><input name="looseUnits" type="number" min="0" step="1" value="0" required></label><label class="wide"><span>Who counted it, and from what source?</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Record physical count</button></form>`:'<p class="warning">Save at least one product carton size before entering stock.</p>'}</details>`:''}
  <section class="card"><div class="heading"><div><h2>Stock by location</h2><p class="muted">Search by product, stock code, location, or batch.</p></div><span>${shown.length} of ${available.length} available lots</span></div><label><span>Search stock</span><input id="inventorySearch" type="search" value="${esc(inventorySearch)}" placeholder="Product, stock code, location, or batch"></label>${shown.map(inventoryLotCard).join('')||'<p class="empty">No stock matches this search.</p>'}</section>
  ${quarantine.length?`<section class="card"><h2>Quarantine · unavailable for sale</h2>${quarantine.map(inventoryLotCard).join('')}</section>`:''}
  <div class="inventory-history"><section class="card"><div class="heading"><h2>Recent stock activity</h2><span>${scopedMovements.length} records</span></div>${scopedMovements.slice(0,20).map(inventoryMovementCard).join('')||'<p class="empty">No stock movements yet.</p>'}</section><section class="card"><div class="heading"><h2>Items issued to clients</h2><span>${scopedIssues.length} records</span></div>${scopedIssues.slice(0,20).map(inventoryIssueCard).join('')||'<p class="empty">No individual items have been issued yet.</p>'}</section></div>`;
@@ -1094,11 +1096,11 @@ async function submitInventoryForm(form){
  if(action!=='location'&&typeof productReviewLoadError!=='undefined'&&productReviewLoadError)throw Error('Refresh product corrections before changing inventory. '+productReviewLoadError);
  if(action==='location')result=await client.rpc('save_inventory_location',{p_id:crypto.randomUUID(),p_expected_version:0,p_name:f.get('name'),p_code:f.get('code'),p_location_type:f.get('locationType'),p_active:true});
  else if(action==='pack'){const product=inventoryProductFromChoice(f.get('productChoice'));if(!product)throw Error('Choose a product from the search suggestions.');const current=inventoryLatestPack(product.id);result=await client.rpc('save_pack_definition',{p_id:crypto.randomUUID(),p_product_id:product.id,p_expected_version:current?.version||0,p_base_unit:f.get('baseUnit'),p_units_per_carton:Number(f.get('unitsPerCarton')),p_reason:f.get('reason')});}
- else if(action==='opening'){const pack=inventoryPacks.find(x=>x.id===f.get('packId'));result=await client.rpc('set_inventory_opening_balance',{p_lot_id:crypto.randomUUID(),p_expected_version:0,p_product_id:pack.product_id,p_location_id:f.get('locationId'),p_pack_definition_id:pack.id,p_batch_number:f.get('batchNumber'),p_expiry_date:f.get('expiryDate')||null,p_sealed_cartons:Number(f.get('sealedCartons')),p_loose_units:Number(f.get('looseUnits')),p_reason:f.get('reason')});}
- else if(action==='correct'){const lot=inventoryLots.find(x=>x.id===form.dataset.lot);if(!lot)throw Error('This stock lot changed. Refresh and try again.');result=await client.rpc('set_inventory_opening_balance',{p_lot_id:lot.id,p_expected_version:Number(form.dataset.version),p_product_id:lot.product_id,p_location_id:lot.location_id,p_pack_definition_id:lot.pack_definition_id,p_batch_number:lot.batch_number,p_expiry_date:lot.expiry_date||null,p_sealed_cartons:Number(f.get('sealedCartons')),p_loose_units:Number(f.get('looseUnits')),p_reason:f.get('reason')});}
+ else if(action==='opening'){const pack=inventoryPacks.find(x=>x.id===f.get('packId'));result=await saveInventoryCountWithSerials({p_lot_id:crypto.randomUUID(),p_expected_version:0,p_product_id:pack.product_id,p_location_id:f.get('locationId'),p_pack_definition_id:pack.id,p_batch_number:f.get('batchNumber'),p_expiry_date:f.get('expiryDate')||null,p_sealed_cartons:Number(f.get('sealedCartons')),p_loose_units:Number(f.get('looseUnits')),p_reason:f.get('reason')},f.get('receivingSerials'));}
+ else if(action==='correct'){const lot=inventoryLots.find(x=>x.id===form.dataset.lot);if(!lot)throw Error('This stock lot changed. Refresh and try again.');result=await saveInventoryCountWithSerials({p_lot_id:lot.id,p_expected_version:Number(form.dataset.version),p_product_id:lot.product_id,p_location_id:lot.location_id,p_pack_definition_id:lot.pack_definition_id,p_batch_number:lot.batch_number,p_expiry_date:lot.expiry_date||null,p_sealed_cartons:Number(f.get('sealedCartons')),p_loose_units:Number(f.get('looseUnits')),p_reason:f.get('reason')},f.get('receivingSerials'));}
  else if(action==='request')result=await client.rpc('request_inventory_transfer',{p_id:crypto.randomUUID(),p_source_lot_id:f.get('sourceLotId'),p_to_location_id:f.get('toLocationId'),p_cartons:Number(f.get('cartons')),p_expected_at:f.get('expectedAt'),p_reason:f.get('reason')});
- else if(action==='dispatch')result=await client.rpc('dispatch_inventory_transfer',{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_expected_lot_version:Number(form.dataset.lotVersion),p_reason:f.get('reason')});
- else if(action==='receive')result=await client.rpc('receive_inventory_transfer',{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_actual_units:Number(f.get('actualUnits')),p_inspection:f.get('inspection'),p_note:f.get('note')});
+ else if(action==='dispatch')result=await saveInventoryTransferWithSerials(action,{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_expected_lot_version:Number(form.dataset.lotVersion),p_reason:f.get('reason')},f.get('transferSerials'),f.get('legacyTransfer')==='on');
+ else if(action==='receive')result=await saveInventoryTransferWithSerials(action,{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_actual_units:Number(f.get('actualUnits')),p_inspection:f.get('inspection'),p_note:f.get('note')},f.get('transferSerials'),f.get('legacyTransfer')==='on');
  else if(action==='open')result=await client.rpc('open_inventory_cartons',{p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_cartons:Number(f.get('cartons')),p_reason:f.get('reason')});
  else if(action==='issue')result=await client.rpc('issue_consumer_units',{p_id:crypto.randomUUID(),p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_organization_id:f.get('organizationId'),p_quantity:Number(f.get('quantity')),p_issued_on:f.get('issuedOn'),p_reference:f.get('reference'),p_reason:f.get('reason')});
  else if(action==='classification')result=await client.rpc('save_product_inventory_classification',{p_id:crypto.randomUUID(),p_product_id:form.dataset.product,p_expected_version:Number(form.dataset.version),p_category:f.get('category'),p_reason:f.get('reason')});
@@ -1173,8 +1175,18 @@ async function documentStorageErrorDetails(error){
  return {missing,message:text||(status?`Storage request failed (HTTP ${status}).`:'Storage request failed.')};
 }
 
+async function documentAttachmentBlob(row,checkCurrent){
+ const result=await client.storage.from('erp-documents').download(row.object_path);
+ checkCurrent();
+ if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
+ if(!result.data)throw Error('The server returned no file.');
+ const file=new Blob([result.data],{type:row.mime_type});
+ await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:file.size,slice:(start,end)=>file.slice(start,end)});checkCurrent();
+ return file;
+}
+
 async function openDocumentAttachments(recordType,recordId,recordLabel){
- if(!['proforma','delivery','service','accounting','contract'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
+ if(!['proforma','delivery','service','accounting','contract','product'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
  const actor=me?.user_id,openingView=view;
  if(!actor)throw Error('Sign in to open document attachments.');
  let dialog=null,page=0,busy=false,pending=null;
@@ -1193,7 +1205,7 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
  }
  await requireAccess();
  dialog=document.createElement('dialog');dialog.className='document-attachments';dialog.setAttribute('aria-label',`Attachments for ${recordLabel}`);
- dialog.innerHTML=`<form><h2>Document attachments</h2><p>${esc(recordLabel)}</p><p>Attach a PDF, JPEG or PNG up to 10 MB to this saved record. Attachments do not issue an invoice, approve an order or change stock.</p><label>File<input type="file" data-attachment-file accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></label><button type="submit">Upload attachment</button></form><p data-attachment-status role="status" aria-live="polite"></p><section data-attachment-list aria-label="Saved attachments"></section><div class="actions"><button type="button" data-attachment-previous>Previous</button><span data-attachment-page>Page 1</span><button type="button" data-attachment-next>Next</button></div><p>Download a saved attachment, then open it in your PDF or image viewer to print. Files remain private to authorized staff. Keep this dialog open to retry an unconfirmed upload.</p><button type="button" data-attachment-close>Close</button>`;
+ dialog.innerHTML=`<form><h2>${recordType==='product'?'Product brochures':'Document attachments'}</h2><p>${esc(recordLabel)}</p><p>${recordType==='product'?'Upload only customer-facing product brochures or specifications. These files are available for selection on quotations containing this product. ':''}Attach a PDF, JPEG or PNG up to 10 MB to this saved record. Attachments do not issue an invoice, approve an order or change stock.</p><label>File<input type="file" data-attachment-file accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></label><button type="submit">Upload attachment</button></form><p data-attachment-status role="status" aria-live="polite"></p><section data-attachment-list aria-label="Saved attachments"></section><div class="actions"><button type="button" data-attachment-previous>Previous</button><span data-attachment-page>Page 1</span><button type="button" data-attachment-next>Next</button></div><p>Download a saved attachment, then open it in your PDF or image viewer to print. Files remain private to authorized staff. Keep this dialog open to retry an unconfirmed upload.</p><button type="button" data-attachment-close>Close</button>`;
  document.body.append(dialog);
  const form=dialog.querySelector('form'),input=dialog.querySelector('[data-attachment-file]'),submit=dialog.querySelector('[type="submit"]'),status=dialog.querySelector('[data-attachment-status]'),list=dialog.querySelector('[data-attachment-list]'),previous=dialog.querySelector('[data-attachment-previous]'),next=dialog.querySelector('[data-attachment-next]');
  dialog.querySelector('[data-attachment-close]').onclick=()=>{if(!busy)dialog.close()};
@@ -1206,12 +1218,7 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
   try{
    await requireAccess();
    status.textContent='Downloading private attachment…';
-   const result=await client.storage.from('erp-documents').download(row.object_path);
-   checkCurrent();
-   if(result.error){const detail=await documentStorageErrorDetails(result.error);checkCurrent();throw Error(detail.missing?'The private file was not found, or your access to it has changed.':detail.message);}
-   if(!result.data)throw Error('The server returned no file.');
-   const safeFile=new Blob([result.data],{type:row.mime_type});
-   await validateDocumentAttachment({name:row.original_filename,type:row.mime_type,size:safeFile.size,slice:(start,end)=>safeFile.slice(start,end)});checkCurrent();
+   const safeFile=await documentAttachmentBlob(row,checkCurrent);
    const url=URL.createObjectURL(safeFile),link=document.createElement('a');
    try{link.href=url;link.download=row.original_filename;link.rel='noopener';document.body.append(link);link.click();status.textContent='Download requested. Open the downloaded file in your PDF or image viewer to print.';}
    finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
@@ -1276,6 +1283,122 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
  busy=true;
  try{await loadList();}catch(error){if(current())status.textContent=`Attachments could not load: ${error.message}`;}
  finally{busy=false;}
+}
+;// quotation-documents.js
+'use strict';
+
+function quotationDocumentsButton(record){return `<button type="button" data-quotation-documents="${esc(record.id)}">Quotation documents</button>`;}
+function productBrochuresButton(product){return `<button type="button" data-product-brochures="${esc(product.id)}">Product brochures</button>`;}
+function bindQuotationDocuments(){
+ document.querySelectorAll('[data-quotation-documents]').forEach(button=>button.onclick=()=>run(()=>openQuotationDocuments(salesProforma(button.dataset.quotationDocuments))));
+ document.querySelectorAll('[data-product-brochures]').forEach(button=>button.onclick=()=>run(()=>openDocumentAttachments('product',button.dataset.productBrochures,salesProduct(button.dataset.productBrochures).name)));
+}
+function quotationDocumentParents(record){
+ const parents=[{type:'proforma',id:record.id,label:'Quotation supporting files'}],seen=new Set();
+ for(const line of salesDocumentLines(record))if(line.product_id&&!seen.has(line.product_id)){
+  seen.add(line.product_id);parents.push({type:'product',id:line.product_id,label:line.product_name||salesProduct(line.product_id).name});
+ }
+ return parents;
+}
+// Only these public identifiers and explicitly selected filenames enter the customer cover note.
+function quotationCustomerNote(record,filenames){
+ return `Please find the supporting documents for quotation ${String(record.document_number||'').replace(/[\r\n]/g,' ')} (revision ${Number(record.revision)||1}).\n\n${filenames.map(name=>'- '+name).join('\n')}\n`;
+}
+// A bounded, uncompressed ZIP avoids dependencies and keeps original PDF/image bytes intact.
+function quotationSupportingZip(files){
+ if(!files.length||files.length>21||files.reduce((total,file)=>total+file.bytes.length,0)>52428800)throw Error('Select at most 20 supporting files totaling less than 50 MB.');
+ const encoder=new TextEncoder(),parts=[],directory=[];let offset=0;
+ const header=(length,signature)=>{const bytes=new Uint8Array(length),view=new DataView(bytes.buffer);view.setUint32(0,signature,true);return {bytes,view};};
+ for(const file of files){
+  if(!file.name||file.name.length>258||/[\x00-\x1f\x7f/\\]/.test(file.name))throw Error('Invalid package filename.');
+  const name=encoder.encode(file.name),bytes=file.bytes;let crc=0xffffffff;
+  for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+  crc=(crc^0xffffffff)>>>0;
+  const local=header(30,0x04034b50),central=header(46,0x02014b50);
+  local.view.setUint16(4,20,true);local.view.setUint16(6,0x0800,true);local.view.setUint16(12,33,true);
+  local.view.setUint32(14,crc,true);local.view.setUint32(18,bytes.length,true);local.view.setUint32(22,bytes.length,true);local.view.setUint16(26,name.length,true);
+  central.view.setUint16(4,20,true);central.view.setUint16(6,20,true);central.view.setUint16(8,0x0800,true);central.view.setUint16(14,33,true);
+  central.view.setUint32(16,crc,true);central.view.setUint32(20,bytes.length,true);central.view.setUint32(24,bytes.length,true);central.view.setUint16(28,name.length,true);central.view.setUint32(42,offset,true);
+  parts.push(local.bytes,name,bytes);directory.push(central.bytes,name);offset+=30+name.length+bytes.length;
+ }
+ const end=header(22,0x06054b50);end.view.setUint16(8,files.length,true);end.view.setUint16(10,files.length,true);
+ end.view.setUint32(12,directory.reduce((total,bytes)=>total+bytes.length,0),true);end.view.setUint32(16,offset,true);
+ return new Blob([...parts,...directory,end.bytes],{type:'application/zip'});
+}
+async function openQuotationDocuments(record){
+ if(!record?.id||!me?.user_id)throw Error('Choose a saved quotation.');
+ const actor=me,openingView=view,epoch=salesEpoch,version=record.version,selected=new Map();let dialog=null,busy=false,page=0,parentIndex=0;
+ const current=()=>{
+  const valid=me===actor&&view===openingView&&salesEpoch===epoch&&salesProforma(record.id)?.version===version&&(!dialog||dialog.isConnected);
+  if(!valid){selected.clear();if(dialog?.isConnected){dialog.close();dialog.remove();}}
+  return valid;
+ };
+ const checkCurrent=()=>{if(!current())throw Error('Login, quotation or page changed. Reopen quotation documents.');};
+ async function requireAccess(type,id){
+  checkCurrent();const result=await client.rpc('document_attachment_parent_access',{p_record_type:type,p_record_id:id});checkCurrent();
+  if(result.error)throw Error(`Document access could not be verified: ${result.error.message}`);
+  if(result.data!==true)throw Error('You do not have access to these documents.');
+ }
+ await requireAccess('proforma',record.id);await loadSalesRevision(record);checkCurrent();
+ const parents=quotationDocumentParents(record);
+ dialog=document.createElement('dialog');dialog.className='document-attachments no-print';dialog.setAttribute('aria-label','Quotation documents');
+ dialog.innerHTML=`<h2>Quotation documents · ${esc(record.document_number)}</h2><p>1. Save the quotation PDF with <strong>Print / PDF</strong>. Internal remarks are excluded.</p><button type="button" data-quote-print>Print / PDF</button><p>2. Review the supporting files and product brochures below. Select only files intended for this customer; no files are selected automatically.</p><label>Document source<select data-quote-source>${parents.map((parent,index)=>`<option value="${index}">${esc(parent.label)}</option>`).join('')}</select></label><section data-quote-files aria-label="Available supporting files"></section><div class="actions"><button type="button" data-quote-previous>Previous</button><span data-quote-page></span><button type="button" data-quote-next>Next</button><button type="button" data-quote-upload>Upload / view source files</button></div><p data-quote-selection>0 files selected</p><button type="button" data-quote-download disabled>Download selected supporting files (ZIP)</button><p>3. Attach the quotation PDF and the reviewed supporting files to your message. The ZIP contains the selected files and a customer cover note; it does not contain the quotation PDF. Email is sent manually in your email app. This workspace does not automatically email quotations. Record “sent to client” only after sending.</p><p data-quote-status role="status" aria-live="polite"></p><button type="button" data-quote-close>Close</button>`;
+ document.body.append(dialog);dialog.showModal();
+ const source=dialog.querySelector('[data-quote-source]'),list=dialog.querySelector('[data-quote-files]'),status=dialog.querySelector('[data-quote-status]'),previous=dialog.querySelector('[data-quote-previous]'),next=dialog.querySelector('[data-quote-next]'),download=dialog.querySelector('[data-quote-download]');
+ dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});dialog.addEventListener('close',()=>{selected.clear();dialog.remove();});
+ dialog.querySelector('[data-quote-close]').onclick=()=>{if(!busy)dialog.close();};
+ dialog.querySelector('[data-quote-print]').onclick=()=>{if(!busy&&current()){dialog.close();printSalesDocument(record.id);}};
+ dialog.querySelector('[data-quote-upload]').onclick=()=>{if(!busy&&current()){const parent=parents[parentIndex];dialog.close();run(()=>openDocumentAttachments(parent.type,parent.id,parent.label));}};
+ function selectionChanged(){
+  const size=[...selected.values()].reduce((total,row)=>total+Number(row.byte_size),0);
+  dialog.querySelector('[data-quote-selection]').textContent=`${selected.size} files selected · ${(size/1048576).toFixed(1)} MB (maximum 20 files / 50 MB)`;download.disabled=busy||selected.size===0;
+ }
+ async function loadPage(){
+  const parent=parents[parentIndex];await requireAccess(parent.type,parent.id);
+  const result=await client.from('document_attachments').select('id,record_type,record_id,object_path,original_filename,mime_type,byte_size,uploaded_at').eq('record_type',parent.type).eq('record_id',parent.id).order('uploaded_at',{ascending:false}).order('id',{ascending:false}).range(page*25,page*25+25);
+  checkCurrent();if(result.error)throw result.error;
+  const rows=(result.data||[]).slice(0,25);
+  list.innerHTML=rows.map(row=>`<label><input type="checkbox" data-quote-file="${esc(row.id)}" ${selected.has(row.id)?'checked':''}>${esc(row.original_filename)} · ${(Number(row.byte_size)/1048576).toFixed(1)} MB · ${esc(row.uploaded_at)}</label>`).join('')||`<p>${parent.type==='product'?'No product brochures have been uploaded for this product.':'No quotation supporting files have been uploaded.'}</p>`;
+  list.querySelectorAll('[data-quote-file]').forEach(input=>input.onchange=()=>{
+   if(busy||!current())return;
+   const row=rows.find(item=>item.id===input.dataset.quoteFile);
+   if(input.checked){
+    const total=[...selected.values()].reduce((sum,item)=>sum+Number(item.byte_size),Number(row.byte_size));
+    if(selected.size>=20||!Number.isSafeInteger(total)||total>=52428800){input.checked=false;status.textContent='Select at most 20 supporting files totaling less than 50 MB.';return;}
+    selected.set(row.id,row);
+   }else selected.delete(row.id);
+   status.textContent='';selectionChanged();
+  });
+  previous.disabled=page===0;next.disabled=(result.data||[]).length<=25;dialog.querySelector('[data-quote-page]').textContent=`Page ${page+1}`;
+ }
+ async function reload(index,nextPage){
+  if(busy||!current())return;busy=true;source.disabled=true;download.disabled=true;list.innerHTML='';parentIndex=index;page=nextPage;
+  try{await loadPage();if(current())status.textContent='';}
+  catch(error){if(current()){list.innerHTML='';previous.disabled=true;next.disabled=true;status.textContent=`Files could not load: ${error.message}`;}}
+  finally{busy=false;if(current()){source.disabled=false;selectionChanged();}}
+ }
+ source.onchange=()=>reload(Number(source.value),0);previous.onclick=()=>{if(page>0)return reload(parentIndex,page-1);};next.onclick=()=>{if(!next.disabled)return reload(parentIndex,page+1);};
+ download.onclick=async()=>{
+  if(busy||!selected.size||!current())return;busy=true;source.disabled=true;download.disabled=true;
+  list.querySelectorAll('[data-quote-file]').forEach(input=>input.disabled=true);
+  try{
+   const rows=[...selected.values()],files=[];let size=0;
+   for(const row of rows){
+    await requireAccess(row.record_type,row.record_id);status.textContent=`Preparing file ${files.length+1} of ${rows.length}…`;
+    const blob=await documentAttachmentBlob(row,checkCurrent);if(blob.size!==Number(row.byte_size))throw Error('File size changed; reopen and review the supporting files.');
+    size+=blob.size;if(size>=52428800)throw Error('Selected files exceed the 50 MB package limit.');
+    const bytes=new Uint8Array(await blob.arrayBuffer());checkCurrent();
+    files.push({name:String(files.length+1).padStart(2,'0')+'-'+row.original_filename,bytes});
+   }
+   files.unshift({name:'00-Customer cover note.txt',bytes:new TextEncoder().encode(quotationCustomerNote(record,rows.map(row=>row.original_filename)))});
+   const zip=quotationSupportingZip(files);checkCurrent();
+   const url=URL.createObjectURL(zip),link=document.createElement('a');
+   try{link.href=url;link.download=String(record.document_number||'Quotation').replace(/[^a-zA-Z0-9_.-]+/g,'-').slice(0,80)+'-supporting-files.zip';link.rel='noopener';document.body.append(link);link.click();status.textContent='Supporting-file ZIP download requested. Attach the quotation PDF separately and review all files before sending. Nothing has been emailed or marked sent.';}
+   finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+  }catch(error){if(current())status.textContent=`Package download failed: ${error.message||'Please retry.'}`;}
+  finally{busy=false;if(current()){source.disabled=false;list.querySelectorAll('[data-quote-file]').forEach(input=>input.disabled=false);selectionChanged();}}
+ };
+ await reload(0,0);
 }
 ;// order-timing.js
 'use strict';
@@ -1471,6 +1594,7 @@ async function pricesWorkspace(target=$('#content')){
  const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
  search.oninput=draw;draw();target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));
  const form=target.querySelector('[data-price-editor]');if(!form)return;
+ if(typeof bindProductPriceImport==='function')bindProductPriceImport(target,current);
  let selected=null,request=null;
  const choose=()=>{const product=inventoryProductFromChoice(form.elements.productChoice.value),currency=form.elements.currency.value;selected=product?{product,currency,current:productSalePrices.get(pricingKey(product.id,currency))}:null;request=null;form.elements.price.value=selected?.current?pricingMinorText(selected.current.unit_price_minor):'';form.querySelector('[data-price-current]').textContent=selected?(selected.current?`Current version ${selected.current.version}. Saving retains the previous price in history.`:'No price configured for this product and currency.'): 'Choose a product from the suggestions.';};
  form.addEventListener('change',event=>{if(['productChoice','currency'].includes(event.target.name))choose();});
@@ -1700,7 +1824,7 @@ function proformaEditor(){
  return `<section class="card document-editor"><div class="heading"><div><small>${record?'REVISION '+record.revision:'NEW DOCUMENT'}</small><h2>${record?'Edit '+esc(record.document_number):'New Pro forma invoice'}</h2></div><button type="button" id="closeSalesEditor">Close</button></div><form id="proformaForm" data-id="${record?.id||''}" data-version="${record?.version||0}"><div class="grid"><label><span>Client branch</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions(organizationId)}</select></label><label><span>Named contact</span><select name="contactId" required><option value="">Choose the branch first</option>${salesContactOptions(organizationId,contactId)}</select></label><label><span>Currency</span><select name="currency"><option ${record?.currency==='TZS'?'selected':''}>TZS</option><option ${record?.currency==='USD'?'selected':''}>USD</option><option ${record?.currency==='EUR'?'selected':''}>EUR</option></select></label><label><span>Valid until</span><input name="validUntil" type="date" min="${salesDate()}" value="${record?.valid_until||salesDate(15)}" required></label><label><span>Delivery period</span><input name="deliveryPeriod" value="${esc(record?.delivery_period||'As agreed after acceptance')}" required maxlength="300"></label><label><span>Payment terms</span><input name="paymentTerms" value="${esc(record?.payment_terms||'Payment before delivery')}" required maxlength="1000"></label><label class="wide"><span>Customer-facing notes · printed on quotation</span><textarea name="notes" maxlength="4000">${esc(record?.notes||'')}</textarea></label></div>${proformaCommercialFields(record,organizationId)}<h3>Items</h3><datalist id="salesProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><div id="proformaLines">${lines.map(salesLineRow).join('')}</div><div class="actions"><button type="button" id="addSalesLine">+ Add item</button><button type="submit">${record?'Save new revision':'Save Pro forma invoice'}</button></div></form></section>`;
 }
 function proformaTable(record){const lines=salesDocumentLines(record);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Disc.</th><th>Tax</th><th>Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(line.product_name||salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td>${line.quantity}</td><td>${esc(moneyDisplay(Number(line.unit_price_minor),record.currency))}</td><td>${line.discount_basis_points/100}%</td><td>${line.tax_basis_points/100}%</td><td>${esc(moneyDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
-function proformaActions(record){const actions=proformaNextActions(record.status),buttons=[];if(record.status==='draft')buttons.push(`<button data-edit-proforma="${record.id}">Edit draft</button>`);if(record.status==='draft'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-archive-business="proforma" data-id="${record.id}">Delete draft</button>`);for(const action of actions){const labels={send:'Record sent to client',accept:'Submit to accounting',revise:'Return for revision',reject:'Record rejected',cancel:'Cancel'};buttons.push(`<button data-proforma-action="${action}" data-id="${record.id}" class="${['reject','cancel'].includes(action)?'danger':''}">${labels[action]}</button>`)}buttons.push(`<button data-print-document="${record.id}">Print / PDF</button>`);return buttons.join('')}
+function proformaActions(record){const actions=proformaNextActions(record.status),buttons=[];if(record.status==='draft')buttons.push(`<button data-edit-proforma="${record.id}">Edit draft</button>`);if(record.status==='draft'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-archive-business="proforma" data-id="${record.id}">Delete draft</button>`);for(const action of actions){const labels={send:'Record sent to client',accept:'Submit to accounting',revise:'Return for revision',reject:'Record rejected',cancel:'Cancel'};buttons.push(`<button data-proforma-action="${action}" data-id="${record.id}" class="${['reject','cancel'].includes(action)?'danger':''}">${labels[action]}</button>`)}buttons.push(`<button data-print-document="${record.id}">Print / PDF</button>`);if(typeof quotationDocumentsButton==='function')buttons.push(quotationDocumentsButton(record));return buttons.join('')}
 function proformaCard(record){const snapshot=salesDocumentSnapshot(record),organization=snapshot?{name:snapshot.organizationName||'Historical client name not recorded',location:snapshot.organizationLocation||''}:record.status==='draft'?salesOrganization(record.organization_id):{name:'Saved revision unavailable',location:''},contactName=snapshot?(snapshot.contactName||'Historical contact name not recorded'):record.status==='draft'?salesContactName(record.contact_id):'Saved revision unavailable',note=latestDelivery(record.id);if(snapshot)record={...record,currency:snapshot.currency,valid_until:snapshot.validUntil,delivery_period:snapshot.deliveryPeriod,payment_terms:snapshot.paymentTerms,notes:snapshot.notes,commercial_kind:snapshot.commercialKind||'sale',contract_id:snapshot.contractId||null,installation_required:snapshot.installationRequired??true,installation_charge_notes:snapshot.installationChargeNotes||'',subtotal_minor:snapshot.subtotalMinor,discount_minor:snapshot.discountMinor,tax_minor:snapshot.taxMinor,total_minor:snapshot.totalMinor};return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(contactName)}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaCommercialSummary(record)}${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
 // One tag per Pro forma, from where it is now: its own status, then the delivery started from it.
 const proformaTagKinds=[['draft','Draft'],['revised','Revised'],['sent','Sent to customer'],['waiting','Waiting approval'],['delivery','Approved · in delivery'],['partial','Partially delivered'],['done','Delivered'],['closed','Cancelled / rejected']];
@@ -1825,10 +1949,11 @@ function proformaMineToday(record,userId,now=new Date()){
  return [record.created_at,record.accepted_at,record.updated_at].some(value=>value&&companyDate(0,new Date(value))===today);
 }
 function proformaItemsSummary(record){const lines=salesLines(record.id);if(!lines.length)return '';const shown=lines.slice(0,3).map(line=>`${line.quantity} × ${salesProduct(line.product_id).name}`);return shown.join(' · ')+(lines.length>3?` · +${lines.length-3} more`:'');}
-function openProformaAction(record,action){const asksReference=action!=='send',label={send:'Send Pro forma to client',accept:'Record customer acceptance',revise:'Return Pro forma for revision',reject:'Record customer rejection',cancel:'Cancel Pro forma'}[action];actionForm(label,asksReference?`<p>${esc(record.document_number)} · ${esc(salesOrganization(record.organization_id).name)}</p><label><span>${action==='accept'?'Customer LPO, payment proof, email or acceptance reference':'Reason / reference'}</span><textarea name="reference" required maxlength="1000"></textarea></label>`:`<p>Confirm that ${esc(record.document_number)} has been sent to the named customer contact. The sent revision is locked until it is returned to Draft.</p>`,async values=>{const result=await client.rpc('advance_sales_proforma',{p_id:record.id,p_expected_version:record.version,p_action:action,p_reference:values.reference||''});if(result.error)throw result.error;await salesDeliveryWorkspace(true);message(label+' saved.')})}
+function openProformaAction(record,action){const asksReference=action!=='send',label={send:'Record sent to client',accept:'Record customer acceptance',revise:'Return Pro forma for revision',reject:'Record customer rejection',cancel:'Cancel Pro forma'}[action];actionForm(label,asksReference?`<p>${esc(record.document_number)} · ${esc(salesOrganization(record.organization_id).name)}</p><label><span>${action==='accept'?'Customer LPO, payment proof, email or acceptance reference':'Reason / reference'}</span><textarea name="reference" required maxlength="1000"></textarea></label>`:`<p>Confirm that ${esc(record.document_number)} has already been sent to the named customer contact. This action records the status; it does not send an email. The sent revision is locked until it is returned to Draft.</p>`,async values=>{const result=await client.rpc('advance_sales_proforma',{p_id:record.id,p_expected_version:record.version,p_action:action,p_reference:values.reference||''});if(result.error)throw result.error;await salesDeliveryWorkspace(true);message(label+' saved.')})}
 function openDeliveryAction(note,action){const actor=me,epoch=salesEpoch;const content=action==='tax_invoice'?'<p class="notice">Link an existing ERP invoice for this accepted Pro forma and reserve only that invoice’s undelivered quantities from available Haadi stock. If the invoice is missing, voided, ambiguous, or stock is short, nothing is reserved.</p><label><span>ERP invoice number · optional when only one is eligible</span><input name="invoiceReference" maxlength="80"></label>':action==='dispatch'?'<label><span>Driver / vehicle</span><input name="carrier" required maxlength="200"></label><label><span>Out-for-delivery / tracking reference</span><input name="tracking" required maxlength="200"></label>':action==='deliver'?'<p class="notice">First upload a photo or scan of the signed and stamped delivery note: close this, press <strong>Upload / view documents</strong> on this delivery, then come back. Delivery cannot be recorded without it.</p><label><span>Customer recipient name</span><input name="recipient" required maxlength="200"></label><label><span>Signed delivery note / proof reference</span><input name="proof" required maxlength="500"></label>':action==='cancel'?'<label><span>Cancellation reason</span><textarea name="proof" required maxlength="500"></textarea></label>':action==='send_to_sales'?'<p>Confirm the tax-invoiced order has been handed to the downstairs sales team for packing.</p>':action==='start_packing'?packingFields(note):'<p>Confirm every listed item and quantity is packed and the selected Haadi stock is still available.</p>';actionForm({tax_invoice:'Link ERP invoice & reserve stock',send_to_sales:'Send to downstairs sales',start_packing:'Start packing',ready:'Mark ready for delivery',dispatch:'Mark out for delivery',deliver:'Record signed delivery note',cancel:'Cancel delivery'}[action],content,async values=>{if(me!==actor||salesEpoch!==epoch||view!=='sales')throw Error('Reopen this delivery before saving.');let result;if(action==='tax_invoice'){result=await client.rpc('create_tax_invoice_and_reserve_stock',{p_id:note.id,p_expected_version:note.version,p_tax_invoice_reference:values.invoiceReference||''});}else if(action==='start_packing'&&deliveryLines(note.id).length)result=await client.rpc('start_reserved_sales_delivery_packing',{p_id:note.id,p_expected_version:note.version});else if(action==='start_packing'){const record=salesProforma(note.proforma_id),lines=salesLines(record.id).filter(line=>values[`include_${line.id}`]==='on').map(line=>({proformaLineId:line.id,lotId:values[`lot_${line.id}`]||'',quantity:Number(values[`qty_${line.id}`])}));if(!lines.length)throw Error('Choose at least one item to pack.');if(lines.some(line=>!line.lotId||!Number.isSafeInteger(line.quantity)||line.quantity<1))throw Error('Choose a Haadi lot and whole quantity for every selected item.');result=await client.rpc('start_sales_delivery_packing',{p_id:note.id,p_expected_version:note.version,p_lines:lines})}else if(action==='ready')result=await client.rpc('packing_mark_packed',{p_id:note.id,p_expected_version:note.version});else result=await client.rpc('advance_sales_delivery',{p_id:note.id,p_expected_version:note.version,p_action:action,p_carrier:values.carrier||'',p_tracking_reference:values.tracking||'',p_recipient_name:values.recipient||'',p_proof_reference:values.proof||''});if(me!==actor||salesEpoch!==epoch)return;if(result.error)throw result.error;if(action==='deliver'){clearServiceWorkflow();if(view==='service')await serviceWorkspace();}if(['tax_invoice','start_packing','cancel','dispatch'].includes(action))await loadInventoryOperations();if(me!==actor||salesEpoch!==epoch||view!=='sales')return;await salesDeliveryWorkspace(true);if(me!==actor||salesEpoch!==epoch||view!=='sales')return;message('Order status saved: '+salesStatus(Array.isArray(result.data)?result.data[0]?.status:result.data?.status)+'.')})}
 function printSalesDocument(id){const card=document.querySelector(`[data-document-card="${CSS.escape(id)}"]`);if(!card)return;card.classList.add('print-document');try{window.print()}finally{card.classList.remove('print-document')}}
 function bindSalesDelivery(){
+ if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
  if(typeof bindOrderWorkflow==='function')bindOrderWorkflow();
  document.querySelectorAll('[data-delivery-back]').forEach(button=>button.onclick=()=>{salesFocusedDelivery='';salesDeliveryWorkspace()});
  const editor=document.querySelector('#proformaForm,#deliveryForm');if(editor)editor.dataset.initialState=salesEditorState(editor);
@@ -2167,7 +2292,7 @@ function deliverySerialPanelHtml(note,lines,serials){
  const rows=tracked.map(line=>{const own=serials.filter(s=>s.delivery_line_id===line.id);
   const list=own.length?own.map(s=>`<code>${esc(s.serial_number)}</code>${s.returned_at?' <small>(returned)</small>':''}`).join(', '):'<strong>Not entered yet</strong>';
   return `<li>${esc(salesProduct(line.product_id).name)} × ${esc(line.quantity)} · ${list}</li>`;}).join('');
- const missing=tracked.some(line=>serials.filter(s=>s.delivery_line_id===line.id&&!s.returned_at).length!==line.quantity);
+ const missing=tracked.some(line=>serials.filter(s=>s.delivery_line_id===line.id&&!s.returned_at).length!==line.quantity||serials.some(s=>s.delivery_line_id===line.id&&s.inventory_serial_id===null));
  return `<div class="notice serial-numbers no-print" data-serial-panel="${esc(note.id)}"><h3>Serial numbers</h3><ul>${rows}</ul>${editable&&missing?'<p>This delivery cannot go out until every unit above has its serial number. Enter these before marking Packed.</p>':''}${editable?`<button type="button" data-serial-record="${esc(note.id)}">${missing?'Enter serial numbers':'Correct serial numbers'}</button>`:''}</div>`;
 }
 
@@ -2196,11 +2321,11 @@ async function decorateDeliverySerials(){
 function openRecordSerials(note){
  if(!note)return;
  const lines=deliveryLines(note.id).filter(line=>serialRequired(line.product_id));
- actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line.</p>`+lines.map(line=>{
+ actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line. Every unit must be available in the allocated stock lot. Transferred units must have a confirmed arrival; quarantined units cannot be selected.</p>`+lines.map(line=>{
    const current=deliverySerials.filter(s=>s.delivery_line_id===line.id).map(s=>s.serial_number).join('\n');
-   return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label>`;}).join(''),
+   return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label><label><input type="checkbox" name="legacy_${esc(line.id)}"> These are verified units already in stock before serial receiving began. I checked their real serials. This confirmation is audited and limited to remaining legacy stock.</label>`;}).join(''),
   async values=>{
-   const payload=lines.map(line=>({deliveryLineId:line.id,serials:parseSerialList(values['serials_'+line.id])}));
+   const payload=lines.map(line=>({deliveryLineId:line.id,serials:parseSerialList(values['serials_'+line.id]),legacyConfirmed:values['legacy_'+line.id]==='on'}));
    for(const [i,item] of payload.entries()){const problem=serialListProblem(item.serials,lines[i].quantity);if(problem)throw Error(`${salesProduct(lines[i].product_id).name}: ${problem}`);}
    const result=await client.rpc('record_delivery_serials',{p_delivery_note_id:note.id,p_expected_version:note.version,p_lines:payload});
    if(result.error)throw result.error;
@@ -2242,20 +2367,80 @@ async function decorateSerialTools(){
   ${canFlagSerials(me)?`<p>Every machine needs its real serial number before it can be marked Packed or sent out.</p><h3>Products that need serial numbers · ${flagged.length}</h3><ul>${flagged.map(productId=>`<li>${esc(inventoryProduct(productId).name)} ${machineSerialRequired(productId)?'<small>Required for machines</small>':`<button type="button" data-serial-unflag="${esc(productId)}">Remove</button>`}</li>`).join('')||'<li>None yet.</li>'}</ul>
   <form id="serialFlag" class="actions"><input name="product" list="serialProductChoices" placeholder="Product name or code" required><datalist id="serialProductChoices">${((()=>{try{return typeof products}catch{return 'undefined'}})()!=='undefined'?products:[]).filter(p=>!p.deleted_at&&!serialRequired(p.id)).slice(0,2000).map(p=>`<option value="${esc(p.name)}${p.sku?' · '+esc(p.sku):''}"></option>`).join('')}</datalist><button type="submit">Needs serial numbers</button></form>`:''}</section>`);
  $('#serialSearch').onsubmit=event=>{event.preventDefault();run(async()=>{
-  const value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});
+  const actor=me?.user_id,value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});
   if(result.error)throw result.error;
-  $('#serialResults').innerHTML=(result.data||[]).length?`<ul>${result.data.map(r=>`<li><code>${esc(r.serial_number)}</code> · ${esc(inventoryProduct(r.product_id).name)} · ${esc(r.organization_name||'Customer unavailable')} · ${esc(r.delivery_number)} (${esc(typeof salesStatus==='function'?salesStatus(r.delivery_status):r.delivery_status)})${r.returned_at?' · came back '+esc(String(r.returned_at).slice(0,10)):''}</li>`).join('')}</ul>`:'<p>No delivery has this serial number.</p>';
+  const receiptHtml=typeof receivingSerialSearchHtml==='function'?await receivingSerialSearchHtml(value):'';if(me?.user_id!==actor)return;
+  $('#serialResults').innerHTML=receiptHtml+((result.data||[]).length?`<ul>${result.data.map(r=>`<li><code>${esc(r.serial_number)}</code> · ${esc(inventoryProduct(r.product_id).name)} · ${esc(r.organization_name||'Customer unavailable')} · ${esc(r.delivery_number)} (${esc(typeof salesStatus==='function'?salesStatus(r.delivery_status):r.delivery_status)})${r.returned_at?' · came back '+esc(String(r.returned_at).slice(0,10)):''}</li>`).join('')}</ul>`:'<p>No delivery has this serial number.</p>');
  });};
  $('#serialFlag')?.addEventListener('submit',event=>{event.preventDefault();run(async()=>{
   const text=String(new FormData(event.target).get('product')||'').trim(),product=((()=>{try{return typeof products}catch{return 'undefined'}})()!=='undefined'?products:[]).find(p=>`${p.name}${p.sku?' · '+p.sku:''}`===text||p.name===text);
   if(!product)throw Error('Choose a product from the list.');
   const result=await client.rpc('set_product_serial_required',{p_product_id:product.id,p_required:true});if(result.error)throw result.error;
-  content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message(`${product.name} now needs serial numbers when it is packed.`);
+  content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message(`${product.name} now needs serial numbers when received and packed.`);
  });});
  content.querySelectorAll('[data-serial-unflag]').forEach(button=>button.onclick=()=>run(async()=>{
   const result=await client.rpc('set_product_serial_required',{p_product_id:button.dataset.serialUnflag,p_required:false});if(result.error)throw result.error;
   content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message('That product no longer needs serial numbers.');
  }));
+ if(typeof bindReceivingSerialForms==='function')bindReceivingSerialForms();
+}
+;// receiving-serials.js
+'use strict';
+// Stock quantities still use the established count transaction; receipt identities are saved atomically with it.
+function receivingSerialCount(pack,lot,sealed,loose){return Number(sealed)*Number(pack.units_per_carton)+Number(loose)-(lot?Number(lot.sealed_cartons)*Number(pack.units_per_carton)+Number(lot.loose_units):0)}
+function receivingSerialFieldsHtml(){return '<div class="wide" data-receiving-serials hidden><p>For machines and other serial-tracked products, enter the real serial of every additional unit received. Include units inside sealed cartons. Existing stock is identified separately while packing.</p><label><span data-receiving-serial-count>Serial numbers of added units</span><textarea name="receivingSerials" rows="4" placeholder="One real serial number per line"></textarea></label><p class="muted">To receive more into this lot, enter the new total physical counts above. Reducing serial-tracked stock needs a reviewed serial adjustment.</p></div>'}
+function bindReceivingSerialForms(){
+ document.querySelectorAll('form[data-inventory-action="opening"],form[data-inventory-action="correct"]').forEach(form=>{
+  if(!form.querySelector('[data-receiving-serials]'))form.querySelector('.grid')?.insertAdjacentHTML('beforeend',receivingSerialFieldsHtml());
+  const refresh=()=>{
+   const lot=inventoryLots.find(row=>row.id===form.dataset.lot),pack=inventoryPacks.find(row=>row.id===(lot?.pack_definition_id||form.elements.packId?.value));
+   const tracked=!!pack&&serialRequired(pack.product_id),panel=form.querySelector('[data-receiving-serials]');if(!panel)return;
+   panel.hidden=!tracked;const field=panel.querySelector('textarea');field.disabled=!tracked;
+   if(form.dataset.inventoryAction==='correct'){const summary=form.closest('details')?.querySelector('summary');if(summary)summary.textContent=tracked?'Receive additional units with serials':'Correct this physical count';}
+   const added=pack?receivingSerialCount(pack,lot,form.elements.sealedCartons.value,form.elements.looseUnits.value):0;
+   field.required=tracked&&added>0;panel.querySelector('[data-receiving-serial-count]').textContent=`Real serial numbers · ${Math.max(0,added)} additional units`;
+  };
+  form.addEventListener('input',refresh);form.addEventListener('change',refresh);refresh();
+ });
+ bindTransferSerialForms();
+ document.querySelectorAll('form[data-inventory-action="issue"]').forEach(form=>{
+  const lot=inventoryLots.find(row=>row.id===form.dataset.lot);if(!lot||!serialRequired(lot.product_id))return;
+  const details=form.closest('details');if(details)details.innerHTML='<summary>Issue serial-tracked units through Deliveries</summary><p>Create the delivery and record each unit’s real serial number while packing. This preserves ownership and return history.</p>';
+ });
+}
+async function saveInventoryCountWithSerials(args,serialText){
+ if(!serialRequired(args.p_product_id))return client.rpc('set_inventory_opening_balance',args);
+ const lot=args.p_expected_version?inventoryLots.find(row=>row.id===args.p_lot_id):null,pack=inventoryPacks.find(row=>row.id===args.p_pack_definition_id);
+ if(!pack)throw Error('Refresh the saved carton sizes before receiving stock.');
+ const added=receivingSerialCount(pack,lot,args.p_sealed_cartons,args.p_loose_units);
+ if(added<0)throw Error('Reducing serial-tracked stock needs a reviewed serial adjustment. Do not change a physical count to bypass unit identities.');
+ if(added===0)return client.rpc('set_inventory_opening_balance',args);
+ const serials=parseSerialList(serialText),problem=serialListProblem(serials,added);if(problem)throw Error(problem);
+ return client.rpc('receive_serialized_inventory',{...args,p_serials:serials});
+}
+async function receivingSerialSearchHtml(serial){
+ const result=await client.from('inventory_serial_receipts').select('product_id,serial_number,lot_id,source,recorded_at').ilike('serial_number',`%${String(serial).trim()}%`).order('recorded_at',{ascending:false}).limit(50);
+ if(result.error)throw result.error;
+ const sources={receiving:'Received into stock',legacy_stock:'Verified legacy stock',legacy_return:'Verified legacy return'};
+ return (result.data||[]).length?`<h3>Recorded stock identities</h3><ul>${result.data.map(row=>`<li><code>${esc(row.serial_number)}</code> · ${esc(inventoryProduct(row.product_id).name)} · ${esc(sources[row.source]||row.source)} · ${esc(String(row.recorded_at).slice(0,10))}</li>`).join('')}</ul>`:'';
+}
+
+function transferSerialFieldsHtml(transfer,action){
+ const receiving=action==='receive';
+ return `<div class="wide" data-transfer-serials><p>${receiving?'Scan only the units that actually arrived. The list must match the counted quantity; missing or quarantined units cannot be sold.':`Scan every unit inside the ${esc(transfer.cartons)} cartons being moved (${esc(transfer.expected_units)} units). Only serials available in the source lot can move.`}</p><label><span>${receiving?'Real serial numbers that arrived':'Real serial numbers being dispatched'}</span><textarea name="transferSerials" rows="4" ${receiving?'':'required'} placeholder="One serial per line"></textarea></label><label><input type="checkbox" name="legacyTransfer"> ${receiving?'This transfer left before serial receiving began. I physically checked these legacy units and their real serials.':'These are verified units already in stock before serial receiving began. I physically checked their real serials.'} This confirmation is audited and limited to eligible legacy stock.</label></div>`;
+}
+function bindTransferSerialForms(){
+ document.querySelectorAll('form[data-inventory-action="dispatch"],form[data-inventory-action="receive"]').forEach(form=>{
+  const transfer=inventoryTransfers.find(row=>row.id===form.dataset.transfer);if(!transfer||!serialRequired(transfer.product_id)||form.querySelector('[data-transfer-serials]'))return;
+  form.querySelector('button[type="submit"]')?.insertAdjacentHTML('beforebegin',transferSerialFieldsHtml(transfer,form.dataset.inventoryAction));
+ });
+}
+async function saveInventoryTransferWithSerials(action,args,serialText,legacyConfirmed){
+ const transfer=inventoryTransfers.find(row=>row.id===args.p_id);if(!transfer)throw Error('Refresh this transfer before continuing.');
+ const receiving=action==='receive';
+ if(!serialRequired(transfer.product_id))return client.rpc(receiving?'receive_inventory_transfer':'dispatch_inventory_transfer',args);
+ const serials=parseSerialList(serialText),problem=serialListProblem(serials,receiving?args.p_actual_units:transfer.expected_units);if(problem)throw Error(problem);
+ return client.rpc(receiving?'receive_serialized_inventory_transfer':'dispatch_serialized_inventory_transfer',{...args,p_serials:serials,p_legacy_confirmed:legacyConfirmed===true});
 }
 ;// sales-leads.js
 'use strict';
@@ -2875,7 +3060,8 @@ function openWorkClose(row,action){
 }
 async function workOpenRecord(row){
  if(!row)return;
- if(row.record_type==='proforma'||row.record_type==='delivery'){view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
+ if(row.record_type==='proforma'||row.record_type==='delivery'){salesLoaded=false;view='sales';salesSection=row.record_type==='delivery'?'delivery':'proformas';salesEditing='';if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma=row.record_type==='proforma'?row.record_id:'';if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery=row.record_type==='delivery'?row.record_id:'';}
  else if(row.record_type==='contract'){view='contracts';contractFocus=row.record_id;contractPage=0;}
  else if(row.record_type==='service')return focusServiceCase(row.record_id);
  else if(row.record_type==='lead'){if(typeof focusLead==='function')focusLead(row.record_id);else view='leads';}
@@ -4747,26 +4933,27 @@ for(const type of ['copy','cut','contextmenu','dragstart'])document.addEventList
 window.addEventListener('beforeprint',()=>{if(document.body.classList.contains('stock-protected')&&typeof message==='function')message('Stock pages cannot be printed. Send customers a Pro forma instead.',true);});
 ;// notification-bell.js
 'use strict';
-// Bell in the top header: new things for the signed-in person. Three kinds, each read under the person's own read rules:
+// Bell in the top header: new things for the signed-in person, under their own read rules:
 //  tasks   — open tasks someone else gave me, not seen yet
 //  work    — open work (handoffs) someone else handed me, not seen yet
 //  results — tasks I gave someone else that were done or cancelled in the last 7 days, not seen yet
+//  notices — unread order updates, acknowledged with the same server receipt as My tasks
 // "Seen" is a time per kind, kept per person on this device (localStorage). Opening My tasks marks all three seen;
 // pressing an item marks its kind seen. The badge uses count-only reads (head: true); the list loads only when opened.
 // Refreshes when the person moves between pages and every 2 minutes.
 let bellCounts=null,bellEpoch=0,bellLastRefresh=0,bellOpen=false,bellItems=null,bellError='';
-const bellKinds=[['tasks','New tasks for you'],['work','Work handed to you'],['results','Results of tasks you gave']];
+const bellKinds=[['tasks','New tasks for you'],['work','Work handed to you'],['results','Results of tasks you gave'],['notices','Order updates']];
 const bellResultDays=7,bellListSize=5;
 function clearNotificationBell(){bellEpoch++;bellCounts=null;bellLastRefresh=0;bellOpen=false;bellItems=null;bellError='';}
 function bellStorage(){try{return globalThis.localStorage||null}catch{return null}}
 function bellKey(userId){return `anudha.bell.seen.${userId}`;}
 function bellSeen(userId,storage=bellStorage()){
- try{const saved=JSON.parse(storage?.getItem(bellKey(userId))||'{}');return Object.fromEntries(bellKinds.map(([kind])=>[kind,typeof saved?.[kind]==='string'&&Number.isFinite(Date.parse(saved[kind]))?saved[kind]:'']));}
+ try{const saved=JSON.parse(storage?.getItem(bellKey(userId))||'{}');return Object.fromEntries(bellKinds.filter(([kind])=>kind!=='notices').map(([kind])=>[kind,typeof saved?.[kind]==='string'&&Number.isFinite(Date.parse(saved[kind]))?saved[kind]:'']));}
  catch{return {tasks:'',work:'',results:''};}
 }
 function bellMarkSeen(userId,kinds,now=new Date(),storage=bellStorage()){
  if(!userId)return;
- const seen=bellSeen(userId,storage);for(const kind of kinds)seen[kind]=now.toISOString();
+ const seen=bellSeen(userId,storage);for(const kind of kinds)if(kind!=='notices')seen[kind]=now.toISOString();
  try{storage?.setItem(bellKey(userId),JSON.stringify(seen));}catch{}
 }
 // Results look back 7 days, or to when they were last seen if that is later.
@@ -4777,6 +4964,10 @@ function bellSince(kind,seen,now=Date.now()){
 }
 // The read for one kind. count=true asks for the number only.
 function bellQuery(kind,userId,since,count){
+ if(kind==='notices'){
+  const q=client.from('work_notices').select(count?'id':'id,record_type,record_id,record_label,message,created_at',count?{count:'exact',head:true}:undefined).eq('user_id',userId).is('read_at',null);
+  return count?q:q.order('created_at',{ascending:false}).limit(bellListSize);
+ }
  const columns=kind==='work'?'id,record_type,record_id,record_label,task,assigned_by,created_at':kind==='tasks'?'id,task_number,title,assigned_by,created_at':'id,task_number,title,assignee_user_id,status,close_note,closed_at';
  let q=client.from(kind==='work'?'work_assignments':'team_tasks').select(count?'id':columns,count?{count:'exact',head:true}:undefined);
  if(kind==='results')q=q.eq('assigned_by',userId).neq('assignee_user_id',userId).neq('closed_by',userId).in('status',['done','cancelled']).gt('closed_at',since);
@@ -4815,16 +5006,17 @@ async function bellLoadList(){
 function bellItemText(kind,row){
  if(kind==='tasks')return `${row.title} · from ${employeeName(row.assigned_by)}`;
  if(kind==='work')return `${row.record_label} · ${row.task} · from ${employeeName(row.assigned_by)}`;
+ if(kind==='notices')return `${row.record_label} · ${row.message}`;
  return `${employeeName(row.assignee_user_id)} ${row.status==='done'?'finished':'cancelled'}: ${row.title}${row.close_note?` — ${row.close_note}`:''}`;
 }
 function bellPanel(){
  if(!bellItems)return `<p role="status">Loading…</p>`;
- const total=bellTotal(bellCounts);
+ const taskTotal=bellTotal({...bellCounts,notices:0});
  const groups=bellKinds.map(([kind,label])=>{
   const rows=bellItems[kind]||[],more=(Number(bellCounts?.[kind])||0)-rows.length;
-  return rows.length?`<section><h3>${label}</h3><ul>${rows.map((row,i)=>`<li><button type="button" data-bell-item="${kind}:${i}">${esc(bellItemText(kind,row))}</button></li>`).join('')}</ul>${more>0?`<button type="button" class="bell-more" data-bell-more="${kind}">and ${more} more</button>`:''}</section>`:'';
+  return rows.length?`<section><h3>${label}</h3><ul>${rows.map((row,i)=>`<li><button type="button" data-bell-item="${kind}:${i}">${esc(bellItemText(kind,row))}</button>${kind==='notices'?`<button type="button" data-bell-dismiss="${esc(row.id)}">Got it</button>`:''}</li>`).join('')}</ul>${more>0?`<button type="button" class="bell-more" data-bell-more="${kind}">and ${more} more</button>`:''}</section>`:'';
  }).join('');
- return `${bellError?`<p role="alert">Some updates could not load: ${esc(bellError)}</p>`:''}${groups||'<p class="muted">Nothing new for you.</p>'}${total?'<button type="button" class="bell-clear" data-bell-clear>Mark all as seen</button>':''}`;
+ return `${bellError?`<p role="alert">Some updates could not load: ${esc(bellError)}</p>`:''}${groups||'<p class="muted">Nothing new for you.</p>'}${taskTotal?'<button type="button" class="bell-clear" data-bell-clear>Mark task updates as seen</button>':''}`;
 }
 function bellRender(){
  const box=document.getElementById('bell');if(!box)return;
@@ -4836,6 +5028,7 @@ function bellRender(){
  if(bellOpen)panel.innerHTML=`<h2>Updates</h2>${bellPanel()}`;
 }
 function bellGoToTasks(){
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
  if(typeof message==='function')message('');
  view='personal';personalSection='task';personalPage=0;
  return run(async()=>render());
@@ -4843,8 +5036,16 @@ function bellGoToTasks(){
 function bellSetOpen(open){bellOpen=open;bellRender();if(open){bellItems=null;bellRender();bellLoadList().catch(error=>{bellError=error.message;bellItems={};bellRender();});}}
 function bellChoose(kind,row){
  bellMarkSeen(me?.user_id,[kind]);bellSetOpen(false);
- if(kind==='work'&&row&&typeof workOpenRecord==='function'){workOpenRecord(row);refreshNotificationBell(true).catch(()=>{});return;}
+ if((kind==='work'||kind==='notices')&&row&&typeof workOpenRecord==='function'){run(()=>workOpenRecord(row));refreshNotificationBell(true).catch(()=>{});return;}
  bellGoToTasks();
+}
+async function bellDismissNotice(id){
+ const actor=me?.user_id,epoch=bellEpoch;
+ if(!actor||!bellItems?.notices?.some(row=>row.id===id))return;
+ const result=await client.rpc('dismiss_work_notice',{p_id:id});
+ if(me?.user_id!==actor||bellEpoch!==epoch)return;
+ if(result.error)throw Error(result.error.message);
+ await refreshNotificationBell(true);
 }
 // Adds the bell to the header once someone is signed in (sign-out empties the header, which removes it).
 function bellInstall(){
@@ -4857,6 +5058,8 @@ function bellInstall(){
  box.querySelector('.bell-panel').addEventListener('click',event=>{
   const item=event.target.closest('[data-bell-item]'),more=event.target.closest('[data-bell-more]');
   if(item){const [kind,i]=item.dataset.bellItem.split(':');return bellChoose(kind,bellItems?.[kind]?.[Number(i)]);}
+  const dismiss=event.target.closest('[data-bell-dismiss]');
+  if(dismiss)return run(()=>bellDismissNotice(dismiss.dataset.bellDismiss));
   if(more)return bellChoose(more.dataset.bellMore,null);
   if(event.target.closest('[data-bell-clear]')){bellMarkSeen(me?.user_id,bellKinds.map(([kind])=>kind));bellSetOpen(false);refreshNotificationBell(true).catch(()=>{});}
  });
@@ -5123,6 +5326,7 @@ async function showAccountingNavigation(){
  items.forEach(item=>item.hidden=true);
  let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
  items.forEach(item=>item.hidden=!allowed);
+ if(typeof navResumePending==='function')navResumePending();
 }
 let navWhileBusy=null;
 function installWorkspaceNavigation(){
@@ -5154,13 +5358,14 @@ function installWorkspaceNavigation(){
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
  if(button.dataset.view==='packing'&&typeof openPackingSection==='function')openPackingSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
+   salesLoaded=false;
    if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery='';
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
   }
   if(button.dataset.view==='contracts'){contractFocus='';contractPage=0;}
-  if(button.dataset.view==='service')serviceSection=section||'installations';
+  if(button.dataset.view==='service'){serviceLoaded=false;serviceSection=section||'installations';}
   if(button.dataset.view==='books'&&typeof openBooksSection==='function')openBooksSection(section);
   if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
   if(button.dataset.view==='inventory')inventorySection=section||'stock';
@@ -5996,6 +6201,145 @@ async function financialImportWorkspace(actor,current){
   catch(error){if(active()){state.uncertain=!!error.uncertain;status.textContent=error.message;}}
   finally{if(active()){state.busy=false;redraw();}}
  };
+}
+;// product-price-import.js
+'use strict';
+
+const productPriceImportHeaders=['Product ID','Product Name','Currency','Current Price','New Price','Reason'];
+const productPriceImportLimit=200;
+function productPriceImportMinor(value){
+ const text=String(value??'').trim();
+ if(!/^\d+(?:\.\d{1,2})?$/.test(text))throw Error('New Price must be a nonnegative decimal amount with at most two decimal places.');
+ if(text.length>32)throw Error('New Price is above the supported amount.');
+ if(typeof value==='number'&&text.replace('.','').replace(/^0+/,'').length>15)throw Error('Store large prices as text in Excel to preserve every digit.');
+ const [whole,fraction='']=text.split('.'),minor=BigInt(whole)*100n+BigInt((fraction+'00').slice(0,2));
+ if(minor>9000000000000000n)throw Error('New Price is above the supported amount.');
+ return Number(minor);
+}
+function productPriceImportCatalog(catalog){return catalog.filter(product=>!product.deleted_at).map(product=>typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product).sort((a,b)=>String(a.name).localeCompare(String(b.name))||a.id.localeCompare(b.id));}
+function productPriceImportTemplateRows(catalog,prices,currency,page=0){
+ if(!['TZS','USD','EUR'].includes(currency)||!Number.isInteger(page)||page<0)throw Error('Choose a template currency and product page.');
+ return productPriceImportCatalog(catalog).slice(page*productPriceImportLimit,(page+1)*productPriceImportLimit).map(product=>{
+  const price=prices.get(pricingKey(product.id,currency));
+  return [product.id,product.name,currency,price?pricingMinorText(price.unit_price_minor):'','',''];
+ });
+}
+function productPriceImportPreview(sheet,catalog,prices){
+ const rows=[],errors=[],byId=new Map(productPriceImportCatalog(catalog).map(product=>[product.id.toLowerCase(),product])),seen=new Map();
+ const fail=message=>({rows,errors:[message],reviewed:false});
+ if(!sheet?.['!ref'])return fail('The selected sheet is empty.');
+ const range=XLSX.utils.decode_range(sheet['!fullref']||sheet['!ref']);
+ if(range.e.r>productPriceImportLimit)return fail(`Use at most ${productPriceImportLimit} product rows plus the header. Download another template page for the remaining products.`);
+ if(range.e.c>31)return fail('Use the downloaded template; the sheet has too many columns.');
+ const formula=cell=>cell?.f||cell?.F||cell?.t==='e';
+ const cellsAt=r=>Array.from({length:Math.max(range.e.c+1,productPriceImportHeaders.length)},(_,c)=>sheet[XLSX.utils.encode_cell({r,c})]);
+ const headers=cellsAt(0);
+ if(headers.some(formula)||productPriceImportHeaders.some((header,index)=>String(headers[index]?.v??'').trim()!==header)||headers.slice(productPriceImportHeaders.length).some(cell=>String(cell?.v??'').trim()))return fail(`Row 1 must contain these columns in order: ${productPriceImportHeaders.join(', ')}. Formulas are not supported.`);
+ for(let r=1;r<=range.e.r;r++){
+  const cells=cellsAt(r);if(cells.every(cell=>!formula(cell)&&String(cell?.v??'').trim()===''))continue;
+  const values=productPriceImportHeaders.map((_,c)=>cells[c]?.v??''),[rawId,,rawCurrency,,rawPrice,rawReason]=values;
+  const productId=String(rawId).trim().toLowerCase(),currency=String(rawCurrency).trim(),reason=String(rawReason).trim(),product=byId.get(productId),key=pricingKey(productId,currency),prior=prices.get(key);
+  const row={number:r+1,productId,productName:product?.name||String(values[1]),currency,beforeMinor:prior?Number(prior.unit_price_minor):null,expectedVersion:prior?.version||0,unitPriceMinor:null,reason,errors:[],status:'not entered',requestId:null};rows.push(row);
+  const bad=message=>row.errors.push(message);
+  if(cells.some(formula)||cells.some((cell,index)=>index!==1&&typeof cell?.v==='string'&&/^[\s\u0000-\u001f]*[=+@-]/.test(cell.v)))bad('Formulas and spreadsheet errors are not supported. Paste reviewed values only.');
+  if(cells.slice(productPriceImportHeaders.length).some(cell=>String(cell?.v??'').trim()!==''))bad('Unexpected data after the Reason column.');
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(productId)||!product)bad('Product ID must exactly match an active product UUID from the template. Names are not matched.');
+  if(!['TZS','USD','EUR'].includes(currency))bad('Currency must be TZS, USD or EUR.');
+  if(seen.has(key)){bad('Duplicate product and currency in this file.');seen.get(key).errors.push('Duplicate product and currency in this file.');}else seen.set(key,row);
+  if(prior&&(!Number.isSafeInteger(row.expectedVersion)||row.expectedVersion<1||!Number.isSafeInteger(row.beforeMinor)||row.beforeMinor<0))bad('Current database price/version is invalid; refresh product prices.');
+  if(String(rawPrice).trim()===''){if(reason)bad('Enter New Price or clear Reason to leave this price unchanged.');}
+  else{
+   try{row.unitPriceMinor=productPriceImportMinor(rawPrice);}catch(error){bad(error.message);}
+   if(reason.length<2||reason.length>1000)bad('Reason must contain 2–1000 characters for every entered New Price.');
+   row.status=row.unitPriceMinor===row.beforeMinor?'unchanged':'ready';
+  }
+ }
+ for(const row of rows)for(const error of row.errors)errors.push(`Row ${row.number}: ${error}`);
+ if(!rows.length)errors.push('Add product rows from the downloaded template.');
+ if(!rows.some(row=>row.status==='ready')&&!errors.length)errors.push('No price changes to apply. Enter New Price and Reason for the products you want to change.');
+ return {rows,errors,reviewed:false,busy:false};
+}
+async function productPriceImportApply(backend,preview,current,onProgress=()=>{}){
+ if(!current())return null;
+ if(!preview||preview.errors.length||!preview.reviewed||preview.rows.length>productPriceImportLimit)throw Error('Review a valid import preview before applying prices.');
+ if(preview.rows.some(row=>row.status==='rejected'))throw Error('Start another import and review fresh prices after the rejected row.');
+ if(preview.busy)return null;preview.busy=true;
+ try{
+  for(const row of preview.rows){
+   if(!current())return null;
+   if(!['ready','unconfirmed'].includes(row.status))continue;
+   const uncertain=row.status==='unconfirmed';row.requestId ||= crypto.randomUUID();row.status='saving';row.error='';onProgress();
+   try{
+    const result=await backend.rpc('set_product_sale_price',{p_request_id:row.requestId,p_product_id:row.productId,p_currency:row.currency,p_expected_version:row.expectedVersion,p_unit_price_minor:row.unitPriceMinor,p_reason:row.reason});
+    if(!current())return null;if(result.error){const error=Error(result.error.message);error.rejected=/^(?:P0001|42501|22[A-Z0-9]{3}|23[A-Z0-9]{3})$/.test(result.error.code||'');throw error;}
+    const saved=Array.isArray(result.data)?result.data[0]:result.data;
+    if(!saved||saved.product_id!==row.productId||saved.currency!==row.currency||Number(saved.unit_price_minor)!==row.unitPriceMinor||saved.version!==row.expectedVersion+1)throw Error('The server did not confirm this exact price revision.');
+    row.status='saved';onProgress();
+   }catch(error){
+    if(!current())return null;row.status=error.rejected&&!uncertain?'rejected':'unconfirmed';row.error=error.message||'Please retry.';onProgress();break;
+   }
+  }
+  return {saved:preview.rows.filter(row=>row.status==='saved').length,rejected:preview.rows.filter(row=>row.status==='rejected').length,unconfirmed:preview.rows.filter(row=>row.status==='unconfirmed').length,pending:preview.rows.filter(row=>row.status==='ready').length};
+ }finally{preview.busy=false;}
+}
+function bindProductPriceImport(target,workspaceCurrent){
+ const actor=me,productCount=productPriceImportCatalog(products).length;let workbook=null,preview=null,busy=false;
+ const current=()=>me===actor&&workspaceCurrent()&&panel.isConnected;
+ target.insertAdjacentHTML('beforeend',`<details class="card"><summary>Import product prices from Excel / CSV</summary><section data-price-import><p>Download a template for the currency and product page you need. Fill New Price and Reason only for approved changes. Blank New Price leaves a product unchanged. Up to ${productPriceImportLimit} rows and 5 MB per import.</p><div class="grid"><label>Template currency<select data-price-import-currency><option>TZS</option><option>USD</option><option>EUR</option></select></label><label>Template product page<select data-price-import-page>${Array.from({length:Math.max(1,Math.ceil(productCount/productPriceImportLimit))},(_,index)=>`<option value="${index}">${productCount?`${index*productPriceImportLimit+1}–${Math.min((index+1)*productPriceImportLimit,productCount)}`:'No active products'}</option>`).join('')}</select></label></div><div class="actions"><button type="button" data-price-import-excel>Download Excel template</button><button type="button" data-price-import-csv>Download CSV template</button></div><label>Completed Excel workbook or CSV<input type="file" data-price-import-file accept=".xlsx,.csv"></label><label>Sheet to review<select data-price-import-sheet disabled></select></label><button type="button" data-price-import-preview disabled>Preview current price changes</button><p>Product ID is the only match key. Product Name and Current Price in the file are references; the preview reloads current database prices and versions. No price changes are saved until you review and apply them. Prices save one at a time; if one fails, earlier confirmed changes remain and later rows stop.</p><div data-price-import-results></div><label><input type="checkbox" data-price-import-reviewed disabled>I have reviewed every listed price change and reason.</label><button type="button" data-price-import-apply disabled>Apply reviewed price changes</button><p data-price-import-status role="status" aria-live="polite"></p><button type="button" data-price-import-reset>Start another import</button></section></details>`);
+ const panel=target.querySelector('[data-price-import]'),get=selector=>panel.querySelector(selector),file=get('[data-price-import-file]'),sheet=get('[data-price-import-sheet]'),review=get('[data-price-import-reviewed]'),apply=get('[data-price-import-apply]'),status=get('[data-price-import-status]'),previewButton=get('[data-price-import-preview]');
+ const mutable=()=>!!preview?.rows.some(row=>['saving','saved','unconfirmed','rejected'].includes(row.status));
+ function lock(){
+  file.disabled=busy||mutable();sheet.disabled=busy||!workbook||mutable();previewButton.disabled=busy||!workbook||mutable();review.disabled=busy||!preview||!!preview.errors.length||mutable();
+  apply.disabled=busy||!preview||!!preview.errors.length||!review.checked||preview.rows.some(row=>row.status==='rejected')||!preview.rows.some(row=>['ready','unconfirmed'].includes(row.status));
+  get('[data-price-import-reset]').disabled=busy||!!preview?.rows.some(row=>row.status==='unconfirmed');
+  for(const selector of ['[data-price-import-excel]','[data-price-import-csv]','[data-price-import-currency]','[data-price-import-page]'])get(selector).disabled=busy;
+ }
+ function render(){
+  const rows=preview?.rows||[],errors=preview?.errors||[];
+  get('[data-price-import-results]').innerHTML=`${errors.length?`<div role="alert"><p>Correct these errors before applying:</p><ul>${errors.map(error=>`<li>${esc(error)}</li>`).join('')}</ul></div>`:''}${rows.length?`<div class="table-wrap"><table><thead><tr><th>Row / product UUID</th><th>Product</th><th>Currency</th><th>Current database price</th><th>New price</th><th>Reason</th><th>Result</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row.number}<small>${esc(row.productId)}</small></td><td>${esc(row.productName)}</td><td>${esc(row.currency)}</td><td>${row.beforeMinor===null?'Not configured':esc(pricingMinorText(row.beforeMinor))}<small>Version ${row.expectedVersion}</small></td><td>${row.unitPriceMinor===null?'Leave unchanged':esc(pricingMinorText(row.unitPriceMinor))}</td><td>${esc(row.reason)}</td><td>${esc(row.errors.length?'Invalid':row.status)}${row.error?`<small>${esc(row.error)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:''}`;lock();
+ }
+ async function requireEditor(){
+  if(!current())throw Error('Reopen product prices before importing.');const result=await client.rpc('accounting_access');
+  if(!current())throw Error('Login or price view changed.');if(actor.role!=='owner'&&(result.error||result.data!==true))throw Error('Only the owner or approved accounting users can import prices.');
+ }
+ async function template(format){
+  if(busy||!current())return;busy=true;lock();
+  try{
+   await requireEditor();const rows=await pricingLoad();if(!current()||rows===null)return;
+   const currency=get('[data-price-import-currency]').value,page=Number(get('[data-price-import-page]').value),values=productPriceImportTemplateRows(products,productSalePrices,currency,page);
+   if(!values.length)throw Error('No active products on this template page. Refresh product prices.');
+   if(format==='xlsx'){const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([productPriceImportHeaders,...values]),'Product Prices');XLSX.writeFile(book,`product-prices-${currency}-${page+1}.xlsx`);}
+   else booksDownload(`product-prices-${currency}-${page+1}.csv`,'\uFEFF'+booksCsv(productPriceImportHeaders.map((header,index)=>[index,header]),values));
+   status.textContent='Template download requested. Fill only approved New Price and Reason values, then upload it to preview.';
+  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+ }
+ get('[data-price-import-excel]').onclick=()=>template('xlsx');get('[data-price-import-csv]').onclick=()=>template('csv');
+ file.onchange=async()=>{
+  if(busy||mutable()||!current())return;busy=true;workbook=null;preview=null;review.checked=false;render();
+  try{
+   await requireEditor();const loaded=await financialImportRead(file.files?.[0]);if(!current())return;workbook=loaded;
+   sheet.innerHTML=loaded.SheetNames.map(name=>`<option>${esc(name)}</option>`).join('');status.textContent='Choose the sheet and preview its current price changes.';
+  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+ };
+ sheet.onchange=()=>{if(!busy&&!mutable()&&current()){preview=null;review.checked=false;render();}};
+ previewButton.onclick=async()=>{
+  if(busy||mutable()||!workbook||!current())return;busy=true;preview=null;review.checked=false;render();
+  try{
+   await requireEditor();const rows=await pricingLoad();if(!current()||rows===null)return;
+   preview=productPriceImportPreview(workbook.Sheets[sheet.value],products,productSalePrices);render();status.textContent=preview.errors.length?'No prices have been saved. Correct the file and upload it again.':`${preview.rows.filter(row=>row.status==='ready').length} price changes ready for review. No prices have been saved.`;
+  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+ };
+ review.onchange=()=>{if(preview&&current()&&!busy){preview.reviewed=review.checked;lock();}};
+ apply.onclick=async()=>{
+  if(busy||!preview||!review.checked||!current())return;busy=true;lock();
+  try{
+   await requireEditor();preview.reviewed=true;status.textContent='Applying reviewed prices one at a time…';
+   const result=await productPriceImportApply(client,preview,current,render);if(!current()||!result)return;
+   status.textContent=result.unconfirmed?`${result.saved} confirmed saved; 1 result not confirmed; ${result.pending} not attempted. Retry the same reviewed import to check the same request. Earlier confirmed saves remain saved.`:result.rejected?`${result.saved} confirmed saved; 1 rejected without saving; ${result.pending} not attempted. Start another import to correct the file and review fresh prices. Earlier confirmed saves remain saved.`:`${result.saved} confirmed saved. Blank and unchanged prices were skipped. Refresh product prices to see the updated register.`;
+   apply.textContent=result.unconfirmed?'Retry unconfirmed and remaining prices':'Apply reviewed price changes';
+  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())render();}
+ };
+ get('[data-price-import-reset]').onclick=()=>{if(busy||preview?.rows.some(row=>row.status==='unconfirmed')||!current())return;workbook=null;preview=null;file.value='';sheet.innerHTML='';review.checked=false;status.textContent='';apply.textContent='Apply reviewed price changes';render();};
 }
 ;// opening-receivables.js
 'use strict';
@@ -7064,7 +7408,7 @@ document.addEventListener('DOMContentLoaded',()=>lookupScan());
 // The phone or browser Back button goes to the previous ERP page instead of leaving the ERP (which meant signing in
 // again). Each menu choice is recorded as #/go/<view>/<section>; going Back presses that menu choice again.
 // Client and branch pages keep their own #/clients… addresses (client-profile-pages.js).
-let navReplaying=false,navReplayPending=false,navLastHash=location.hash;
+let navReplaying=false,navReplayPending=false,navPendingHash='',navLastHash=location.hash;
 function navHash(button){return `#/go/${button.dataset.view}${button.dataset.workspaceSection?'/'+button.dataset.workspaceSection:''}`;}
 function navButtonFor(hash){
  const m=String(hash||'').match(/^#\/go\/([a-z]+)(?:\/([a-z-]+))?$/);
@@ -7072,14 +7416,18 @@ function navButtonFor(hash){
  return [...document.querySelectorAll(`#nav [data-view="${view}"]`)].find(b=>(b.dataset.workspaceSection||'')===(section||''))
   ||document.querySelector(`#nav [data-view="${view}"]`);
 }
-function navReplay(hash,tries=0){
- const button=navButtonFor(hash);
- if(!button||button.hidden||(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'||!me||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy)){navReplayPending=tries<40;if(tries<40)setTimeout(()=>navReplay(hash,tries+1),150);return;}
- navReplayPending=false;navReplaying=true;try{button.click();}finally{navReplaying=false;}
+function navReplay(hash){navPendingHash=hash;navReplayPending=true;navResumePending();}
+// Bootstrap and accounting permissions resume the requested page once they finish.
+function navResumePending(){
+ if(!navReplayPending||(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'||!me||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy))return;
+ const button=navButtonFor(navPendingHash);
+ if(!button||button.hidden)return;
+ navReplayPending=false;navPendingHash='';navReplaying=true;try{button.click();}finally{navReplaying=false;}
 }
 document.addEventListener('click',event=>{
  const button=event.target.closest?.('#nav [data-view]');
  if(!button||navReplaying||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy))return;
+ navReplayPending=false;navPendingHash='';
  const hash=navHash(button);
  if(location.hash!==hash)history.pushState({erp:1},'',hash);navLastHash=hash;
 },true);
@@ -7329,7 +7677,7 @@ function friendlyError(e){
 }
 async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
 // The menu item pressed while the last action was still running (workspace-navigation.js), pressed again now.
-function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(!button)return;navWhileBusy=null;if(button.isConnected&&!button.hidden)button.click()}
+function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(button){navWhileBusy=null;if(button.isConnected&&!button.hidden){button.click();return;}}if(typeof navResumePending==='function')navResumePending();}
 $('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};
 $('#closeEditor').onclick=()=>$('#editor').close();
 document.addEventListener('click',e=>{

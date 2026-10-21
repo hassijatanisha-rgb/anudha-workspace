@@ -23,7 +23,7 @@ function deliverySerialPanelHtml(note,lines,serials){
  const rows=tracked.map(line=>{const own=serials.filter(s=>s.delivery_line_id===line.id);
   const list=own.length?own.map(s=>`<code>${esc(s.serial_number)}</code>${s.returned_at?' <small>(returned)</small>':''}`).join(', '):'<strong>Not entered yet</strong>';
   return `<li>${esc(salesProduct(line.product_id).name)} × ${esc(line.quantity)} · ${list}</li>`;}).join('');
- const missing=tracked.some(line=>serials.filter(s=>s.delivery_line_id===line.id&&!s.returned_at).length!==line.quantity);
+ const missing=tracked.some(line=>serials.filter(s=>s.delivery_line_id===line.id&&!s.returned_at).length!==line.quantity||serials.some(s=>s.delivery_line_id===line.id&&s.inventory_serial_id===null));
  return `<div class="notice serial-numbers no-print" data-serial-panel="${esc(note.id)}"><h3>Serial numbers</h3><ul>${rows}</ul>${editable&&missing?'<p>This delivery cannot go out until every unit above has its serial number. Enter these before marking Packed.</p>':''}${editable?`<button type="button" data-serial-record="${esc(note.id)}">${missing?'Enter serial numbers':'Correct serial numbers'}</button>`:''}</div>`;
 }
 
@@ -52,11 +52,11 @@ async function decorateDeliverySerials(){
 function openRecordSerials(note){
  if(!note)return;
  const lines=deliveryLines(note.id).filter(line=>serialRequired(line.product_id));
- actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line.</p>`+lines.map(line=>{
+ actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line. Every unit must be available in the allocated stock lot. Transferred units must have a confirmed arrival; quarantined units cannot be selected.</p>`+lines.map(line=>{
    const current=deliverySerials.filter(s=>s.delivery_line_id===line.id).map(s=>s.serial_number).join('\n');
-   return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label>`;}).join(''),
+   return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label><label><input type="checkbox" name="legacy_${esc(line.id)}"> These are verified units already in stock before serial receiving began. I checked their real serials. This confirmation is audited and limited to remaining legacy stock.</label>`;}).join(''),
   async values=>{
-   const payload=lines.map(line=>({deliveryLineId:line.id,serials:parseSerialList(values['serials_'+line.id])}));
+   const payload=lines.map(line=>({deliveryLineId:line.id,serials:parseSerialList(values['serials_'+line.id]),legacyConfirmed:values['legacy_'+line.id]==='on'}));
    for(const [i,item] of payload.entries()){const problem=serialListProblem(item.serials,lines[i].quantity);if(problem)throw Error(`${salesProduct(lines[i].product_id).name}: ${problem}`);}
    const result=await client.rpc('record_delivery_serials',{p_delivery_note_id:note.id,p_expected_version:note.version,p_lines:payload});
    if(result.error)throw result.error;
@@ -98,18 +98,20 @@ async function decorateSerialTools(){
   ${canFlagSerials(me)?`<p>Every machine needs its real serial number before it can be marked Packed or sent out.</p><h3>Products that need serial numbers · ${flagged.length}</h3><ul>${flagged.map(productId=>`<li>${esc(inventoryProduct(productId).name)} ${machineSerialRequired(productId)?'<small>Required for machines</small>':`<button type="button" data-serial-unflag="${esc(productId)}">Remove</button>`}</li>`).join('')||'<li>None yet.</li>'}</ul>
   <form id="serialFlag" class="actions"><input name="product" list="serialProductChoices" placeholder="Product name or code" required><datalist id="serialProductChoices">${(typeof products!=='undefined'?products:[]).filter(p=>!p.deleted_at&&!serialRequired(p.id)).slice(0,2000).map(p=>`<option value="${esc(p.name)}${p.sku?' · '+esc(p.sku):''}"></option>`).join('')}</datalist><button type="submit">Needs serial numbers</button></form>`:''}</section>`);
  $('#serialSearch').onsubmit=event=>{event.preventDefault();run(async()=>{
-  const value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});
+  const actor=me?.user_id,value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});
   if(result.error)throw result.error;
-  $('#serialResults').innerHTML=(result.data||[]).length?`<ul>${result.data.map(r=>`<li><code>${esc(r.serial_number)}</code> · ${esc(inventoryProduct(r.product_id).name)} · ${esc(r.organization_name||'Customer unavailable')} · ${esc(r.delivery_number)} (${esc(typeof salesStatus==='function'?salesStatus(r.delivery_status):r.delivery_status)})${r.returned_at?' · came back '+esc(String(r.returned_at).slice(0,10)):''}</li>`).join('')}</ul>`:'<p>No delivery has this serial number.</p>';
+  const receiptHtml=typeof receivingSerialSearchHtml==='function'?await receivingSerialSearchHtml(value):'';if(me?.user_id!==actor)return;
+  $('#serialResults').innerHTML=receiptHtml+((result.data||[]).length?`<ul>${result.data.map(r=>`<li><code>${esc(r.serial_number)}</code> · ${esc(inventoryProduct(r.product_id).name)} · ${esc(r.organization_name||'Customer unavailable')} · ${esc(r.delivery_number)} (${esc(typeof salesStatus==='function'?salesStatus(r.delivery_status):r.delivery_status)})${r.returned_at?' · came back '+esc(String(r.returned_at).slice(0,10)):''}</li>`).join('')}</ul>`:'<p>No delivery has this serial number.</p>');
  });};
  $('#serialFlag')?.addEventListener('submit',event=>{event.preventDefault();run(async()=>{
   const text=String(new FormData(event.target).get('product')||'').trim(),product=(typeof products!=='undefined'?products:[]).find(p=>`${p.name}${p.sku?' · '+p.sku:''}`===text||p.name===text);
   if(!product)throw Error('Choose a product from the list.');
   const result=await client.rpc('set_product_serial_required',{p_product_id:product.id,p_required:true});if(result.error)throw result.error;
-  content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message(`${product.name} now needs serial numbers when it is packed.`);
+  content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message(`${product.name} now needs serial numbers when received and packed.`);
  });});
  content.querySelectorAll('[data-serial-unflag]').forEach(button=>button.onclick=()=>run(async()=>{
   const result=await client.rpc('set_product_serial_required',{p_product_id:button.dataset.serialUnflag,p_required:false});if(result.error)throw result.error;
   content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message('That product no longer needs serial numbers.');
  }));
+ if(typeof bindReceivingSerialForms==='function')bindReceivingSerialForms();
 }

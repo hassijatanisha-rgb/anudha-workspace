@@ -22,12 +22,12 @@ function load(extra={}){
  vm.runInContext(read('notification-bell.js')+';Object.assign(globalThis,{bellKinds});',ctx);return ctx;
 }
 
-test('the badge is three count-only reads, one per kind, all limited to the signed-in person',async()=>{
+test('the badge counts tasks, handoffs, results and unread order updates for the signed-in person',async()=>{
  const client=fakeClient(q=>({count:q.table==='work_assignments'?2:1,error:null}));
  const box={querySelector:()=>({setAttribute(){},textContent:'',hidden:false})};
  const ctx=load({client,me:{user_id:'me1'},document:{addEventListener(){},getElementById:id=>id==='identity'||id==='bell'?box:null,querySelector:()=>null}});
  await ctx.refreshNotificationBell(true);
- assert.equal(client.queries.length,3);
+ assert.equal(client.queries.length,4);
  for(const q of client.queries)assert.deepEqual(plain(q.calls[0]),['select','id',{count:'exact',head:true}],'count only, no rows');
  const [tasks,work,results]=client.queries.map(q=>q.calls.slice(1));
  assert.equal(client.queries[0].table,'team_tasks');
@@ -38,7 +38,50 @@ test('the badge is three count-only reads, one per kind, all limited to the sign
  assert.deepEqual(plain(results.slice(0,4)),[['eq','assigned_by','me1'],['neq','assignee_user_id','me1'],['neq','closed_by','me1'],['in','status',['done','cancelled']]]);
  assert.equal(results[4][0],'gt');assert.equal(results[4][1],'closed_at');
  assert.ok(Math.abs(Date.parse(results[4][2])-(Date.now()-7*864e5))<60000,'results look back 7 days');
- assert.deepEqual(plain(ctx.bellTotal({tasks:1,work:2,results:1})),4);
+ assert.equal(client.queries[3].table,'work_notices');
+ assert.deepEqual(plain(client.queries[3].calls.slice(1)),[['eq','user_id','me1'],['is','read_at',null]]);
+ assert.equal(ctx.bellTotal({tasks:1,work:2,results:1,notices:3}),7);
+});
+
+test('order updates use server unread state even after local task updates have been marked seen',()=>{
+ const client=fakeClient(),data=new Map(),storage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value)},ctx=load({client});
+ ctx.bellMarkSeen('u1',['tasks','work','results','notices'],new Date('2026-10-20T10:00:00Z'),storage);
+ assert.equal(Object.hasOwn(ctx.bellSeen('u1',storage),'notices'),false);
+ ctx.bellQuery('notices','u1','2026-10-20T10:00:00Z',false);
+ assert.deepEqual(plain(client.queries[0].calls.slice(1)),[['eq','user_id','u1'],['is','read_at',null],['order','created_at',{ascending:false}],['limit',5]]);
+ assert.equal(ctx.bellItemText('notices',{record_label:'PF-1',message:'Invoice is ready'}),'PF-1 · Invoice is ready');
+});
+
+test('opening an order update routes to its record without acknowledging the server notice',()=>{
+ const opened=[],calls=[],ctx=load({me:{user_id:'u1'},run:fn=>fn(),workOpenRecord:row=>opened.push(row.record_id),client:{rpc:(...args)=>calls.push(args)}});
+ ctx.bellChoose('notices',{id:'notice-1',record_type:'proforma',record_id:'pf-1'});
+ assert.deepEqual(opened,['pf-1']);assert.deepEqual(calls,[]);
+});
+
+test('Got it acknowledges only a loaded notice and refreshes after server confirmation',async()=>{
+ const calls=[],ctx=load({me:{user_id:'u1'},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:{id:args.p_id}};}}});
+ vm.runInContext("bellItems={notices:[{id:'notice-1'}]};bellCounts={notices:1};",ctx);
+ let refreshes=0;ctx.refreshNotificationBell=async()=>{refreshes++;};
+ await ctx.bellDismissNotice('unknown');assert.equal(calls.length,0);
+ await ctx.bellDismissNotice('notice-1');
+ assert.deepEqual(plain(calls),[{name:'dismiss_work_notice',args:{p_id:'notice-1'}}]);assert.equal(refreshes,1);
+ ctx.client.rpc=async()=>({error:{message:'Access denied'}});
+ await assert.rejects(ctx.bellDismissNotice('notice-1'),/Access denied/);assert.equal(refreshes,1);
+});
+
+test('an old notice acknowledgement cannot refresh the replacement session',async()=>{
+ let finish;const ctx=load({me:{user_id:'u1'},client:{rpc:()=>new Promise(resolve=>{finish=resolve;})}});
+ vm.runInContext("bellItems={notices:[{id:'notice-1'}]};",ctx);
+ let refreshes=0;ctx.refreshNotificationBell=async()=>{refreshes++;};
+ const pending=ctx.bellDismissNotice('notice-1');ctx.me={user_id:'u2'};ctx.clearNotificationBell();finish({data:{id:'notice-1'}});await pending;
+ assert.equal(refreshes,0);
+});
+
+test('notice labels are escaped and each unread update has its own acknowledgement',()=>{
+ const ctx=load();
+ vm.runInContext("bellCounts={notices:1};bellItems={notices:[{id:'notice-1',record_label:'<PF>',message:'<script>bad</script>'}]};",ctx);
+ const html=ctx.bellPanel();
+ assert.doesNotMatch(html,/<script>|<PF>|data-bell-clear/);assert.match(html,/data-bell-dismiss="notice-1">Got it/);
 });
 test('seen times are kept per person and kind; later reads only count what came after',()=>{
  const data=new Map(),storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,String(v))};
