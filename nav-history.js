@@ -2,7 +2,7 @@
 // The phone or browser Back button goes to the previous ERP page instead of leaving the ERP (which meant signing in
 // again). Each menu choice is recorded as #/go/<view>/<section>; going Back presses that menu choice again.
 // Client and branch pages keep their own #/clients… addresses (client-profile-pages.js).
-let navReplaying=false,navReplayPending=false,navLastHash=location.hash;
+let navReplaying=false,navReplayPending=false,navPendingHash='',navLastHash=location.hash;
 function navHash(button){return `#/go/${button.dataset.view}${button.dataset.workspaceSection?'/'+button.dataset.workspaceSection:''}`;}
 function navButtonFor(hash){
  const m=String(hash||'').match(/^#\/go\/([a-z]+)(?:\/([a-z-]+))?$/);
@@ -10,14 +10,18 @@ function navButtonFor(hash){
  return [...document.querySelectorAll(`#nav [data-view="${view}"]`)].find(b=>(b.dataset.workspaceSection||'')===(section||''))
   ||document.querySelector(`#nav [data-view="${view}"]`);
 }
-function navReplay(hash,tries=0){
- const button=navButtonFor(hash);
- if(!button||button.hidden||typeof me==='undefined'||!me||(typeof busy!=='undefined'&&busy)){navReplayPending=tries<40;if(tries<40)setTimeout(()=>navReplay(hash,tries+1),150);return;}
- navReplayPending=false;navReplaying=true;try{button.click();}finally{navReplaying=false;}
+function navReplay(hash){navPendingHash=hash;navReplayPending=true;navResumePending();}
+// Bootstrap and accounting permissions resume the requested page once they finish.
+function navResumePending(){
+ if(!navReplayPending||typeof me==='undefined'||!me||(typeof busy!=='undefined'&&busy))return;
+ const button=navButtonFor(navPendingHash);
+ if(!button||button.hidden)return;
+ navReplayPending=false;navPendingHash='';navReplaying=true;try{button.click();}finally{navReplaying=false;}
 }
 document.addEventListener('click',event=>{
  const button=event.target.closest?.('#nav [data-view]');
  if(!button||navReplaying||(typeof busy!=='undefined'&&busy))return;
+ navReplayPending=false;navPendingHash='';
  const hash=navHash(button);
  if(location.hash!==hash)history.pushState({erp:1},'',hash);navLastHash=hash;
 },true);

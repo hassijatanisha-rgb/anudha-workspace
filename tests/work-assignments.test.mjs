@@ -6,6 +6,16 @@ function load(overrides={}){
  const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String,...overrides});
  vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);return ctx;
 }
+test('opening a Sales handoff or update refreshes its cached record after the editor leave guard',async()=>{
+ let leave=false,renders=0;
+ const ctx=load({view:'sales',salesLoaded:true,salesSection:'proformas',salesEditing:'draft',salesFocusedProforma:'original',salesFocusedDelivery:'',salesConfirmLeave:()=>leave,render:async()=>{renders++;}});
+ await ctx.workOpenRecord({record_type:'delivery',record_id:'dn-1'});
+ assert.equal(ctx.salesLoaded,true);assert.equal(ctx.salesEditing,'draft');assert.equal(ctx.salesFocusedProforma,'original');assert.equal(renders,0);
+ leave=true;await ctx.workOpenRecord({record_type:'delivery',record_id:'dn-1'});
+ assert.equal(ctx.salesLoaded,false);assert.equal(ctx.salesEditing,'');assert.equal(ctx.salesFocusedDelivery,'dn-1');assert.equal(renders,1);
+ ctx.salesLoaded=true;await ctx.workOpenRecord({record_type:'proforma',record_id:'pf-1'});
+ assert.equal(ctx.salesLoaded,false);assert.equal(ctx.salesFocusedProforma,'pf-1');assert.equal(ctx.salesFocusedDelivery,'');assert.equal(renders,2);
+});
 test('elapsed time reads in minutes, hours, then days',()=>{
  const ctx=load(),now=Date.parse('2026-09-30T12:00:00Z');
  assert.equal(ctx.workSince('2026-09-30T11:45:00Z',now),'15 min');

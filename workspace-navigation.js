@@ -32,6 +32,7 @@ async function showAccountingNavigation(){
  items.forEach(item=>item.hidden=true);
  let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
  items.forEach(item=>item.hidden=!allowed);
+ if(typeof navResumePending==='function')navResumePending();
 }
 let navWhileBusy=null;
 function installWorkspaceNavigation(){
@@ -63,13 +64,14 @@ function installWorkspaceNavigation(){
  if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
  if(button.dataset.view==='packing'&&typeof openPackingSection==='function')openPackingSection(section);
  if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
+   salesLoaded=false;
    if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
    if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery='';
    salesSection=section==='new'?'proformas':section||'proformas';
    salesEditing=section==='new'?'new':'';
   }
   if(button.dataset.view==='contracts'){contractFocus='';contractPage=0;}
-  if(button.dataset.view==='service')serviceSection=section||'installations';
+  if(button.dataset.view==='service'){serviceLoaded=false;serviceSection=section||'installations';}
   if(button.dataset.view==='books'&&typeof openBooksSection==='function')openBooksSection(section);
   if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
   if(button.dataset.view==='inventory')inventorySection=section||'stock';

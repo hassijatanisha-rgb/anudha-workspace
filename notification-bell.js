@@ -1,24 +1,25 @@
 'use strict';
-// Bell in the top header: new things for the signed-in person. Three kinds, each read under the person's own read rules:
+// Bell in the top header: new things for the signed-in person, under their own read rules:
 //  tasks   — open tasks someone else gave me, not seen yet
 //  work    — open work (handoffs) someone else handed me, not seen yet
 //  results — tasks I gave someone else that were done or cancelled in the last 7 days, not seen yet
+//  notices — unread order updates, acknowledged with the same server receipt as My tasks
 // "Seen" is a time per kind, kept per person on this device (localStorage). Opening My tasks marks all three seen;
 // pressing an item marks its kind seen. The badge uses count-only reads (head: true); the list loads only when opened.
 // Refreshes when the person moves between pages and every 2 minutes.
 let bellCounts=null,bellEpoch=0,bellLastRefresh=0,bellOpen=false,bellItems=null,bellError='';
-const bellKinds=[['tasks','New tasks for you'],['work','Work handed to you'],['results','Results of tasks you gave']];
+const bellKinds=[['tasks','New tasks for you'],['work','Work handed to you'],['results','Results of tasks you gave'],['notices','Order updates']];
 const bellResultDays=7,bellListSize=5;
 function clearNotificationBell(){bellEpoch++;bellCounts=null;bellLastRefresh=0;bellOpen=false;bellItems=null;bellError='';}
 function bellStorage(){try{return globalThis.localStorage||null}catch{return null}}
 function bellKey(userId){return `anudha.bell.seen.${userId}`;}
 function bellSeen(userId,storage=bellStorage()){
- try{const saved=JSON.parse(storage?.getItem(bellKey(userId))||'{}');return Object.fromEntries(bellKinds.map(([kind])=>[kind,typeof saved?.[kind]==='string'&&Number.isFinite(Date.parse(saved[kind]))?saved[kind]:'']));}
+ try{const saved=JSON.parse(storage?.getItem(bellKey(userId))||'{}');return Object.fromEntries(bellKinds.filter(([kind])=>kind!=='notices').map(([kind])=>[kind,typeof saved?.[kind]==='string'&&Number.isFinite(Date.parse(saved[kind]))?saved[kind]:'']));}
  catch{return {tasks:'',work:'',results:''};}
 }
 function bellMarkSeen(userId,kinds,now=new Date(),storage=bellStorage()){
  if(!userId)return;
- const seen=bellSeen(userId,storage);for(const kind of kinds)seen[kind]=now.toISOString();
+ const seen=bellSeen(userId,storage);for(const kind of kinds)if(kind!=='notices')seen[kind]=now.toISOString();
  try{storage?.setItem(bellKey(userId),JSON.stringify(seen));}catch{}
 }
 // Results look back 7 days, or to when they were last seen if that is later.
@@ -29,6 +30,10 @@ function bellSince(kind,seen,now=Date.now()){
 }
 // The read for one kind. count=true asks for the number only.
 function bellQuery(kind,userId,since,count){
+ if(kind==='notices'){
+  const q=client.from('work_notices').select(count?'id':'id,record_type,record_id,record_label,message,created_at',count?{count:'exact',head:true}:undefined).eq('user_id',userId).is('read_at',null);
+  return count?q:q.order('created_at',{ascending:false}).limit(bellListSize);
+ }
  const columns=kind==='work'?'id,record_type,record_id,record_label,task,assigned_by,created_at':kind==='tasks'?'id,task_number,title,assigned_by,created_at':'id,task_number,title,assignee_user_id,status,close_note,closed_at';
  let q=client.from(kind==='work'?'work_assignments':'team_tasks').select(count?'id':columns,count?{count:'exact',head:true}:undefined);
  if(kind==='results')q=q.eq('assigned_by',userId).neq('assignee_user_id',userId).neq('closed_by',userId).in('status',['done','cancelled']).gt('closed_at',since);
@@ -67,16 +72,17 @@ async function bellLoadList(){
 function bellItemText(kind,row){
  if(kind==='tasks')return `${row.title} · from ${employeeName(row.assigned_by)}`;
  if(kind==='work')return `${row.record_label} · ${row.task} · from ${employeeName(row.assigned_by)}`;
+ if(kind==='notices')return `${row.record_label} · ${row.message}`;
  return `${employeeName(row.assignee_user_id)} ${row.status==='done'?'finished':'cancelled'}: ${row.title}${row.close_note?` — ${row.close_note}`:''}`;
 }
 function bellPanel(){
  if(!bellItems)return `<p role="status">Loading…</p>`;
- const total=bellTotal(bellCounts);
+ const taskTotal=bellTotal({...bellCounts,notices:0});
  const groups=bellKinds.map(([kind,label])=>{
   const rows=bellItems[kind]||[],more=(Number(bellCounts?.[kind])||0)-rows.length;
-  return rows.length?`<section><h3>${label}</h3><ul>${rows.map((row,i)=>`<li><button type="button" data-bell-item="${kind}:${i}">${esc(bellItemText(kind,row))}</button></li>`).join('')}</ul>${more>0?`<button type="button" class="bell-more" data-bell-more="${kind}">and ${more} more</button>`:''}</section>`:'';
+  return rows.length?`<section><h3>${label}</h3><ul>${rows.map((row,i)=>`<li><button type="button" data-bell-item="${kind}:${i}">${esc(bellItemText(kind,row))}</button>${kind==='notices'?`<button type="button" data-bell-dismiss="${esc(row.id)}">Got it</button>`:''}</li>`).join('')}</ul>${more>0?`<button type="button" class="bell-more" data-bell-more="${kind}">and ${more} more</button>`:''}</section>`:'';
  }).join('');
- return `${bellError?`<p role="alert">Some updates could not load: ${esc(bellError)}</p>`:''}${groups||'<p class="muted">Nothing new for you.</p>'}${total?'<button type="button" class="bell-clear" data-bell-clear>Mark all as seen</button>':''}`;
+ return `${bellError?`<p role="alert">Some updates could not load: ${esc(bellError)}</p>`:''}${groups||'<p class="muted">Nothing new for you.</p>'}${taskTotal?'<button type="button" class="bell-clear" data-bell-clear>Mark task updates as seen</button>':''}`;
 }
 function bellRender(){
  const box=document.getElementById('bell');if(!box)return;
@@ -88,6 +94,7 @@ function bellRender(){
  if(bellOpen)panel.innerHTML=`<h2>Updates</h2>${bellPanel()}`;
 }
 function bellGoToTasks(){
+ if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
  if(typeof message==='function')message('');
  view='personal';personalSection='task';personalPage=0;
  return run(async()=>render());
@@ -95,8 +102,16 @@ function bellGoToTasks(){
 function bellSetOpen(open){bellOpen=open;bellRender();if(open){bellItems=null;bellRender();bellLoadList().catch(error=>{bellError=error.message;bellItems={};bellRender();});}}
 function bellChoose(kind,row){
  bellMarkSeen(me?.user_id,[kind]);bellSetOpen(false);
- if(kind==='work'&&row&&typeof workOpenRecord==='function'){workOpenRecord(row);refreshNotificationBell(true).catch(()=>{});return;}
+ if((kind==='work'||kind==='notices')&&row&&typeof workOpenRecord==='function'){run(()=>workOpenRecord(row));refreshNotificationBell(true).catch(()=>{});return;}
  bellGoToTasks();
+}
+async function bellDismissNotice(id){
+ const actor=me?.user_id,epoch=bellEpoch;
+ if(!actor||!bellItems?.notices?.some(row=>row.id===id))return;
+ const result=await client.rpc('dismiss_work_notice',{p_id:id});
+ if(me?.user_id!==actor||bellEpoch!==epoch)return;
+ if(result.error)throw Error(result.error.message);
+ await refreshNotificationBell(true);
 }
 // Adds the bell to the header once someone is signed in (sign-out empties the header, which removes it).
 function bellInstall(){
@@ -109,6 +124,8 @@ function bellInstall(){
  box.querySelector('.bell-panel').addEventListener('click',event=>{
   const item=event.target.closest('[data-bell-item]'),more=event.target.closest('[data-bell-more]');
   if(item){const [kind,i]=item.dataset.bellItem.split(':');return bellChoose(kind,bellItems?.[kind]?.[Number(i)]);}
+  const dismiss=event.target.closest('[data-bell-dismiss]');
+  if(dismiss)return run(()=>bellDismissNotice(dismiss.dataset.bellDismiss));
   if(more)return bellChoose(more.dataset.bellMore,null);
   if(event.target.closest('[data-bell-clear]')){bellMarkSeen(me?.user_id,bellKinds.map(([kind])=>kind));bellSetOpen(false);refreshNotificationBell(true).catch(()=>{});}
  });
