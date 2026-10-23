@@ -81,6 +81,20 @@ try{
   for(const role of ['anon','authenticated'])assert.equal((await one("select has_function_privilege($1,'append_team_task_progress(uuid,uuid,text)','execute') allowed",[role])).allowed,role==='authenticated');
   for(const role of ['anon','authenticated'])assert.equal((await one("select has_function_privilege($1,'capture_team_task_assignment()','execute') allowed",[role])).allowed,false);
  });
+ // The existing task is now assigned to inactive ENGINEER; age only this disposable fixture row.
+ await admin("update team_tasks set due_at='2020-01-01T08:34:56.789Z' where id=$1",[OTHER]);
+ await as(OUTSIDER);
+ await check(async()=>{assert.equal(await row(OTHER),undefined);await assert.rejects(save(OTHER,1,'Other separate task','Independent instructions',OUTSIDER,'2020-01-01T08:34:56.789Z'),/Only the person who gave the task or the owner/);});
+ await as(OWNER);const stranded=await row(OTHER),strandedHistory=await history(OTHER);
+ await check(async()=>{
+  assert.equal(stranded.assignee_user_id,ENGINEER);assert.ok(new Date(stranded.due_at)<new Date());
+  const recovered=await save(OTHER,stranded.version,stranded.title,stranded.details,OUTSIDER,stranded.due_at);
+  assert.equal(recovered.assignee_user_id,OUTSIDER);assert.equal(recovered.version,stranded.version+1);
+  for(const key of ['title','details','urgency','due_at','assigned_by','status','close_note','closed_by','closed_at','reschedule_count'])assert.deepEqual(recovered[key],stranded[key],`${key} survives overdue reassignment`);
+  const events=await history(OTHER);for(const event of strandedHistory)assert.deepEqual(events.find(e=>e.id===event.id),event);
+  const change=events.find(e=>e.action==='assignment'&&e.old_assignment?.assignee_user_id===ENGINEER&&e.new_assignment?.assignee_user_id===OUTSIDER);
+  assert.ok(change);assert.equal(change.old_assignment.due_at,change.new_assignment.due_at);assert.equal(change.actor_user_id,OWNER);
+ });
  const count=(await history(LEGACY)).length;await db.exec('reset role');await load('202610200113_task_progress_history.sql');await db.exec('set role authenticated');
  await check(async()=>assert.equal((await history(LEGACY)).length,count,'rerunning migration preserves history without duplicate baselines'));
  console.log(`PASS: ${checks} task progress database checks; append-only comments, assignment snapshots, honest legacy baseline, no direct writes, current-task RLS, same-department head isolation, active staff/MFA, retry semantics, unchanged RPCs and deadline limits. Single-session PGlite does not exercise concurrent PostgreSQL lock contention.`);

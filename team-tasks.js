@@ -46,7 +46,8 @@ function teamTaskCard(row){
 }
 async function loadTeamTasks(){
  const actor=me,epoch=teamTaskEpoch,since=new Date(Date.now()-30*86400000).toISOString();
- const rows=await all('team_tasks','id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count',q=>q.or(`assignee_user_id.eq.${actor.user_id},assigned_by.eq.${actor.user_id}`).or(`status.eq.open,closed_at.gte.${since}`));
+ const inactive=actor.role==='owner'?[...employeeDirectory.values()].filter(row=>row.active===false).map(row=>row.user_id):[];
+ const rows=await all('team_tasks','id,task_number,title,details,urgency,due_at,assignee_user_id,assigned_by,status,close_note,closed_at,version,reschedule_count',q=>q.or(`assignee_user_id.eq.${actor.user_id},assigned_by.eq.${actor.user_id}${inactive.length?`,and(status.eq.open,assignee_user_id.in.(${inactive.join(',')}))`:''}`).or(`status.eq.open,closed_at.gte.${since}`));
  if(me!==actor||epoch!==teamTaskEpoch)return null;
  const ids=rows.map(row=>row.id),moves=new Map(),history=new Map();
  for(let i=0;i<ids.length;i+=100){
@@ -58,7 +59,7 @@ async function loadTeamTasks(){
    map.get(e.task_id).push(e);
   }
  }
- return {rows,moves,history};
+ return {rows,moves,history,inactive};
 }
 // A long list shows its first 100 cards and a button for the rest, so the page draws at once however many tasks a
 // person has (one has 2,872 in the test data). The rest are kept here until the button is pressed.
@@ -99,7 +100,8 @@ async function teamTasksWorkspace(){
  if(!current()||loaded===null)return;
  teamTasks=teamTaskOrder(loaded.rows);teamTaskMoves=loaded.moves;teamTaskEvents=loaded.history;teamTaskMore=new Map();
  const forMe=teamTasks.filter(row=>row.status==='open'&&row.assignee_user_id===actor.user_id),gave=teamTasks.filter(row=>row.status==='open'&&row.assigned_by===actor.user_id&&row.assignee_user_id!==actor.user_id),results=teamTasks.filter(row=>row.status!=='open'&&row.assigned_by===actor.user_id&&row.assignee_user_id!==actor.user_id&&Date.parse(row.closed_at)>Date.now()-7*86400000).sort((a,b)=>Date.parse(b.closed_at)-Date.parse(a.closed_at)),finished=teamTasks.filter(row=>row.status!=='open'&&(row.assignee_user_id===actor.user_id||row.assigned_by===actor.user_id)&&!results.includes(row));
- manual.innerHTML=`<section class="team-task-group"><h3>To do · ${forMe.length}</h3>${teamTaskCards(forMe)||'<p class="muted">Nothing given to you right now.</p>'}</section>${gave.length?`<section class="team-task-group"><h3>Tasks I gave others · ${gave.length}</h3>${teamTaskCards(gave)}</section>`:''}`;
+ const recovery=actor.role==='owner'?teamTasks.filter(row=>row.status==='open'&&loaded.inactive.includes(row.assignee_user_id)&&row.assignee_user_id!==actor.user_id&&row.assigned_by!==actor.user_id):[];
+ manual.innerHTML=`<section class="team-task-group"><h3>To do · ${forMe.length}</h3>${teamTaskCards(forMe)||'<p class="muted">Nothing given to you right now.</p>'}</section>${gave.length?`<section class="team-task-group"><h3>Tasks I gave others · ${gave.length}</h3>${teamTaskCards(gave)}</section>`:''}${recovery.length?`<section class="team-task-group"><h3>Tasks for inactive staff · ${recovery.length}</h3><p class="muted">Use Edit to assign these open tasks to an active employee.</p>${teamTaskCards(recovery)}</section>`:''}`;
  finishedBox.innerHTML=`${results.length?`<section class="team-task-group"><h2>Results of tasks I gave · last 7 days · ${results.length}</h2>${teamTaskCards(results)}</section>`:''}${finished.length?`<details class="team-task-group"><summary>Finished in the last 30 days · ${finished.length}</summary>${teamTaskCards(finished)}</details>`:''}`;
  markSeen(['tasks','results']);
  await handoffs;
@@ -123,7 +125,7 @@ function openTeamTaskEditor(row){
  const assignee=row?.assignee_user_id||me.user_id,id=row?.id||crypto.randomUUID(),actor=me?.user_id;
  const fields=`<label><span>What needs doing?</span><input name="title" required minlength="2" maxlength="200" value="${esc(row?.title||'')}" placeholder="For example: send the service report to Aga Khan"></label>
  ${row&&me.role!=='owner'?'<p class="muted">To change the deadline, close this editor and use Ask for more time.</p>':''}
- <label><span>Who does it?</span><select name="assignee" required>${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
+ <label><span>Who does it?</span><select name="assignee" required>${row&&!employees.some(e=>e.user_id===assignee)?'<option value="" selected>Choose an active employee</option>':''}${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
  <fieldset class="urgency-choice"><legend>How urgent?</legend>${teamTaskUrgency.map(([key,label])=>`<label class="urgency-${key}"><input type="radio" name="urgency" value="${key}" required${row?.urgency===key?' checked':''}> ${label}</label>`).join('')}</fieldset>
  <label><span>Due</span><input type="datetime-local" name="due" required ${row&&me.role!=='owner'?'readonly':''} value="${teamTaskLocalInput(row?new Date(row.due_at):teamTaskDefaultDue())}"></label>
  <label><span>Details · optional</span><textarea name="details" maxlength="4000">${esc(row?.details||'')}</textarea></label>`;
@@ -131,7 +133,7 @@ function openTeamTaskEditor(row){
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the task.');
   if(!values.urgency)throw Error('Choose how urgent it is.');
   const due=new Date(row&&me.role!=='owner'?row.due_at:values.due);if(!Number.isFinite(due.getTime()))throw Error('Choose the due date and time.');
-  const result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:row&&me.role!=='owner'?row.due_at:due.toISOString(),p_assignee:values.assignee});
+  const result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:row&&(me.role!=='owner'||values.due===teamTaskLocalInput(new Date(row.due_at)))?row.due_at:due.toISOString(),p_assignee:values.assignee});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
   await teamTasksWorkspace();message(row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`);
