@@ -1,6 +1,24 @@
 'use strict';
 let tallyRows=[],tallyCorrections=new Map(),tallySearch='',tallyPage=0,tallyGodown='';
 let tallyReadiness=null;
+let tallyLocationReviews=null,tallyLocations=null;
+function tallyGodownLocationStatus(godown,reviews,locations){
+ if(!godown?.trim())return {ready:false,label:'Missing source godown',version:0};
+ if(!Array.isArray(reviews)||!Array.isArray(locations))return {ready:false,label:'Location checks unavailable',version:0};
+ const latest=reviews.filter(r=>r.source_godown===godown).reduce((best,r)=>!best||r.version>best.version?r:best,null);
+ if(!latest)return {ready:false,label:'Location not mapped',version:0};
+ if(latest.unconfirmed)return {ready:false,label:'Mapping save unconfirmed — do not import',version:latest.version};
+ if(!latest.location_id)return {ready:false,label:'Unresolved — do not import',version:latest.version};
+ const location=locations.find(r=>r.id===latest.location_id&&r.active===true);
+ return {ready:!!location,label:location?location.name:'Mapped location inactive or missing',version:latest.version};
+}
+function refreshGodownLocationChecks(){
+ document.querySelectorAll('#godownReadiness tbody tr[data-source-godown]').forEach(row=>{
+  const cell=row.querySelector('[data-location-ready]');if(!cell)return;
+  const check=tallyGodownLocationStatus(row.dataset.sourceGodown,tallyLocationReviews,tallyLocations);
+  cell.dataset.locationReady=String(check.ready);cell.textContent=check.label;
+ });
+}
 function tallyGodownReview(source,corrections,godown,search){
  const godowns=[...new Set(source.map(r=>r.godown||''))].sort((a,b)=>a.localeCompare(b));
  const scoped=godown?source.filter(r=>r.godown===godown):source;
@@ -14,8 +32,9 @@ async function tallyStockScreen(){
  const actor=me?.user_id;
  $('#content').innerHTML='<p role="status">Loading Tally stock review…</p>';
  try{
-  const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
+  const [rows,corrections,mapping]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*'),Promise.all([all('godown_mapping_reviews','id,source_godown,version,location_id,reason'),all('inventory_locations','id,name,active')]).catch(()=>[null,null])]);
   if(me?.user_id!==actor||inventorySection!=='review')return;
+  [tallyLocationReviews,tallyLocations]=mapping;
   tallyRows=rows;tallyCorrections=new Map();for(const r of corrections)if((tallyCorrections.get(r.source_id)?.version||0)<r.version)tallyCorrections.set(r.source_id,r);
   tallyReadiness=tallyGodownReadiness(tallyRows,tallyRowReview);
   renderTallyStock();
@@ -50,8 +69,17 @@ function renderTallyStock(){
  $('#tallyPrev').onclick=()=>{tallyPage--;renderTallyStock()};$('#tallyNext').onclick=()=>{tallyPage++;renderTallyStock()};
  document.querySelectorAll('[data-tally-review]').forEach(b=>b.onclick=()=>openTallyCorrection(b.dataset.tallyReview));
  const readiness=document.createElement('section');readiness.className='card';readiness.id='godownReadiness';
- readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name||'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
+ readiness.innerHTML=`<h2>All godowns · reconciliation checklist</h2><p>Checks passed means product details and physical-count review are complete, not that stock has been imported. Original negative balances remain visible. No quantities are added together across different products or units.</p><div class="table-wrap"><table><thead><tr><th>Godown</th><th>Source rows</th><th>Checks passed</th><th>Needs correction</th><th>Product not linked</th><th>Original negatives</th></tr></thead><tbody>${tallyReadiness.map(g=>`<tr><td>${esc(g.name.trim()?g.name:'Missing godown — needs correction')}</td><td>${g.total}</td><td>${g.checked}</td><td>${g.blocked}</td><td>${g.unmapped}</td><td>${g.negative}</td></tr>`).join('')}</tbody></table></div>`;
  $('#content').append(readiness);
+ const locationHeading=document.createElement('th');locationHeading.textContent='Location check';readiness.querySelector('thead tr').append(locationHeading);
+ const sourceGroups=tallyReadiness;
+ readiness.querySelectorAll('tbody tr').forEach((row,index)=>{row.dataset.sourceGodown=sourceGroups[index].name;const cell=document.createElement('td');cell.dataset.locationReady='false';row.append(cell);});
+ refreshGodownLocationChecks();
+ const locationNotice=document.createElement('p');locationNotice.textContent='Product checks alone do not authorize import. A saved active location mapping is also required. Operational import is not enabled here.';readiness.append(locationNotice);
+ if(me.role==='owner'){
+  const heading=document.createElement('th');heading.textContent='Location mapping';readiness.querySelector('thead tr').append(heading);
+  readiness.querySelectorAll('tbody tr').forEach(row=>{const name=row.dataset.sourceGodown,cell=document.createElement('td'),button=document.createElement('button');button.type='button';button.textContent='Review location mapping';button.disabled=!name.trim();button.onclick=()=>openGodownMapping(name);cell.append(button);row.append(cell);});
+ }
  const file=$('#tallyFile');if(file)file.onchange=()=>run(async()=>{
   const actor=me?.user_id,payload=JSON.parse(await file.files[0].text());
   if(!Array.isArray(payload.records))throw Error('Choose the prepared stock review JSON.');
@@ -74,4 +102,52 @@ function openTallyCorrection(id){
    if(me?.user_id!==actor){dialog.close();return;}if(r.error)throw r.error;dialog.close();await tallyStockScreen();
   }catch(error){dialog.querySelector('[role="alert"]').textContent=`Not confirmed saved: ${error.message}. Reopen to check the latest version before retrying.`;}finally{button.disabled=false;}
  };
+}
+async function openGodownMapping(godown){
+ if(me?.role!=='owner'||!godown?.trim())return;
+ const actor=me.user_id,current=()=>me?.user_id===actor&&me?.role==='owner'&&inventorySection==='review';
+ const dialog=document.createElement('dialog');dialog.innerHTML='<h2>Map source godown</h2><p role="status">Loading mapping…</p><button type="button">Close</button>';
+ document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.querySelector('button').onclick=()=>dialog.close();dialog.showModal();
+ try{
+  const [locations,history]=await Promise.all([all('inventory_locations','id,name,active'),all('godown_mapping_reviews','id,source_godown,version,location_id,reason')]);
+  if(!current()||!dialog.isConnected){dialog.close();return;}
+  const previous=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version)[0];
+  const active=locations.filter(r=>r.active),validPrior=active.some(r=>r.id===previous?.location_id);
+  dialog.innerHTML=`<form><h2>Map source godown</h2><p>${esc(godown)} · version ${previous?.version||0}</p><p>This saves a location mapping only. Stock quantities are unchanged.</p>${previous?.location_id&&!validPrior?'<p role="status">Previous location is inactive or missing. Choose a location or explicitly leave unresolved.</p>':''}<label>ERP location<select name="location"><option value="">Unresolved — do not import</option>${active.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><label>Reason / evidence<textarea name="reason" required minlength="5" maxlength="1000"></textarea></label><p role="alert"></p><p role="status"></p><button type="button" data-close>Close</button><button type="submit">Save mapping only</button></form>`;
+  const audit=document.createElement('section');audit.dataset.mappingHistory='';
+  const versionLabel=dialog.querySelector('form > p');
+  const auditHeading=document.createElement('h3');auditHeading.textContent='Saved mapping history';
+  const revisions=history.filter(r=>r.source_godown===godown).sort((a,b)=>b.version-a.version);
+  function renderHistory(){
+  audit.replaceChildren(auditHeading);
+  for(const r of revisions){const item=document.createElement('p'),location=locations.find(l=>l.id===r.location_id);item.textContent=`Version ${r.version} · ${r.location_id?(location?location.name+(location.active?'':' (inactive)'):'Location unavailable'):'Unresolved — do not import'} · ${r.reason}`;audit.append(item);}
+  if(!revisions.length){const empty=document.createElement('p');empty.textContent='No saved mapping yet.';audit.append(empty);}
+  }
+  renderHistory();
+  dialog.append(audit);
+  dialog.querySelector('[name="location"]').value=validPrior?previous.location_id:'';
+  dialog.querySelector('[data-close]').onclick=()=>dialog.close();let request=null;
+  dialog.querySelector('form').onsubmit=async e=>{
+   e.preventDefault();if(!current()){dialog.close();return;}
+   const button=dialog.querySelector('[type="submit"]');if(button.disabled)return;
+   const f=new FormData(e.target),location=f.get('location')||null,reason=f.get('reason').trim(),alert=dialog.querySelector('[role="alert"]');
+   if(reason.length<5){alert.textContent='Enter the evidence for this mapping.';return;}
+   if(request&&(request.p_location_id!==location||request.p_reason!==reason)){alert.textContent='Previous save is unconfirmed. Retry unchanged or close and reopen to check the latest saved mapping.';return;}
+   request??={p_id:crypto.randomUUID(),p_godown:godown,p_expected_version:previous?.version||0,p_location_id:location,p_reason:reason};button.disabled=true;
+   tallyLocations=locations;
+   tallyLocationReviews=[...(tallyLocationReviews||[]).filter(item=>item.id!==request.p_id),{id:request.p_id,source_godown:godown,version:request.p_expected_version+1,unconfirmed:true}];
+   refreshGodownLocationChecks();
+   try{const r=await client.rpc('save_godown_mapping_review',request);if(!current()||!dialog.isConnected){dialog.close();return;}if(r.error)throw r.error;
+    const saved=Array.isArray(r.data)?r.data[0]:r.data;if(saved?.id!==request.p_id||saved?.version!==request.p_expected_version+1)throw Error('Saved mapping could not be verified');
+    tallyLocations=locations;
+    tallyLocationReviews=[...(tallyLocationReviews||[]).filter(item=>item.id!==saved.id),{...saved,source_godown:godown,location_id:request.p_location_id}];
+    refreshGodownLocationChecks();
+    revisions.unshift({...saved,location_id:request.p_location_id,reason:request.p_reason});
+    renderHistory();
+    versionLabel.textContent=`${godown} · version ${saved.version}`;
+    alert.textContent='';dialog.querySelector('[role="status"]').textContent='Mapping saved. Stock quantities unchanged.';
+    dialog.querySelectorAll('input,select,textarea').forEach(el=>el.disabled=true);
+   }catch(error){if(current()&&dialog.isConnected){alert.textContent=`Not confirmed saved: ${error.message}`;button.disabled=false;}}
+  };
+ }catch(error){if(current()&&dialog.isConnected)dialog.querySelector('[role="status"]').textContent=`Mapping could not load: ${error.message}. No changes saved.`;else dialog.close();}
 }
