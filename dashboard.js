@@ -15,20 +15,20 @@ const dashboardPresets=[['today','Today'],['week','This week'],['month','This mo
 // out: those tables keep no creation date.
 const dashboardCards={
  open:[
-  ['overdue','Overdues','overdue',null],['due_today','Due Today','due',null],
-  ['opportunities','Opportunities','leads',{view:'leads',filter:'open'}],['cases','Cases','cases',{view:'service',section:'schedule'}],
-  ['accounts','Accounts','accounts',{view:'contacts'}],['scheduled_service','Scheduled Service Activities','schedule',{view:'service',section:'schedule'}],
-  ['quotes','Quotes','quotes',{view:'sales',section:'proformas'}],['webqueries','Webqueries','web',{view:'requests',section:'inquiries',filter:'open'}],
+  ['overdue','Overdue work','overdue',null],['due_today','Due today','due',null],
+  ['opportunities','Leads','leads',{view:'leads',filter:'open'}],['cases','Service jobs','cases',{view:'service',section:'schedule'}],
+  ['accounts','Customer accounts','accounts',{view:'contacts'}],['scheduled_service','Scheduled visits','schedule',{view:'service',section:'schedule'}],
+  ['quotes','Pro formas','quotes',{view:'sales',section:'proformas'}],['webqueries','Website inquiries','web',{view:'requests',section:'inquiries',filter:'open'}],
   ['contacts','Contacts','contacts',null],['tasks','Tasks','tasks',{view:'personal',section:'task'}]],
  periodic:[
-  ['opportunities','Opportunities','leads',null],['cases','Cases','cases',null],['scheduled_service','Scheduled Service Activities','schedule',null],
-  ['quotes','Quotes','quotes',null],['webqueries','Webqueries','web',null],['tasks','Tasks','tasks',null]],
+  ['opportunities','Leads','leads',null],['cases','Service jobs','cases',null],['scheduled_service','Scheduled visits','schedule',null],
+  ['quotes','Pro formas','quotes',null],['webqueries','Website inquiries','web',null],['tasks','Tasks','tasks',null]],
  // A fifth item lists the parts of a grouped card; the group shows their total.
  result:[
-  ['cases','Cases','cases',null,[['cases_cancelled','Canceled Cases','cases',null],['cases_resolved','Resolved Cases','cases',null]]],
-  ['opportunities','Opportunities','leads',null,[['opportunities_won','Closed Won','won',{view:'leads',filter:'won'}],['opportunities_lost','Closed Lost','lost',{view:'leads',filter:'lost'}]]],
-  ['quotes_closed','Close Quotes','quotes',null],['tasks_completed','Completed Tasks','tasks',null],
-  ['webqueries_closed','Close Webqueries','web',{view:'requests',section:'inquiries',filter:'done'}]]
+  ['cases','Service jobs','cases',null,[['cases_cancelled','Canceled Cases','cases',null],['cases_resolved','Resolved Cases','cases',null]]],
+  ['opportunities','Leads','leads',null,[['opportunities_won','Closed Won','won',{view:'leads',filter:'won'}],['opportunities_lost','Closed Lost','lost',{view:'leads',filter:'lost'}]]],
+  ['quotes_closed','Pro formas: accepted / rejected / cancelled','quotes',null],['tasks_completed','Completed Tasks','tasks',null],
+  ['webqueries_closed','Closed website inquiries','web',{view:'requests',section:'inquiries',filter:'done'}]]
 };
 const dashboardParts=[['leads','Lead follow-ups'],['tasks','Tasks'],['steps','Order steps'],['service','Service visits']];
 function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
@@ -90,7 +90,7 @@ function dashboardOpen(target){
 function dashboardNumber(n){return Number(n).toLocaleString('en-GB');}
 function dashboardTile(column,tile){
  const body=`<span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?`<small>${esc(tile.breakdown)}</small>`:''}`;
- return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
+ return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
   :`<div class="dashboard-tile dashboard-${tile.tone}">${body}</div>`;
 }
 function dashboardGroup(column,tile){
@@ -113,7 +113,7 @@ function dashboardSavePeriod(userId,choice,storage=dashboardStorage()){
 }
 function dashboardPicker(range){
  const choice=dashboardPeriod;
- return `<div class="dashboard-period" role="group" aria-label="Period"><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-range">Periodic, Result${dashboardTeamVisible()?' and Team tasks':''}: ${esc(dashboardRangeLabel(choice,range))}</p></div>`;
+ return `<div class="dashboard-period" role="group" aria-label="Period"><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-range">New work, scheduling and outcomes${dashboardTeamVisible()?' and Team tasks':''}: ${esc(dashboardRangeLabel(choice,range))}</p></div>`;
 }
 function dashboardColumn(column,title){
  const tiles=dashboardTiles(column,dashboardData);
@@ -154,7 +154,7 @@ async function dashboardOpenPerson(userId,range){
  renderDashboard(range,userId);
 }
 function renderDashboard(range,focusPerson=''){
- $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><small>MAIN</small><h1>Dashboard</h1><p class="muted">What is open now, what came in and what was finished. Choose a period, then press a card to open its list.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Open')}${dashboardColumn('periodic','Periodic')}${dashboardColumn('result','Result')}</div>`:''}${dashboardTeamSection()}</section>`;
+ $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><small>MAIN</small><h1>Dashboard</h1><p class="muted">Start with overdue work and tasks due today. Buttons open the linked work; plain counts are summaries. Choose a period for new work, scheduling and outcomes.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Open now')}${dashboardColumn('periodic','Created / scheduled in period')}${dashboardColumn('result','Outcomes in period')}</div>`:''}${dashboardTeamSection()}</section>`;
  $('#dashboardRefresh').onclick=()=>run(dashboardWorkspace);
  document.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
  document.querySelectorAll('[data-dashboard-preset]').forEach(button=>button.onclick=()=>{

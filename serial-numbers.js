@@ -1,7 +1,7 @@
 'use strict';
 // Serial numbers (migration 084). The database decides which products need serials, blocks dispatch until each such
 // unit has one, keeps them permanent after dispatch and frees them on return; this file shows and records them.
-let serialSettings=new Map(),deliverySerials=[];
+let serialSettings=new Map(),deliverySerials=[],plannedSerialLines=new Set();
 const serialEditableStatuses=['sent_to_sales','packing','ready'];
 
 // Parses what stores typed or scanned: one serial per line or comma, trimmed, blanks dropped.
@@ -15,10 +15,11 @@ function serialListProblem(serials,quantity){
 }
 function machineSerialRequired(productId){return typeof inventoryClassification==='function'&&inventoryClassification(productId)?.category==='machines'}
 function serialRequired(productId){return machineSerialRequired(productId)||serialSettings.get(productId)===true}
+function deliveryLineSerialRequired(line,serials=deliverySerials){return serialRequired(line.product_id)||plannedSerialLines.has(line.id)||serials.some(serial=>serial.delivery_line_id===line.id)}
 function canFlagSerials(user){return !!user&&(user.role==='owner'||(user.role==='head'&&user.department==='stores'))}
 
 function deliverySerialPanelHtml(note,lines,serials){
- const tracked=lines.filter(line=>serialRequired(line.product_id));if(!tracked.length)return '';
+ const tracked=lines.filter(line=>deliveryLineSerialRequired(line,serials));if(!tracked.length)return '';
  const editable=serialEditableStatuses.includes(note.status);
  const rows=tracked.map(line=>{const own=serials.filter(s=>s.delivery_line_id===line.id);
   const list=own.length?own.map(s=>`<code>${esc(s.serial_number)}</code>${s.returned_at?' <small>(returned)</small>':''}`).join(', '):'<strong>Not entered yet</strong>';
@@ -33,14 +34,23 @@ async function loadSerialSettings(){
  serialSettings=new Map((result.data||[]).map(row=>[row.product_id,row.serial_required]));return true;
 }
 async function decorateDeliverySerials(){
+ plannedSerialLines=new Set();deliverySerials=[];
  const notes=[...document.querySelectorAll('[data-document-card]')].map(card=>salesDeliveryNotes.find(row=>row.id===card.dataset.documentCard)).filter(Boolean);
  if(!notes.length)return;
  const actor=me?.user_id;
  if(!(await loadSerialSettings())||me?.user_id!==actor)return;
- const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>serialRequired(line.product_id)));if(!relevant.length)return;
- const result=await client.from('delivery_line_serials').select('*').in('delivery_note_id',relevant.map(note=>note.id)).order('serial_number');
- if(result.error||me?.user_id!==actor)return;
- deliverySerials=result.data||[];
+ const planned=[];
+ for(let start=0;start<notes.length;start+=100){
+  const result=await client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:notes.slice(start,start+100).map(note=>note.id)});
+  if(me?.user_id!==actor)return;
+  if(result.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
+  planned.push(...(result.data||[]));
+ }
+ const result=await salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number');
+ if(me?.user_id!==actor)return;
+ if(result.error){message('Serial numbers could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
+ plannedSerialLines=new Set(planned.map(line=>line.delivery_line_id));deliverySerials=result.data||[];
+ const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>deliveryLineSerialRequired(line)));
  for(const note of relevant){
   const card=document.querySelector(`[data-document-card="${CSS.escape(note.id)}"]`),actions=card?.querySelector('.actions');
   if(!actions||card.querySelector('[data-serial-panel]'))continue;
@@ -51,7 +61,7 @@ async function decorateDeliverySerials(){
 }
 function openRecordSerials(note){
  if(!note)return;
- const lines=deliveryLines(note.id).filter(line=>serialRequired(line.product_id));
+ const lines=deliveryLines(note.id).filter(line=>deliveryLineSerialRequired(line));
  actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line. Every unit must be available in the allocated stock lot. Transferred units must have a confirmed arrival; quarantined units cannot be selected.</p>`+lines.map(line=>{
    const current=deliverySerials.filter(s=>s.delivery_line_id===line.id).map(s=>s.serial_number).join('\n');
    return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label><label><input type="checkbox" name="legacy_${esc(line.id)}"> These are verified units already in stock before serial receiving began. I checked their real serials. This confirmation is audited and limited to remaining legacy stock.</label>`;}).join(''),
@@ -67,7 +77,7 @@ function openRecordSerials(note){
 function decorateReturnedSerials(){
  document.querySelectorAll('[data-returns-panel]').forEach(panel=>{
   const noteId=panel.dataset.returnsPanel,out=deliverySerials.filter(s=>s.delivery_note_id===noteId&&!s.returned_at);if(!out.length)return;
-  const lines=(typeof customerReturnLines!=='undefined'?customerReturnLines:[]).filter(line=>serialRequired(line.product_id)&&deliverySerials.some(s=>s.delivery_line_id===line.delivery_line_id&&s.delivery_note_id===noteId));
+  const lines=(typeof customerReturnLines!=='undefined'?customerReturnLines:[]).filter(line=>deliverySerials.some(s=>s.delivery_line_id===line.delivery_line_id&&s.delivery_note_id===noteId));
   for(const line of lines){
    const marked=deliverySerials.filter(s=>s.return_line_id===line.id).length;if(marked>=line.quantity||panel.querySelector(`[data-serial-return="${CSS.escape(line.id)}"]`))continue;
    panel.insertAdjacentHTML('beforeend',`<button type="button" data-serial-return="${esc(line.id)}">Mark returned serials · ${esc(salesProduct(line.product_id).name)} (${esc(line.quantity-marked)} to mark)</button>`);

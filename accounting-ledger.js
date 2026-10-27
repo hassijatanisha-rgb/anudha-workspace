@@ -87,11 +87,14 @@ async function booksWorkspace(){
  if(!current())return;
  booksData=data;
  const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace,opening:(actor,current)=>openingReceivablesWorkspace(actor,current)}[booksSection]||booksOverview;
- $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>Books</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
- <div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>
+ $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>${esc(booksSection==='overview'?'Accounts overview':booksSections.find(([key])=>key===booksSection)?.[1]||'Accounts')}</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
+ <details class="no-print"><summary>Other accounting tasks</summary><div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div></details>
  <div id="booksBody"></div></section>`;
  document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{if(button.dataset.booksSection!==booksSection&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;if(button.dataset.booksSection!==booksSection&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
  await body(actor,current);
+}
+function booksCutoverChecklist(){
+ return `<details class="card"><summary>Opening books and stock · launch checklist</summary><p>A successful Excel import does not complete the opening books. Accounts must reconcile and approve each stage before using the ERP balances for live reporting.</p><ol><li><strong>Cutover date and source:</strong> agree the final date, retain the source files and back up the current workspace.</li><li><strong>Rehearsal records:</strong> review test invoices, receipts and deliveries. Use the supported cancellation, void or reversal process; never delete posted history. Rehearsal entries remain in reports until correctly reversed.</li><li><strong>Account mapping and opening trial balance:</strong> map ledger codes, preview balanced journals, post once and compare every balance with the source.</li><li><strong>Customer receivables:</strong> import genuine outstanding invoice references and residual amounts using Opening receivables. Reconcile the customer total to the receivables control account without posting it twice.</li><li><strong>Supplier payables:</strong> reconcile supplier details and the payable control account separately. The journal importer does not create supplier bills or allocations.</li><li><strong>Physical stock:</strong> count and approve actual location, batch, expiry, carton conversion and machine serials in Stock count. Provisional demonstration quantities are not verified physical counts.</li><li><strong>Prices and tax details:</strong> review selling prices, currencies, tax rates and customer tax details. Missing prices must be configured before quoting.</li><li><strong>Final sign-off:</strong> reconcile banks, cash, receivables, payables and stock valuation; verify employee access and a controlled split-order workflow; set the approved lock date.</li></ol><p class="muted">This is a checklist, not a recorded approval. Keep the owner's reconciliation and sign-off with the cutover source documents.</p></details>`;
 }
 async function booksOverview(actor,current){
  const d=booksData,today=d.today;
@@ -101,7 +104,7 @@ async function booksOverview(actor,current){
  const money=['cash','bank','mobile_money'].reduce((s,k)=>s+balance(k),0);
  const income=pl.filter(r=>r.account_type==='income').reduce((s,r)=>s+Number(r.amount_minor),0),expense=pl.filter(r=>r.account_type==='expense').reduce((s,r)=>s+Number(r.amount_minor),0);
  const overdue=d.invoices.filter(i=>i.state.key==='overdue');
- $('#booksBody').innerHTML=`<div class="books-metrics">
+ $('#booksBody').innerHTML=`${booksCutoverChecklist()}<p class="notice">Reports include all posted entries. Rehearsal entries are not automatically excluded; reconcile opening books before relying on these balances.</p><div class="books-metrics">
   <div><small>Cash, bank and mobile money</small><strong>${booksMoney(money)}</strong></div>
   <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
   <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
@@ -173,8 +176,13 @@ function booksInvoiceQuantitySelection(lines,values){
 }
 async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
  const d=booksData,chosen=booksDraft?.proformaId||'',session=me,epoch=booksEpoch;
- $('#booksBody').innerHTML=`<section class="card"><h2>Invoice available order quantities</h2><p class="muted">Review the accepted order and choose what to invoice now. Posting creates one invoice and delivery note, reserves those Haadi units, and keeps the remaining quantities linked as pending stock for a later invoice. Accounting and delivery access are required.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><fieldset id="booksInvoiceFields"><legend>Invoice details and quantities</legend><div class="grid">
-  <label class="wide"><span>Accepted Pro forma · quote total</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · Quote total ${esc(booksMoney(p.total_minor,p.currency))}</option>`).join('')}</select></label>
+ const invoices=chosen?d.invoices.filter(invoice=>invoice.proforma_id===chosen):d.invoices;
+ const linked=invoices.find(invoice=>!invoice.voided_at)||invoices[0],waiting=d.toInvoice.find(order=>order.id===chosen);
+ const orders=chosen?(waiting?[waiting]:linked?[{id:chosen,document_number:linked.proforma_number||d.proformaNumbers?.get(chosen)||'Selected order',organization_id:linked.organization_id,currency:linked.currency}]:[]):d.toInvoice;
+ const orderNumber=waiting?.document_number||linked?.proforma_number||d.proformaNumbers?.get(chosen)||'Selected order';
+
+ $('#booksBody').innerHTML=`${chosen?`<section class="card"><h2>${esc(orderNumber)}</h2><p>Showing only invoices and quantities for this order.</p><div class="actions"><button type="button" data-books-return-order>Return to whole order</button><button type="button" data-books-all-invoices>Show all customer invoices</button></div></section>`:''}<section class="card"><h2>Invoice available order quantities</h2><p class="muted">Review the accepted order and choose what to invoice now. Posting creates one invoice and delivery note, reserves those Haadi units, and sends the delivery to the packing queue. Machines with installation requested get planning cases immediately. The remaining quantities stay pending for a later invoice. Accounting and delivery access are required.</p>${orders.length?`<form id="booksInvoiceForm"><fieldset id="booksInvoiceFields"><legend>Invoice details and quantities</legend><div class="grid">
+  <label class="wide"><span>Accepted Pro forma · quote total</span><select name="proforma" required><option value="">Choose</option>${orders.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))}${p.total_minor!=null?' · Quote total '+esc(booksMoney(p.total_minor,p.currency)):''}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
   <label><span>Accounts approval reference</span><input name="accountsref" required maxlength="120"></label>
@@ -185,7 +193,9 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
   <p class="muted">The quote total is for the whole order. This invoice charges only the selected quantities; any balance remains pending.</p>
   <p id="booksInvoiceReview" role="status"></p><p id="booksInvoiceStatus" role="status"></p>
   <div class="actions"><button type="submit" id="booksInvoicePost" disabled>Post invoice & reserve stock</button></div></form>`:'<p class="empty">No accepted Pro formas have quantities waiting for an invoice.</p>'}</section>
- <section class="card"><div class="heading"><h2>Invoices (${d.invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${d.invoices.length?booksInvoiceTable(d.invoices):'<p class="empty">No invoices yet.</p>'}</section>`;
+ <section class="card"><div class="heading"><h2>${chosen?'Invoices for this order':'Invoices'} (${invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${invoices.length?booksInvoiceTable(invoices):'<p class="empty">No invoices for this selection.</p>'}</section>`;
+ $('#booksBody').querySelector('[data-books-all-invoices]')?.addEventListener('click',()=>run(()=>{booksDraft=null;return booksWorkspace();}));
+ $('#booksBody').querySelector('[data-books-return-order]')?.addEventListener('click',()=>run(()=>{salesFocusedProforma=chosen;salesFocusedDelivery='';salesSection='proformas';salesEditing='';view='sales';return render();}));
  const form=$('#booksInvoiceForm');
  if(form){
   const current=()=>workspaceCurrent()&&me===session&&me?.user_id===actor&&view==='books'&&booksEpoch===epoch&&form.isConnected;
@@ -195,6 +205,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
   const selection=()=>booksInvoiceQuantitySelection(snapshot.lines,inputs().map(input=>input.value));
   const reviewSelection=()=>{
    if(!snapshot||posting||uncertain)return;
+   if(snapshot.lines.every(line=>Number(line.remaining_quantity)===0)){review.textContent='All order quantities are already invoiced.';button.disabled=true;return;}
    try{const lines=selection(),count=lines.reduce((sum,line)=>sum+line.quantity,0),remaining=snapshot.lines.reduce((sum,line)=>sum+Number(line.remaining_quantity),0)-count;
     review.textContent=`${count} units selected for this invoice; ${remaining} units remain pending on this order.`;button.disabled=false;
    }catch(error){review.textContent=error.message;button.disabled=true;}
@@ -209,9 +220,10 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
     if(!current()||sequence!==request||form.elements.proforma.value!==id)return;
     if(result?.proforma_id!==id||!Number.isSafeInteger(Number(result.version))||Number(result.version)<1||!Array.isArray(result.lines))throw Error('Order quantities could not be verified. Refresh quantities before posting.');
     snapshot=result;const available=new Map();
-    quantities.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Already invoiced</th><th>Remaining</th><th>Haadi available</th><th>Invoice now</th></tr></thead><tbody>${result.lines.map((line,index)=>{
+    quantities.innerHTML=`${result.lines.every(line=>Number(line.remaining_quantity)===0)?'<p class="notice"><strong>Fully invoiced.</strong> Zero units remain to invoice. Review the linked invoices below or return to the whole order.</p>':''}<div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Already invoiced</th><th>Remaining</th><th>Haadi free to invoice</th><th>Invoice now</th></tr></thead><tbody>${result.lines.map((line,index)=>{
      const stock=Number(line.available_quantity),left=available.has(line.product_id)?available.get(line.product_id):stock,max=Math.min(1000000,Number(line.remaining_quantity),stock),value=Math.min(max,left);available.set(line.product_id,left-value);
-     return `<tr><td>${esc(line.description)}<small>${esc(line.uom)}</small></td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${esc(line.remaining_quantity)}</td><td>${esc(line.available_quantity)}</td><td><input type="number" min="0" max="${esc(max)}" step="1" required value="${esc(value)}" data-books-invoice-quantity="${esc(line.proforma_line_id)}" aria-label="Invoice now: ${esc(line.description)} (line ${index+1})"${max===0?' readonly':''}></td></tr>`;
+     const identity=typeof inventoryProduct==='function'?inventoryProduct(line.product_id):null;
+     return `<tr><td>${identity?.name?`<strong>${esc(identity.name)}</strong>${identity.sku?`<small>${esc(identity.sku)}</small>`:''}`:''}<span>${esc(line.description)}</span><small>${esc(line.uom)}</small></td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${esc(line.remaining_quantity)}</td><td>${esc(line.available_quantity)}</td><td><input type="number" min="0" max="${esc(max)}" step="1" required value="${esc(value)}" data-books-invoice-quantity="${esc(line.proforma_line_id)}" aria-label="Invoice now: ${esc(line.description)} (line ${index+1})"${max===0?' readonly':''}></td></tr>`;
     }).join('')}</tbody></table></div><p class="muted">Haadi availability is shared by lines for the same product and is checked again when posting.</p>`;
     inputs().forEach(input=>input.oninput=reviewSelection);reviewSelection();
    }catch(error){if(current()&&sequence===request){snapshot=null;quantities.textContent='Quantities could not load.';status.textContent=error.message;}}
@@ -242,8 +254,9 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
      if(typeof pendingLoaded!=='undefined')pendingLoaded=false;
      if(typeof salesLoaded!=='undefined')salesLoaded=false;
      if(typeof inventoryLoaded!=='undefined')inventoryLoaded=false;
+     if(typeof serviceLoaded!=='undefined')serviceLoaded=false;
      if(!current())return;
-     booksDraft=null;message(`${result.data.invoice_number} posted. Selected stock is reserved; any remaining quantities stay linked in Pending stock.`);await booksWorkspace();
+     booksDraft={proformaId:snapshot.proforma_id};message(`${result.data.invoice_number} posted. Selected stock is reserved and queued for packing; requested machine installations are ready for planning. Remaining quantities stay in Pending stock.`);await booksWorkspace();
     }catch(error){if(current())status.textContent=uncertain?`Invoice result not confirmed: ${error.message} Retry this same invoice to check the result safely. Its submitted details stay locked until confirmed.`:error.message;
     }finally{posting=false;if(current()){fields.disabled=uncertain;button.textContent=uncertain?'Retry same invoice':'Post invoice & reserve stock';if(uncertain)button.disabled=false;else reviewSelection();}}
    });
@@ -252,7 +265,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
  }
  if(!workspaceCurrent()||me!==session||view!=='books'||booksEpoch!==epoch)return;
  $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
-  d.invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
+  invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
  wireBooksInvoiceActions();
 }
 function booksClearPrint(){

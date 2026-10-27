@@ -4,7 +4,9 @@ const serviceStatuses=['new','assigned','scheduled','on_site','report_required',
 const serviceStatusLabels={new:'New',assigned:'Assigned',scheduled:'Scheduled',on_site:'On site',report_required:'Report required',completed:'Completed',cancelled:'Cancelled'};
 
 function serviceStatusLabel(status){return serviceStatusLabels[status]||String(status||'').replaceAll('_',' ')}
-function serviceNextActions(status){return ({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','schedule','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[]}
+function serviceNextActions(status,record={}){const actions=({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','schedule','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[];return record.reused_case_id?[]:record.delivery_ready===false?actions.filter(action=>!['start','submit_report'].includes(action)):actions}
+function serviceNeedsPlanning(record){return !['completed','cancelled'].includes(record.status)&&!record.reused_case_id&&(!record.assigned_user_id||!record.scheduled_for)}
+function serviceSortCases(rows){return [...rows].sort((a,b)=>Number(serviceNeedsPlanning(b))-Number(serviceNeedsPlanning(a))||Number(['completed','cancelled'].includes(a.status))-Number(['completed','cancelled'].includes(b.status))||String(a.created_at||'').localeCompare(String(b.created_at||'')))}
 function serviceMaintenanceDate(actual,months){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(actual||''))||Number.isNaN(Date.parse(actual+'T00:00:00Z')))throw Error('Enter a valid work date.');
  if(![3,6,12,24,36].includes(Number(months)))throw Error('Choose a supported maintenance interval.');
@@ -13,4 +15,4 @@ function serviceMaintenanceDate(actual,months){
 }
 function serviceProgress(status){const current=serviceStatuses.indexOf(status);return serviceStatuses.map((name,index)=>({name,label:serviceStatusLabel(name),state:status==='cancelled'?'':index<current?'complete':index===current?'current':''}))}
 
-function serviceSourceLabel(source){return ({erp_delivery:'Signed machine delivery',third_party:'Bought from another supplier',legacy:'Older equipment / historical sale',distributor:'Distributor supplied',customer_request:'Customer request'})[source]||'Equipment request'}
+function serviceSourceLabel(source,record={}){if(source==='erp_delivery'&&record.delivery_ready===false)return 'Invoiced · awaiting signed delivery';return ({erp_delivery:'Signed machine delivery',third_party:'Bought from another supplier',legacy:'Older equipment / historical sale',distributor:'Distributor supplied',customer_request:'Customer request'})[source]||'Equipment request'}

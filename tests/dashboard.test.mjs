@@ -110,10 +110,10 @@ test('default period is Today',()=>{
 });
 test('cards follow the screenshot order; a card the person cannot see is left out, not shown as 0',()=>{
  const {dashboardTiles}=load();
- assert.deepEqual(plain(dashboardTiles('open',sample).map(t=>t.label)),['Overdues','Due Today','Opportunities','Accounts','Quotes','Webqueries','Contacts','Tasks']);
- assert.deepEqual(plain(dashboardTiles('periodic',sample).map(t=>`${t.label}=${t.value}`)),['Opportunities=2','Quotes=11','Webqueries=0','Tasks=54'],'a real 0 is still shown');
+ assert.deepEqual(plain(dashboardTiles('open',sample).map(t=>t.label)),['Overdue work','Due today','Leads','Customer accounts','Pro formas','Website inquiries','Contacts','Tasks']);
+ assert.deepEqual(plain(dashboardTiles('periodic',sample).map(t=>`${t.label}=${t.value}`)),['Leads=2','Pro formas=11','Website inquiries=0','Tasks=54'],'a real 0 is still shown');
  const result=dashboardTiles('result',sample);
- assert.deepEqual(plain(result.map(t=>t.label)),['Opportunities','Close Quotes','Completed Tasks','Close Webqueries'],'Cases group hidden when both parts are hidden');
+ assert.deepEqual(plain(result.map(t=>t.label)),['Leads','Pro formas: accepted / rejected / cancelled','Completed Tasks','Closed website inquiries'],'Cases group hidden when both parts are hidden');
  assert.equal(result[0].value,3);assert.deepEqual(plain(result[0].items.map(i=>i.label)),['Closed Won','Closed Lost']);
  assert.equal(dashboardTiles('open',null).length,0);
 });
@@ -142,7 +142,7 @@ test('clickable cards open existing lists with filters those lists already have;
  assert.deepEqual(plain(dashboardTarget('result','opportunities_lost')),{view:'leads',filter:'lost'});
  assert.equal(dashboardTarget('periodic','opportunities'),null,'no list can be filtered by creation date');
  assert.equal(dashboardTarget('open','overdue'),null);
- assert.match(dashboardTile('open',{key:'tasks',label:'Tasks',tone:'tasks',value:4740,target:{view:'personal'}}),/^<button type="button" class="dashboard-tile dashboard-tasks" data-dashboard-open="open:tasks"[^>]*>.*4,740/);
+ assert.match(dashboardTile('open',{key:'tasks',label:'Tasks',tone:'tasks',value:4740,target:{view:'personal'}}),/^<button type="button" class="dashboard-tile dashboard-tasks"[^>]* data-dashboard-open="open:tasks"[^>]*>.*4,740/);
  assert.match(dashboardTile('open',{key:'contacts',label:'Contacts <b>',tone:'contacts',value:1,target:null}),/^<div class="dashboard-tile dashboard-contacts"><span>Contacts &#60;b&#62;<\/span>/);
 });
 test('opening a card sets the same screen state as its menu entry',async()=>{

@@ -53,26 +53,45 @@ function pricingReadLine(row,{quantity,unitPriceMinor}){
  return {unitPriceMinor,discountBasisPoints:discount.discountBasisPoints};
 }
 function pricingRefreshRow(row,form,{replacePrice=true}={}){
- const unit=row.querySelector('[name="unitPrice"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
+ const product=row.querySelector('[name="productChoice"]'),unit=row.querySelector('[name="unitPrice"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
  row.querySelector('[data-discount-percent]').hidden=mode==='amount';row.querySelector('[data-discount-amount]').hidden=mode!=='amount';amount.disabled=mode!=='amount';percent.readOnly=mode==='amount';
- unit.readOnly=true;unit.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
+ unit.readOnly=true;product.setCustomValidity('');unit.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
+ let expected;
  try{
-  const expected=pricingExpectedPrice(row,form);
+  expected=pricingExpectedPrice(row,form);
   if(replacePrice)unit.value=pricingMinorText(expected);
   else if(moneyMinor(unit.value)!==expected)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+ }catch(error){
+  if(replacePrice)unit.value='';
+  // A readonly price cannot receive native validation focus; its selected product can.
+  product.setCustomValidity(error.message);feedback.textContent=error.message;return;
+ }
+ try{
   const discount=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),expected,mode,mode==='amount'?amount.value:percent.value);
   if(mode==='amount')percent.value=String(discount.discountBasisPoints/100);
   const currency=form.querySelector('[name="currency"]').value;
   feedback.textContent=`Actual discount: ${moneyDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
  }catch(error){
-  if(replacePrice){try{pricingExpectedPrice(row,form);}catch{unit.value='';}}
   const invalid=mode==='amount'?amount:percent;invalid.setCustomValidity(error.message);feedback.textContent=error.message;
  }
 }
 function pricingRefreshForm(form){for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form);}
 function pricingBindForm(form){
  if(!form||form.dataset.pricingBound)return;form.dataset.pricingBound='true';
- if(!form.querySelector('#pricingHelp')){const help=document.createElement('p');help.id='pricingHelp';help.className='muted';help.textContent='Unit prices come from the central price list. Discounts may be entered as a percentage or an amount for the whole line. Exact amounts must fit a 0.01% step; the actual rounded discount is shown.';form.querySelector('#proformaLines').before(help);}
+ if(!form.querySelector('#pricingHelp')){
+  const help=document.createElement('div');help.id='pricingHelp';help.className='notice';
+  help.innerHTML='<p>Unit prices come from Product prices. If a price is missing, ask Accounts to configure it, then refresh prices here. Your draft stays open. Discounts apply to the whole line; the actual rounded amount is shown.</p><div class="actions"><a class="button" href="#/go/prices" target="_blank" rel="noopener">Open product prices in a new tab</a><button type="button" data-refresh-quote-prices>Refresh prices in this draft</button></div><p data-quote-price-status role="status"></p>';
+  form.querySelector('#proformaLines').before(help);
+  const button=help.querySelector('[data-refresh-quote-prices]'),status=help.querySelector('[data-quote-price-status]');
+  button.onclick=()=>run(async()=>{
+   const actor=me;button.disabled=true;status.textContent='Loading current prices…';
+   try{const rows=await pricingLoad();if(me!==actor||!form.isConnected||rows===null)return;
+    // Fill missing prices only. A saved price changes only after explicit product selection.
+    for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form,{replacePrice:!row.querySelector('[name="unitPrice"]').value});
+    status.textContent='Prices refreshed. Existing prices and entered quantities were preserved; review any price-change messages.';
+   }catch(error){if(me===actor&&form.isConnected)status.textContent=error.message;}finally{button.disabled=false;}
+  });
+ }
  // Preserve a saved historical base price until the seller explicitly selects the product again.
  for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form,{replacePrice:!row.querySelector('[name="unitPrice"]').value});
  form.addEventListener('change',event=>{
@@ -88,12 +107,14 @@ function pricingBindForm(form){
 async function pricesWorkspace(target=$('#content')){
  const actor=me,epoch=++productPriceViewEpoch,current=()=>me===actor&&view==='prices'&&epoch===productPriceViewEpoch&&target.isConnected;
  if(!current())return;target.innerHTML='<p role="status">Loading product prices…</p>';
- const [rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);
+ let rows,access;
+ try{[rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);}
+ catch(error){if(current()){target.innerHTML=`<section class="card"><h1>Product prices</h1><p role="alert">${esc(error.message)}</p><button type="button" data-pricing-reload>Retry loading prices</button></section>`;target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));}return;}
  if(!current()||rows===null)return;
  const canEdit=actor.role==='owner'||(!access.error&&access.data===true);
  target.innerHTML=`<section class="card"><div class="heading"><div><h1>Product prices</h1><p>Prices are configured per product and currency. Sales staff use these base prices and request approval for discounts.</p></div><button type="button" data-pricing-reload>Refresh</button></div>${canEdit?`<form data-price-editor><div class="grid"><label><span>Product</span><input name="productChoice" list="pricingProductChoices" required autocomplete="off" placeholder="Choose a product"></label><datalist id="pricingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Configured unit price</span><input name="price" inputmode="decimal" required></label><label><span>Reason</span><textarea name="reason" minlength="2" maxlength="1000" required></textarea></label></div><p data-price-current class="muted">Choose a product. Enter zero explicitly only when it is the approved price.</p><button type="submit">Save configured price</button></form>`:'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}<label><span>Find configured price</span><input data-price-search type="search" placeholder="Product or currency"></label><div data-price-register></div></section>`;
  const register=target.querySelector('[data-price-register]'),search=target.querySelector('[data-price-search]');
- const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
+ const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=!rows.length?`<div class="notice"><strong>No selling prices configured.</strong><p>Sales cannot quote a product until its currency price is configured. ${canEdit?'Choose a product above or import a source price list below.':'Ask Accounts to configure the required product and currency, then refresh.'} Missing prices are never treated as zero.</p></div>`:!shown.length?'<p class="empty">No configured price matches this search. Clear or change the search.</p>':`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
  search.oninput=draw;draw();target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));
  const form=target.querySelector('[data-price-editor]');if(!form)return;
  if(typeof bindProductPriceImport==='function')bindProductPriceImport(target,current);

@@ -32,7 +32,7 @@ test('only open handoffs past their due date are overdue',()=>{
 });
 test('responsible line names assignee, task and sender and escapes text',()=>{
  const ctx=load();
- assert.match(ctx.workResponsibleHtml(null),/nobody assigned/);
+ assert.match(ctx.workResponsibleHtml(null),/unassigned/);
  const html=ctx.workResponsibleHtml({assignee_user_id:'a',assigned_by:'b',task:'<b>Pack</b>',due_on:null,created_at:new Date().toISOString(),status:'open'});
  assert.match(html,/Asha/);assert.match(html,/sent by Baraka/);assert.match(html,/&#60;b&#62;Pack/);assert.doesNotMatch(html,/<b>Pack/);
 });
@@ -64,7 +64,7 @@ test('Assign to me opens a prefilled current-step form, then records a retry-saf
  ctx.workRecordCards=()=>[{card,type:'delivery',id:'delivery-1',label:'DN-1'}];
  ctx.loadOpenWork=async()=>new Map([['delivery-1',current]]);ctx.loadWorkHistory=async()=>[];ctx.loadWorkDelays=async()=>[];
  await ctx.decorateWorkHandoffs();
- assert.match(box.innerHTML,/data-work-self>Assign to me/);
+ assert.match(box.innerHTML,/data-work-self>Assign this step to me/);
  handlers.get('[data-work-self]')();
  assert.equal(calls.length,0,'click requires the employee to review and submit the form');
  assert.equal(form.title,'Assign this step to me');
@@ -100,7 +100,7 @@ test('finished delivery and service records retain history without offering new 
  ctx.loadOpenWork=async()=>new Map();ctx.loadWorkHistory=async()=>[{id:'old',record_id:'delivery-1',assignee_user_id:'a',task:'Deliver the order',status:'done',created_at:'2026-10-18T09:00:00Z',closed_at:'2026-10-18T10:00:00Z'}];ctx.loadWorkDelays=async()=>[];
  await ctx.decorateWorkHandoffs();
  assert.doesNotMatch(box.innerHTML,/data-work-self|data-work-assign/);
- assert.match(box.innerHTML,/Deliver the order/);assert.match(box.innerHTML,/finished/);
+ assert.match(box.innerHTML,/Deliver the order/);assert.match(box.innerHTML,/Handoff task: <strong>closed/);
 });
 
 test('task layout loads handoffs in their own column and related notices below, with unowned work for owners',async()=>{

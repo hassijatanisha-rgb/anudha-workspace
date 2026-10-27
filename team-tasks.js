@@ -38,7 +38,7 @@ function teamTaskCard(row){
  const buttons=[];
  const moved=row.reschedule_count||0;
  if(open&&(mine||gave||owner))buttons.push(`<button type="button" data-team-task-comment="${esc(row.id)}">Add progress</button>`);
- if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Mark done</button>`);
+ if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Complete assigned task</button>`);
  // Migration 083: only the owner moves a deadline directly; everyone else asks their department head.
  if(teamTaskCanMove(row))buttons.push(owner||typeof openDeadlineRequest!=='function'?`<button type="button" data-team-task-move="${esc(row.id)}">Reschedule</button>`:`<button type="button" data-team-task-ask="${esc(row.id)}">Ask for more time</button>`);
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
@@ -150,7 +150,7 @@ function openTeamTaskClose(row,action){
  const fields=action==='done'
   ?`<p><strong>${esc(row.title)}</strong></p><label><span>What did you do? What was the result?</span><textarea name="note" maxlength="1000" required minlength="5" rows="4" placeholder="For example: Called Nisha. Interested in 2 ultrasound machines. Made Pro forma for her."></textarea></label><p class="muted">If the client wants a quote, has a complaint or is a new opportunity, also open it under Pro formas, Complaints or Leads so someone follows it up.</p>`
   :`<p><strong>${esc(row.title)}</strong></p><label><span>Why is it cancelled?</span><textarea name="note" maxlength="1000" required minlength="3"></textarea></label>`;
- actionForm(action==='done'?'Mark task done':'Cancel task',fields,async values=>{
+ actionForm(action==='done'?'Complete assigned task':'Cancel task',fields,async values=>{
   if(action==='done'){const problem=teamTaskResultProblem(values.note);if(problem)throw Error(problem);}
   const actor=me?.user_id,result=await client.rpc('close_team_task',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the task.');

@@ -26,7 +26,7 @@ test('latest delay per step wins; card shows waiting, total, expected date and s
  assert.equal(latest.get('x').reason,'new');
  const open={id:'o',assignee_user_id:'b',assigned_by:'a',task:'Pack PF-1',created_at:new Date(Date.now()-3*H).toISOString()},t=c.workTimeline([{...open,status:'open'},{id:'p',assignee_user_id:'a',task:'Invoice',status:'done',created_at:new Date(Date.now()-27*H).toISOString(),closed_at:new Date(Date.now()-3*H).toISOString()}]);
  const html=c.workResponsibleHtml(open,{expected_on:'2099-01-01',reason:'Waiting for stock'},t);
- assert.match(html,/With <strong>Jagroop<\/strong> · Pack PF-1 · waiting <strong>3 h<\/strong> · 27 h since the start · <strong>expected 2099-01-01<\/strong>: Waiting for stock/);
+ assert.match(html,/Current step owner: <strong>Jagroop<\/strong> · Pack PF-1 · waiting <strong>3 h<\/strong> · 27 h since the start · <strong>Staff task expected 2099-01-01<\/strong>: Waiting for stock/);
  assert.match(c.workTimelineHtml(t),/Step times · 2 steps.*Mujtaba.*24 h.*Jagroop.*3 h so far/s);
- assert.match(c.workResponsibleHtml(null,null,c.workTimeline([{id:'1',assignee_user_id:'a',task:'x',status:'done',created_at:new Date(Date.now()-5*H).toISOString(),closed_at:new Date(Date.now()-H).toISOString()}])),/finished · took 4 h in total/);
+ assert.match(c.workResponsibleHtml(null,null,c.workTimeline([{id:'1',assignee_user_id:'a',task:'x',status:'done',created_at:new Date(Date.now()-5*H).toISOString(),closed_at:new Date(Date.now()-H).toISOString()}])),/Handoff task: <strong>closed<\/strong> · took 4 h in total/);
 });
