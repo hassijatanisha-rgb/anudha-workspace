@@ -11,7 +11,7 @@ function fixture(){
   esc:String,client:{from:()=>query,rpc:async(name,args)=>{calls.push({name,args});return {data:{}}}},
   all:async table=>{if(table==='product_detail_reviews')throw Error('Correction connection unavailable');return [];},products:[{id:'p',name:'Raw source identity',source:{}}],
   view:'inventory',me:{role:'owner',user_id:'owner'},organizations:[],syncWorkspaceNavigation(){},message(){},
-  inventoryAvailableTotals:()=>({cartons:0,loose:0}),crypto:{randomUUID:()=> 'fixture-id'},
+  inventoryStockTotals:()=>({cartons:0,loose:0,reserved:0,freeLoose:0,invoiceableLoose:0}),crypto:{randomUUID:()=> 'fixture-id'},
   FormData:class{constructor(form){this.fields=form.fields||{}}get(key){return this.fields[key]??''}}
  });
  vm.runInContext(readFileSync(new URL('../staff-access.js',import.meta.url),'utf8'),ctx);

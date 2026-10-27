@@ -8,7 +8,7 @@ test('interface polish stylesheet loads after every other stylesheet so its hier
  assert.equal(links.at(-1),'ui-polish.css');
  const css=read('ui-polish.css');
  for(const selector of ['[data-lead-action="lost"]','[data-proforma-action="cancel"]','[data-delete-contact]'])assert.ok(css.includes(selector),`${selector} is styled as danger`);
- for(const selector of ['[data-lead-action="qualify"]','[data-proforma-action="send"]','[data-work-done]'])assert.ok(css.includes(selector),`${selector} is styled as primary`);
+ for(const selector of ['[data-lead-action="qualify"]','[data-proforma-action="send"]','[data-work-open]'])assert.ok(css.includes(selector),`${selector} is styled as primary`);
 });
 test('navigating to another screen clears the previous screen message',()=>{
  let handler,cleared=0;const nav={innerHTML:'',setAttribute(){}};

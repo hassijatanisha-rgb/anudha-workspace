@@ -86,12 +86,12 @@ function bellPanel(){
 }
 function bellRender(){
  const box=document.getElementById('bell');if(!box)return;
- const total=bellTotal(bellCounts),button=box.querySelector('.bell-button'),badge=box.querySelector('.bell-count'),panel=box.querySelector('.bell-panel');
- badge.textContent=total?bellBadge(total):'';badge.hidden=!total;
- button.setAttribute('aria-label',total?`Updates: ${total} new`:'Updates: nothing new');
+ const incomplete=bellCounts&&bellKinds.some(([kind])=>bellCounts[kind]===null),total=bellTotal(bellCounts),button=box.querySelector('.bell-button'),badge=box.querySelector('.bell-count'),panel=box.querySelector('.bell-panel');
+ badge.textContent=total?bellBadge(total):incomplete?'!':'';badge.hidden=!total&&!incomplete;
+ button.setAttribute('aria-label',incomplete?'Updates: some checks failed; open to retry':total?`Updates: ${total} new`:bellCounts?'Updates: nothing new':'Updates: checking');
  button.setAttribute('aria-expanded',String(bellOpen));
  panel.hidden=!bellOpen;
- if(bellOpen)panel.innerHTML=`<h2>Updates</h2>${bellPanel()}`;
+ if(bellOpen)panel.innerHTML=`<h2>Updates</h2><p class="muted">In-app updates · checks every two minutes while open.</p><button type="button" data-bell-refresh>Refresh updates</button>${bellPanel()}`;
 }
 function bellGoToTasks(){
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
@@ -122,6 +122,7 @@ function bellInstall(){
  identity.prepend(box);
  box.querySelector('.bell-button').onclick=()=>bellSetOpen(!bellOpen);
  box.querySelector('.bell-panel').addEventListener('click',event=>{
+  if(event.target.closest('[data-bell-refresh]'))return run(()=>refreshNotificationBell(true));
   const item=event.target.closest('[data-bell-item]'),more=event.target.closest('[data-bell-more]');
   if(item){const [kind,i]=item.dataset.bellItem.split(':');return bellChoose(kind,bellItems?.[kind]?.[Number(i)]);}
   const dismiss=event.target.closest('[data-bell-dismiss]');

@@ -13,16 +13,16 @@ try{
   window.$=s=>document.querySelector(s);window.esc=s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
   window.me={role:'staff'};window.products=[{id:'maker-a',name:'Albumin',sku:'A',source:{company:'Maker A'}},{id:'maker-b',name:'Albumin',sku:'B',source:{company:'Maker B'}}];
   window.catalogProductIssues=()=>[];window.catalogLabel=()=> 'Reagents';window.catalogCategoryOf=()=> 'reagents';
-  window.run=fn=>fn();window.inventoryAvailableTotals=lots=>({cartons:0,loose:lots.reduce((sum,x)=>sum+x.loose_units,0)});
+  window.run=fn=>fn();
  });
- for(const file of ['row-index.js','search-state.js','product-review-ui.js','inventory-operations.js','product-workbench.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ for(const file of ['staff-access.js','row-index.js','business-date.js','inventory-domain.js','search-state.js','product-review-ui.js','inventory-operations.js','product-workbench.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   productDetailReviews.set('maker-a',{name:'Reviewed Albumin',company:'Corrected Maker A',specification:'200 ml'});
   inventoryLocation=()=>({name:'Godown A',code:'G-A'});
   inventoryHeader=()=>'';inventorySetupProgress=()=>'';
   inventoryLotCard=lot=>`<article data-lot="${lot.id}">${esc(inventoryProduct(lot.product_id).source.company)} ${lot.loose_units}</article>`;
   inventoryMovementCard=row=>`<p>${row.id}</p>`;inventoryIssueCard=row=>`<p>${row.id}</p>`;
-  inventoryLots=[{id:'lot-a',product_id:'maker-a',stock_status:'available',loose_units:10},{id:'lot-b',product_id:'maker-b',stock_status:'available',loose_units:25}];
+  inventoryLots=[{id:'lot-a',product_id:'maker-a',stock_status:'available',sealed_cartons:0,reserved_units:0,loose_units:10},{id:'lot-b',product_id:'maker-b',stock_status:'available',sealed_cartons:0,reserved_units:0,loose_units:25}];
   inventoryWorkspace=()=>{$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()};
   $('#content').innerHTML=productWorkbenchTable(products);bindProductWorkbench();
  });

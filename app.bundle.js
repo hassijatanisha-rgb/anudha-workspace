@@ -884,14 +884,23 @@ function companyDate(offset=0,now=new Date()){
 ;// inventory-domain.js
 'use strict';
 
-function inventoryAvailableTotals(lots){
- return lots.filter(lot=>lot.stock_status==='available').reduce((sum,lot)=>{
-  const cartons=lot.sealed_cartons,loose=lot.loose_units,reserved=lot.reserved_units;
-  if(![cartons,loose,reserved].every(value=>Number.isSafeInteger(value)&&value>=0)||reserved>loose)throw Error('Invalid stock or reservation count. Refresh and review this lot.');
-  sum.cartons+=cartons;sum.loose+=loose-reserved;sum.reserved+=reserved;
+function inventoryLotAvailability(lot,location,today){
+ const cartons=lot.sealed_cartons,loose=lot.loose_units,reserved=lot.reserved_units;
+ if(![cartons,loose,reserved].every(value=>Number.isSafeInteger(value)&&value>=0)||reserved>loose)throw Error('Invalid stock or reservation count. Refresh and review this lot.');
+ const freeLoose=loose-reserved,expired=!!lot.expiry_date&&lot.expiry_date<today;
+ const dispatchable=lot.stock_status==='available'&&!expired&&location?.active===true&&location.is_dispatch_hub===true;
+ const invoiceableLoose=dispatchable?freeLoose:0;
+ const reason=!cartons&&!loose?'Out of stock':lot.stock_status!=='available'?'Quarantined':expired?'Expired':!location?.active?'Location inactive or unavailable':!location.is_dispatch_hub?'Transfer to dispatch hub':freeLoose?'Eligible for invoice reservation':cartons?'Open cartons before invoicing':'Fully reserved';
+ return {cartons,loose,reserved,freeLoose,invoiceableLoose,reason,canOpenCartons:dispatchable&&cartons>0};
+}
+function inventoryStockTotals(lots,locations,today){
+ const places=new Map(locations.map(location=>[location.id,location]));
+ return lots.reduce((sum,lot)=>{
+  const stock=inventoryLotAvailability(lot,places.get(lot.location_id),today);
+  for(const key of Object.keys(sum))sum[key]+=stock[key];
   if(!Object.values(sum).every(Number.isSafeInteger))throw Error('Stock totals exceed the supported range.');
   return sum;
- },{cartons:0,loose:0,reserved:0});
+ },{cartons:0,loose:0,reserved:0,freeLoose:0,invoiceableLoose:0});
 }
 
 function inventoryInteger(value,label){
@@ -994,6 +1003,7 @@ function inventoryLatestPack(productId){return inventoryLatestPacks.get(productI
 function inventoryClassification(productId){return inventoryLatestClassifications.get(productId)}
 function inventoryOption(value,label,selected=false){return `<option value="${esc(value)}" ${selected?'selected':''}>${esc(label)}</option>`}
 function inventoryDate(){return companyDate()}
+function inventoryNumber(value){return value.toLocaleString('en-GB')}
 function inventoryProductIdentity(product){const source=product.source||{};return `${product.name} · ${source.company||'Manufacturer needs review'} · ${source.specification||source.model||'Specification needs review'}${product.sku?' · '+product.sku:''}`}
 function inventoryProductChoice(product){return `${inventoryProductIdentity(product)} · ${product.id}`}
 // Product suggestions: with the search box loaded (smart-lookup.js) a <datalist data-lookup-values="products"> stays
@@ -1027,17 +1037,17 @@ function inventoryHeader(){return `<div class="heading"><div><small>INVENTORY</s
 function inventoryUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Inventory could not load</h2><p role="alert">${esc(inventoryLoadError)}</p><p>Check your connection and access, then refresh. Stock actions remain unavailable until the data loads.</p></section>`}
 function inventoryLocationOptions(selected='',exclude=''){return inventoryLocations.filter(x=>x.active&&x.id!==exclude).map(x=>inventoryOption(x.id,`${x.name} · ${x.code}${x.is_dispatch_hub?' · dispatch hub':''}`,x.id===selected)).join('')}
 function inventoryProductOptions(selected=''){return inventorySelectableProducts().map(x=>inventoryOption(x.id,inventoryProductChoice(x),x.id===selected)).join('')}
-function inventoryPackOptions(selected=''){return inventoryPacks.map(x=>{const p=inventoryProduct(x.product_id);return inventoryOption(x.id,`${inventoryProductIdentity(p)} · ${x.units_per_carton} ${x.base_unit}/carton · v${x.version}`,x.id===selected)}).join('')}
+function inventoryPackOptions(selected=''){return inventoryPacks.map(x=>{const p=inventoryProduct(x.product_id);return inventoryOption(x.id,`${inventoryProductIdentity(p)} · ${inventoryNumber(x.units_per_carton)} ${x.base_unit}/carton · v${x.version}`,x.id===selected)}).join('')}
 // Every client, or none when the search box offers them (see salesOrganizationOptions).
 function inventoryClientOptions(){return ((()=>{try{return typeof lookupRowSources}catch{return 'undefined'}})()==='undefined'?organizations.slice().sort((a,b)=>a.name.localeCompare(b.name)):[]).map(x=>inventoryOption(x.id,`${x.name}${x.location?' · '+x.location:''}`)).join('')}
-function inventoryLotLabel(lot){const p=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),pack=inventoryPack(lot.pack_definition_id);return `${inventoryProductIdentity(p)} · ${place.name} · ${lot.sealed_cartons} cartons + ${lot.loose_units} ${pack.base_unit}`}
-function inventorySetupProgress(){const classified=new Set(inventoryClassifications.map(x=>x.product_id)).size,packed=new Set(inventoryPacks.map(x=>x.product_id)).size;return `<section class="card setup-progress"><div class="heading"><div><small>GET STARTED</small><h2>Setup progress</h2></div><span class="tag">Use verified physical counts only</span></div><div class="setup-steps"><div class="${inventoryLocations.length?'done':''}"><strong>1</strong><span><b>Add locations</b><small>${inventoryLocations.length} saved</small></span></div><div class="${classified?'done':''}"><strong>2</strong><span><b>Sort products</b><small>${classified} of ${products.length} reviewed</small></span></div><div class="${packed?'done':''}"><strong>3</strong><span><b>Set carton sizes</b><small>${packed} products ready</small></span></div><div class="${inventoryLots.length?'done':''}"><strong>4</strong><span><b>Enter physical stock</b><small>${inventoryLots.length} stock lots entered</small></span></div></div></section>`}
+function inventoryLotLabel(lot){const p=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),pack=inventoryPack(lot.pack_definition_id);return `${inventoryProductIdentity(p)} · ${place.name} · ${inventoryNumber(lot.sealed_cartons)} cartons + ${inventoryNumber(lot.loose_units)} ${pack.base_unit}`}
+function inventorySetupProgress(){const classified=new Set(inventoryClassifications.map(x=>x.product_id)).size,packed=new Set(inventoryPacks.map(x=>x.product_id)).size;return `<section class="card setup-progress"><div class="heading"><div><small>GET STARTED</small><h2>Setup progress</h2></div><span class="tag">Use verified physical counts only</span></div><div class="setup-steps"><div class="${inventoryLocations.length?'done':''}"><strong>1</strong><span><b>Add locations</b><small>${inventoryNumber(inventoryLocations.length)} saved</small></span></div><div class="${classified?'done':''}"><strong>2</strong><span><b>Sort products</b><small>${inventoryNumber(classified)} of ${inventoryNumber(products.length)} reviewed</small></span></div><div class="${packed?'done':''}"><strong>3</strong><span><b>Set carton sizes</b><small>${inventoryNumber(packed)} products ready</small></span></div><div class="${inventoryLots.length?'done':''}"><strong>4</strong><span><b>Enter physical stock</b><small>${inventoryNumber(inventoryLots.length)} stock lots entered</small></span></div></div></section>`}
 function inventoryImportPanel(){
  const plan=inventoryImportPreview;
- return `<details class="card"><summary>Add product names from a file (owner)</summary><p>Adds product names only. It never changes stock.</p><p class="warning"><strong>No Book2 quantities will be imported.</strong> Opening stock must come from a signed physical count.</p><label><span>Prepared Book2 product list</span><input id="inventoryProductImport" type="file" accept="application/json,.json"></label><div id="inventoryImportStatus" role="status">${plan?`<strong>${esc(inventoryImportFileName)}</strong><br>${plan.sourceRows} source rows → ${plan.uniqueNames} unique names.<br>${plan.existingMatches.length} existing exact-name matches will not be duplicated.<br>${plan.newProducts.length} new product names are ready to import.<br>${plan.duplicateGroups.length} repeated-name groups keep their original row references for review.`:'No file checked yet.'}</div><p class="muted">Existing exact-name matches will not be duplicated.</p>${plan&&plan.newProducts.length?'<button id="inventoryImportCommit" type="button">Import new product names only</button>':''}</details>`;
+ return `<details class="card"><summary>Add product names from a file (owner)</summary><p>Adds product names only. It never changes stock.</p><p class="warning"><strong>No Book2 quantities will be imported.</strong> Opening stock must come from a signed physical count.</p><label><span>Prepared Book2 product list</span><input id="inventoryProductImport" type="file" accept="application/json,.json"></label><div id="inventoryImportStatus" role="status">${plan?`<strong>${esc(inventoryImportFileName)}</strong><br>${inventoryNumber(plan.sourceRows)} source rows → ${inventoryNumber(plan.uniqueNames)} unique names.<br>${inventoryNumber(plan.existingMatches.length)} existing exact-name matches will not be duplicated.<br>${inventoryNumber(plan.newProducts.length)} new product names are ready to import.<br>${inventoryNumber(plan.duplicateGroups.length)} repeated-name groups keep their original row references for review.`:'No file checked yet.'}</div><p class="muted">Existing exact-name matches will not be duplicated.</p>${plan&&plan.newProducts.length?'<button id="inventoryImportCommit" type="button">Import new product names only</button>':''}</details>`;
 }
-function inventoryMovementCard(movement){const lot=inventoryLots.find(x=>x.id===movement.lot_id),product=inventoryProduct(lot?.product_id),place=inventoryLocation(lot?.location_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(place.name)} · ${esc(movement.movement_type.replaceAll('_',' '))}</small></div><div class="activity-change"><strong>${movement.base_unit_change>0?'+':''}${movement.base_unit_change}</strong><small>${esc(new Date(movement.created_at).toLocaleString())}</small></div></article>`}
-function inventoryIssueCard(issue){const product=inventoryProduct(issue.product_id),organization=orgIndex.get(issue.organization_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(organization?.name||'Client unavailable')} · ${esc(issue.reference)}</small></div><div class="activity-change"><strong>${issue.quantity}</strong><small>${esc(issue.issued_on)}</small></div></article>`}
+function inventoryMovementCard(movement){const lot=inventoryLots.find(x=>x.id===movement.lot_id),product=inventoryProduct(lot?.product_id),place=inventoryLocation(lot?.location_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(place.name)} · ${esc(movement.movement_type.replaceAll('_',' '))}</small></div><div class="activity-change"><strong>${movement.base_unit_change>0?'+':''}${inventoryNumber(movement.base_unit_change)}</strong><small>${esc(new Date(movement.created_at).toLocaleString())}</small></div></article>`}
+function inventoryIssueCard(issue){const product=inventoryProduct(issue.product_id),organization=orgIndex.get(issue.organization_id);return `<article class="activity-row"><div><strong>${esc(product.name)}</strong><small>${esc(organization?.name||'Client unavailable')} · ${esc(issue.reference)}</small></div><div class="activity-change"><strong>${inventoryNumber(issue.quantity)}</strong><small>${esc(issue.issued_on)}</small></div></article>`}
 function inventoryCorrectionsUnavailable(){return `${inventoryHeader()}<section class="card"><h2>Product corrections could not be loaded</h2><p role="alert">Refresh before viewing stock or changing inventory so product identities are current.</p><p>${esc(productReviewLoadError)}</p></section>`}
 function inventoryStock(){
  if(typeof productReviewLoadError!=='undefined'&&productReviewLoadError)return inventoryCorrectionsUnavailable();
@@ -1046,27 +1056,28 @@ function inventoryStock(){
  const scopedLotIds=new Set(scopedLots.map(x=>x.id));
  const scopedMovements=inventoryMovements.filter(x=>!inventoryProductId||scopedLotIds.has(x.lot_id));
  const scopedIssues=inventoryIssues.filter(x=>!inventoryProductId||x.product_id===inventoryProductId);
- const {cartons:totalCartons,loose:totalLoose}=inventoryAvailableTotals(available);
+ const totals=inventoryStockTotals(scopedLots,inventoryLocations,inventoryDate());
  const q=inventorySearch.trim().toLowerCase(),shown=available.filter(lot=>{const product=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),source=product.source||{};return `${product.name} ${product.sku||''} ${source.company||''} ${source.specification||source.model||''} ${place.name} ${place.code} ${lot.batch_number||''}`.toLowerCase().includes(q)});
- return `${inventoryHeader()}${inventoryProductId?`<section class="card"><strong>Selected product: ${esc(inventoryProduct(inventoryProductId).name)}</strong><p>Stock code: ${esc(inventoryProduct(inventoryProductId).sku||inventoryProductId)} · This view uses the exact product ID, not a name match.</p><button type="button" id="clearStockProduct">Show all products</button></section>`:''}${me.role==='owner'?inventorySetupProgress()+inventoryImportPanel():''}<div class="inventory-metrics"><div><small>Available sealed cartons</small><strong>${totalCartons}</strong></div><div><small>Available loose units</small><strong>${totalLoose}</strong></div><div><small>Quarantined lots</small><strong>${quarantine.length}</strong></div><div><small>Active locations</small><strong>${inventoryLocations.filter(x=>x.active).length}</strong></div></div>
+ return `${inventoryHeader()}${inventoryProductId?`<section class="card"><strong>Selected product: ${esc(inventoryProduct(inventoryProductId).name)}</strong><p>Stock code: ${esc(inventoryProduct(inventoryProductId).sku||inventoryProductId)} · This view uses the exact product ID, not a name match.</p><button type="button" id="clearStockProduct">Show all products</button></section>`:''}${me.role==='owner'?inventorySetupProgress()+inventoryImportPanel():''}<div class="inventory-metrics"><div><small>Sealed cartons on hand</small><strong>${inventoryNumber(totals.cartons)}</strong></div><div><small>Loose units on hand</small><strong>${inventoryNumber(totals.loose)}</strong></div><div><small>Reserved loose units</small><strong>${inventoryNumber(totals.reserved)}</strong></div><div><small>Free loose units</small><strong>${inventoryNumber(totals.freeLoose)}</strong></div><div><small>Invoice-eligible loose units</small><strong>${inventoryNumber(totals.invoiceableLoose)}</strong></div></div><p class="muted">On-hand and free quantities include stock held outside dispatch or in quarantine. Only unexpired, free loose units at an active dispatch hub are eligible for a new invoice reservation. Cartons must be opened first; the saved transaction rechecks stock.</p>
  ${canEditRecords()?`<details class="card"><summary>1. Set a product carton size</summary><form data-inventory-action="pack"><div class="grid"><label class="wide"><span>Find product</span><input name="productChoice" list="inventoryProductChoices" placeholder="Start typing a product name" autocomplete="off" required><datalist id="inventoryProductChoices" data-lookup-values="products">${inventoryProductChoices()}</datalist></label><label><span>Individual unit name</span><input name="baseUnit" placeholder="piece, bottle, test" required maxlength="40"></label><label><span>Units in one sealed carton</span><input name="unitsPerCarton" type="number" min="1" step="1" required></label><label class="wide"><span>Where was this carton size verified?</span><textarea name="reason" minlength="5" placeholder="Example: supplier carton label checked by…" required></textarea></label></div><button type="submit">Save carton size</button></form></details>`:''}${me.role==='owner'?`
  <details class="card"><summary>2. Receive stock / enter a verified physical count</summary>${inventoryPacks.length?`<form data-inventory-action="opening"><div class="grid"><label><span>Product / carton size</span><select name="packId" required><option value="">Choose saved carton size</option>${inventoryPackOptions()}</select></label><label><span>Location</span><select name="locationId" required><option value="">Choose location</option>${inventoryLocationOptions()}</select></label><label><span>Batch number</span><input name="batchNumber" maxlength="120"></label><label><span>Expiry date</span><input name="expiryDate" type="date"></label><label><span>Sealed cartons counted</span><input name="sealedCartons" type="number" min="0" step="1" value="0" required></label><label><span>Loose individual units counted</span><input name="looseUnits" type="number" min="0" step="1" value="0" required></label><label class="wide"><span>Who counted it, and from what source?</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Record physical count</button></form>`:'<p class="warning">Save at least one product carton size before entering stock.</p>'}</details>`:''}
- <section class="card"><div class="heading"><div><h2>Stock by location</h2><p class="muted">Search by product, stock code, location, or batch.</p></div><span>${shown.length} of ${available.length} available lots</span></div><label><span>Search stock</span><input id="inventorySearch" type="search" value="${esc(inventorySearch)}" placeholder="Product, stock code, location, or batch"></label>${shown.map(inventoryLotCard).join('')||'<p class="empty">No stock matches this search.</p>'}</section>
+ <section class="card"><div class="heading"><div><h2>Stock by location</h2><p class="muted">Search by product, stock code, location, or batch.</p></div><span>${inventoryNumber(shown.length)} of ${inventoryNumber(available.length)} non-quarantined lots</span></div><label><span>Search stock</span><input id="inventorySearch" type="search" value="${esc(inventorySearch)}" placeholder="Product, stock code, location, or batch"></label>${shown.map(inventoryLotCard).join('')||'<p class="empty">No stock matches this search.</p>'}</section>
  ${quarantine.length?`<section class="card"><h2>Quarantine · unavailable for sale</h2>${quarantine.map(inventoryLotCard).join('')}</section>`:''}
- <div class="inventory-history"><section class="card"><div class="heading"><h2>Recent stock activity</h2><span>${scopedMovements.length} records</span></div>${scopedMovements.slice(0,20).map(inventoryMovementCard).join('')||'<p class="empty">No stock movements yet.</p>'}</section><section class="card"><div class="heading"><h2>Items issued to clients</h2><span>${scopedIssues.length} records</span></div>${scopedIssues.slice(0,20).map(inventoryIssueCard).join('')||'<p class="empty">No individual items have been issued yet.</p>'}</section></div>`;
+ <div class="inventory-history"><section class="card"><div class="heading"><h2>Recent stock activity</h2><span>${inventoryNumber(scopedMovements.length)} records</span></div>${scopedMovements.slice(0,20).map(inventoryMovementCard).join('')||'<p class="empty">No stock movements yet.</p>'}</section><section class="card"><div class="heading"><h2>Items issued to clients</h2><span>${inventoryNumber(scopedIssues.length)} records</span></div>${scopedIssues.slice(0,20).map(inventoryIssueCard).join('')||'<p class="empty">No individual items have been issued yet.</p>'}</section></div>`;
 }
 function inventoryLotCard(lot){
- const product=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),pack=inventoryPack(lot.pack_definition_id),total=lot.sealed_cartons*pack.units_per_carton+lot.loose_units;
- return `<article class="contact ${lot.stock_status==='quarantine'?'incomplete':''}"><div class="heading"><div><h3>${esc(inventoryProductIdentity(product))}</h3><p>${esc(place.name)} · ${esc(place.code)}</p></div><span class="tag">${esc(lot.stock_status)}</span></div><div class="details"><div><small>Sealed cartons</small>${lot.sealed_cartons}</div><div><small>Loose ${esc(pack.base_unit)}</small>${lot.loose_units}</div><div><small>Total individual units</small>${total}</div><div><small>Batch / expiry</small>${esc(lot.batch_number||'Not supplied')} · ${esc(lot.expiry_date||'Not supplied')}</div></div>${me.role==='owner'&&lot.stock_status==='available'?`<details><summary>Correct this physical count</summary><form data-inventory-action="correct" data-lot="${lot.id}" data-version="${lot.version}"><div class="grid"><label><span>Sealed cartons now counted</span><input name="sealedCartons" type="number" min="0" step="1" value="${lot.sealed_cartons}" required></label><label><span>Loose ${esc(pack.base_unit)} now counted</span><input name="looseUnits" type="number" min="0" step="1" value="${lot.loose_units}" required></label><label class="wide"><span>Reason for count correction</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Save corrected count</button></form></details>`:''}${lot.stock_status==='available'&&place.is_dispatch_hub&&lot.sealed_cartons?`<details><summary>Open cartons into individual units</summary><form data-inventory-action="open" data-lot="${lot.id}" data-version="${lot.version}"><label><span>Sealed cartons to open · ${pack.units_per_carton} ${esc(pack.base_unit)} each</span><input name="cartons" type="number" min="1" max="${lot.sealed_cartons}" step="1" required></label><label><span>Reason / packing note</span><textarea name="reason" minlength="5" required></textarea></label><button type="submit">Open cartons at ${esc(place.name)}</button></form></details>`:''}${lot.stock_status==='available'&&lot.loose_units?`<details><summary>Issue individual units to a client</summary><form data-inventory-action="issue" data-lot="${lot.id}" data-version="${lot.version}"><div class="grid"><label><span>Client / branch</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client</option>${inventoryClientOptions()}</select></label><label><span>Quantity · ${esc(pack.base_unit)}</span><input name="quantity" type="number" min="1" max="${Math.max(0,lot.loose_units-lot.reserved_units)}" step="1" required></label><label><span>Issue date</span><input name="issuedOn" type="date" value="${inventoryDate()}" required></label><label><span>Delivery / sale reference</span><input name="reference" required maxlength="120"></label><label class="wide"><span>Reason</span><textarea name="reason" minlength="3" required></textarea></label></div><button type="submit">Issue individual units</button></form></details>`:''}</article>`;
+ const product=inventoryProduct(lot.product_id),place=inventoryLocation(lot.location_id),pack=inventoryPack(lot.pack_definition_id),stock=inventoryLotAvailability(lot,place,inventoryDate());
+ const total=pack.units_per_carton>0?inventoryNumber(stockPosition({sealedCartons:stock.cartons,looseUnits:stock.loose,unitsPerCarton:pack.units_per_carton,reservedUnits:stock.reserved}).totalBaseUnits):'Carton size needs review';
+ return `<article class="contact ${lot.stock_status==='quarantine'?'incomplete':''}"><div class="heading"><div><h3>${esc(inventoryProductIdentity(product))}</h3><p>${esc(place.name)} · ${esc(place.code)}</p></div><span class="tag">${esc(stock.reason)}</span></div><div class="details"><div><small>Sealed cartons on hand</small>${inventoryNumber(stock.cartons)}</div><div><small>Loose ${esc(pack.base_unit)} on hand</small>${inventoryNumber(stock.loose)}</div><div><small>Total individual units on hand</small>${total}</div><div><small>Reserved loose ${esc(pack.base_unit)}</small>${inventoryNumber(stock.reserved)}</div><div><small>Free loose ${esc(pack.base_unit)}</small>${inventoryNumber(stock.freeLoose)}</div><div><small>Invoice-eligible loose ${esc(pack.base_unit)}</small>${inventoryNumber(stock.invoiceableLoose)}</div><div><small>Batch / expiry</small>${esc(lot.batch_number||'Not supplied')} · ${esc(lot.expiry_date||'Not supplied')}</div></div>${stock.reserved?`<div>${hasArea('deliveries')?`<button type="button" data-inventory-reserved="${esc(lot.id)}">View reserved deliveries</button>`:'<p class="muted">Delivery details require Deliveries access.</p>'}</div>`:''}${me.role==='owner'&&lot.stock_status==='available'?`<details><summary>Correct this physical count</summary><form data-inventory-action="correct" data-lot="${lot.id}" data-version="${lot.version}"><div class="grid"><label><span>Sealed cartons now counted</span><input name="sealedCartons" type="number" min="0" step="1" value="${lot.sealed_cartons}" required></label><label><span>Loose ${esc(pack.base_unit)} now counted</span><input name="looseUnits" type="number" min="0" step="1" value="${lot.loose_units}" required></label><label class="wide"><span>Reason for count correction</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Save corrected count</button></form></details>`:''}${stock.canOpenCartons?`<details><summary>Open cartons into individual units</summary><form data-inventory-action="open" data-lot="${lot.id}" data-version="${lot.version}"><label><span>Sealed cartons to open · ${inventoryNumber(pack.units_per_carton)} ${esc(pack.base_unit)} each</span><input name="cartons" type="number" min="1" max="${lot.sealed_cartons}" step="1" required></label><label><span>Reason / packing note</span><textarea name="reason" minlength="5" required></textarea></label><button type="submit">Open cartons at ${esc(place.name)}</button></form></details>`:''}${stock.invoiceableLoose>0?`<details><summary>Issue individual units to a client</summary><form data-inventory-action="issue" data-lot="${lot.id}" data-version="${lot.version}"><div class="grid"><label><span>Client / branch</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client</option>${inventoryClientOptions()}</select></label><label><span>Quantity · ${esc(pack.base_unit)}</span><input name="quantity" type="number" min="1" max="${stock.freeLoose}" step="1" required></label><label><span>Issue date</span><input name="issuedOn" type="date" value="${inventoryDate()}" required></label><label><span>Delivery / sale reference</span><input name="reference" required maxlength="120"></label><label class="wide"><span>Reason</span><textarea name="reason" minlength="3" required></textarea></label></div><button type="submit">Issue individual units</button></form></details>`:''}</article>`;
 }
 function inventoryTransferScreen(){
  if(typeof productReviewLoadError!=='undefined'&&productReviewLoadError)return inventoryCorrectionsUnavailable();
  const sources=inventoryLots.filter(x=>x.stock_status==='available'&&x.sealed_cartons>0);
- return `${inventoryHeader()}<section class="card"><h2>Request sealed-carton transfer</h2><p>Stock leaves the first godown when you dispatch it, and can be sold from the new godown once it is received.</p><form data-inventory-action="request"><div class="grid"><label><span>Move from</span><select name="sourceLotId" required><option value="">Choose sealed stock</option>${sources.map(x=>inventoryOption(x.id,inventoryLotLabel(x))).join('')}</select></label><label><span>Move to</span><select name="toLocationId" required><option value="">Choose destination</option>${inventoryLocationOptions()}</select></label><label><span>Sealed cartons</span><input name="cartons" type="number" min="1" step="1" required></label><label><span>Expected receipt date</span><input name="expectedAt" type="date" required></label><label class="wide"><span>Transfer reason</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Request transfer</button></form></section><section class="card"><h2>Transfer register</h2>${inventoryTransfers.map(inventoryTransferCard).join('')||'<p class="empty">No carton transfers yet.</p>'}</section>`;
+ return `${inventoryHeader()}<section class="card"><h2>Request sealed-carton transfer</h2><p>Stock leaves the first godown when dispatched. Receive it at an active dispatch hub and open cartons before reserving loose units for invoices.</p><form data-inventory-action="request"><div class="grid"><label><span>Move from</span><select name="sourceLotId" required><option value="">Choose sealed stock</option>${sources.map(x=>inventoryOption(x.id,inventoryLotLabel(x))).join('')}</select></label><label><span>Move to</span><select name="toLocationId" required><option value="">Choose destination</option>${inventoryLocationOptions()}</select></label><label><span>Sealed cartons</span><input name="cartons" type="number" min="1" step="1" required></label><label><span>Expected receipt date</span><input name="expectedAt" type="date" required></label><label class="wide"><span>Transfer reason</span><textarea name="reason" minlength="5" required></textarea></label></div><button type="submit">Request transfer</button></form></section><section class="card"><h2>Transfer register</h2>${inventoryTransfers.map(inventoryTransferCard).join('')||'<p class="empty">No carton transfers yet.</p>'}</section>`;
 }
 function inventoryTransferCard(t){
  const product=inventoryProduct(t.product_id),from=inventoryLocation(t.from_location_id),to=inventoryLocation(t.to_location_id),pack=inventoryPack(t.pack_definition_id),lot=inventoryLots.find(x=>x.id===t.source_lot_id);
- return `<article class="contact ${t.status==='quarantine'?'incomplete':''}"><div class="heading"><h3>${esc(inventoryProductIdentity(product))}</h3><span class="tag">${esc(t.status.replaceAll('_',' '))}</span></div><p>${esc(from.name)} → ${esc(to.name)} · ${t.cartons} cartons · ${t.expected_units} ${esc(pack.base_unit)}</p><p class="muted">Expected ${esc(t.expected_at)} · ${esc(t.reason)}</p>${t.status==='requested'?`<form data-inventory-action="dispatch" data-transfer="${t.id}" data-version="${t.version}" data-lot-version="${lot?.version||0}"><label><span>Dispatch note</span><input name="reason" minlength="3" required></label><button type="submit">Dispatch sealed cartons</button></form>`:''}${t.status==='in_transit'?`<form data-inventory-action="receive" data-transfer="${t.id}" data-version="${t.version}"><div class="grid"><label><span>Counted individual units</span><input name="actualUnits" type="number" min="0" step="1" required></label><label><span>Inspection</span><select name="inspection" required><option value="pass">Count, identity, expiry and condition pass</option><option value="damaged">Damaged / expired / identity mismatch</option></select></label><label class="wide"><span>Receipt note</span><textarea name="note" minlength="3" required></textarea></label></div><button type="submit">Receive or quarantine</button></form>`:''}${t.status==='quarantine'?'<p class="warning">Count or inspection differed. This stock is isolated and unavailable for issue.</p>':''}</article>`;
+ return `<article class="contact ${t.status==='quarantine'?'incomplete':''}"><div class="heading"><h3>${esc(inventoryProductIdentity(product))}</h3><span class="tag">${esc(t.status.replaceAll('_',' '))}</span></div><p>${esc(from.name)} → ${esc(to.name)} · ${inventoryNumber(t.cartons)} cartons · ${inventoryNumber(t.expected_units)} ${esc(pack.base_unit)}</p><p class="muted">Expected ${esc(t.expected_at)} · ${esc(t.reason)}</p>${t.status==='requested'?`<form data-inventory-action="dispatch" data-transfer="${t.id}" data-version="${t.version}" data-lot-version="${lot?.version||0}"><label><span>Dispatch note</span><input name="reason" minlength="3" required></label><button type="submit">Dispatch sealed cartons</button></form>`:''}${t.status==='in_transit'?`<form data-inventory-action="receive" data-transfer="${t.id}" data-version="${t.version}"><div class="grid"><label><span>Counted individual units</span><input name="actualUnits" type="number" min="0" step="1" required></label><label><span>Inspection</span><select name="inspection" required><option value="pass">Count, identity, expiry and condition pass</option><option value="damaged">Damaged / expired / identity mismatch</option></select></label><label class="wide"><span>Receipt note</span><textarea name="note" minlength="3" required></textarea></label></div><button type="submit">Receive or quarantine</button></form>`:''}${t.status==='quarantine'?'<p class="warning">Count or inspection differed. This stock is isolated and unavailable for issue.</p>':''}</article>`;
 }
 function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='owner'?`<section class="card"><h2>Add godown or Haadi dispatch hub</h2><form data-inventory-action="location"><div class="grid"><label><span>Name</span><input name="name" required maxlength="120" placeholder="Haadi"></label><label><span>Short code</span><input name="code" required maxlength="30" placeholder="HAA"></label><label><span>Type</span><select name="locationType"><option value="godown">Godown · sealed-carton storage</option><option value="dispatch_hub">Dispatch hub · may open cartons</option></select></label></div><button type="submit">Save location</button></form></section>`:''}<section class="card"><h2>Storage locations</h2>${inventoryLocations.map(x=>`<article class="contact"><div class="heading"><div><h3>${esc(x.name)}</h3><p>${esc(x.code)} · ${x.is_dispatch_hub?'Dispatch hub; cartons can be opened here':'Godown; sealed-carton storage'}</p></div><span class="tag">${x.active?'Active':'Inactive'}</span></div></article>`).join('')||'<p class="empty">No godowns have been entered yet.</p>'}</section>`}
 async function inventoryWorkspace(force=false){
@@ -1088,8 +1099,38 @@ function bindInventoryWorkspace(){
  const stockSearch=$('#inventorySearch');if(stockSearch)stockSearch.oninput=event=>{inventorySearch=event.target.value;renderSearchPreservingPosition(event.target,()=>{$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()},150)};
  const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=event=>run(async()=>{const file=event.target.files[0];if(!file)return;const payload=JSON.parse(await file.text());inventoryImportPreview=inventoryImportPlan(payload,products);inventoryImportFileName=file.name;$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()});
  const importCommit=$('#inventoryImportCommit');if(importCommit)importCommit.onclick=()=>run(async()=>{const plan=inventoryImportPreview;if(!plan?.newProducts.length)return;if(!confirm(`Import ${plan.newProducts.length} new product names into this ERP? Existing exact-name matches will be skipped and no stock quantities will be created.`))return;for(let i=0;i<plan.newProducts.length;i+=250){const result=await client.rpc('import_records',{p_products:plan.newProducts.slice(i,i+250)});if(result.error)throw Error(`Import stopped at product ${i}. Completed batches are safe to retry. ${result.error.message}`)}inventoryImportPreview=null;inventoryImportFileName='';await load();message('Book2 product names imported. Enter stock only from verified physical counts.')});
+ document.querySelectorAll('[data-inventory-reserved]').forEach(button=>button.onclick=()=>run(()=>showInventoryReservations(button)));
  document.querySelectorAll('form[data-inventory-action]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(()=>submitInventoryForm(form))});
  if(typeof decorateSerialTools==='function')decorateSerialTools().catch(()=>{});
+}
+async function showInventoryReservations(button){
+ if(!hasArea('deliveries'))throw Error('Delivery details require Deliveries access.');
+ const lot=inventoryLots.find(row=>row.id===button.dataset.inventoryReserved);
+ if(!lot)throw Error('Refresh stock before viewing reservations.');
+ const actor=me,epoch=inventoryEpoch,target=button.parentElement,current=()=>me===actor&&inventoryEpoch===epoch&&button.isConnected&&hasArea('deliveries');
+ button.disabled=true;
+ try{
+  const lines=await all('sales_delivery_lines','id,delivery_note_id,lot_id,quantity,inventory_issue_id',query=>query.eq('lot_id',lot.id).is('inventory_issue_id',null));
+  if(!current())return;
+  const ids=[...new Set(lines.map(line=>line.delivery_note_id))],notes=[];
+  for(let i=0;i<ids.length;i+=100){
+   notes.push(...await all('sales_delivery_notes','id,delivery_number,status',query=>query.in('id',ids.slice(i,i+100))));
+   if(!current())return;
+  }
+  const active=notes.filter(note=>['tax_invoice_created','sent_to_sales','packing','ready'].includes(note.status));
+  let matched=0;
+  const rows=active.map(note=>{
+   const quantity=lines.filter(line=>line.delivery_note_id===note.id).reduce((sum,line)=>{positiveInventoryInteger(line.quantity,'Reserved quantity');return inventoryInteger(sum+line.quantity,'Reserved total')},0);
+   matched=inventoryInteger(matched+quantity,'Reserved total');
+   return `<li><button type="button" data-inventory-delivery="${esc(note.id)}">${esc(note.delivery_number)}</button> · ${inventoryNumber(quantity)} reserved · ${esc(note.status.replaceAll('_',' '))}</li>`;
+  });
+  target.innerHTML=rows.length?`<ul>${rows.join('')}</ul>`:'<p>No active delivery reservations are visible with your access.</p>';
+  if(matched!==lot.reserved_units)target.insertAdjacentHTML('beforeend','<p class="warning">Visible delivery reservations do not match this stock snapshot. Refresh stock before relying on these details.</p>');
+  target.querySelectorAll('[data-inventory-delivery]').forEach(link=>link.onclick=()=>run(()=>{
+   if(!hasArea('deliveries'))throw Error('Delivery details require Deliveries access.');
+   salesFocusedDelivery=link.dataset.inventoryDelivery;salesFocusedProforma='';salesSection='delivery';salesEditing='';view='sales';return salesDeliveryWorkspace(true);
+  }));
+ }finally{if(button.isConnected)button.disabled=false;}
 }
 async function submitInventoryForm(form){
  const f=new FormData(form),action=form.dataset.inventoryAction;let result;
@@ -1101,8 +1142,8 @@ async function submitInventoryForm(form){
  else if(action==='request')result=await client.rpc('request_inventory_transfer',{p_id:crypto.randomUUID(),p_source_lot_id:f.get('sourceLotId'),p_to_location_id:f.get('toLocationId'),p_cartons:Number(f.get('cartons')),p_expected_at:f.get('expectedAt'),p_reason:f.get('reason')});
  else if(action==='dispatch')result=await saveInventoryTransferWithSerials(action,{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_expected_lot_version:Number(form.dataset.lotVersion),p_reason:f.get('reason')},f.get('transferSerials'),f.get('legacyTransfer')==='on');
  else if(action==='receive')result=await saveInventoryTransferWithSerials(action,{p_id:form.dataset.transfer,p_expected_version:Number(form.dataset.version),p_actual_units:Number(f.get('actualUnits')),p_inspection:f.get('inspection'),p_note:f.get('note')},f.get('transferSerials'),f.get('legacyTransfer')==='on');
- else if(action==='open')result=await client.rpc('open_inventory_cartons',{p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_cartons:Number(f.get('cartons')),p_reason:f.get('reason')});
- else if(action==='issue')result=await client.rpc('issue_consumer_units',{p_id:crypto.randomUUID(),p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_organization_id:f.get('organizationId'),p_quantity:Number(f.get('quantity')),p_issued_on:f.get('issuedOn'),p_reference:f.get('reference'),p_reason:f.get('reason')});
+ else if(action==='open'){const lot=inventoryLots.find(row=>row.id===form.dataset.lot);if(!lot||!inventoryLotAvailability(lot,inventoryLocation(lot.location_id),inventoryDate()).canOpenCartons)throw Error('This lot cannot be opened for dispatch. Refresh stock before continuing.');result=await client.rpc('open_inventory_cartons',{p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_cartons:Number(f.get('cartons')),p_reason:f.get('reason')});}
+ else if(action==='issue'){const lot=inventoryLots.find(row=>row.id===form.dataset.lot),quantity=positiveInventoryInteger(Number(f.get('quantity')),'Issue quantity');if(!lot||quantity>inventoryLotAvailability(lot,inventoryLocation(lot.location_id),inventoryDate()).invoiceableLoose)throw Error('Not enough eligible loose units at the dispatch hub. Refresh stock before continuing.');result=await client.rpc('issue_consumer_units',{p_id:crypto.randomUUID(),p_lot_id:form.dataset.lot,p_expected_version:Number(form.dataset.version),p_organization_id:f.get('organizationId'),p_quantity:quantity,p_issued_on:f.get('issuedOn'),p_reference:f.get('reference'),p_reason:f.get('reason')});}
  else if(action==='classification')result=await client.rpc('save_product_inventory_classification',{p_id:crypto.randomUUID(),p_product_id:form.dataset.product,p_expected_version:Number(form.dataset.version),p_category:f.get('category'),p_reason:f.get('reason')});
  else throw Error('Unsupported inventory action.');
  if(result.error)throw result.error;await inventoryWorkspace(true);message('Inventory transaction saved.');
@@ -1551,26 +1592,45 @@ function pricingReadLine(row,{quantity,unitPriceMinor}){
  return {unitPriceMinor,discountBasisPoints:discount.discountBasisPoints};
 }
 function pricingRefreshRow(row,form,{replacePrice=true}={}){
- const unit=row.querySelector('[name="unitPrice"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
+ const product=row.querySelector('[name="productChoice"]'),unit=row.querySelector('[name="unitPrice"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
  row.querySelector('[data-discount-percent]').hidden=mode==='amount';row.querySelector('[data-discount-amount]').hidden=mode!=='amount';amount.disabled=mode!=='amount';percent.readOnly=mode==='amount';
- unit.readOnly=true;unit.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
+ unit.readOnly=true;product.setCustomValidity('');unit.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
+ let expected;
  try{
-  const expected=pricingExpectedPrice(row,form);
+  expected=pricingExpectedPrice(row,form);
   if(replacePrice)unit.value=pricingMinorText(expected);
   else if(moneyMinor(unit.value)!==expected)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+ }catch(error){
+  if(replacePrice)unit.value='';
+  // A readonly price cannot receive native validation focus; its selected product can.
+  product.setCustomValidity(error.message);feedback.textContent=error.message;return;
+ }
+ try{
   const discount=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),expected,mode,mode==='amount'?amount.value:percent.value);
   if(mode==='amount')percent.value=String(discount.discountBasisPoints/100);
   const currency=form.querySelector('[name="currency"]').value;
   feedback.textContent=`Actual discount: ${moneyDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
  }catch(error){
-  if(replacePrice){try{pricingExpectedPrice(row,form);}catch{unit.value='';}}
   const invalid=mode==='amount'?amount:percent;invalid.setCustomValidity(error.message);feedback.textContent=error.message;
  }
 }
 function pricingRefreshForm(form){for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form);}
 function pricingBindForm(form){
  if(!form||form.dataset.pricingBound)return;form.dataset.pricingBound='true';
- if(!form.querySelector('#pricingHelp')){const help=document.createElement('p');help.id='pricingHelp';help.className='muted';help.textContent='Unit prices come from the central price list. Discounts may be entered as a percentage or an amount for the whole line. Exact amounts must fit a 0.01% step; the actual rounded discount is shown.';form.querySelector('#proformaLines').before(help);}
+ if(!form.querySelector('#pricingHelp')){
+  const help=document.createElement('div');help.id='pricingHelp';help.className='notice';
+  help.innerHTML='<p>Unit prices come from Product prices. If a price is missing, ask Accounts to configure it, then refresh prices here. Your draft stays open. Discounts apply to the whole line; the actual rounded amount is shown.</p><div class="actions"><a class="button" href="#/go/prices" target="_blank" rel="noopener">Open product prices in a new tab</a><button type="button" data-refresh-quote-prices>Refresh prices in this draft</button></div><p data-quote-price-status role="status"></p>';
+  form.querySelector('#proformaLines').before(help);
+  const button=help.querySelector('[data-refresh-quote-prices]'),status=help.querySelector('[data-quote-price-status]');
+  button.onclick=()=>run(async()=>{
+   const actor=me;button.disabled=true;status.textContent='Loading current prices…';
+   try{const rows=await pricingLoad();if(me!==actor||!form.isConnected||rows===null)return;
+    // Fill missing prices only. A saved price changes only after explicit product selection.
+    for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form,{replacePrice:!row.querySelector('[name="unitPrice"]').value});
+    status.textContent='Prices refreshed. Existing prices and entered quantities were preserved; review any price-change messages.';
+   }catch(error){if(me===actor&&form.isConnected)status.textContent=error.message;}finally{button.disabled=false;}
+  });
+ }
  // Preserve a saved historical base price until the seller explicitly selects the product again.
  for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form,{replacePrice:!row.querySelector('[name="unitPrice"]').value});
  form.addEventListener('change',event=>{
@@ -1586,12 +1646,14 @@ function pricingBindForm(form){
 async function pricesWorkspace(target=$('#content')){
  const actor=me,epoch=++productPriceViewEpoch,current=()=>me===actor&&view==='prices'&&epoch===productPriceViewEpoch&&target.isConnected;
  if(!current())return;target.innerHTML='<p role="status">Loading product prices…</p>';
- const [rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);
+ let rows,access;
+ try{[rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);}
+ catch(error){if(current()){target.innerHTML=`<section class="card"><h1>Product prices</h1><p role="alert">${esc(error.message)}</p><button type="button" data-pricing-reload>Retry loading prices</button></section>`;target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));}return;}
  if(!current()||rows===null)return;
  const canEdit=actor.role==='owner'||(!access.error&&access.data===true);
- target.innerHTML=`<section class="card"><div class="heading"><div><h1>Product prices</h1><p>Prices are configured per product and currency. Sales staff use these base prices and request approval for discounts.</p></div><button type="button" data-pricing-reload>Refresh</button></div>${canEdit?`<form data-price-editor><div class="grid"><label><span>Product</span><input name="productChoice" list="pricingProductChoices" required autocomplete="off" placeholder="Choose a product"></label><datalist id="pricingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Configured unit price</span><input name="price" inputmode="decimal" required></label><label><span>Reason</span><textarea name="reason" minlength="2" maxlength="1000" required></textarea></label></div><p data-price-current class="muted">Choose a product. Enter zero explicitly only when it is the approved price.</p><button type="submit">Save configured price</button></form>`:'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}<label><span>Find configured price</span><input data-price-search type="search" placeholder="Product or currency"></label><div data-price-register></div></section>`;
+ target.innerHTML=`<section class="prices-workspace"><div class="heading prices-heading"><div><h1>Product prices</h1><p class="muted">Set the base selling price for each product and currency. Sales requests approval for discounts.</p></div><button type="button" data-pricing-reload>Refresh prices</button></div><div class="prices-layout">${canEdit?`<section class="card price-edit-panel"><h2>Set a selling price</h2><p class="muted">All fields are required. Each saved change keeps its history.</p><form data-price-editor><div class="grid price-fields"><label class="price-product"><span>Product</span><input name="productChoice" list="pricingProductChoices" required autocomplete="off" placeholder="Search product name or model"></label><datalist id="pricingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Unit price</span><input name="price" inputmode="decimal" required></label><label class="price-reason"><span>Reason for this price</span><textarea name="reason" minlength="2" maxlength="1000" rows="2" required></textarea></label></div><p data-price-current class="muted" role="status">Choose a product. Enter zero explicitly only when it is the approved price.</p><button type="submit">Save configured price</button></form></section>`:''}<section class="card price-register-panel"><h2>Selling price register</h2>${canEdit?'':'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}<label><span>Find a price</span><input data-price-search type="search" placeholder="Search product or currency"></label><div data-price-register></div></section></div></section>`;
  const register=target.querySelector('[data-price-register]'),search=target.querySelector('[data-price-search]');
- const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
+ const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=!rows.length?`<div class="notice"><strong>No selling prices configured.</strong><p>Sales cannot quote a product until its currency price is configured. ${canEdit?'Use Set a selling price or import an approved price list below.':'Ask Accounts to configure the required product and currency, then refresh.'} Missing prices are never treated as zero.</p></div>`:!shown.length?'<p class="empty">No configured price matches this search. Clear or change the search.</p>':`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
  search.oninput=draw;draw();target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));
  const form=target.querySelector('[data-price-editor]');if(!form)return;
  if(typeof bindProductPriceImport==='function')bindProductPriceImport(target,current);
@@ -1629,7 +1691,7 @@ function proformaContractOptions(organizationId,selected=''){
 }
 function proformaCommercialFields(record,organizationId){
  const kind=record?.commercial_kind||'sale';
- return `<div class="grid"><label>Commercial category<select name="commercialKind"><option value="sale" ${kind==='sale'?'selected':''}>Sale</option><option value="placement" ${kind==='placement'?'selected':''}>Placement</option></select></label><label data-placement-contract ${kind==='placement'?'':'hidden'}>Placement contract<select name="contractId" ${kind==='placement'?'required':''}><option value="">Choose this branch’s contract</option>${proformaContractOptions(organizationId,record?.contract_id)}</select></label><label>Installation required?<select name="installationRequired"><option value="yes" ${record?.installation_required!==false?'selected':''}>Yes · create installation jobs after delivery</option><option value="no" ${record?.installation_required===false?'selected':''}>No · service team can open a later job</option></select></label><label class="wide">Installation charges / service instructions<textarea name="installationChargeNotes" maxlength="2000" placeholder="Describe agreed charges or service arrangements. Bill charges as quotation line items.">${esc(record?.installation_charge_notes||'')}</textarea><small>Visible to service. This note does not add an amount to the quotation.</small></label><label class="wide">Internal remarks · never printed<textarea name="internalNotes" maxlength="4000">${esc(record?.internal_notes||'')}</textarea></label></div><p data-placement-help class="notice" ${kind==='placement'?'':'hidden'}>Placement is for zero-charge machines only. Put consumables on a separate quotation. Save and approve the customer’s contract under Contracts before recording this quotation as sent. Placement billing and stock release are awaiting the agreed accounting route.</p>`;
+ return `<div class="grid"><label>Commercial category<select name="commercialKind"><option value="sale" ${kind==='sale'?'selected':''}>Sale</option><option value="placement" ${kind==='placement'?'selected':''}>Placement</option></select></label><label data-placement-contract ${kind==='placement'?'':'hidden'}>Placement contract<select name="contractId" ${kind==='placement'?'required':''}><option value="">Choose this branch’s contract</option>${proformaContractOptions(organizationId,record?.contract_id)}</select></label><label>Installation required?<select name="installationRequired"><option value="yes" ${record?.installation_required!==false?'selected':''}>Yes · create installation plans when invoiced</option><option value="no" ${record?.installation_required===false?'selected':''}>No · service team can open a later job</option></select></label><label class="wide">Installation charges / service instructions<textarea name="installationChargeNotes" maxlength="2000" placeholder="Describe agreed charges or service arrangements. Bill charges as quotation line items.">${esc(record?.installation_charge_notes||'')}</textarea><small>Visible to service. This note does not add an amount to the quotation.</small></label><label class="wide">Internal remarks · never printed<textarea name="internalNotes" maxlength="4000">${esc(record?.internal_notes||'')}</textarea></label></div><p data-placement-help class="notice" ${kind==='placement'?'':'hidden'}>Placement is for zero-charge machines only. Put consumables on a separate quotation. Save and approve the customer’s contract under Contracts before recording this quotation as sent. Placement billing and stock release are awaiting the agreed accounting route.</p>`;
 }
 function proformaUpdateContractChoices(){
  const form=$('#proformaForm');if(!form)return;
@@ -1801,7 +1863,12 @@ function salesOrganizationOptions(selected=''){return ((()=>{try{return typeof l
 function salesContactOptions(organizationId,selected=''){return contacts.filter(row=>row.organization_id===organizationId&&row.status!=='incorrect').sort((a,b)=>(a.first_name+' '+a.last_name).localeCompare(b.first_name+' '+b.last_name)).map(row=>inventoryOption(row.id,salesContactName(row.id),row.id===selected)).join('')}
 // Labels must come from the reviewed product, the same one inventoryProductFromChoice matches against.
 function salesProductChoices(){if((()=>{try{return typeof lookupRowSources}catch{return 'undefined'}})()!=='undefined'&&typeof inventoryProductValues==='function')return '';return (typeof inventorySelectableProducts==='function'?inventorySelectableProducts():products.filter(p=>!p.deleted_at).map(p=>typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(p):p).sort((a,b)=>a.name.localeCompare(b.name))).map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
-function salesLineRow(line={}){const product=salesProduct(line.product_id),choice=line.product_id?inventoryProductChoice(product.id&&typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product):'';return `<div class="document-line" data-proforma-line><label><span>Product</span><input name="productChoice" list="salesProductChoices" value="${esc(choice)}" placeholder="Start typing a product" required autocomplete="off"></label><label><span>Description</span><input name="description" value="${esc(line.description||'')}" required maxlength="4000"></label><label><span>Quantity</span><input name="quantity" type="number" min="1" step="1" value="${line.quantity||1}" required></label><label><span>Unit</span><input name="uom" value="${esc(line.uom||'unit')}" required maxlength="40"></label>${pricingLineFields(line)}<label><span>Tax %</span><input name="tax" type="number" min="0" max="100" step="0.01" value="${line.tax_basis_points===undefined?0:line.tax_basis_points/100}" required></label><button type="button" class="danger" data-remove-sales-line>Remove item</button></div>`}
+function salesLineRow(line={}){const product=salesProduct(line.product_id),choice=line.product_id?inventoryProductChoice(product.id&&typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product):'';return `<div class="document-line" data-proforma-line><label><span>Product</span><input name="productChoice" list="salesProductChoices" value="${esc(choice)}" placeholder="Start typing a product" required autocomplete="off"></label><label><span>Customer-facing description · required, editable</span><input name="description" value="${esc(line.description||'')}" required maxlength="4000"></label><label><span>Quantity</span><input name="quantity" type="number" min="1" step="1" value="${line.quantity||1}" required></label><label><span>Unit</span><input name="uom" value="${esc(line.uom||'unit')}" required maxlength="40"></label>${pricingLineFields(line)}<label><span>Tax %</span><input name="tax" type="number" min="0" max="100" step="0.01" value="${line.tax_basis_points===undefined?0:line.tax_basis_points/100}" required></label><button type="button" class="danger" data-remove-sales-line>Remove item</button></div>`}
+function salesPrefillLineDescription(row){
+ const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value),description=row.querySelector('[name="description"]');
+ if(!product||!description)return;
+ if(!description.value.trim()||description.value===description.dataset.autoDescription){description.value=product.name;description.dataset.autoDescription=product.name;}
+}
 // Before a second quote is made for the same client, show the open ones and who made them, so the team can
 // check with that person instead of sending the client two different Pro formas.
 let proformaExistingAsk=0;
@@ -1866,7 +1933,7 @@ function deliveryEditor(record){
 function packingFields(note){const reserved=deliveryLines(note.id);if(reserved.length)return `<p class="notice">Stock was reserved when the Tax Invoice was created. Confirm the team has started packing these reserved items.</p><ul>${reserved.map(line=>`<li>${esc(salesProduct(line.product_id).name)} · ${line.quantity} reserved</li>`).join('')}</ul>`;const record=salesProforma(note.proforma_id),rows=salesLines(record.id).map(line=>({line,remaining:remainingDeliveryQuantity(line,salesDeliveryLines,salesDeliveryNotes)})).filter(row=>row.remaining>0);return `<p>Select only the quantities being packed in this legacy delivery. Saving reserves those exact Haadi units so another order cannot use them.</p>${rows.map(({line,remaining})=>{const lots=haadiLots(line.product_id),key=line.id;return `<div class="delivery-pick"><label class="delivery-check"><input type="checkbox" name="include_${key}" ${lots.length?'':'disabled'}><span>${esc(salesProduct(line.product_id).name)} · ${remaining} ${esc(line.uom)} remaining</span></label><label><span>Haadi lot</span><select name="lot_${key}" ${lots.length?'':'disabled'}><option value="">Choose lot</option>${lots.map(lot=>inventoryOption(lot.id,`${lot.batch_number||'No batch'} · ${lot.loose_units-lot.reserved_units} available`)).join('')}</select></label><label><span>Quantity</span><input name="qty_${key}" type="number" min="1" max="${remaining}" value="${remaining}" ${lots.length?'':'disabled'}></label>${lots.length?'':'<p class="warning">No loose Haadi stock is available for this item.</p>'}</div>`}).join('')}`}
 function deliveryCanFinishPacking(note){return note.packer_user_id===me?.user_id||me?.role==='owner'||(me?.role==='head'&&me?.department==='stores')}
 function deliveryActions(note){const labels={tax_invoice:'Link ERP invoice & reserve stock',send_to_sales:'Send to downstairs sales',start_packing:'Start packing',ready:'Packing complete · ready for delivery',dispatch:'Mark out for delivery',deliver:'Record signed delivery note',cancel:'Cancel'};return `${deliveryNextActions(note.status).map(action=>`<button ${action==='ready'&&!deliveryCanFinishPacking(note)?'disabled title="Only the assigned packer or stores manager can finish packing"':''} data-delivery-action="${action}" data-id="${note.id}" class="${action==='cancel'?'danger':''}">${labels[action]}</button>`).join('')}<button data-print-document="${note.id}">Print / PDF</button>`}
-function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div>${deliveryCollectionHtml(note)}${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">This delivery is complete.${proforma&&salesFulfillment(proforma)!=='complete'?' Remaining order quantities still require delivery.':''} ${proforma?.installation_required===false?'Installation was not requested. Equipment remains available for later service intake.':'Delivered machines are registered for installation; existing open jobs are reused.'}</p>`:''}${deliveryHistory(note)}<div class="actions no-print">${deliveryActions(note)}</div></article>`}
+function deliveryCard(note){const proforma=salesProforma(note.proforma_id),organization=salesOrganization(note.organization_id),lines=deliveryLines(note.id);return `<article class="card document-card" data-document-card="${note.id}"><div class="document-brand delivery-print-brand"><img src="assets/anudha-logo.svg" alt="Anudha Limited"><span>DELIVERY NOTE</span></div><div class="heading"><div><h2>${esc(note.delivery_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(salesContactName(note.contact_id))}</p></div><span class="tag">${esc(salesStatus(note.status))}</span></div><div class="actions no-print">${deliveryActions(note)}</div>${deliveryCollectionHtml(note)}${workflowProgress(proforma,note)}${!note.tax_invoice_reference&&['ready','out_for_delivery','delivered'].includes(note.status)?'<p class="warning">Legacy order: the tax invoice reference was not verified during migration.</p>':''}<div class="details"><div><small>Accepted Pro forma</small>${esc(proforma?.document_number||'Unavailable')}</div><div><small>Accounts approval</small>${esc(note.accounts_reference)}</div><div><small>Tax invoice</small>${esc(note.tax_invoice_reference||'Not created yet')}</div><div><small>Expected delivery</small>${esc(note.expected_delivery_date)}</div><div><small>Driver / out-for-delivery reference</small>${esc([note.carrier,note.tracking_reference].filter(Boolean).join(' · ')||'Not out for delivery')}</div></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th>Haadi lot</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${esc(salesProduct(line.product_id).name)}</td><td>${line.quantity}</td><td>${esc(inventoryLots.find(lot=>lot.id===line.lot_id)?.batch_number||'No batch')}</td></tr>`).join('')}</tbody></table></div>${note.status==='delivered'?`<p><strong>Received by:</strong> ${esc(note.recipient_name)} · <strong>Signed delivery note:</strong> ${esc(note.proof_reference)}</p><p class="notice">This delivery is complete.${proforma&&salesFulfillment(proforma)!=='complete'?' Remaining order quantities still require delivery.':''} ${proforma?.installation_required===false?'Installation was not requested. Equipment remains available for later service intake.':'Delivered machines are registered for installation; existing open jobs are reused.'}</p>`:''}${deliveryHistory(note)}</article>`}
 function deliveryScreen(){const accepted=salesProformas.filter(canCreateDelivery),focused=!salesEditing&&salesFocusedDelivery&&salesDeliveryNotes.find(note=>note.id===salesFocusedDelivery);if(!salesEditing&&salesFocusedDelivery&&!focused)return `${salesHeader()}<div class="actions"><button type="button" data-delivery-back>← All delivery notes</button></div><p role="alert">This delivery is unavailable or you do not have access. Refresh to try again.</p>`;if(focused)return `${salesHeader()}<div class="actions"><button type="button" data-delivery-back>← All delivery notes</button><button type="button" data-order-proforma="${esc(focused.proforma_id)}">View whole order</button></div>${deliveryCard(focused)}`;return `${salesHeader()}<div class="heading"><div><h2>Delivery register</h2><p class="muted">Press the button for the step you have just finished. Stock is reserved when the tax invoice is made and leaves the godown when you mark Out for delivery.</p></div></div>${salesEditing&&salesEditing!=='new'?deliveryEditor(salesProforma(salesEditing)):''}${salesDeliveryNotes.slice(0,salesDeliveryShown).map(deliveryCard).join('')||'<div class="empty"><strong>No delivery notes yet.</strong><br>Accept the Pro forma, then choose invoice quantities in Books. Posting creates its delivery note.</div>'}${salesDeliveryNotes.length>salesDeliveryShown?'<button type="button" id="moreSalesDeliveries">Show more delivery notes</button>':''}${accepted.length&&!salesEditing?`<section class="card"><h2>Orders with quantities still awaiting delivery</h2>${accepted.map(record=>`<div class="recycle-record"><span><strong>${esc(record.document_number)}</strong><small>${esc(salesOrganization(record.organization_id).name)}</small></span><div class="actions"><button type="button" data-order-proforma="${esc(record.id)}">Review whole order</button><button data-create-delivery="${record.id}">Use existing invoice</button></div></div>`).join('')}</section>`:''}`}
 function officialDocumentsScreen(){return `${salesHeader()}<div class="heading"><div><h2>Official forms and printable records</h2><p class="muted">Use the approved Anudha forms. Completed Pro formas and delivery notes are printed from their own record cards.</p></div></div><div class="official-document-grid"><article class="card"><small>WORKFLOW 1 · SALES</small><h3>Pro forma invoice</h3><p>Open a Pro forma record and choose <strong>Print / PDF</strong>. Its current revision, client, items, prices, tax and terms are printed together.</p><button type="button" data-sales-section="proformas">Open Pro formas</button></article><article class="card"><small>WORKFLOW 1 · DELIVERY</small><h3>Delivery note</h3><p>Open a delivery record and choose <strong>Print / PDF</strong>. The signed reference and recipient remain attached to the closed order.</p><button type="button" data-sales-section="delivery">Open delivery notes</button></article><article class="card"><small>WORKFLOW 2 · INSTALLATION</small><h3>Equipment handover and installation report</h3><p>The official Anudha equipment handover and installation form.</p><a class="button" href="official-documents/equipment-handover-installation-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article><article class="card"><small>WORKFLOW 2 · SERVICE</small><h3>Service work report</h3><p>The official Anudha service report for field work, parts, customer sign-off and completion.</p><a class="button" href="official-documents/service-work-report.pdf" target="_blank" rel="noopener">Open / print PDF</a></article></div><p class="warning">These blank official forms contain no client data and are included as approved print references. The next service build will turn their fields into connected records and generate completed PDFs from the website.</p>`}
 async function salesDeliveryWorkspace(force=false){
@@ -1977,6 +2044,7 @@ function bindSalesDelivery(){
  $('#closeDeliveryEditor')?.addEventListener('click',()=>salesNavigate(()=>{salesEditing='';salesDeliveryWorkspace()}));
  $('#addSalesLine')?.addEventListener('click',()=>{const box=$('#proformaLines');box.insertAdjacentHTML('beforeend',salesLineRow());pricingRefreshRow(box.lastElementChild,$('#proformaForm'));});
  $('#proformaForm')?.addEventListener('change',event=>{if(event.target.name==='organizationId'){const select=$('#proformaForm [name="contactId"]');select.innerHTML='<option value="">Choose named contact</option>'+salesContactOptions(event.target.value);proformaShowExisting();proformaUpdateContractChoices()}});proformaShowExisting();
+ $('#proformaLines')?.addEventListener('change',event=>{if(event.target.name==='productChoice')salesPrefillLineDescription(event.target.closest('[data-proforma-line]'));});
  pricingBindForm($('#proformaForm'));proformaBindCommercial();
  $('#proformaForm')?.addEventListener('submit',event=>{event.preventDefault();run(()=>saveProformaForm(event.currentTarget))});
  $('#deliveryForm')?.addEventListener('submit',event=>{event.preventDefault();run(()=>createDeliveryForm(event.currentTarget))});
@@ -2000,14 +2068,17 @@ function bindSalesDelivery(){
 function orderWorkflowHtml(record){
  const notes=rowsWhere(salesDeliveryNotes,'proforma_id',record.id),active=notes.filter(note=>note.status!=='cancelled');
  const fulfillment=salesFulfillment(record),summary=record.status!=='accepted'?salesStatus(record.status):fulfillment==='complete'?'All quantities delivered':fulfillment==='partial'?'Part delivered · balance outstanding':'Delivery outstanding';
- return `<section class="card no-print" data-order-workflow="${esc(record.id)}" aria-label="Whole order workflow"><div class="heading"><div><h2>Whole order · ${esc(record.document_number)}</h2><p>${esc(summary)}</p></div><button type="button" data-order-refresh>Refresh order</button></div><p>Create and send the Pro forma → record customer acceptance → Accounts chooses invoice quantities → reserve those units → pack → dispatch → signed delivery → machine installation.</p><p>Use <strong>Assign to me</strong> on the record below to take responsibility for the current step. Packing and engineering assignment are recorded in their own steps.</p><div class="details"><div><small>Pro forma</small>${esc(salesStatus(record.status))} · revision ${esc(record.revision)}</div><div><small>Prepared by</small>${esc(employeeName(record.prepared_by))}</div><div><small>Deliveries</small>${active.length} active / completed · ${notes.length-active.length} cancelled</div></div><h3>ERP invoice</h3><div data-order-invoices role="status">Checking accounting access…</div><h3>Packing and shipping</h3>${notes.length?notes.map(note=>`<div class="recycle-record"><span><strong>${esc(note.delivery_number)}</strong><small>${esc(salesStatus(note.status))}${note.packer_user_id?' · Packer: '+esc(employeeName(note.packer_user_id)):''}${note.tracking_reference?' · Tracking: '+esc(note.tracking_reference):''}</small></span>${typeof hasArea==='function'&&hasArea('deliveries')?`<button type="button" data-order-delivery="${esc(note.id)}">Open delivery</button>`:'<span>Delivery access required</span>'}</div>`).join(''):'<p>No delivery note yet. After customer acceptance, review invoice quantities in Books. Posting creates the delivery and reserves the selected units.</p>'}<h3>Service engineering</h3><p>Signing a machine delivery creates one installation case for each machine unit. The engineer can then be assigned and the installation tracked here.</p><div data-order-service role="status">Loading linked engineering cases…</div></section>`;
+ return `<section class="card no-print" data-order-workflow="${esc(record.id)}" aria-label="Whole order workflow"><div class="heading"><div><h2>Whole order · ${esc(record.document_number)}</h2><p>${esc(summary)}</p></div><button type="button" data-order-refresh>Refresh order</button></div><p>Create and send the Pro forma → record customer acceptance → Accounts invoices selected quantities → stock reserved, packing queued and machine installation planned → pack → dispatch → signed delivery → on-site installation.</p><p>Use <strong>Assign to me</strong> on the record below to take responsibility for the current step. Packing and engineering assignment are recorded in their own steps.</p><div class="details"><div><small>Pro forma</small>${esc(salesStatus(record.status))} · revision ${esc(record.revision)}</div><div><small>Prepared by</small>${esc(employeeName(record.prepared_by))}</div><div><small>Deliveries</small>${active.length} active / completed · ${notes.length-active.length} cancelled</div></div><h3>ERP invoice</h3><div data-order-invoices role="status">Checking accounting access…</div><h3>Packing and shipping</h3>${notes.length?notes.map(note=>`<div class="recycle-record"><span><strong>${esc(note.delivery_number)}</strong><small>${esc(salesStatus(note.status))}${note.packer_user_id?' · Packer: '+esc(employeeName(note.packer_user_id)):''}${note.tracking_reference?' · Tracking: '+esc(note.tracking_reference):''}</small></span>${typeof hasArea==='function'&&hasArea('deliveries')?`<button type="button" data-order-delivery="${esc(note.id)}">Open delivery</button>`:'<span>Delivery access required</span>'}</div>`).join(''):'<p>No delivery note yet. After customer acceptance, review invoice quantities in Books. Posting creates the delivery, reserves the selected units, queues packing and creates requested machine installation plans.</p>'}<h3>Service engineering</h3><p>Posting an invoice creates one installation plan per requested machine unit. Assign the engineer and work date before delivery. Signed delivery records the delivered machine and serial against that plan and enables on-site work; an existing open installation is reused when needed.</p><div data-order-service role="status">Loading linked engineering cases…</div></section>`;
 }
 
 function orderQuantityHtml(order){
  const deliveredNotes=new Set(rowsWhere(salesDeliveryNotes,'proforma_id',order.proforma_id).filter(note=>note.status==='delivered').map(note=>note.id));
- return `<h3>Order quantities</h3><div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Invoiced</th><th>Delivered</th><th>Pending invoice</th></tr></thead><tbody>${(order.lines||[]).map(line=>{
+ const lines=order.lines||[],ordered=lines.reduce((sum,line)=>sum+Number(line.ordered_quantity),0),invoiced=lines.reduce((sum,line)=>sum+Number(line.invoiced_quantity),0),pending=lines.reduce((sum,line)=>sum+Number(line.remaining_quantity),0);
+ const invoiceStatus=invoiced===0?'Awaiting invoice':pending>0?'Part invoiced':'Fully invoiced';
+ return `<h3>Order quantities</h3><p><strong>${invoiceStatus}</strong> · ${esc(invoiced)} of ${esc(ordered)} units invoiced · ${esc(pending)} pending invoice.</p><div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Invoiced</th><th>Delivered</th><th>Pending invoice</th></tr></thead><tbody>${lines.map(line=>{
   const delivered=salesDeliveryLines.filter(row=>row.proforma_line_id===line.proforma_line_id&&deliveredNotes.has(row.delivery_note_id)).reduce((sum,row)=>sum+Number(row.quantity),0);
-  return `<tr><td>${esc(line.description)}${line.uom?' · '+esc(line.uom):''}</td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${delivered}</td><td>${esc(line.remaining_quantity)}</td></tr>`;
+  const identity=typeof inventoryProduct==='function'?inventoryProduct(line.product_id):null;
+  return `<tr><td>${identity?.name?`<strong>${esc(identity.name)}</strong>${identity.sku?`<small>${esc(identity.sku)}</small>`:''}`:''}<span>${esc(line.description)}</span>${line.uom?`<small>${esc(line.uom)}</small>`:''}</td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${delivered}</td><td>${esc(line.remaining_quantity)}</td></tr>`;
  }).join('')}</tbody></table></div><p class="muted">Pending quantities stay on this accepted order. Each invoice reserves only its selected units. An order is complete only after all quantities have signed delivery proof.</p>`;
 }
 
@@ -2045,18 +2116,18 @@ async function loadOrderWorkflow(panel){
     if(result.error)throw Error(result.error.message||'Order quantities could not load.');
     quantities=result.data;
    }
-   invoices.innerHTML=(rows.length?rows.map(row=>`<p><strong>${esc(row.invoice_number)}</strong> · ${esc(moneyDisplay(Number(row.total_minor),row.currency))}${row.voided_at?' · Voided':''}</p>`).join(''):'<p>No ERP invoice is linked yet. Accounts chooses the quantities to invoice after customer acceptance.</p>')+(quantities?orderQuantityHtml(quantities):'')+`<button type="button" data-order-books>${accepted?'Review quantities / open invoices':'Open customer invoices in Books'}</button>`;
+   invoices.innerHTML=(rows.length?rows.map(row=>`<p><strong>${esc(row.invoice_number)}</strong> · ${esc(moneyDisplay(Number(row.total_minor),row.currency))}${row.voided_at?' · Voided':''}</p>`).join(''):'<p>No ERP invoice is linked yet. Accounts chooses the quantities to invoice after customer acceptance.</p>')+(quantities?orderQuantityHtml(quantities):'')+`<button type="button" data-order-books>Open this order’s invoices</button>`;
    invoices.querySelector('[data-order-books]')?.addEventListener('click',()=>run(async()=>{await requireAccountingAccess(client,()=>me);if(!current())return;openBooksSection('invoices');booksDraft={proformaId:id};view='books';await render();}));
   }catch(error){if(current())invoices.textContent='Invoice lookup unavailable: '+error.message;}
  };
  const loadService=async()=>{
   try{
    if(typeof hasArea!=='function'||!hasArea('service')){service.textContent='Engineering case details require Service jobs access. Ask the assigned engineer to review the Installation queue.';return;}
-   const noteIds=rowsWhere(salesDeliveryNotes,'proforma_id',id).filter(note=>note.status==='delivered').map(note=>note.id);
-   if(!noteIds.length){service.textContent='Waiting for signed machine delivery.';return;}
-   const rows=await orderWorkflowRows('service_cases','id,case_number,status,assigned_user_id,scheduled_for,source_delivery_note_id','source_delivery_note_id',noteIds,current);
+   const noteIds=rowsWhere(salesDeliveryNotes,'proforma_id',id).filter(note=>note.status!=='cancelled').map(note=>note.id);
+   if(!noteIds.length){service.textContent='Awaiting invoice. Requested machine installation plans appear when invoice posting creates an active delivery note.';return;}
+   const rows=await orderWorkflowRows('service_cases','id,case_number,status,assigned_user_id,scheduled_for,source_delivery_note_id,planned_delivery_line_id,planned_unit_number,delivery_ready,reused_case_id','source_delivery_note_id',noteIds,current);
    if(!current())return;
-   service.innerHTML=rows.length?rows.map(row=>`<div class="recycle-record"><span><strong>${esc(row.case_number)}</strong><small>${esc(String(row.status||'').replaceAll('_',' '))} · ${row.assigned_user_id?esc(employeeName(row.assigned_user_id)):'Engineer not assigned'}${row.scheduled_for?' · '+esc(row.scheduled_for):''}</small></span><button type="button" data-order-service-case="${esc(row.id)}">Open engineering case</button></div>`).join(''):'<p>No engineering cases are linked to these deliveries. Automatic cases apply to products classified as Machine at delivery.</p>';
+   service.innerHTML=rows.length?rows.map(row=>`<div class="recycle-record"><span><strong>${esc(row.case_number)}</strong><small>${esc(String(row.status||'').replaceAll('_',' '))} · ${row.assigned_user_id?'Engineer: '+esc(employeeName(row.assigned_user_id)):'Engineer not assigned'}${row.scheduled_for?' · Work date: '+esc(row.scheduled_for):''}</small><small>${row.delivery_ready===false?'Awaiting signed delivery · planning only':'Signed delivery recorded'}${row.planned_unit_number?' · Machine unit '+esc(row.planned_unit_number):''}${row.reused_case_id?' · Continue in the existing installation':''}</small></span><button type="button" data-order-service-case="${esc(row.reused_case_id||row.id)}">${row.reused_case_id?'Open existing installation':'Open engineering case'}</button></div>`).join(''):'<p>No installation plans are linked to these deliveries. Plans apply to invoiced machine units when installation is requested.</p>';
    service.querySelectorAll('[data-order-service-case]').forEach(button=>button.onclick=()=>run(()=>{if(current())return focusServiceCase(button.dataset.orderServiceCase);}));
   }catch(error){if(current())service.textContent='Engineering lookup unavailable: '+error.message;}
  };
@@ -2270,7 +2341,7 @@ async function createReturnCreditNote(ret){
 'use strict';
 // Serial numbers (migration 084). The database decides which products need serials, blocks dispatch until each such
 // unit has one, keeps them permanent after dispatch and frees them on return; this file shows and records them.
-let serialSettings=new Map(),deliverySerials=[];
+let serialSettings=new Map(),deliverySerials=[],plannedSerialLines=new Set();
 const serialEditableStatuses=['sent_to_sales','packing','ready'];
 
 // Parses what stores typed or scanned: one serial per line or comma, trimmed, blanks dropped.
@@ -2284,10 +2355,11 @@ function serialListProblem(serials,quantity){
 }
 function machineSerialRequired(productId){return typeof inventoryClassification==='function'&&inventoryClassification(productId)?.category==='machines'}
 function serialRequired(productId){return machineSerialRequired(productId)||serialSettings.get(productId)===true}
+function deliveryLineSerialRequired(line,serials=deliverySerials){return serialRequired(line.product_id)||plannedSerialLines.has(line.id)||serials.some(serial=>serial.delivery_line_id===line.id)}
 function canFlagSerials(user){return !!user&&(user.role==='owner'||(user.role==='head'&&user.department==='stores'))}
 
 function deliverySerialPanelHtml(note,lines,serials){
- const tracked=lines.filter(line=>serialRequired(line.product_id));if(!tracked.length)return '';
+ const tracked=lines.filter(line=>deliveryLineSerialRequired(line,serials));if(!tracked.length)return '';
  const editable=serialEditableStatuses.includes(note.status);
  const rows=tracked.map(line=>{const own=serials.filter(s=>s.delivery_line_id===line.id);
   const list=own.length?own.map(s=>`<code>${esc(s.serial_number)}</code>${s.returned_at?' <small>(returned)</small>':''}`).join(', '):'<strong>Not entered yet</strong>';
@@ -2302,14 +2374,23 @@ async function loadSerialSettings(){
  serialSettings=new Map((result.data||[]).map(row=>[row.product_id,row.serial_required]));return true;
 }
 async function decorateDeliverySerials(){
+ plannedSerialLines=new Set();deliverySerials=[];
  const notes=[...document.querySelectorAll('[data-document-card]')].map(card=>salesDeliveryNotes.find(row=>row.id===card.dataset.documentCard)).filter(Boolean);
  if(!notes.length)return;
  const actor=me?.user_id;
  if(!(await loadSerialSettings())||me?.user_id!==actor)return;
- const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>serialRequired(line.product_id)));if(!relevant.length)return;
- const result=await client.from('delivery_line_serials').select('*').in('delivery_note_id',relevant.map(note=>note.id)).order('serial_number');
- if(result.error||me?.user_id!==actor)return;
- deliverySerials=result.data||[];
+ const planned=[];
+ for(let start=0;start<notes.length;start+=100){
+  const result=await client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:notes.slice(start,start+100).map(note=>note.id)});
+  if(me?.user_id!==actor)return;
+  if(result.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
+  planned.push(...(result.data||[]));
+ }
+ const result=await salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number');
+ if(me?.user_id!==actor)return;
+ if(result.error){message('Serial numbers could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
+ plannedSerialLines=new Set(planned.map(line=>line.delivery_line_id));deliverySerials=result.data||[];
+ const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>deliveryLineSerialRequired(line)));
  for(const note of relevant){
   const card=document.querySelector(`[data-document-card="${CSS.escape(note.id)}"]`),actions=card?.querySelector('.actions');
   if(!actions||card.querySelector('[data-serial-panel]'))continue;
@@ -2320,7 +2401,7 @@ async function decorateDeliverySerials(){
 }
 function openRecordSerials(note){
  if(!note)return;
- const lines=deliveryLines(note.id).filter(line=>serialRequired(line.product_id));
+ const lines=deliveryLines(note.id).filter(line=>deliveryLineSerialRequired(line));
  actionForm('Serial numbers',`<p>${esc(note.delivery_number)}: type or scan the serial number of each unit going out, one per line. Every unit must be available in the allocated stock lot. Transferred units must have a confirmed arrival; quarantined units cannot be selected.</p>`+lines.map(line=>{
    const current=deliverySerials.filter(s=>s.delivery_line_id===line.id).map(s=>s.serial_number).join('\n');
    return `<label><span>${esc(salesProduct(line.product_id).name)} — ${esc(line.quantity)} unit${line.quantity===1?'':'s'}</span><textarea name="serials_${esc(line.id)}" rows="${Math.min(8,Math.max(2,line.quantity))}" required>${esc(current)}</textarea></label><label><input type="checkbox" name="legacy_${esc(line.id)}"> These are verified units already in stock before serial receiving began. I checked their real serials. This confirmation is audited and limited to remaining legacy stock.</label>`;}).join(''),
@@ -2336,7 +2417,7 @@ function openRecordSerials(note){
 function decorateReturnedSerials(){
  document.querySelectorAll('[data-returns-panel]').forEach(panel=>{
   const noteId=panel.dataset.returnsPanel,out=deliverySerials.filter(s=>s.delivery_note_id===noteId&&!s.returned_at);if(!out.length)return;
-  const lines=(typeof customerReturnLines!=='undefined'?customerReturnLines:[]).filter(line=>serialRequired(line.product_id)&&deliverySerials.some(s=>s.delivery_line_id===line.delivery_line_id&&s.delivery_note_id===noteId));
+  const lines=(typeof customerReturnLines!=='undefined'?customerReturnLines:[]).filter(line=>deliverySerials.some(s=>s.delivery_line_id===line.delivery_line_id&&s.delivery_note_id===noteId));
   for(const line of lines){
    const marked=deliverySerials.filter(s=>s.return_line_id===line.id).length;if(marked>=line.quantity||panel.querySelector(`[data-serial-return="${CSS.escape(line.id)}"]`))continue;
    panel.insertAdjacentHTML('beforeend',`<button type="button" data-serial-return="${esc(line.id)}">Mark returned serials · ${esc(salesProduct(line.product_id).name)} (${esc(line.quantity-marked)} to mark)</button>`);
@@ -2802,7 +2883,7 @@ function pendingActions(row){
 }
 function pendingCard({row,state}){
  const days=pendingDaysLeft(row),proforma=salesProformas.find(p=>p.id===row.proforma_id);
- return `<article class="card pending-card pending-${state.key}" data-pending-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.request_number)}</small><h2>${esc(pendingProductLabel(row))} · ${esc(row.quantity)} pcs</h2><p>${esc(pendingClientLabel(row))}</p></div><span class="tag">${esc(state.label)}</span></div>${row.proforma_line_id?'<p class="muted">Linked order balance: invoice available units from the original Pro forma. This quantity updates automatically when an invoice is posted or voided.</p>':''}${row.notes?`<p>${esc(row.notes)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(employeeName(row.salesperson_user_id))}</div><div><small>${row.status==='waiting'?(row.proforma_line_id?'Follow up by':'Closes on'):'Closed'}</small>${row.status==='waiting'?`${esc(row.expires_on)} · ${days<0?'overdue':days+' days left'}${row.extension_count?` · extended ${row.extension_count}×`:''}`:esc(row.close_note)}</div>${proforma?`<div><small>Pro forma</small>${esc(proforma.document_number)}</div>`:''}</div><div class="actions">${pendingActions(row)}</div><div data-pending-history-output="${esc(row.id)}"></div></article>`;
+ return `<article class="card pending-card pending-${state.key}" data-pending-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.request_number)}</small><h2>${esc(pendingProductLabel(row))} · ${esc(row.quantity)} pcs</h2><p>${esc(pendingClientLabel(row))}</p></div><span class="tag">${esc(state.label)}</span></div>${row.proforma_line_id?'<p class="muted">Linked order balance: invoice available units from the original Pro forma. This quantity updates automatically when an invoice is posted or voided. The follow-up date is a staff reminder, not a promised customer delivery date; the delivery promise remains on the order.</p>':''}${row.notes?`<p>${esc(row.notes)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(employeeName(row.salesperson_user_id))}</div><div><small>${row.status==='waiting'?(row.proforma_line_id?'Next stock follow-up':'Administrative close date'):'Closed'}</small>${row.status==='waiting'?`${esc(row.expires_on)} · ${days<0?'overdue':days+' days left'}${row.extension_count?` · extended ${row.extension_count}×`:''}`:esc(row.close_note)}</div>${proforma?`<div><small>Pro forma</small>${esc(proforma.document_number)}</div>`:''}</div><div class="actions">${pendingActions(row)}</div><div data-pending-history-output="${esc(row.id)}"></div></article>`;
 }
 function pendingForm(){
  return `<section class="card document-editor"><div class="heading"><div><small>NEW</small><h2>Pending stock order</h2></div><button type="button" id="closePendingForm">Close</button></div><form id="pendingForm"><p class="muted">Use this when a customer wants more than is in stock. It does not reserve stock. You will see here when stock arrives.</p><div class="grid"><label><span>Client</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions()}</select></label><label><span>Contact · optional</span><select name="contactId"><option value="">No named contact</option></select></label><label class="wide"><span>Product</span><input name="productChoice" list="pendingProductChoices" required autocomplete="off" placeholder="Type to search products"><datalist id="pendingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist></label><label><span>Quantity still needed (pieces)</span><input name="quantity" type="number" min="1" max="1000000" step="1" required></label><label><span>Pro forma · optional</span><select name="proformaId"><option value="">Not linked</option></select></label><label><span>Salesperson</span><select name="salesperson" required>${leadEmployeeOptions(me?.user_id||'')}</select></label><label class="wide"><span>Notes</span><textarea name="notes" maxlength="4000"></textarea></label></div><p role="alert" id="pendingFormError"></p><div class="actions"><button type="submit">Save pending order</button></div></form></section>`;
@@ -2978,10 +3059,10 @@ function openWorkDelay(row){
   await render();message(`${row.record_label}: delay recorded, expected ${values.expected}.`);
  });
 }
-function workResponsibleHtml(open,delay=null,timeline=null){
- if(!open)return `<span>Responsible: <strong>nobody assigned</strong>${timeline?.finished?` · finished · took ${esc(workDuration(timeline.totalMs))} in total`:''}</span>`;
+function workResponsibleHtml(open,delay=null,timeline=null,type=''){
+ if(!open)return `<span>${type==='service'?'Coordination handoff':'Handoff task'}: <strong>${timeline?.finished?'closed':'unassigned'}</strong>${timeline?.finished?` · took ${esc(workDuration(timeline.totalMs))} in total`:''}</span>`;
  const level=workAgeLevel(open,delay);
- return `<span class="${level?'work-age-'+level:''}">With <strong>${esc(employeeName(open.assignee_user_id))}</strong> · ${esc(open.task)} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(open.created_at)))}</strong>${timeline&&timeline.steps.length>1?` · ${esc(workDuration(timeline.totalMs))} since the start`:''}${delay?` · <strong>expected ${esc(delay.expected_on)}</strong>: ${esc(delay.reason)}`:''}${open.due_on?` · due <strong${workOverdue(open)?' class="overdue"':''}>${esc(open.due_on)}</strong>`:''} · sent by ${esc(employeeName(open.assigned_by))}</span>`;
+ return `<span class="${level?'work-age-'+level:''}">${type==='service'?'Current coordinator':'Current step owner'}: <strong>${esc(employeeName(open.assignee_user_id))}</strong> · ${esc(open.task)} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(open.created_at)))}</strong>${timeline&&timeline.steps.length>1?` · ${esc(workDuration(timeline.totalMs))} since the start`:''}${delay?` · <strong>Staff task expected ${esc(delay.expected_on)}</strong>: ${esc(delay.reason)}`:''}${open.due_on?` · due <strong${workOverdue(open)?' class="overdue"':''}>${esc(open.due_on)}</strong>`:''} · sent by ${esc(employeeName(open.assigned_by))}</span>`;
 }
 function workTimelineHtml(timeline){
  if(!timeline||!timeline.steps.length)return '';
@@ -3024,7 +3105,7 @@ async function decorateWorkHandoffs(){
    const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
    const delay=current?delays.get(current.id):null,timeline=workTimeline(history.get(item.id)||[]),level=workAgeLevel(current,delay);
    box.classList.toggle('quality-yellow',level==='yellow');box.classList.toggle('quality-red',level==='red');
-   box.innerHTML=`${workResponsibleHtml(current,delay,timeline)}${canAssign?` <button type="button" data-work-assign>${current?'Hand to next person':'Assign responsible person'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign to me</button>':''}`:''}${canClose?` <button type="button" data-work-done>Mark ${current.assignee_user_id===actor.user_id?'my':esc(employeeName(current.assignee_user_id))+"’s"} step done</button>`:''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
+   box.innerHTML=`${workResponsibleHtml(current,delay,timeline,type)}${canAssign?` <button type="button" data-work-assign>${current?'Reassign handoff task':type==='service'?'Assign coordinator':'Assign step owner'}</button>${current?.assignee_user_id!==actor.user_id?' <button type="button" data-work-self>Assign this step to me</button>':''}`:''}${canClose?` <button type="button" data-work-done>Close handoff task</button>`:''}${canDelay?' <button type="button" data-work-delay>Report delay</button>':''}${workTimelineHtml(timeline)}`;
    box.querySelector('[data-work-delay]')?.addEventListener('click',()=>openWorkDelay({...current,record_label:item.label}));
    box.querySelector('[data-work-assign]')?.addEventListener('click',()=>openWorkHandoff({...item,current}));
    box.querySelector('[data-work-self]')?.addEventListener('click',()=>openWorkHandoff({...item,current,self:true}));
@@ -3051,7 +3132,7 @@ function openWorkHandoff({type,id,label,current,self=false}){
 }
 function openWorkClose(row,action){
  if(!row)return;
- actionForm(action==='done'?`Mark ${row.assignee_user_id===me?.user_id?'my':employeeName(row.assignee_user_id)+'’s'} step done`:'Cancel handoff',`<p><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}</p><p>Assigned to ${esc(employeeName(row.assignee_user_id))}. This closes that person’s handoff.</p><label><span>${action==='done'?'Note · optional':'Why is it cancelled?'}</span><textarea name="note" maxlength="1000" ${action==='cancel'?'required minlength="3"':''}></textarea></label>`,async values=>{
+ actionForm(action==='done'?'Close handoff task':'Cancel handoff',`<p><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}</p><p>Assigned to ${esc(employeeName(row.assignee_user_id))}. This closes only the coordination task. It does not post an invoice, complete packing, confirm delivery or finish installation. Record that business event on the order or job.</p><label><span>${action==='done'?'Note · optional':'Why is it cancelled?'}</span><textarea name="note" maxlength="1000" ${action==='cancel'?'required minlength="3"':''}></textarea></label>`,async values=>{
   const actor=me?.user_id,result=await client.rpc('close_work_assignment',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
   if(result.error)throw Error(result.error.message);
@@ -3082,7 +3163,7 @@ async function renderMyHandoffs(target){
  if(epoch!==workEpoch||me!==actor||!box.isConnected)return false;
  const levelRank=row=>({red:2,yellow:1}[workAgeLevel(row,delays.get(row.id))]||0);
  const rows=[...(result.data||[])].sort((a,b)=>levelRank(b)-levelRank(a)||Number(workOverdue(b))-Number(workOverdue(a))||String(a.due_on||'9999').localeCompare(String(b.due_on||'9999'))||String(a.created_at).localeCompare(String(b.created_at))||String(a.id).localeCompare(String(b.id)));
- box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>{const delay=delays.get(row.id),level=workAgeLevel(row,delay);return `<li class="${level?'quality-'+level:workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(row.created_at)))}</strong>${delay?` · expected ${esc(delay.expected_on)}: ${esc(delay.reason)}`:''}${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open</button> <button type="button" data-work-finish="${esc(row.id)}">Mark done</button> <button type="button" data-work-delay-row="${esc(row.id)}">Report delay</button></li>`;}).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
+ box.innerHTML=`<h2>Work handed to me · ${rows.length}</h2>${rows.length?`<ol class="handoff-list">${rows.map(row=>{const delay=delays.get(row.id),level=workAgeLevel(row,delay);return `<li class="${level?'quality-'+level:workOverdue(row)?'attention':''}"><strong>${esc(row.record_label)}</strong> · ${esc(row.task)}${row.due_on?` · due <strong${workOverdue(row)?' class="overdue"':''}>${esc(row.due_on)}</strong>`:''}<br><small>From ${esc(employeeName(row.assigned_by))} · waiting <strong>${esc(workDuration(Date.now()-Date.parse(row.created_at)))}</strong>${delay?` · staff task expected ${esc(delay.expected_on)}: ${esc(delay.reason)}`:''}${row.note?` · ${esc(row.note)}`:''}</small> <button type="button" data-work-open="${esc(row.id)}">Open record &amp; next action</button> <button type="button" data-work-finish="${esc(row.id)}">Close handoff task</button> <button type="button" data-work-delay-row="${esc(row.id)}">Report delay</button></li>`;}).join('')}</ol>`:'<p class="muted">Nothing is waiting for you.</p>'}`;
  box.querySelectorAll('[data-work-open]').forEach(button=>button.onclick=()=>run(()=>workOpenRecord(rows.find(row=>row.id===button.dataset.workOpen))));
  box.querySelectorAll('[data-work-finish]').forEach(button=>button.onclick=()=>openWorkClose(rows.find(row=>row.id===button.dataset.workFinish),'done'));
  box.querySelectorAll('[data-work-delay-row]').forEach(button=>button.onclick=()=>openWorkDelay(rows.find(row=>row.id===button.dataset.workDelayRow)));
@@ -3273,7 +3354,7 @@ function renderPurchasing(){
  const pages=Math.max(1,Math.ceil(rows.length/20));purchasePage=Math.min(Math.max(purchasePage,0),pages-1);
  const counts={requested:purchaseOrders.filter(o=>o.status==='requested').length,approved:purchaseOrders.filter(o=>o.status==='approved').length,ordered:purchaseOrders.filter(o=>o.status==='ordered').length,overdue:purchaseOrders.filter(o=>purchaseOverdue(o)).length};
  const editingOrder=purchaseEditing&&purchaseEditing!=='new'?purchaseOrders.find(o=>o.id===purchaseEditing):null,editingSupplier=supplierEditing&&supplierEditing!=='new'?suppliers.find(s=>s.id===supplierEditing):null;
- $('#content').innerHTML=`<section class="purchasing-workspace"><div class="heading"><div><small>ORDERS</small><h1>${ordersSection?'Purchasing':'Suppliers'}</h1><p class="muted">${ordersSection?'Choose the supplier and list the items. The owner approves, then the order is placed.':'Everyone we buy from. The same supplier cannot be entered twice.'}</p></div><div class="actions"><button type="button" id="purchaseRefresh">Refresh</button><button type="button" id="${ordersSection?'newPurchase':'newSupplier'}">${ordersSection?'New purchase request':'New supplier'}</button></div></div>${purchaseLoadError?`<p class="notice error" role="alert">Purchasing could not load: ${esc(purchaseLoadError)}. Nothing was changed.</p>`:''}${ordersSection&&purchaseEditing?purchaseEditor(editingOrder):''}${!ordersSection&&supplierEditing?supplierEditor(editingSupplier):''}${ordersSection?`<div class="tabs" role="group" aria-label="Filter purchase orders">${purchaseFilters.map(([key,label])=>`<button type="button" data-purchase-filter="${key}" class="${purchaseFilter===key?'active':''}" aria-pressed="${purchaseFilter===key}">${label}${counts[key]?` · ${counts[key]}`:''}</button>`).join('')}</div>${['finished','all'].includes(purchaseFilter)?'<p class="muted">Showing arrived and cancelled orders from the last 6 months. Search by PO or LPO number finds older ones.</p>':''}`:''}<label class="search"><span>Search</span><input id="purchaseSearch" type="search" placeholder="${ordersSection?'Supplier, product, PO or LPO number':'Name, contact, phone, email or TIN'}" value="${esc(purchaseSearch)}"></label>${rows.slice(purchasePage*20,purchasePage*20+20).map(row=>ordersSection?purchaseCard(row):supplierCard(row)).join('')||`<p class="muted">${ordersSection?'No purchase orders here.':'No suppliers yet. Press New supplier to add one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="purchasePrev" ${purchasePage===0?'disabled':''}>Previous</button><span>Page ${purchasePage+1} of ${pages}</span><button type="button" id="purchaseNext" ${purchasePage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
+ $('#content').innerHTML=`<section class="purchasing-workspace"><div class="heading"><div><small>ORDERS</small><h1>${ordersSection?'Purchasing':'Suppliers'}</h1><p class="muted">${ordersSection?'Choose the supplier and list the items. The owner approves, then the order is placed.':'Everyone we buy from. The same supplier cannot be entered twice.'}</p></div><div class="actions"><button type="button" id="purchaseRefresh">Refresh</button><button type="button" id="${ordersSection?'newPurchase':'newSupplier'}">${ordersSection?'New purchase request':'New supplier'}</button></div></div>${purchaseLoadError?`<p class="notice error" role="alert">Purchasing could not load: ${esc(purchaseLoadError)}. Nothing was changed.</p>`:''}${ordersSection&&purchaseEditing?purchaseEditor(editingOrder):''}${!ordersSection&&supplierEditing?supplierEditor(editingSupplier):''}${ordersSection?`<div class="tabs" role="group" aria-label="Filter purchase orders">${purchaseFilters.map(([key,label])=>`<button type="button" data-purchase-filter="${key}" class="${purchaseFilter===key?'active':''}" aria-pressed="${purchaseFilter===key}">${label}${counts[key]?` · ${counts[key]}`:''}</button>`).join('')}</div>${['finished','all'].includes(purchaseFilter)?'<p class="muted">Showing arrived and cancelled orders from the last 6 months. Search by PO or LPO number finds older ones.</p>':''}`:''}<label class="search"><span>Search</span><input id="purchaseSearch" type="search" placeholder="${ordersSection?'Supplier, product, PO or LPO number':'Name, contact, phone, email or TIN'}" value="${esc(purchaseSearch)}"></label>${rows.slice(purchasePage*20,purchasePage*20+20).map(row=>ordersSection?purchaseCard(row):supplierCard(row)).join('')||`<p class="muted">${ordersSection?(purchaseOrders.length?'No purchase orders match this filter and search. Choose All or clear the search to see other orders.':'No purchase orders have been recorded. Press New purchase request to begin.'):'No suppliers match. Clear the search or press New supplier to add one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="purchasePrev" ${purchasePage===0?'disabled':''}>Previous</button><span>Page ${purchasePage+1} of ${pages}</span><button type="button" id="purchaseNext" ${purchasePage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
  bindPurchasing();
  if(typeof decorateWorkHandoffs==='function')decorateWorkHandoffs().catch(()=>{});
 }
@@ -3964,25 +4045,75 @@ function renderReports(range,error=''){
 }
 ;// user-settings.js
 'use strict';
-// Per-person display settings (this browser only) and an honest list of outside connections.
+// Personal profile, display settings (this browser only), and an honest list of outside connections.
 // zoom, not root font-size: the stylesheets use fixed pixel sizes, which zoom scales together with spacing.
 const textSizes={normal:{label:'Normal',scale:'1'},large:{label:'Large',scale:'1.15'},xlarge:{label:'Extra large',scale:'1.3'}};
 // Status only changes here after a real provider is configured and tested; nothing is simulated.
 const externalConnections=[
  {name:'Email notifications',status:'Not connected',detail:'Work sent to you and stock-arrival notices show inside the ERP. No emails are sent yet.'},
  {name:'WhatsApp messages',status:'Not connected',detail:'No WhatsApp provider has been set up. No messages are sent.'},
- {name:'Tally',status:'Not connected',detail:'Use Send to Tally on an accepted Pro forma, and upload invoices under Tally invoices. A direct connection is planned.'},
- {name:'VFD / tax invoice device',status:'Not connected',detail:'Tax invoices are made in TallyPrime.'}
+ {name:'Tally',status:'Not connected',detail:'Optional legacy import/export only. Post new orders in Accounts → Customer invoices. Do not create a second invoice in Tally for the same sale. No direct connection is configured.'},
+ {name:'VFD / tax invoice device',status:'Not connected',detail:'Tax invoices are posted here in Accounts. Fiscal-device integration is not connected; record the genuine TRA receipt separately when issued. Tally import/export is optional and does not replace ERP posting.'}
 ];
 function readTextSize(){try{const value=localStorage.getItem('anudha.textSize');return textSizes[value]?value:'normal';}catch{return 'normal';}}
 function applyTextSize(size=readTextSize()){document.documentElement.style.zoom=(textSizes[size]||textSizes.normal).scale;document.documentElement.dataset.textSize=textSizes[size]?size:'normal';}
 function saveTextSize(size){if(!textSizes[size])throw Error('Choose a text size from the list.');try{localStorage.setItem('anudha.textSize',size);}catch{}applyTextSize(size);}
+function settingsProfileRow(row,actor){
+ if(!row||row.user_id!==actor.user_id||!Number.isInteger(row.name_version)||row.name_version<0||!['display_name','phone','contact_email'].every(key=>typeof row[key]==='string'||row[key]===null)||typeof row.role!=='string'||typeof row.department!=='string')throw Error('The server did not return your profile. Reload and try again.');
+ return row;
+}
+function settingsProfileForm(profile){
+ return `<form id="settingsProfileForm"><div class="grid"><label class="wide"><span>Full name</span><input name="display_name" autocomplete="name" required maxlength="120" value="${esc(profile.display_name)}"></label><label><span>Phone · with country code</span><input name="phone" type="tel" autocomplete="tel" maxlength="24" placeholder="+255712345678" value="${esc(profile.phone)}"><small>Optional. Include the country code.</small></label><label><span>Contact email</span><input name="contact_email" type="email" autocomplete="email" maxlength="254" aria-describedby="settingsContactEmailHelp" value="${esc(profile.contact_email)}"></label></div><p id="settingsContactEmailHelp" class="muted">This email is for contact details. Your sign-in stays the same. You may use a shared department email or leave it empty.</p><div class="details"><div><small>Role</small><strong data-profile-role>${esc(roleLabels[profile.role]||profile.role)}</strong></div><div><small>Department</small><strong data-profile-department>${esc(departmentLabel(profile.department))}</strong></div></div><p class="muted">Your administrator assigns your role and department.</p><div class="actions"><button type="submit">Save profile</button><button type="button" data-profile-reload hidden>Reload saved details</button></div><p data-profile-status role="status" aria-live="polite"></p><p data-profile-error class="error" role="alert"></p><p data-profile-reload-help class="muted" hidden>Reloading replaces your unsaved edits with the saved profile.</p></form>`;
+}
+async function loadSettingsProfile(section){
+ const actor=me,current=()=>me===actor&&view==='settings'&&section.isConnected;
+ if(!actor||!current())return;
+ section.innerHTML='<p role="status">Loading your profile…</p>';
+ try{
+  const result=await client.rpc('get_my_staff_profile');if(!current())return;
+  if(result.error)throw Error(result.error.message||'Your profile could not load.');
+  let profile=settingsProfileRow(result.data,actor);
+  section.innerHTML=settingsProfileForm(profile);
+  const form=section.querySelector('form'),status=form.querySelector('[data-profile-status]'),error=form.querySelector('[data-profile-error]'),reload=form.querySelector('[data-profile-reload]'),reloadHelp=form.querySelector('[data-profile-reload-help]');
+  let saving=false;
+  reload.onclick=()=>{if(current()&&!saving)return loadSettingsProfile(section)};
+  form.onsubmit=async event=>{
+   event.preventDefault();if(saving||!current()||!form.reportValidity())return;
+   const values={display_name:form.elements.display_name.value.trim(),phone:form.elements.phone.value.trim().replace(/[\s()-]/g,''),contact_email:form.elements.contact_email.value.trim().toLowerCase()};
+   error.textContent='';status.textContent='';
+   if(!values.display_name){error.textContent='Enter your full name.';return;}
+   if(values.phone&&!/^\+[0-9]{8,15}$/.test(values.phone)){error.textContent='Enter the phone with country code, for example +255712345678, or leave it empty.';return;}
+   const expected={display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+   saving=true;const controls=[...form.querySelectorAll('input,button')];controls.forEach(control=>control.disabled=true);status.textContent='Saving profile…';
+   try{
+    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});if(!current())return;
+    if(result.error)throw Error(result.error.message||'Your profile could not be saved.');
+    const saved=settingsProfileRow(result.data,actor);
+    if(saved.name_version<profile.name_version||saved.display_name!==values.display_name||(saved.phone||'')!==values.phone||(saved.contact_email||'')!==values.contact_email)throw Error('The server did not confirm these profile details. Reload to check the saved profile.');
+    profile=saved;
+    for(const key of ['display_name','phone','contact_email'])form.elements[key].value=saved[key]||'';
+    form.querySelector('[data-profile-role]').textContent=roleLabels[saved.role]||saved.role;
+    form.querySelector('[data-profile-department]').textContent=departmentLabel(saved.department);
+    employeeDirectory.set(actor.user_id,{...employeeDirectory.get(actor.user_id),user_id:actor.user_id,display_name:saved.display_name,name_version:saved.name_version});
+    const name=$('#identity .identity-name');if(name)name.textContent=saved.display_name;
+    $('#accountMenu > summary')?.setAttribute('aria-label',`Account options for ${saved.display_name}`);
+    status.textContent='Profile saved.';reload.hidden=true;reloadHelp.hidden=true;
+   }catch(cause){if(current()){status.textContent='';error.textContent=`Profile save was not confirmed. ${cause.message||'Check your connection and try again.'} Your edits are still here.`;reload.hidden=false;reloadHelp.hidden=false;}}
+   finally{saving=false;if(current())controls.forEach(control=>control.disabled=false);}
+  };
+ }catch(cause){
+  if(!current())return;
+  section.innerHTML=`<p class="error" role="alert">Your profile could not load: ${esc(cause.message||'Check your connection and try again.')}</p><button type="button" data-profile-reload>Reload profile</button>`;
+  section.querySelector('[data-profile-reload]').onclick=()=>{if(current())return loadSettingsProfile(section)};
+ }
+}
 function settingsWorkspace(){
  syncWorkspaceNavigation();
  const size=readTextSize();
- $('#content').innerHTML=`<section class="settings-workspace"><div class="heading"><div><small>SYSTEM</small><h1>My settings</h1></div></div><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>My account</h2><p>${esc(employeeName(me.user_id))} · ${esc(me.role)}</p><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Language</h2><p>English. Kiswahili, Chinese and Hindi have been requested but are not available yet.</p></section><section class="card"><h2>Connections to other systems</h2><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></section></section>`;
+ $('#content').innerHTML=`<section class="settings-workspace"><div class="heading"><div><small>SYSTEM</small><h1>My settings</h1></div></div><section class="card"><h2>My account</h2><div id="settingsProfile"></div><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>Language</h2><p>English. Kiswahili, Chinese and Hindi have been requested but are not available yet.</p></section><section class="card"><h2>In-app updates</h2><p>Use the bell and My tasks for assigned work and order updates. The bell checks while the ERP is open, on navigation and every two minutes. Open the bell and press Refresh updates to check now. Email and WhatsApp are not active delivery channels.</p></section><section class="card"><h2>Connections to other systems</h2><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></section></section>`;
  document.querySelectorAll('[name="textSize"]').forEach(input=>input.onchange=()=>{saveTextSize(input.value);message(`Text size set to ${textSizes[input.value].label.toLowerCase()} on this device.`);});
  $('#settingsPassword').onclick=()=>run(async()=>openChangePassword());
+ loadSettingsProfile($('#settingsProfile'));
  if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('.settings-workspace')).catch(()=>{});
 }
 applyTextSize();
@@ -3993,7 +4124,9 @@ const serviceStatuses=['new','assigned','scheduled','on_site','report_required',
 const serviceStatusLabels={new:'New',assigned:'Assigned',scheduled:'Scheduled',on_site:'On site',report_required:'Report required',completed:'Completed',cancelled:'Cancelled'};
 
 function serviceStatusLabel(status){return serviceStatusLabels[status]||String(status||'').replaceAll('_',' ')}
-function serviceNextActions(status){return ({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','schedule','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[]}
+function serviceNextActions(status,record={}){const actions=({new:['assign'],assigned:['schedule','reassign'],scheduled:['start','schedule','reassign'],on_site:['submit_report'],report_required:[],completed:[],cancelled:[]})[status]||[];return record.reused_case_id?[]:record.delivery_ready===false?actions.filter(action=>!['start','submit_report'].includes(action)):actions}
+function serviceNeedsPlanning(record){return !['completed','cancelled'].includes(record.status)&&!record.reused_case_id&&(!record.assigned_user_id||!record.scheduled_for)}
+function serviceSortCases(rows){return [...rows].sort((a,b)=>Number(serviceNeedsPlanning(b))-Number(serviceNeedsPlanning(a))||Number(['completed','cancelled'].includes(a.status))-Number(['completed','cancelled'].includes(b.status))||String(a.created_at||'').localeCompare(String(b.created_at||'')))}
 function serviceMaintenanceDate(actual,months){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(actual||''))||Number.isNaN(Date.parse(actual+'T00:00:00Z')))throw Error('Enter a valid work date.');
  if(![3,6,12,24,36].includes(Number(months)))throw Error('Choose a supported maintenance interval.');
@@ -4002,7 +4135,7 @@ function serviceMaintenanceDate(actual,months){
 }
 function serviceProgress(status){const current=serviceStatuses.indexOf(status);return serviceStatuses.map((name,index)=>({name,label:serviceStatusLabel(name),state:status==='cancelled'?'':index<current?'complete':index===current?'current':''}))}
 
-function serviceSourceLabel(source){return ({erp_delivery:'Signed machine delivery',third_party:'Bought from another supplier',legacy:'Older equipment / historical sale',distributor:'Distributor supplied',customer_request:'Customer request'})[source]||'Equipment request'}
+function serviceSourceLabel(source,record={}){if(source==='erp_delivery'&&record.delivery_ready===false)return 'Invoiced · awaiting signed delivery';return ({erp_delivery:'Signed machine delivery',third_party:'Bought from another supplier',legacy:'Older equipment / historical sale',distributor:'Distributor supplied',customer_request:'Customer request'})[source]||'Equipment request'}
 ;// service-workflow.js
 'use strict';
 
@@ -4031,20 +4164,49 @@ function serviceHeader(){return `<div class="heading"><div><small>SERVICE</small
 function serviceUnavailable(){return `${serviceHeader()}<section class="card"><h2>Service could not load</h2><p role="alert">${esc(serviceLoadError)}</p><p>Check your connection and access, then refresh. Contact your administrator if this continues.</p></section>`}
 function serviceProgressRail(record){return `<ol class="service-progress" aria-label="${esc(record.case_type)} progress">${serviceProgress(record.status).map((step,index)=>`<li class="${step.state}" ${step.state==='current'?'aria-current="step"':''}><span>${step.state==='complete'?'✓':index+1}</span><small>${esc(step.label)}</small></li>`).join('')}</ol>`}
 function serviceHistory(record){const rows=serviceEvents.filter(row=>row.case_id===record.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));return `<details class="workflow-history"><summary>Who handled this job and when</summary>${rows.map(row=>`<div><strong>${esc(serviceStatusLabel(row.to_status))}</strong><small>${esc(employeeName(row.actor_user_id))} · ${esc(new Date(row.created_at).toLocaleString('en-TZ'))} · ${esc(row.note)}</small></div>`).join('')}</details>`}
-function serviceCaseActions(record){const buttons=serviceNextActions(record.status).map(action=>`<button data-service-action="${action}" data-id="${record.id}">${({assign:'Assign engineer',reassign:'Change engineer',schedule:record.status==='scheduled'?'Change work date':'Set work date',start:'Start on-site work',submit_report:'Work finished · complete report'})[action]}</button>`);if(record.status==='report_required')buttons.push(`<button class="primary-action" data-service-report="${record.id}">Complete official report</button>`);if(['new','assigned','scheduled'].includes(record.status))buttons.push(`<button class="danger" data-service-action="cancel" data-id="${record.id}">Cancel job</button>`);if(serviceReport(record.id))buttons.push(`<button data-print-service="${record.id}">Print official report</button>`);return buttons.join('')}
-function serviceCaseCard(record){const asset=serviceAsset(record.asset_id),organization=orgIndex.get(record.site_organization_id||record.organization_id)||{name:'Client unavailable',location:''},product=inventoryProduct(record.product_id),report=serviceReport(record.id);return `<article class="card service-case ${record.status==='report_required'?'attention':''}" data-service-card="${record.id}"><div class="heading"><div><small>${record.case_type==='installation'?'INSTALLATION':'SERVICE'} · ${esc(record.case_number)}</small><h2>${esc(product.name)}</h2><p>${esc(organization.name)} · ${esc(record.site_location||asset.installation_location||organization.location||'Location to be confirmed')}</p>${record.site_organization_id&&record.site_organization_id!==record.organization_id?`<p>Customer: ${esc(orgIndex.get(record.organization_id)?.name||'Client unavailable')}</p>`:''}<p class="muted">${esc(serviceSourceLabel(record.intake_source))}${record.project_name?' · '+esc(record.project_name):''}</p></div><span class="tag ${record.status==='report_required'?'warn':''}">${esc(serviceStatusLabel(record.status))}</span></div>${serviceProgressRail(record)}<div class="service-facts"><div><small>Serial number</small><strong>${esc(asset.serial_number||'Record on report')}</strong></div><div><small>Assigned engineer</small><strong>${esc(serviceTeamLabel(record.assigned_user_id))}</strong></div><div><small>Work date</small><strong>${esc(record.scheduled_for||'Not scheduled')}</strong></div><div><small>${record.case_type==='service'?'Request':'Source'}</small><strong>${esc(record.problem_summary||serviceSourceLabel(record.intake_source))}</strong></div></div>${report?`<div class="notice"><strong>Completed ${esc(report.actual_work_date)}</strong> · Next maintenance ${esc(report.next_maintenance_date)} · ${esc(serviceMoney(report.service_charge_minor,report.currency))}</div>`:''}${serviceHistory(record)}<div class="actions no-print">${serviceCaseActions(record)}</div></article>`}
-function serviceMetrics(rows){const today=serviceDate(),soon=serviceDate(30);return `<div class="inventory-metrics service-metrics"><div><small>Needs assignment</small><strong>${rows.filter(row=>row.status==='new').length}</strong></div><div><small>Scheduled</small><strong>${rows.filter(row=>row.status==='scheduled').length}</strong></div><div><small>Due in 30 days</small><strong>${rows.filter(row=>row.status==='scheduled'&&row.scheduled_for>=today&&row.scheduled_for<=soon).length}</strong></div><div><small>Overdue</small><strong>${rows.filter(row=>row.status==='scheduled'&&row.scheduled_for<today).length}</strong></div></div>`}
+function serviceCaseActions(record){
+ if(record.reused_case_id)return `<button class="primary-action" data-service-reused="${esc(record.reused_case_id)}">Open existing installation</button>`;
+ const buttons=serviceNextActions(record.status,record).map((action,index)=>`<button${index===0?' class="primary-action"':''} data-service-action="${action}" data-id="${record.id}">${({assign:'Assign engineer',reassign:'Change engineer',schedule:record.status==='scheduled'?'Change work date':'Set work date',start:'Start on-site work',submit_report:'Work finished · complete report'})[action]}</button>`);
+ if(record.status==='report_required'&&record.delivery_ready!==false)buttons.push(`<button class="primary-action" data-service-report="${record.id}">Complete official report</button>`);
+ if(['new','assigned','scheduled'].includes(record.status))buttons.push(`<button class="danger" data-service-action="cancel" data-id="${record.id}">Cancel job</button>`);
+ if(serviceReport(record.id))buttons.push(`<button data-print-service="${record.id}">Print official report</button>`);
+ return buttons.join('');
+}
+function serviceNextStep(record){
+ if(record.reused_case_id)return 'Continue in the existing installation. This duplicate planned job is closed.';
+ if(record.status==='cancelled')return 'This job is cancelled.';
+ if(record.status==='completed')return 'Work is complete. The signed report is available below.';
+ if(!record.assigned_user_id)return 'Assign an engineer. The coordinator handoff does not assign the engineer.';
+ if(!record.scheduled_for)return 'Confirm the engineer’s work date.';
+ if(record.delivery_ready===false)return 'Await signed delivery before starting on-site work or completing a report. The engineer and work date can be planned now.';
+ return ({scheduled:'Start on-site work when the engineer reaches the machine.',on_site:'Finish the work and complete the official report.',report_required:'Complete the official report and record both signatures.'})[record.status]||'Review the engineer and work date.';
+}
+function serviceAgeDays(record,today=serviceDate()){
+ const created=new Date(record.created_at);if(Number.isNaN(created.getTime()))return null;
+ return Math.max(0,Math.floor((Date.parse(today)-Date.parse(companyDate(0,created)))/86400000));
+}
+function serviceCaseCard(record){
+ const asset=serviceAsset(record.asset_id),organization=orgIndex.get(record.site_organization_id||record.organization_id)||{name:'Client unavailable',location:''},product=inventoryProduct(record.product_id),report=serviceReport(record.id),age=serviceAgeDays(record);
+ return `<article class="card service-case ${record.status==='report_required'?'attention':''}" data-service-card="${record.id}"><div class="heading"><div><small>${record.case_type==='installation'?'INSTALLATION':'SERVICE'} · ${esc(record.case_number)}</small><h2>${esc(product.name)}</h2><p>${esc(organization.name)} · ${esc(record.site_location||asset.installation_location||organization.location||'Location to be confirmed')}</p>${record.site_organization_id&&record.site_organization_id!==record.organization_id?`<p>Customer: ${esc(orgIndex.get(record.organization_id)?.name||'Client unavailable')}</p>`:''}<p class="muted">${esc(serviceSourceLabel(record.intake_source,record))}${record.project_name?' · '+esc(record.project_name):''}${record.planned_unit_number?' · Machine unit '+esc(record.planned_unit_number):''}</p></div><span class="tag ${record.status==='report_required'?'warn':''}">${esc(serviceStatusLabel(record.status))}</span></div>
+ <p><strong>Next step:</strong> ${esc(serviceNextStep(record))}${serviceNeedsPlanning(record)&&age!==null?` <span class="muted">Waiting ${age} ${age===1?'day':'days'} since this job was created.</span>`:''}</p><div class="actions no-print">${serviceCaseActions(record)}</div>
+ ${serviceProgressRail(record)}<div class="service-facts"><div><small>Serial number</small><strong>${esc(asset.serial_number||(record.delivery_ready===false?'Awaiting signed delivery':'Record on report'))}</strong></div><div><small>Assigned engineer</small><strong>${esc(serviceTeamLabel(record.assigned_user_id))}</strong></div><div><small>Work date</small><strong>${esc(record.scheduled_for||'Not scheduled')}</strong></div><div><small>${record.case_type==='service'?'Request':'Source'}</small><strong>${esc(record.problem_summary||serviceSourceLabel(record.intake_source,record))}</strong></div></div>${report?`<div class="notice"><strong>Completed ${esc(report.actual_work_date)}</strong> · Next maintenance ${esc(report.next_maintenance_date)} · ${esc(serviceMoney(report.service_charge_minor,report.currency))}</div>`:''}${serviceHistory(record)}</article>`;
+}
+function serviceMetrics(rows){
+ const today=serviceDate(),soon=serviceDate(30),planning=rows.filter(serviceNeedsPlanning),unassigned=planning.filter(row=>!row.assigned_user_id),unscheduled=planning.filter(row=>!row.scheduled_for);
+ const oldest=items=>{const ages=items.map(row=>serviceAgeDays(row,today)).filter(age=>age!==null);return ages.length?`<small>Oldest: ${ages.reduce((oldest,age)=>Math.max(oldest,age),0)} days</small>`:'';};
+ return `<div class="inventory-metrics service-metrics"><div><small>Awaiting engineer</small><strong>${unassigned.length}</strong>${oldest(unassigned)}</div><div><small>Awaiting work date</small><strong>${unscheduled.length}</strong>${oldest(unscheduled)}</div><div><small>Due in 30 days</small><strong>${rows.filter(row=>row.status==='scheduled'&&row.scheduled_for>=today&&row.scheduled_for<=soon).length}</strong></div><div><small>Overdue work date</small><strong>${rows.filter(row=>row.status==='scheduled'&&row.scheduled_for<today).length}</strong></div></div>`;
+}
 function serviceOrganizationOptions(selected=''){return organizations.filter(row=>!row.deleted_at).map(row=>inventoryOption(row.id,row.name,row.id===selected)).join('')}
 function serviceAssetOptions(){return serviceAssets.filter(asset=>asset.status!=='retired').map(asset=>{const organization=orgIndex.get(asset.organization_id),product=inventoryProduct(asset.product_id);return inventoryOption(asset.id,`${product.name} · ${asset.serial_number||'Serial unknown'} · ${organization?.name||'Client'}`)}).join('')}
 function serviceContactOptions(organizationId){return contacts.filter(row=>row.organization_id===organizationId&&!row.deleted_at&&row.status!=='incorrect').map(row=>inventoryOption(row.id,salesContactName(row.id))).join('')}
 function serviceIntakeForm(caseType){return `<details class="card"><summary>${caseType==='installation'?'Record an installation request':'Record a repair or service request'}</summary><p>No previous sale is required. Choose an existing machine when it is already recorded. Record the real serial, or mark it unknown until the engineer identifies it.</p><form id="newServiceCase" data-case-type="${caseType}"><div class="grid"><label class="wide"><span>Machine record</span><select name="assetId"><option value="">Equipment not yet recorded</option>${serviceAssetOptions()}</select></label><label><span>Customer</span><select name="organizationId" required><option value="">Choose customer</option>${serviceOrganizationOptions()}</select></label><label><span>Destination site · if different from customer</span><select name="siteOrganizationId"><option value="">Same as customer</option>${serviceOrganizationOptions()}</select></label><label><span>Site contact · optional</span><select name="contactId" disabled><option value="">Choose a customer first</option></select></label><label><span>Equipment source</span><select name="source" required><option value="">Choose source</option><option value="third_party">Bought from another supplier</option><option value="legacy">Older equipment / historical sale</option><option value="distributor">Distributor supplied · installation later</option><option value="customer_request">Customer request</option></select></label><label><span>Equipment product</span><select name="productId" required><option value="">Choose equipment</option>${products.filter(row=>!row.deleted_at).map(row=>inventoryOption(row.id,row.name)).join('')}</select></label><label><span>Equipment model</span><input name="model" required maxlength="200"></label><label><span>Serial number</span><input name="serial" required maxlength="200"></label><label><span><input name="serialUnknown" type="checkbox"> Serial number is not yet known</span></label><label class="wide"><span>Machine site / location</span><input name="location" required minlength="2" maxlength="300"></label><label><span>Project · optional</span><input name="projectName" maxlength="200"></label><label class="wide"><span>Reported problem or requested work</span><textarea name="problem" required minlength="2" maxlength="4000"></textarea></label></div><button type="submit">Create ${caseType==='installation'?'installation':'service'} job</button></form></details>`}
-function installationScreen(){const rows=serviceCases.filter(row=>row.case_type==='installation');return `${serviceHeader()}${serviceMetrics(rows)}${serviceIntakeForm('installation')}<div class="heading"><div><h2>Installation jobs</h2><p class="muted">Installation requests can come from a delivery, older equipment or another supplier.</p></div><span>${rows.length} jobs</span></div>${rows.map(serviceCaseCard).join('')||'<div class="empty"><strong>No installation jobs yet.</strong><br>Record a request above when equipment is ready for installation.</div>'}`}
-function serviceScheduleScreen(){const rows=serviceCases.filter(row=>row.case_type==='service');return `${serviceHeader()}${serviceMetrics(rows)}${serviceIntakeForm('service')}<div class="heading"><div><h2>Service schedule</h2><p class="muted">Preventive maintenance appears here automatically after a signed installation or service report.</p></div><span>${rows.length} jobs</span></div>${rows.map(serviceCaseCard).join('')||'<div class="empty"><strong>No service work scheduled.</strong><br>Complete an installation report or record a service request.</div>'}`}
+function installationScreen(){const rows=serviceSortCases(serviceCases.filter(row=>row.case_type==='installation'));return `${serviceHeader()}${serviceMetrics(rows)}${serviceIntakeForm('installation')}<div class="heading"><div><h2>Installation jobs</h2><p class="muted">Invoiced machines can be planned before delivery. On-site work starts after signed delivery. Jobs awaiting an engineer or date appear first, oldest first.</p></div><span>${rows.length} jobs</span></div>${rows.map(serviceCaseCard).join('')||'<div class="empty"><strong>No installation jobs yet.</strong><br>Record a request above when equipment is ready for installation.</div>'}`}
+function serviceScheduleScreen(){const rows=serviceSortCases(serviceCases.filter(row=>row.case_type==='service'));return `${serviceHeader()}${serviceMetrics(rows)}${serviceIntakeForm('service')}<div class="heading"><div><h2>Service schedule</h2><p class="muted">Preventive maintenance appears after a signed report. Jobs awaiting an engineer or date appear first, oldest first.</p></div><span>${rows.length} jobs</span></div>${rows.map(serviceCaseCard).join('')||'<div class="empty"><strong>No service work scheduled.</strong><br>Complete an installation report or record a service request.</div>'}`}
 function serviceFormsScreen(){return `${serviceHeader()}<div class="official-document-grid"><article class="card"><small>OFFICIAL · REV 2</small><h3>Equipment handover and installation report</h3><p>Fill in the machine details, accessories, who was trained and both signatures.</p><a class="button" href="official-documents/equipment-handover-installation-report.pdf" target="_blank" rel="noopener">Open blank official PDF</a></article><article class="card"><small>OFFICIAL · REV 2</small><h3>Service work report</h3><p>Fill in the fault, the work done, parts, charges and both signatures.</p><a class="button" href="official-documents/service-work-report.pdf" target="_blank" rel="noopener">Open blank official PDF</a></article></div><p class="notice">Completed records have a <strong>Print official report</strong> button in their job card. The printout is exactly what was signed.</p>`}
 function parseServiceRows(text,fields,max){const rows=String(text||'').split(/\r?\n/).map(row=>row.trim()).filter(Boolean);if(rows.length>max)throw Error(`Enter no more than ${max} rows. All your input has been kept.`);return rows.map(row=>{const values=row.split('|').map(value=>value.trim()),result={};fields.forEach((field,index)=>result[field]=values[index]||'');return result})}
-function openServiceAction(record,action){const actor=me,epoch=serviceEpoch,section=serviceSection,current=()=>me===actor&&serviceEpoch===epoch&&view==='service'&&serviceSection===section;const assign=action==='assign'||action==='reassign',schedule=action==='schedule',canAssignSelf=assign&&serviceTeam.some(row=>row.user_id===actor.user_id&&row.active&&(row.role==='owner'||Array.isArray(row.access)&&row.access.includes('service')));const fields=`<p><strong>${esc(record.case_number)}</strong> · ${esc(inventoryProduct(record.product_id).name)}</p>${assign?`<label><span>Engineer</span><select name="assignee" required><option value="">Choose active employee</option>${serviceTeamOptions(record.assigned_user_id)}</select></label>${canAssignSelf?'<button type="button" data-service-assign-me>Assign engineer to me</button>':''}`:''}${schedule?`<label><span>Confirmed work date</span><input name="scheduledFor" type="date" min="${serviceDate()}" value="${record.scheduled_for||serviceDate()}" required></label>`:''}<label><span>Progress note</span><textarea name="note" required minlength="2" maxlength="2000"></textarea></label>`;const form=actionForm(({assign:'Assign engineer',reassign:'Change engineer',schedule:record.status==='scheduled'?'Change work date':'Set work date',start:'Start on-site work',submit_report:'Move to report required',cancel:'Cancel job'})[action],fields,async values=>{if(!current())throw Error('The workspace changed. Reopen this service job.');const result=await client.rpc('advance_service_case',{p_id:record.id,p_expected_version:record.version,p_action:action,p_assigned_user_id:values.assignee||null,p_scheduled_for:values.scheduledFor||null,p_note:values.note});if(!current())return;if(result.error)throw result.error;await serviceWorkspace(true);if(me!==actor||view!=='service'||serviceSection!==section)return;message('Service job updated: '+serviceStatusLabel(Array.isArray(result.data)?result.data[0]?.status:result.data?.status)+'.')});if(canAssignSelf)form.querySelector('[data-service-assign-me]').onclick=()=>{if(!current())return;form.elements.namedItem('assignee').value=actor.user_id;form.elements.namedItem('note').focus()};return form}
+function openServiceAction(record,action){if(record.delivery_ready===false&&['start','submit_report'].includes(action))throw Error('Record signed delivery before starting on-site work or completing a report.');const actor=me,epoch=serviceEpoch,section=serviceSection,current=()=>me===actor&&serviceEpoch===epoch&&view==='service'&&serviceSection===section;const assign=action==='assign'||action==='reassign',schedule=action==='schedule',canAssignSelf=assign&&serviceTeam.some(row=>row.user_id===actor.user_id&&row.active&&(row.role==='owner'||Array.isArray(row.access)&&row.access.includes('service')));const fields=`<p><strong>${esc(record.case_number)}</strong> · ${esc(inventoryProduct(record.product_id).name)}</p>${assign?`<label><span>Engineer</span><select name="assignee" required><option value="">Choose active employee</option>${serviceTeamOptions(record.assigned_user_id)}</select></label>${canAssignSelf?'<button type="button" data-service-assign-me>Assign engineer to me</button>':''}`:''}${schedule?`<label><span>Confirmed work date</span><input name="scheduledFor" type="date" min="${serviceDate()}" value="${record.scheduled_for||serviceDate()}" required></label>`:''}<label><span>Progress note</span><textarea name="note" required minlength="2" maxlength="2000"></textarea></label>`;const form=actionForm(({assign:'Assign engineer',reassign:'Change engineer',schedule:record.status==='scheduled'?'Change work date':'Set work date',start:'Start on-site work',submit_report:'Move to report required',cancel:'Cancel job'})[action],fields,async values=>{if(!current())throw Error('The workspace changed. Reopen this service job.');const result=await client.rpc('advance_service_case',{p_id:record.id,p_expected_version:record.version,p_action:action,p_assigned_user_id:values.assignee||null,p_scheduled_for:values.scheduledFor||null,p_note:values.note});if(!current())return;if(result.error)throw result.error;await serviceWorkspace(true);if(me!==actor||view!=='service'||serviceSection!==section)return;message('Service job updated: '+serviceStatusLabel(Array.isArray(result.data)?result.data[0]?.status:result.data?.status)+'.')});if(canAssignSelf)form.querySelector('[data-service-assign-me]').onclick=()=>{if(!current())return;form.elements.namedItem('assignee').value=actor.user_id;form.elements.namedItem('note').focus()};return form}
 function reportFields(record){const asset=serviceAsset(record.asset_id),organization=orgIndex.get(record.site_organization_id||record.organization_id)||{},contact=contacts.find(row=>row.id===record.contact_id),today=serviceDate();return `<p>${esc(record.case_number)} · ${esc(organization.name||'Client')} · ${esc(inventoryProduct(record.product_id).name)}</p><div class="grid"><label><span>Actual work date</span><input name="actualWorkDate" type="date" max="${today}" value="${today}" required></label><label><span>Actual engineer</span><select name="engineerId" required><option value="">Choose engineer</option>${serviceTeamOptions(record.assigned_user_id)}</select></label><label><span>Engineer full name</span><input name="engineerName" value="${esc(record.assigned_user_id?serviceTeamLabel(record.assigned_user_id):'')}" required maxlength="200"></label><label><span>Project · optional</span><input name="projectName" value="${esc(record.project_name||'')}" maxlength="200"></label><label><span>Equipment model</span><input name="model" value="${esc(asset.model||'')}" required maxlength="200"></label><label><span>Serial number</span><input name="serial" value="${esc(asset.serial_number||'')}" ${asset.serial_number?'readonly':''} required maxlength="200"></label><label class="wide"><span>Installation / machine location</span><input name="location" value="${esc(record.site_location||asset.installation_location||organization.location||'')}" required maxlength="300"></label><label class="wide"><span>Subject / request category</span><input name="subject" value="${esc(record.case_type==='installation'?'Equipment installation and handover':'Service work')}" maxlength="300"></label><label class="wide"><span>Work completed</span><textarea name="workCompleted" required maxlength="8000"></textarea></label><label class="wide"><span>Parts used · optional</span><textarea name="partsUsed" maxlength="4000"></textarea></label><label class="wide"><span>Accessories · maximum 100 rows: description | serial number</span><textarea name="accessories" placeholder="Accessory name | serial number"></textarea></label>${record.case_type==='installation'?`<label><span>Training completed</span><select name="training" required><option value="yes">Yes</option><option value="no">No</option></select></label><label><span>QC training</span><select name="qcTraining" required><option value="completed">Completed</option><option value="not_applicable">Not applicable</option></select></label><label class="wide"><span>Training attendees · maximum 10 rows: name | telephone | designation</span><textarea name="attendees" required placeholder="Full name | 0712 345 678 | Nurse"></textarea></label>`:''}<label><span>Engineer signing date</span><input name="engineerSignedDate" type="date" value="${today}" required></label><label><span>Customer representative</span><input name="customerRepresentative" value="${esc(contact?[contact.first_name,contact.last_name].filter(Boolean).join(' '):'')}" required maxlength="200"></label><label><span>Customer signing date</span><input name="customerSignedDate" type="date" value="${today}" required></label><label><span>Customer signed-document reference</span><input name="customerReference" required maxlength="500"></label><label><span>Anudha representative</span><input name="anudhaRepresentative" required maxlength="200"></label><label><span>Anudha signing date</span><input name="anudhaSignedDate" type="date" value="${today}" required></label><label class="wide"><span>Anudha signed-document reference</span><input name="anudhaReference" required maxlength="500"></label><label><span>Machine collected?</span><select name="machineCollected"><option value="no">No</option><option value="yes">Yes</option></select></label><label><span>Collection representative · if collected</span><input name="collectionRepresentative" maxlength="200"></label><label><span>Collection signing date · if collected</span><input name="collectionSignedDate" type="date"></label><label><span>Collection reference · if collected</span><input name="collectionReference" maxlength="500"></label><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Service charge</span><input name="serviceCharge" type="number" min="0" step="0.01" value="0" required></label><label class="wide"><span>Charge / invoice reference · optional</span><input name="chargeReference" maxlength="300"></label><label><span>Service every</span><select name="interval" required><option value="3">3 months</option><option value="6">6 months</option><option value="12">12 months</option><option value="24">24 months</option><option value="36">36 months</option></select></label></div>`}
-function openServiceReport(record){const actor=me,epoch=serviceEpoch,section=serviceSection,current=()=>me===actor&&serviceEpoch===epoch&&view==='service'&&serviceSection===section;actionForm(record.case_type==='installation'?'Complete installation report':'Complete service report',reportFields(record),async values=>{if(!current())throw Error('The workspace changed. Reopen this report.');const attendees=parseServiceRows(values.attendees,['full_name','telephone','designation'],10),accessories=parseServiceRows(values.accessories,['description','serial_number'],100),charge=Number(values.serviceCharge);if(record.case_type==='installation'&&values.training!=='yes')throw Error('Confirm that installation training was completed.');if(record.case_type==='installation'&&attendees.some(row=>!row.full_name||!row.telephone||!row.designation))throw Error('Every attendee needs a name, telephone and designation separated by |.');if(values.machineCollected==='yes'&&(!values.collectionRepresentative||!values.collectionSignedDate||!values.collectionReference))throw Error('Complete all machine collection fields.');if(!Number.isFinite(charge)||charge<0)throw Error('Enter a valid service charge.');const result=await client.rpc('complete_service_report',{p_case_id:record.id,p_expected_version:record.version,p_actual_work_date:values.actualWorkDate,p_equipment_model:values.model,p_serial_number:values.serial,p_installation_location:values.location,p_project_name:values.projectName||'',p_subject:values.subject||'',p_work_completed:values.workCompleted,p_parts_used:values.partsUsed||'',p_actual_engineer_id:values.engineerId,p_actual_engineer_name:values.engineerName,p_engineer_signed_date:values.engineerSignedDate,p_customer_representative:values.customerRepresentative,p_customer_signed_date:values.customerSignedDate,p_customer_signoff_reference:values.customerReference,p_anudha_representative:values.anudhaRepresentative,p_anudha_signed_date:values.anudhaSignedDate,p_anudha_signoff_reference:values.anudhaReference,p_training_completed:record.case_type==='installation',p_qc_training_status:record.case_type==='installation'?values.qcTraining:null,p_machine_collected:values.machineCollected==='yes',p_collection_representative:values.collectionRepresentative||null,p_collection_signed_date:values.collectionSignedDate||null,p_collection_reference:values.collectionReference||null,p_currency:values.currency,p_service_charge_minor:Math.round(charge*100),p_charge_reference:values.chargeReference||'',p_maintenance_interval_months:Number(values.interval),p_accessories:accessories,p_attendees:attendees});if(!current())return;if(result.error)throw result.error;await serviceWorkspace(true);if(me!==actor||view!=='service'||serviceSection!==section)return;message('Signed report saved. The next maintenance job is now on the service schedule.')})}
+function openServiceReport(record){if(record.delivery_ready===false)throw Error('Record signed delivery before completing the official report.');const actor=me,epoch=serviceEpoch,section=serviceSection,current=()=>me===actor&&serviceEpoch===epoch&&view==='service'&&serviceSection===section;actionForm(record.case_type==='installation'?'Complete installation report':'Complete service report',reportFields(record),async values=>{if(!current())throw Error('The workspace changed. Reopen this report.');const attendees=parseServiceRows(values.attendees,['full_name','telephone','designation'],10),accessories=parseServiceRows(values.accessories,['description','serial_number'],100),charge=Number(values.serviceCharge);if(record.case_type==='installation'&&values.training!=='yes')throw Error('Confirm that installation training was completed.');if(record.case_type==='installation'&&attendees.some(row=>!row.full_name||!row.telephone||!row.designation))throw Error('Every attendee needs a name, telephone and designation separated by |.');if(values.machineCollected==='yes'&&(!values.collectionRepresentative||!values.collectionSignedDate||!values.collectionReference))throw Error('Complete all machine collection fields.');if(!Number.isFinite(charge)||charge<0)throw Error('Enter a valid service charge.');const result=await client.rpc('complete_service_report',{p_case_id:record.id,p_expected_version:record.version,p_actual_work_date:values.actualWorkDate,p_equipment_model:values.model,p_serial_number:values.serial,p_installation_location:values.location,p_project_name:values.projectName||'',p_subject:values.subject||'',p_work_completed:values.workCompleted,p_parts_used:values.partsUsed||'',p_actual_engineer_id:values.engineerId,p_actual_engineer_name:values.engineerName,p_engineer_signed_date:values.engineerSignedDate,p_customer_representative:values.customerRepresentative,p_customer_signed_date:values.customerSignedDate,p_customer_signoff_reference:values.customerReference,p_anudha_representative:values.anudhaRepresentative,p_anudha_signed_date:values.anudhaSignedDate,p_anudha_signoff_reference:values.anudhaReference,p_training_completed:record.case_type==='installation',p_qc_training_status:record.case_type==='installation'?values.qcTraining:null,p_machine_collected:values.machineCollected==='yes',p_collection_representative:values.collectionRepresentative||null,p_collection_signed_date:values.collectionSignedDate||null,p_collection_reference:values.collectionReference||null,p_currency:values.currency,p_service_charge_minor:Math.round(charge*100),p_charge_reference:values.chargeReference||'',p_maintenance_interval_months:Number(values.interval),p_accessories:accessories,p_attendees:attendees});if(!current())return;if(result.error)throw result.error;await serviceWorkspace(true);if(me!==actor||view!=='service'||serviceSection!==section)return;message('Signed report saved. The next maintenance job is now on the service schedule.')})}
 function servicePrintReport(record){const report=serviceReport(record.id);if(!report)return '';const accessories=serviceAccessories.filter(row=>row.report_id===report.id),attendees=serviceAttendees.filter(row=>row.report_id===report.id);return `<section class="service-report-print"><header><img src="assets/anudha-logo.svg" alt="Anudha Limited"><div><strong>ANUDHA LIMITED</strong><small>Medical and laboratory equipment</small><small>${(()=>{try{return typeof companyFormContact}catch{return 'undefined'}})()!=='undefined'?companyFormContact.phone+' · '+companyFormContact.service:''}</small></div><b>${record.case_type==='installation'?'EQUIPMENT HANDOVER & INSTALLATION REPORT':'SERVICE WORK REPORT'}<small>Rev 2</small></b></header><div class="print-grid"><p><small>Job number</small><strong>${esc(record.case_number)}</strong></p><p><small>Work date</small><strong>${esc(report.actual_work_date)}</strong></p><p><small>Customer / site</small><strong>${esc(report.customer_name)}</strong></p><p><small>Location</small><strong>${esc(report.installation_location)}</strong></p><p><small>Contact</small><strong>${esc(report.contact_name)} · ${esc(report.contact_phone)}</strong></p><p><small>Project</small><strong>${esc(report.project_name||'—')}</strong></p><p><small>Equipment</small><strong>${esc(report.equipment_name)}</strong></p><p><small>Model / serial</small><strong>${esc(report.equipment_model)} · ${esc(report.serial_number)}</strong></p></div><h3>${record.case_type==='installation'?'Handover work':'Request and work performed'}</h3><p><strong>${esc(report.subject||record.problem_summary||'')}</strong></p><p class="print-narrative">${esc(report.work_completed)}</p><p><strong>Parts used:</strong> ${esc(report.parts_used||'None recorded')}</p>${accessories.length?`<table><thead><tr><th>Accessory</th><th>Serial number</th></tr></thead><tbody>${accessories.map(row=>`<tr><td>${esc(row.description)}</td><td>${esc(row.serial_number||'—')}</td></tr>`).join('')}</tbody></table>`:''}${record.case_type==='installation'?`<h3>Training attendees · QC training ${esc(report.qc_training_status.replaceAll('_',' '))}</h3><table><thead><tr><th>Name</th><th>Telephone</th><th>Designation</th></tr></thead><tbody>${attendees.map(row=>`<tr><td>${esc(row.full_name)}</td><td>${esc(row.telephone)}</td><td>${esc(row.designation)}</td></tr>`).join('')}</tbody></table>`:''}<div class="print-signatures"><p><small>Engineer</small><strong>${esc(report.actual_engineer_name)}</strong><br>${esc(report.engineer_signed_date)}</p><p><small>Customer representative</small><strong>${esc(report.customer_representative)}</strong><br>${esc(report.customer_signed_date)} · ${esc(report.customer_signoff_reference)}</p><p><small>Anudha representative</small><strong>${esc(report.anudha_representative)}</strong><br>${esc(report.anudha_signed_date)} · ${esc(report.anudha_signoff_reference)}</p></div>${record.case_type==='service'?`<div class="print-grid"><p><small>Service charge</small><strong>${esc(serviceMoney(report.service_charge_minor,report.currency))}</strong><br>${esc(report.charge_reference)}</p><p><small>Machine collected</small><strong>${report.machine_collected?'Yes · '+esc(report.collection_representative):'No'}</strong>${report.machine_collected?`<br>${esc(report.collection_signed_date)} · ${esc(report.collection_reference)}`:''}</p></div>`:''}<p><strong>Next maintenance:</strong> ${esc(report.next_maintenance_date)} · every ${report.maintenance_interval_months} months</p></section>`}
 function printServiceReport(id){const record=serviceCase(id),card=document.querySelector(`[data-service-card="${CSS.escape(id)}"]`);if(!record||!card)return;card.insertAdjacentHTML('beforeend',servicePrintReport(record));card.classList.add('print-service-record');try{window.print()}finally{card.classList.remove('print-service-record');card.querySelector('.service-report-print')?.remove()}}
 function bindServiceWorkflow(){
@@ -4056,6 +4218,7 @@ function bindServiceWorkflow(){
  document.querySelectorAll('[data-service-section]').forEach(button=>button.onclick=()=>{serviceSection=button.dataset.serviceSection;serviceWorkspace()});
  $('#serviceRefresh')?.addEventListener('click',()=>run(()=>serviceWorkspace(true)));
  document.querySelectorAll('[data-service-action]').forEach(button=>button.onclick=()=>openServiceAction(serviceCase(button.dataset.id),button.dataset.serviceAction));
+ document.querySelectorAll('[data-service-reused]').forEach(button=>button.onclick=()=>run(()=>focusServiceCase(button.dataset.serviceReused)));
  document.querySelectorAll('[data-service-report]').forEach(button=>button.onclick=()=>openServiceReport(serviceCase(button.dataset.serviceReport)));
  document.querySelectorAll('[data-print-service]').forEach(button=>button.onclick=()=>printServiceReport(button.dataset.printService));
  const newCase=$('#newServiceCase');if(newCase)bindServiceIntake(newCase);
@@ -4491,7 +4654,7 @@ function teamTaskCard(row){
  const buttons=[];
  const moved=row.reschedule_count||0;
  if(open&&(mine||gave||owner))buttons.push(`<button type="button" data-team-task-comment="${esc(row.id)}">Add progress</button>`);
- if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Mark done</button>`);
+ if(open&&(mine||owner))buttons.push(`<button type="button" data-team-task-done="${esc(row.id)}">Complete assigned task</button>`);
  // Migration 083: only the owner moves a deadline directly; everyone else asks their department head.
  if(teamTaskCanMove(row))buttons.push(owner||typeof openDeadlineRequest!=='function'?`<button type="button" data-team-task-move="${esc(row.id)}">Reschedule</button>`:`<button type="button" data-team-task-ask="${esc(row.id)}">Ask for more time</button>`);
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
@@ -4603,7 +4766,7 @@ function openTeamTaskClose(row,action){
  const fields=action==='done'
   ?`<p><strong>${esc(row.title)}</strong></p><label><span>What did you do? What was the result?</span><textarea name="note" maxlength="1000" required minlength="5" rows="4" placeholder="For example: Called Nisha. Interested in 2 ultrasound machines. Made Pro forma for her."></textarea></label><p class="muted">If the client wants a quote, has a complaint or is a new opportunity, also open it under Pro formas, Complaints or Leads so someone follows it up.</p>`
   :`<p><strong>${esc(row.title)}</strong></p><label><span>Why is it cancelled?</span><textarea name="note" maxlength="1000" required minlength="3"></textarea></label>`;
- actionForm(action==='done'?'Mark task done':'Cancel task',fields,async values=>{
+ actionForm(action==='done'?'Complete assigned task':'Cancel task',fields,async values=>{
   if(action==='done'){const problem=teamTaskResultProblem(values.note);if(problem)throw Error(problem);}
   const actor=me?.user_id,result=await client.rpc('close_team_task',{p_id:row.id,p_expected_version:row.version,p_action:action,p_note:values.note||''});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the task.');
@@ -4730,20 +4893,20 @@ const dashboardPresets=[['today','Today'],['week','This week'],['month','This mo
 // out: those tables keep no creation date.
 const dashboardCards={
  open:[
-  ['overdue','Overdues','overdue',null],['due_today','Due Today','due',null],
-  ['opportunities','Opportunities','leads',{view:'leads',filter:'open'}],['cases','Cases','cases',{view:'service',section:'schedule'}],
-  ['accounts','Accounts','accounts',{view:'contacts'}],['scheduled_service','Scheduled Service Activities','schedule',{view:'service',section:'schedule'}],
-  ['quotes','Quotes','quotes',{view:'sales',section:'proformas'}],['webqueries','Webqueries','web',{view:'requests',section:'inquiries',filter:'open'}],
+  ['overdue','Overdue work','overdue',null],['due_today','Due today','due',null],
+  ['opportunities','Leads','leads',{view:'leads',filter:'open'}],['cases','Service jobs','cases',{view:'service',section:'schedule'}],
+  ['accounts','Customer accounts','accounts',{view:'contacts'}],['scheduled_service','Scheduled visits','schedule',{view:'service',section:'schedule'}],
+  ['quotes','Pro formas','quotes',{view:'sales',section:'proformas'}],['webqueries','Website inquiries','web',{view:'requests',section:'inquiries',filter:'open'}],
   ['contacts','Contacts','contacts',null],['tasks','Tasks','tasks',{view:'personal',section:'task'}]],
  periodic:[
-  ['opportunities','Opportunities','leads',null],['cases','Cases','cases',null],['scheduled_service','Scheduled Service Activities','schedule',null],
-  ['quotes','Quotes','quotes',null],['webqueries','Webqueries','web',null],['tasks','Tasks','tasks',null]],
+  ['opportunities','Leads','leads',null],['cases','Service jobs','cases',null],['scheduled_service','Scheduled visits','schedule',null],
+  ['quotes','Pro formas','quotes',null],['webqueries','Website inquiries','web',null],['tasks','Tasks','tasks',null]],
  // A fifth item lists the parts of a grouped card; the group shows their total.
  result:[
-  ['cases','Cases','cases',null,[['cases_cancelled','Canceled Cases','cases',null],['cases_resolved','Resolved Cases','cases',null]]],
-  ['opportunities','Opportunities','leads',null,[['opportunities_won','Closed Won','won',{view:'leads',filter:'won'}],['opportunities_lost','Closed Lost','lost',{view:'leads',filter:'lost'}]]],
-  ['quotes_closed','Close Quotes','quotes',null],['tasks_completed','Completed Tasks','tasks',null],
-  ['webqueries_closed','Close Webqueries','web',{view:'requests',section:'inquiries',filter:'done'}]]
+  ['cases','Service jobs','cases',null,[['cases_cancelled','Canceled Cases','cases',null],['cases_resolved','Resolved Cases','cases',null]]],
+  ['opportunities','Leads','leads',null,[['opportunities_won','Closed Won','won',{view:'leads',filter:'won'}],['opportunities_lost','Closed Lost','lost',{view:'leads',filter:'lost'}]]],
+  ['quotes_closed','Pro formas: accepted / rejected / cancelled','quotes',null],['tasks_completed','Completed Tasks','tasks',null],
+  ['webqueries_closed','Closed website inquiries','web',{view:'requests',section:'inquiries',filter:'done'}]]
 };
 const dashboardParts=[['leads','Lead follow-ups'],['tasks','Tasks'],['steps','Order steps'],['service','Service visits']];
 function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
@@ -4805,12 +4968,12 @@ function dashboardOpen(target){
 function dashboardNumber(n){return Number(n).toLocaleString('en-GB');}
 function dashboardTile(column,tile){
  const body=`<span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?`<small>${esc(tile.breakdown)}</small>`:''}`;
- return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
-  :`<div class="dashboard-tile dashboard-${tile.tone}">${body}</div>`;
+ return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
+  :`<div class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}">${body}</div>`;
 }
 function dashboardGroup(column,tile){
  if(!tile.items)return dashboardTile(column,tile);
- return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3>${esc(tile.label)} <strong>(${esc(dashboardNumber(tile.value))})</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
+ return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3><span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
 }
 // The chosen period, remembered per person on this device. Storage can be missing or blocked (private window): the
 // page then simply starts on Today.
@@ -4828,11 +4991,11 @@ function dashboardSavePeriod(userId,choice,storage=dashboardStorage()){
 }
 function dashboardPicker(range){
  const choice=dashboardPeriod;
- return `<div class="dashboard-period" role="group" aria-label="Period"><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-range">Periodic, Result${dashboardTeamVisible()?' and Team tasks':''}: ${esc(dashboardRangeLabel(choice,range))}</p></div>`;
+ return `<div class="dashboard-period" role="group" aria-label="Reporting period"><div class="dashboard-period-heading"><span>Reporting period</span><p class="dashboard-range">${esc(dashboardRangeLabel(choice,range))}</p></div><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-period-help">Applies to activity, outcomes${dashboardTeamVisible()?' and team tasks':''}. Current work shows all open items.</p></div>`;
 }
-function dashboardColumn(column,title){
+function dashboardColumn(column,title,description){
  const tiles=dashboardTiles(column,dashboardData);
- return `<section class="dashboard-column dashboard-${column}" aria-label="${title}"><h2>${title}</h2><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
+ return `<section class="dashboard-column dashboard-${column}" aria-labelledby="dashboard-${column}-title"><div class="dashboard-column-heading"><h2 id="dashboard-${column}-title">${esc(title)}</h2><p>${esc(description)}</p></div><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
 }
 
 // Team tasks: the owner sees everyone, a department head their own department. The database decides who is listed.
@@ -4853,11 +5016,16 @@ function dashboardPersonPanel(person){
  if(!person.rows)return '<div class="dashboard-person-tasks"><p role="status">Loading tasks…</p></div>';
  return `<div class="dashboard-person-tasks">${person.rows.length?`<ol>${person.rows.map(task=>dashboardPersonTask(task)).join('')}</ol>`:'<p class="muted">No tasks in this period.</p>'}</div>`;
 }
-function dashboardTeamSection(){
+function dashboardTeamList(rows){
+ return `<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><span class="dashboard-person-identity"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}</span><span class="dashboard-person-counts">${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`;
+}
+function dashboardTeamSection(inactiveOpen=false){
  if(!dashboardTeamVisible())return '';
  const rows=dashboardTeam?dashboardTeamOrder(dashboardTeam):[];
- const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}<span>${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`:'<p class="muted">Nobody in your department yet.</p>';
- return `<section class="dashboard-team" aria-label="Team tasks"><h2>Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it. Press a name to see their tasks and results.</p>${body}</section>`;
+ const active=[],inactive=[];
+ for(const row of rows)(Number(row.open_count)>0||Number(row.completed_count)>0||Number(row.late_count)>0?active:inactive).push(row);
+ const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`${active.length?dashboardTeamList(active):'<p class="dashboard-team-empty">No task activity for this period.</p>'}${inactive.length?`<details id="dashboardTeamInactive" class="dashboard-team-inactive"${inactiveOpen||inactive.some(row=>dashboardPerson?.user_id===row.user_id)?' open':''}><summary>People with no task activity <span>(${dashboardNumber(inactive.length)})</span></summary>${dashboardTeamList(inactive)}</details>`:''}`:'<p class="muted">Nobody in your department yet.</p>';
+ return `<section class="dashboard-team" aria-labelledby="dashboard-team-title"><div class="dashboard-team-heading"><div><h2 id="dashboard-team-title">Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Select a person to view tasks and results.</p></div><details class="dashboard-team-key"><summary>How counts work</summary><p>Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it.</p></details></div>${body}</section>`;
 }
 async function dashboardOpenPerson(userId,range){
  if(dashboardPerson?.user_id===userId){dashboardPerson=null;return renderDashboard(range,userId);}
@@ -4869,7 +5037,8 @@ async function dashboardOpenPerson(userId,range){
  renderDashboard(range,userId);
 }
 function renderDashboard(range,focusPerson=''){
- $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><small>MAIN</small><h1>Dashboard</h1><p class="muted">What is open now, what came in and what was finished. Choose a period, then press a card to open its list.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Open')}${dashboardColumn('periodic','Periodic')}${dashboardColumn('result','Result')}</div>`:''}${dashboardTeamSection()}</section>`;
+ const inactiveOpen=$('#dashboardTeamInactive')?.open;
+ $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><h1>Dashboard</h1><p class="muted">Your work, activity and team at a glance.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Current work','Open items and customer records')}${dashboardColumn('periodic','Activity','Created or scheduled in the period')}${dashboardColumn('result','Outcomes','Completed or closed in the period')}</div>`:''}${dashboardTeamSection(inactiveOpen)}</section>`;
  $('#dashboardRefresh').onclick=()=>run(dashboardWorkspace);
  document.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
  document.querySelectorAll('[data-dashboard-preset]').forEach(button=>button.onclick=()=>{
@@ -5020,12 +5189,12 @@ function bellPanel(){
 }
 function bellRender(){
  const box=document.getElementById('bell');if(!box)return;
- const total=bellTotal(bellCounts),button=box.querySelector('.bell-button'),badge=box.querySelector('.bell-count'),panel=box.querySelector('.bell-panel');
- badge.textContent=total?bellBadge(total):'';badge.hidden=!total;
- button.setAttribute('aria-label',total?`Updates: ${total} new`:'Updates: nothing new');
+ const incomplete=bellCounts&&bellKinds.some(([kind])=>bellCounts[kind]===null),total=bellTotal(bellCounts),button=box.querySelector('.bell-button'),badge=box.querySelector('.bell-count'),panel=box.querySelector('.bell-panel');
+ badge.textContent=total?bellBadge(total):incomplete?'!':'';badge.hidden=!total&&!incomplete;
+ button.setAttribute('aria-label',incomplete?'Updates: some checks failed; open to retry':total?`Updates: ${total} new`:bellCounts?'Updates: nothing new':'Updates: checking');
  button.setAttribute('aria-expanded',String(bellOpen));
  panel.hidden=!bellOpen;
- if(bellOpen)panel.innerHTML=`<h2>Updates</h2>${bellPanel()}`;
+ if(bellOpen)panel.innerHTML=`<h2>Updates</h2><p class="muted">In-app updates · checks every two minutes while open.</p><button type="button" data-bell-refresh>Refresh updates</button>${bellPanel()}`;
 }
 function bellGoToTasks(){
  if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
@@ -5056,6 +5225,7 @@ function bellInstall(){
  identity.prepend(box);
  box.querySelector('.bell-button').onclick=()=>bellSetOpen(!bellOpen);
  box.querySelector('.bell-panel').addEventListener('click',event=>{
+  if(event.target.closest('[data-bell-refresh]'))return run(()=>refreshNotificationBell(true));
   const item=event.target.closest('[data-bell-item]'),more=event.target.closest('[data-bell-more]');
   if(item){const [kind,i]=item.dataset.bellItem.split(':');return bellChoose(kind,bellItems?.[kind]?.[Number(i)]);}
   const dismiss=event.target.closest('[data-bell-dismiss]');
@@ -5129,6 +5299,7 @@ function orderLiveText(s,now=Date.now(),proformaStatus=''){
  if(s.status==='delivered'&&s.remaining_quantity>0)text=`Partly delivered · ${s.remaining_quantity} units still to deliver`;
  if(s.status==='sent_to_sales'&&s.customer_waiting)text+=' · customer waiting';
  if(s.status==='sent_to_sales'&&s.blocked_reason)text+=` · ${s.blocked_reason}`;
+ if(s.quantity_summary){const q=s.quantity_summary;text=`${Number(q.invoiced).toLocaleString('en-GB')} of ${Number(q.ordered).toLocaleString('en-GB')} units invoiced · ${Number(q.pending).toLocaleString('en-GB')} pending invoice. ${text}`;}
  if(s.call_customer)text+=' · Call the customer';
  return text;
 }
@@ -5178,7 +5349,7 @@ function packingQueueHtml(){
   :`<div class="packing-take"><button type="button" class="primary-action packing-big" data-packing-take ${b.waiting.length?'':'disabled'}>Take next</button><p class="muted">${b.waiting.length?`${b.waiting.length} waiting. You get the top order: customers waiting in the lobby first, then the oldest delivery.`:'Nothing is waiting to be packed.'}</p></div>`}
  <h2>Waiting · ${b.waiting.length}</h2>
  ${b.waiting.length?`<ol class="packing-waiting-list">${b.waiting.map(packingWaitingRow).join('')}</ol>`:'<p class="empty">Nothing waiting.</p>'}
- ${b.coming?.count?`<p class="muted">Coming from accounts: ${esc(b.coming.count)}${b.coming.customer_waiting?` (${esc(b.coming.customer_waiting)} with the customer waiting)`:''}.</p>`:''}
+ ${b.coming?.count?`<section class="notice"><h2>Awaiting Accounts release · ${esc(b.coming.count)}</h2><p>These existing deliveries are not in the packing queue yet. Accounts must finish the step shown for each order.</p>${(b.coming.items||[]).map(row=>`<p><strong>${esc(row.delivery_number)}</strong> · ${esc(row.organization)} · ${row.status==='tax_invoice_created'?'Invoice reserved; Accounts must send to packing':'Invoice and stock reservation required'} · ${row.owner_name?'Current step owner: '+esc(row.owner_name):'No step owner assigned'} <button type="button" data-packing-open-incoming="${esc(row.id)}">Open delivery</button></p>`).join('')}</section>`:''}
  <h2>Being packed · ${b.packing.length}</h2>
  ${others.length?others.map(row=>packingCard(row)).join(''):'<p class="muted">Nobody else is packing.</p>'}
  </section>`;
@@ -5259,6 +5430,7 @@ function bindPackingQueue(){
    await packingAct(()=>client.rpc('packing_release',{p_id:b.dataset.packingRelease,p_expected_version:Number(b.dataset.version),p_reason:values.reason}),'Put back in the packing queue.');
   });
  });
+ document.querySelectorAll('[data-packing-open-incoming]').forEach(button=>button.onclick=()=>run(()=>workOpenRecord({record_type:'delivery',record_id:button.dataset.packingOpenIncoming})));
  document.querySelectorAll('[data-packing-screen]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="screen"]')?.click();});
  document.querySelectorAll('[data-packing-exit]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="queue"]')?.click();});
 }
@@ -5681,11 +5853,14 @@ async function booksWorkspace(){
  if(!current())return;
  booksData=data;
  const body={overview:booksOverview,invoices:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace,opening:(actor,current)=>openingReceivablesWorkspace(actor,current)}[booksSection]||booksOverview;
- $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>Books</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
- <div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>
+ $('#content').innerHTML=`<section class="books"><div class="heading"><div><small>ACCOUNTS</small><h1>${esc(booksSection==='overview'?'Accounts overview':booksSections.find(([key])=>key===booksSection)?.[1]||'Accounts')}</h1><p class="muted">Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided. ${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</p></div></div>
+ <details class="no-print"><summary>Other accounting tasks</summary><div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div></details>
  <div id="booksBody"></div></section>`;
  document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(()=>{if(button.dataset.booksSection!==booksSection&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave())return;if(button.dataset.booksSection!==booksSection&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
  await body(actor,current);
+}
+function booksCutoverChecklist(){
+ return `<details class="card"><summary>Opening books and stock · launch checklist</summary><p>A successful Excel import does not complete the opening books. Accounts must reconcile and approve each stage before using the ERP balances for live reporting.</p><ol><li><strong>Cutover date and source:</strong> agree the final date, retain the source files and back up the current workspace.</li><li><strong>Rehearsal records:</strong> review test invoices, receipts and deliveries. Use the supported cancellation, void or reversal process; never delete posted history. Rehearsal entries remain in reports until correctly reversed.</li><li><strong>Account mapping and opening trial balance:</strong> map ledger codes, preview balanced journals, post once and compare every balance with the source.</li><li><strong>Customer receivables:</strong> import genuine outstanding invoice references and residual amounts using Opening receivables. Reconcile the customer total to the receivables control account without posting it twice.</li><li><strong>Supplier payables:</strong> reconcile supplier details and the payable control account separately. The journal importer does not create supplier bills or allocations.</li><li><strong>Physical stock:</strong> count and approve actual location, batch, expiry, carton conversion and machine serials in Stock count. Provisional demonstration quantities are not verified physical counts.</li><li><strong>Prices and tax details:</strong> review selling prices, currencies, tax rates and customer tax details. Missing prices must be configured before quoting.</li><li><strong>Final sign-off:</strong> reconcile banks, cash, receivables, payables and stock valuation; verify employee access and a controlled split-order workflow; set the approved lock date.</li></ol><p class="muted">This is a checklist, not a recorded approval. Keep the owner's reconciliation and sign-off with the cutover source documents.</p></details>`;
 }
 async function booksOverview(actor,current){
  const d=booksData,today=d.today;
@@ -5695,7 +5870,7 @@ async function booksOverview(actor,current){
  const money=['cash','bank','mobile_money'].reduce((s,k)=>s+balance(k),0);
  const income=pl.filter(r=>r.account_type==='income').reduce((s,r)=>s+Number(r.amount_minor),0),expense=pl.filter(r=>r.account_type==='expense').reduce((s,r)=>s+Number(r.amount_minor),0);
  const overdue=d.invoices.filter(i=>i.state.key==='overdue');
- $('#booksBody').innerHTML=`<div class="books-metrics">
+ $('#booksBody').innerHTML=`${booksCutoverChecklist()}<p class="notice">Reports include all posted entries. Rehearsal entries are not automatically excluded; reconcile opening books before relying on these balances.</p><div class="books-metrics">
   <div><small>Cash, bank and mobile money</small><strong>${booksMoney(money)}</strong></div>
   <div><small>Customers owe</small><strong>${booksMoney(balance('receivables'))}</strong></div>
   <div><small>VAT output payable</small><strong>${booksMoney(-balance('vat_output'))}</strong></div>
@@ -5767,8 +5942,13 @@ function booksInvoiceQuantitySelection(lines,values){
 }
 async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
  const d=booksData,chosen=booksDraft?.proformaId||'',session=me,epoch=booksEpoch;
- $('#booksBody').innerHTML=`<section class="card"><h2>Invoice available order quantities</h2><p class="muted">Review the accepted order and choose what to invoice now. Posting creates one invoice and delivery note, reserves those Haadi units, and keeps the remaining quantities linked as pending stock for a later invoice. Accounting and delivery access are required.</p>${d.toInvoice.length?`<form id="booksInvoiceForm"><fieldset id="booksInvoiceFields"><legend>Invoice details and quantities</legend><div class="grid">
-  <label class="wide"><span>Accepted Pro forma · quote total</span><select name="proforma" required><option value="">Choose</option>${d.toInvoice.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))} · Quote total ${esc(booksMoney(p.total_minor,p.currency))}</option>`).join('')}</select></label>
+ const invoices=chosen?d.invoices.filter(invoice=>invoice.proforma_id===chosen):d.invoices;
+ const linked=invoices.find(invoice=>!invoice.voided_at)||invoices[0],waiting=d.toInvoice.find(order=>order.id===chosen);
+ const orders=chosen?(waiting?[waiting]:linked?[{id:chosen,document_number:linked.proforma_number||d.proformaNumbers?.get(chosen)||'Selected order',organization_id:linked.organization_id,currency:linked.currency}]:[]):d.toInvoice;
+ const orderNumber=waiting?.document_number||linked?.proforma_number||d.proformaNumbers?.get(chosen)||'Selected order';
+
+ $('#booksBody').innerHTML=`${chosen?`<section class="card"><h2>${esc(orderNumber)}</h2><p>Showing only invoices and quantities for this order.</p><div class="actions"><button type="button" data-books-return-order>Return to whole order</button><button type="button" data-books-all-invoices>Show all customer invoices</button></div></section>`:''}<section class="card"><h2>Invoice available order quantities</h2><p class="muted">Review the accepted order and choose what to invoice now. Posting creates one invoice and delivery note, reserves those Haadi units, and sends the delivery to the packing queue. Machines with installation requested get planning cases immediately. The remaining quantities stay pending for a later invoice. Accounting and delivery access are required.</p>${orders.length?`<form id="booksInvoiceForm"><fieldset id="booksInvoiceFields"><legend>Invoice details and quantities</legend><div class="grid">
+  <label class="wide"><span>Accepted Pro forma · quote total</span><select name="proforma" required><option value="">Choose</option>${orders.map(p=>`<option value="${esc(p.id)}"${p.id===chosen?' selected':''}>${esc(p.document_number)} · ${esc(booksCustomer(p.organization_id))}${p.total_minor!=null?' · Quote total '+esc(booksMoney(p.total_minor,p.currency)):''}</option>`).join('')}</select></label>
   <label><span>Invoice date</span><input name="date" type="date" required value="${esc(d.today)}"></label>
   <label><span>Due date</span><input name="due" type="date" required value="${esc(booksAddDays(d.today,30))}"></label>
   <label><span>Accounts approval reference</span><input name="accountsref" required maxlength="120"></label>
@@ -5779,7 +5959,9 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
   <p class="muted">The quote total is for the whole order. This invoice charges only the selected quantities; any balance remains pending.</p>
   <p id="booksInvoiceReview" role="status"></p><p id="booksInvoiceStatus" role="status"></p>
   <div class="actions"><button type="submit" id="booksInvoicePost" disabled>Post invoice & reserve stock</button></div></form>`:'<p class="empty">No accepted Pro formas have quantities waiting for an invoice.</p>'}</section>
- <section class="card"><div class="heading"><h2>Invoices (${d.invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${d.invoices.length?booksInvoiceTable(d.invoices):'<p class="empty">No invoices yet.</p>'}</section>`;
+ <section class="card"><div class="heading"><h2>${chosen?'Invoices for this order':'Invoices'} (${invoices.length})</h2><button type="button" id="booksInvoicesCsv">Download CSV</button></div>${invoices.length?booksInvoiceTable(invoices):'<p class="empty">No invoices for this selection.</p>'}</section>`;
+ $('#booksBody').querySelector('[data-books-all-invoices]')?.addEventListener('click',()=>run(()=>{booksDraft=null;return booksWorkspace();}));
+ $('#booksBody').querySelector('[data-books-return-order]')?.addEventListener('click',()=>run(()=>{salesFocusedProforma=chosen;salesFocusedDelivery='';salesSection='proformas';salesEditing='';view='sales';return render();}));
  const form=$('#booksInvoiceForm');
  if(form){
   const current=()=>workspaceCurrent()&&me===session&&me?.user_id===actor&&view==='books'&&booksEpoch===epoch&&form.isConnected;
@@ -5789,6 +5971,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
   const selection=()=>booksInvoiceQuantitySelection(snapshot.lines,inputs().map(input=>input.value));
   const reviewSelection=()=>{
    if(!snapshot||posting||uncertain)return;
+   if(snapshot.lines.every(line=>Number(line.remaining_quantity)===0)){review.textContent='All order quantities are already invoiced.';button.disabled=true;return;}
    try{const lines=selection(),count=lines.reduce((sum,line)=>sum+line.quantity,0),remaining=snapshot.lines.reduce((sum,line)=>sum+Number(line.remaining_quantity),0)-count;
     review.textContent=`${count} units selected for this invoice; ${remaining} units remain pending on this order.`;button.disabled=false;
    }catch(error){review.textContent=error.message;button.disabled=true;}
@@ -5803,9 +5986,10 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
     if(!current()||sequence!==request||form.elements.proforma.value!==id)return;
     if(result?.proforma_id!==id||!Number.isSafeInteger(Number(result.version))||Number(result.version)<1||!Array.isArray(result.lines))throw Error('Order quantities could not be verified. Refresh quantities before posting.');
     snapshot=result;const available=new Map();
-    quantities.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Already invoiced</th><th>Remaining</th><th>Haadi available</th><th>Invoice now</th></tr></thead><tbody>${result.lines.map((line,index)=>{
+    quantities.innerHTML=`${result.lines.every(line=>Number(line.remaining_quantity)===0)?'<p class="notice"><strong>Fully invoiced.</strong> Zero units remain to invoice. Review the linked invoices below or return to the whole order.</p>':''}<div class="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Already invoiced</th><th>Remaining</th><th>Haadi free to invoice</th><th>Invoice now</th></tr></thead><tbody>${result.lines.map((line,index)=>{
      const stock=Number(line.available_quantity),left=available.has(line.product_id)?available.get(line.product_id):stock,max=Math.min(1000000,Number(line.remaining_quantity),stock),value=Math.min(max,left);available.set(line.product_id,left-value);
-     return `<tr><td>${esc(line.description)}<small>${esc(line.uom)}</small></td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${esc(line.remaining_quantity)}</td><td>${esc(line.available_quantity)}</td><td><input type="number" min="0" max="${esc(max)}" step="1" required value="${esc(value)}" data-books-invoice-quantity="${esc(line.proforma_line_id)}" aria-label="Invoice now: ${esc(line.description)} (line ${index+1})"${max===0?' readonly':''}></td></tr>`;
+     const identity=typeof inventoryProduct==='function'?inventoryProduct(line.product_id):null;
+     return `<tr><td>${identity?.name?`<strong>${esc(identity.name)}</strong>${identity.sku?`<small>${esc(identity.sku)}</small>`:''}`:''}<span>${esc(line.description)}</span><small>${esc(line.uom)}</small></td><td>${esc(line.ordered_quantity)}</td><td>${esc(line.invoiced_quantity)}</td><td>${esc(line.remaining_quantity)}</td><td>${esc(line.available_quantity)}</td><td><input type="number" min="0" max="${esc(max)}" step="1" required value="${esc(value)}" data-books-invoice-quantity="${esc(line.proforma_line_id)}" aria-label="Invoice now: ${esc(line.description)} (line ${index+1})"${max===0?' readonly':''}></td></tr>`;
     }).join('')}</tbody></table></div><p class="muted">Haadi availability is shared by lines for the same product and is checked again when posting.</p>`;
     inputs().forEach(input=>input.oninput=reviewSelection);reviewSelection();
    }catch(error){if(current()&&sequence===request){snapshot=null;quantities.textContent='Quantities could not load.';status.textContent=error.message;}}
@@ -5836,8 +6020,9 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
      if(typeof pendingLoaded!=='undefined')pendingLoaded=false;
      if(typeof salesLoaded!=='undefined')salesLoaded=false;
      if(typeof inventoryLoaded!=='undefined')inventoryLoaded=false;
+     if(typeof serviceLoaded!=='undefined')serviceLoaded=false;
      if(!current())return;
-     booksDraft=null;message(`${result.data.invoice_number} posted. Selected stock is reserved; any remaining quantities stay linked in Pending stock.`);await booksWorkspace();
+     booksDraft={proformaId:snapshot.proforma_id};message(`${result.data.invoice_number} posted. Selected stock is reserved and queued for packing; requested machine installations are ready for planning. Remaining quantities stay in Pending stock.`);await booksWorkspace();
     }catch(error){if(current())status.textContent=uncertain?`Invoice result not confirmed: ${error.message} Retry this same invoice to check the result safely. Its submitted details stay locked until confirmed.`:error.message;
     }finally{posting=false;if(current()){fields.disabled=uncertain;button.textContent=uncertain?'Retry same invoice':'Post invoice & reserve stock';if(uncertain)button.disabled=false;else reviewSelection();}}
    });
@@ -5846,7 +6031,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
  }
  if(!workspaceCurrent()||me!==session||view!=='books'||booksEpoch!==epoch)return;
  $('#booksInvoicesCsv').onclick=()=>booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
-  d.invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
+  invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));
  wireBooksInvoiceActions();
 }
 function booksClearPrint(){
@@ -6174,7 +6359,7 @@ async function financialImportWorkspace(actor,current){
  if(!active())return;
  financialImportState={actor:identity,accounts,lockedThrough:settings[0]?.locked_through||null,workbook:null,sheet:'',preview:null,request:null,busy:false,uncertain:false,result:null};
  const state=financialImportState;
- $('#booksBody').innerHTML=`<section class="card"><h2>Import Excel financials</h2><p>Import opening balances or journal transactions in TZS. Each Entry Reference becomes one balanced journal entry.</p><p class="muted">This imports general-ledger journals. It does not create customer invoices, receipts, allocations or stock. Reconcile receivables/payables control accounts and their customer/supplier details separately before relying on ageing reports.</p>
+ $('#booksBody').innerHTML=`${booksCutoverChecklist()}<section class="card"><h2>Import Excel financials</h2><p>Import opening balances or journal transactions in TZS. Each Entry Reference becomes one balanced journal entry.</p><p class="muted">This imports general-ledger journals. It does not create customer invoices, receipts, allocations or stock. Reconcile receivables/payables control accounts and their customer/supplier details separately before relying on ageing reports.</p>
  <div class="actions"><button type="button" id="financialTemplate">Download Excel template</button><button type="button" id="financialCsvTemplate">Download CSV template</button></div>
  <form id="financialImportForm"><div class="grid"><label><span>Import type</span><select name="kind"><option value="opening">Opening balances</option><option value="journal">Journal transactions</option></select></label><label><span>Source name · keep the same on retries</span><input name="source" required maxlength="80" placeholder="Name of the source ledger"></label><label class="wide"><span>Excel workbook or CSV · maximum 5 MB</span><input name="file" type="file" accept=".xlsx,.csv"></label><label id="financialSheetLabel" hidden><span>Sheet to import</span><select name="sheet"></select></label></div>
  <p class="muted">The file stays in this browser during preview. Posting saves all reviewed entries together. Previously imported source/reference pairs are skipped only when their details match exactly. After a lost connection or sign-out, select the same file and source name to recover its result without posting it twice.</p><div id="financialImportPreview" aria-live="polite"></div><p id="financialImportStatus" role="status"></p><button type="submit" id="financialImportCommit" disabled>Post reviewed journals</button><button type="button" id="financialImportNew" hidden>Start another import</button></form></section>`;
@@ -6650,18 +6835,22 @@ async function startTwoStepSetup(box,onDone=null){
 // Staff page (owner, or a head for their own department): who has it on, and a reset for a lost phone.
 async function decorateStaffTwoStep(){
  if(me?.role!=='owner'&&me?.role!=='head')return;
- const result=await client.rpc('staff_two_step_status');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_two_step_status');if(me!==actor)return;
  const on=new Map((result.data||[]).map(r=>[r.user_id,r.enabled]));
- document.querySelectorAll('[data-staff-reset]').forEach(button=>{
-  const id=button.dataset.staffReset,cell=button.closest('.actions');if(!cell||cell.querySelector('[data-two-step-reset]'))return;
-  cell.insertAdjacentHTML('beforeend',on.get(id)?`<button type="button" data-two-step-reset="${esc(id)}">Reset two-step</button>`:'<span class="muted two-step-off">Two-step off</span>');
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-two-step-status]');
+  if(status)status.textContent=result.error||!on.has(id)?'Two-step unavailable':on.get(id)?'Two-step: on':'Two-step: off';
+  const cell=row.querySelector('[data-staff-reset]')?.closest('.actions');
+  if(!result.error&&on.get(id)&&cell&&!cell.querySelector('[data-two-step-reset]'))cell.insertAdjacentHTML('beforeend',`<button type="button" class="danger" data-two-step-reset="${esc(id)}" aria-label="Reset two-step for ${esc(employeeName(id))}">Reset two-step</button>`);
+  row.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
+   const name=employeeName(id);
+   if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
+   await staffAccountsCall({action:'reset_two_step',user_id:id});if(me!==actor||!row.isConnected)return;
+   if(status)status.textContent='Two-step: off';
+   button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
+  }));
  });
- document.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
-  const name=employeeName(button.dataset.twoStepReset);
-  if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
-  await staffAccountsCall({action:'reset_two_step',user_id:button.dataset.twoStepReset});
-  button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
- }));
 }
 ;// staff-access.js
 'use strict';
@@ -6795,19 +6984,23 @@ async function headStaffPage(){
 // Staff page (owner only): who can use the accounting forms, with a switch per person. Changes are logged.
 async function decorateStaffAccounting(){
  if(me?.role!=='owner')return;
- const result=await client.rpc('staff_accounting_access');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_accounting_access');if(me!==actor)return;
  const on=new Set((result.data||[]).filter(r=>r.active).map(r=>r.user_id));
- document.querySelectorAll('[data-staff-row]').forEach(row=>{
-  const id=row.dataset.staffRow,cell=row.querySelector('.actions');if(!cell||cell.querySelector('[data-accounting]'))return;
-  cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}">${on.has(id)?'Accounting: on · remove':'Give accounting access'}</button>`);
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-accounting-status]'),cell=row.querySelector('.actions');
+  if(status)status.textContent=result.error?'Accounting unavailable':on.has(id)?'Accounting: on':'Accounting: off';
+  if(result.error||!cell)return;
+  if(!cell.querySelector('[data-accounting]'))cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}" aria-label="${on.has(id)?'Remove':'Give'} accounting access for ${esc(employeeName(id))}">${on.has(id)?'Remove accounting access':'Give accounting access'}</button>`);
+  const button=cell.querySelector('[data-accounting]');button.onclick=()=>run(async()=>{
+   const turnOn=button.dataset.on!=='true',name=employeeName(id);
+   if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
+   const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(me!==actor||!row.isConnected)return;if(r.error)throw Error(r.error.message);
+   button.dataset.on=String(turnOn);button.textContent=turnOn?'Remove accounting access':'Give accounting access';
+   button.setAttribute('aria-label',`${turnOn?'Remove':'Give'} accounting access for ${name}`);if(status)status.textContent=turnOn?'Accounting: on':'Accounting: off';
+   message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
+  });
  });
- document.querySelectorAll('[data-accounting]').forEach(button=>button.onclick=()=>run(async()=>{
-  const id=button.dataset.accounting,turnOn=button.dataset.on!=='true',name=employeeName(id);
-  if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
-  const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(r.error)throw Error(r.error.message);
-  button.dataset.on=String(turnOn);button.textContent=turnOn?'Accounting: on · remove':'Give accounting access';
-  message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
- }));
 }
 
 // Staff page (owner): create many logins from a prepared list (format anudha-staff-list-v1). The owner ticks who to
@@ -6960,22 +7153,54 @@ function openStaffPhone(userId,name,phone){
   if(view==='staff')await staff();message(`Phone saved for ${name}.`);
  });
 }
+function staffSearchValue(person){return [employeeName(person.user_id),person.phone||'',roleLabels[person.role]||person.role,departmentLabel(person.department)].join(' ').toLowerCase();}
 function staffListHtml(rows){
  const owner=me?.role==='owner',sorted=[...rows].sort((a,b)=>Number(b.active)-Number(a.active)||employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  if(!sorted.length)return '<p class="muted">Nobody here yet.</p>';
- return `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Department</th><th>Can use</th><th>Phone</th><th>Login</th><th></th></tr></thead><tbody>${sorted.map(x=>{
+ const active=sorted.filter(x=>x.active).length;
+ return `<div class="staff-directory" data-staff-directory><div class="staff-directory-tools"><label><span>Find an employee</span><input type="search" data-staff-search placeholder="Name, phone, role or department" autocomplete="off"></label><label><span>Show</span><select data-staff-filter><option value="active">Active (${active})</option><option value="all">All staff (${sorted.length})</option><option value="inactive">Switched off (${sorted.length-active})</option></select></label></div><p class="staff-directory-count" data-staff-count role="status">${active} active · ${sorted.length} total employees</p><p class="staff-directory-help">${owner?'Department changes save automatically. Wait for the saved confirmation.':'Open workflow areas to see each employee’s access.'}</p><p data-staff-empty hidden>No employees match this search. Try another name or choose All staff.</p><div class="table-wrap"><table class="staff-directory-table" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Employee</th><th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Department</th><th role="columnheader" scope="col">Workflow areas</th><th role="columnheader" scope="col">Login</th><th role="columnheader" scope="col">Actions</th></tr></thead><tbody role="rowgroup">${sorted.map(x=>{
   const self=x.user_id===me?.user_id,manage=canManagePerson(x)&&!self,id=esc(x.user_id),name=esc(employeeName(x.user_id));
+  const areas=accessAreas.filter(([key])=>x.role==='owner'||(x.access||[]).includes(key));
   const role=owner&&!self?`<select data-staff-role="${id}" aria-label="Role for ${name}">${Object.entries(roleLabels).map(([v,l])=>`<option value="${v}" ${x.role===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(roleLabels[x.role]||x.role);
-  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(departmentLabel(x.department));
-  const access=`${esc(accessSummary(x))}${manage&&x.role!=='owner'?` <button type="button" data-staff-access="${id}">Change access</button>`:''}`;
-  const login=`${x.active?'Active':'Switched off'}${manage&&x.role!=='owner'?` <button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}">${x.active?'Switch off':'Switch on'}</button>`:''}`;
-  const actions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" data-staff-reset="${id}">Reset password</button><button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}">Phone</button>`:'';
-  return `<tr data-staff-row="${id}"><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
+  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}" aria-describedby="staff-department-status-${id}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select><span class="staff-field-status" data-staff-department-status id="staff-department-status-${id}"></span>`:esc(x.department?departmentLabel(x.department):'No department');
+  const access=`<details class="staff-area-details"><summary aria-label="Workflow areas for ${name}: ${areas.length}">${areas.length?`${areas.length} ${areas.length===1?'area':'areas'}`:'No areas'}</summary>${areas.length?`<ul>${areas.map(([,label])=>`<li>${esc(label)}</li>`).join('')}</ul>`:'<p>No workflow areas assigned.</p>'}${manage&&x.role!=='owner'?`<button type="button" data-staff-access="${id}" aria-label="Change access for ${name}">Change access</button>`:''}</details>`;
+  const login=`<span class="staff-login-state${x.active?'':' is-off'}">${x.active?'Active':'Switched off'}</span>`;
+  const phone=manage?`<button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}" aria-label="Edit phone for ${name}">Edit phone</button>`:'';
+  const accountActions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" class="danger" data-staff-reset="${id}" aria-label="Reset password for ${name}">Reset password</button>${x.role!=='owner'?`<button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}" aria-label="${x.active?'Switch off':'Switch on'} login for ${name}">${x.active?'Switch off login':'Switch on login'}</button>`:''}`:'';
+  const account=manage||self||owner?`<details class="staff-account-details"><summary><span>Account actions</span><span class="staff-account-status"><span data-staff-two-step-status>Two-step: checking…</span>${owner?'<span data-staff-accounting-status>Accounting: checking…</span>':''}</span></summary><div class="actions">${accountActions}</div></details>`:'<span class="muted">Read only</span>';
+  return `<tr data-staff-row="${id}" role="row" data-staff-search-value="${esc(staffSearchValue(x))}" data-staff-state="${x.active?'active':'inactive'}"${x.active?'':' hidden'}><th role="rowheader" scope="row" class="staff-identity"><span class="staff-cell-label" aria-hidden="true">Employee</span><strong>${name}${self?' <span class="staff-self">You</span>':''}</strong><div class="staff-phone-line"><span class="staff-phone-value">${esc(x.phone||'No phone added')}</span>${phone}</div></th><td role="cell" class="staff-role-cell"><span class="staff-cell-label" aria-hidden="true">Role</span>${role}</td><td role="cell" class="staff-department-cell"><span class="staff-cell-label" aria-hidden="true">Department</span>${dept}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Workflow areas</span>${access}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Login</span>${login}</td><td role="cell" class="staff-actions-cell"><span class="staff-cell-label" aria-hidden="true">Actions</span>${account}</td></tr>`;}).join('')}</tbody></table></div></div>`;
 }
 function bindStaffList(rows=[]){
  const row=id=>rows.find(r=>r.user_id===id),reload=()=>staff();
+ document.querySelectorAll('[data-staff-directory]').forEach(directory=>{
+  const search=directory.querySelector('[data-staff-search]'),filter=directory.querySelector('[data-staff-filter]'),entries=[...directory.querySelectorAll('[data-staff-row]')];
+  const update=()=>{
+   const terms=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);let shown=0;
+   for(const entry of entries){entry.hidden=!(filter.value==='all'||entry.dataset.staffState===filter.value)||!terms.every(term=>entry.dataset.staffSearchValue.includes(term));if(!entry.hidden)shown++;}
+   directory.querySelector('[data-staff-count]').textContent=`${shown} ${filter.value==='all'?'employees':filter.value==='active'?'active employees':'switched off employees'} · ${entries.length} total`;
+   directory.querySelector('[data-staff-empty]').hidden=shown!==0;
+  };
+  search.oninput=update;filter.onchange=update;update();
+ });
  document.querySelectorAll('[data-staff-reset]').forEach(button=>button.onclick=()=>run(async()=>openStaffPasswordReset(button.dataset.staffReset,employeeName(button.dataset.staffReset))));
- document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>run(async()=>{const r=await client.rpc('set_staff_department',{p_user_id:select.dataset.staffDepartment,p_department:select.value});if(r.error)throw Error(r.error.message);message(`Department saved for ${employeeName(select.dataset.staffDepartment)}.`);}));
+ document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>{
+  const person=row(select.dataset.staffDepartment),status=select.parentElement.querySelector('[data-staff-department-status]');
+  const state=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
+  if(busy){select.value=person.department||'';state('Not saved. Try again when the current change finishes.',true);message(`Department not saved for ${employeeName(person.user_id)}. Another change is still saving. Please try again.`,true);return;}
+  const department=select.value,actor=me,current=()=>me===actor&&select.isConnected;
+  select.disabled=true;state('Saving…');
+  return run(async()=>{
+   try{
+    const r=await client.rpc('set_staff_department',{p_user_id:person.user_id,p_department:department});
+    if(!current())return;if(r.error)throw Error(r.error.message);
+    person.department=department;
+    const entry=select.closest('[data-staff-row]');entry.dataset.staffSearchValue=staffSearchValue(person);
+    entry.closest('[data-staff-directory]').querySelector('[data-staff-search]').oninput();
+    state('Saved');message(`Department saved for ${employeeName(person.user_id)}.`);
+   }catch(error){if(!current())return;select.value=person.department||'';state(error.message||'Not saved. Please try again.',true);throw error;}
+   finally{if(current())select.disabled=false;}
+  });
+ });
  document.querySelectorAll('[data-staff-phone]').forEach(button=>button.onclick=()=>openStaffPhone(button.dataset.staffPhone,employeeName(button.dataset.staffPhone),button.dataset.phone));
  document.querySelectorAll('[data-staff-access]').forEach(button=>button.onclick=()=>run(async()=>openStaffAccess(row(button.dataset.staffAccess),reload)));
  document.querySelectorAll('[data-staff-active]').forEach(button=>button.onclick=()=>run(()=>setStaffActive(row(button.dataset.staffActive),button.dataset.active==='true',reload)));
@@ -7054,10 +7279,10 @@ const howToTopics=[
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
   'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Books.',
-  'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
+  'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Partially delivered, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
  {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
   'After Sales presses **Submit to accounting**, open **Customer invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
-  'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units; the remaining quantities appear automatically in **Pending stock orders**.',
+  'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units, queues them for packing and creates requested machine installation plans. The remaining quantities appear automatically in **Pending stock orders**.',
   'The delivery note is created with those reserved units. Pack and deliver it, then return to the same Pro forma when more stock arrives to invoice the balance. Use **Print** next to each invoice for a copy.',
   'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
   'A wrong invoice is never edited. Cancel its delivery before dispatch, void any allocated receipts, then **Void** the invoice with a reason. Its quantities return to the pending balance. Dispatched deliveries prevent voiding.']},
@@ -7083,13 +7308,13 @@ const howToTopics=[
   'The clock on your order turns amber after 20 minutes. After 30 minutes it turns red and the stores head and the owner are told.',
   'Owner and stores head: press **Put back in queue** and write why, for example when a packer has to leave. The order keeps its place.',
   'Leave **Packing TV screen** open on the television in stores. It shows the waiting orders as big numbers and who is packing what, and updates by itself.',
-  'Accounts or sales: when you press **Record Accounts approval**, choose whether the customer is waiting in the lobby (cash, collecting now) or it is a delivery. You can change it on the delivery note until packing starts.']},
+  'Posting an invoice queues its selected units for packing. Accounts or sales can mark the customer as waiting in the lobby (cash, collecting now) on the delivery note until packing starts.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',
   'After the customer signs, press **Record signed delivery note**.',
   'Press **Upload / view documents** to keep a photo or scan of the signed note with the order.',
-  'A machine delivery creates an installation job for the service team by itself.']},
+  'The invoice already created the requested machine installation plans. Signed delivery links the delivered machines and serials to those plans, or reuses an existing installation, and allows on-site work to start.']},
  {id:'pending',role:'sales',title:'Customer wants more than we have',screens:['pending'],steps:[
   'For an accepted Pro forma, invoice the units available now in Books. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
   'For a manual request, choose the client and product and type the quantity still needed, then press **Save pending order**.',
@@ -7103,10 +7328,10 @@ const howToTopics=[
   'When the goods arrive, press **Goods arrived — close** and type the delivery note number.',
   'New suppliers are added under **Suppliers** with **New supplier**.']},
  {id:'install',role:'service',title:'Install a machine',screens:['service:installations'],steps:[
-  'Open **Machines to install**. Every machine on a signed delivery note is listed here.',
-  'Press **Assign engineer** and **Set work date**.',
-  'On the day, press **Start on-site work**.',
-  'When you finish, press **Complete official report**. Fill in the machine details, who was trained and both signatures.',
+  'Open **Machines to install**. Requested machine installation plans appear when their units are invoiced, before delivery.',
+  'Press **Assign engineer** and **Set work date** while delivery is being arranged. A coordinator handoff is separate from the engineer assignment.',
+  'Wait for signed delivery. Once the delivered machine is linked and the engineer is on site, press **Start on-site work**.',
+  'When you finish, press **Work finished · complete report**, then **Complete official report**. Fill in the machine details, who was trained and both signatures.',
   'Press **Print official report** for the customer copy. The next maintenance visit is added to the schedule by itself.']},
  {id:'service',role:'service',title:'Record a repair or service visit',screens:['service:schedule'],steps:[
   'Open **Service & maintenance schedule**. Planned visits are listed by date.',
@@ -7259,19 +7484,27 @@ document.addEventListener('click',event=>{
 // reads and saves exactly as before.
 const lookupMinOptions=12,lookupShown=60;
 function lookupNormal(text){return String(text??'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+function lookupModelKeys(text){return (lookupNormal(text).match(/\b[a-z]+ ?[0-9]+[a-z0-9]*\b/g)||[]).map(key=>key.replace(/ /g,''));}
 // Every typed word must appear somewhere; names that start with the typed text come first, then word starts.
 function lookupRank(items,query,limit=lookupShown){
- const q=lookupNormal(query),words=q.split(' ').filter(Boolean);
+ const q=lookupNormal(query),words=q.split(' ').filter(Boolean),models=lookupModelKeys(q);
  if(!words.length)return {rows:items.slice(0,limit),total:items.length};
  const hits=[];
  for(const item of items){
   const text=item.search;let ok=true,score=0,compact;
-  for(const word of words){const at=text.indexOf(word);if(at<0){
+  for(const word of words){
+   // Model digits must start a token and end at a digit boundary: DP10 must not suggest DP100.
+   if(item.product&&/[0-9]/.test(word)&&![...text.split(' '),...item.models].some(token=>{
+    const candidate=/^[0-9]/.test(word)?token.replace(/^[a-z]+/,''):token;
+    return candidate.startsWith(word)&&!/[0-9]/.test(candidate[word.length]||'');
+   })){ok=false;break;}
+   const at=text.indexOf(word);if(at<0){
    // Product model numbers and names may be entered without their printed spaces or hyphens.
    compact??=text.replace(/ /g,'');if(!compact.includes(word)){ok=false;break}score+=4;
   }else score+=at===0?0:text[at-1]===' '?1:3;}
   if(!ok)continue;
   if(text.startsWith(q))score-=10;
+  if(item.product&&item.models.some(model=>models.includes(model)||words.includes(model.replace(/^[a-z]+/,''))))score-=item.category==='machines'?30:5;
   hits.push([score,item.label.length,item]);
  }
  hits.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
@@ -7285,7 +7518,11 @@ function lookupTidy(label){return label.replace(/ · [0-9a-f]{8}-[0-9a-f]{4}-[0-
 // the <select> exactly as before.
 const lookupRowSources={organizations:()=>organizations.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(row=>({value:row.id,label:`${row.name}${row.location?' · '+row.location:''}`}))};
 // Likewise <datalist data-lookup-values="products"> takes its suggestions from lookupValueSources, not <option>s.
-const lookupValueSources={products:()=>inventoryProductValues()};
+const lookupValueSources={products:()=>inventorySelectableProducts().map(product=>{
+ const source=product.source||{},category=inventoryClassification(product.id)?.category||catalogCategoryOf(product),model=source.model&&source.specification&&source.model!==source.specification?` · ${source.model}`:'';
+ const label=`${lookupTidy(inventoryProductIdentity(product))}${model} · ${catalogLabel(category)}`;
+ return {value:inventoryProductChoice(product),label,search:lookupNormalCached(label),product:true,category,models:lookupModelKeys(`${product.name} ${source.model||''} ${source.specification||''}`)};
+})};
 const lookupNormals=new Map();
 function lookupNormalCached(text){let value=lookupNormals.get(text);if(value===undefined){if(lookupNormals.size>100000)lookupNormals.clear();value=lookupNormal(text);lookupNormals.set(text,value);}return value;}
 function lookupOptionsOf(source){
@@ -7293,10 +7530,10 @@ function lookupOptionsOf(source){
  if(rows)return rows().filter(row=>row.value!=='').map(row=>{const label=String(row.label).trim();return {value:row.value,label,search:lookupNormalCached(label)}});
  if(source.tagName==='SELECT')return [...source.options].filter(o=>o.value!==''&&!o.disabled).map(o=>({value:o.value,label:o.textContent.trim(),search:lookupNormalCached(o.textContent)}));
  const list=source._lookupList,values=lookupValueSources[list?.dataset.lookupValues];
- if(values)return values().map(value=>{const label=lookupTidy(value);return {value,label,search:lookupNormalCached(label)}});
+ if(values)return values();
  return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormalCached(label)}}):[];
 }
-function lookupClose(box){box.querySelector('.lookup-list').hidden=true;box.querySelector('input.lookup-input').setAttribute('aria-expanded','false');}
+function lookupClose(box){clearTimeout(box._lookupTimer);box._lookupTimer=0;box.querySelector('.lookup-list').hidden=true;const input=box.querySelector('input.lookup-input');input.setAttribute('aria-expanded','false');input.setAttribute('aria-activedescendant','');}
 function lookupRender(box,showAll=false){
  const input=box.querySelector('input.lookup-input'),list=box.querySelector('.lookup-list'),source=box._lookupSource;
  if(!box._lookupItems)box._lookupItems=lookupOptionsOf(source);
@@ -7324,15 +7561,20 @@ function lookupMove(box,step){
 function lookupPick(box,row){
  const source=box._lookupSource,input=box.querySelector('input.lookup-input');
  if(source.tagName==='SELECT'&&![...source.options].some(o=>o.value===row.value))source.add(new Option(row.label,row.value));
- if(source.tagName==='SELECT'){source.value=row.value;input.value=row.label;}
+ if(source!==input){source.setCustomValidity('');source.value=row.value;input.value=row.label;}
  else{source.value=row.value;}
  input.setCustomValidity('');lookupClose(box);box._lookupHold=false;
  source.dispatchEvent(new Event('input',{bubbles:true}));source.dispatchEvent(new Event('change',{bubbles:true}));
 }
-// Show what the hidden <select> holds now (pages set .value or rebuild options without telling anyone).
+// Keep the readable label in step with the canonical form field, including draft edits.
 function lookupSync(box){
- const source=box._lookupSource;if(source.tagName!=='SELECT')return;
- const input=box.querySelector('input.lookup-input'),chosen=source.selectedOptions[0];
+ const source=box._lookupSource,input=box.querySelector('input.lookup-input');if(source===input)return;
+ if(source.tagName!=='SELECT'){
+  if(source.value)input.value=(box._lookupItems||lookupOptionsOf(source)).find(row=>row.value===source.value)?.label||lookupTidy(source.value);
+  else if(document.activeElement!==input)input.value='';
+  input.disabled=source.disabled;input.placeholder=source.placeholder;return;
+ }
+ const chosen=source.selectedOptions[0];
  if(document.activeElement!==input)input.value=chosen&&chosen.value!==''?chosen.textContent.trim():'';
  input.disabled=source.disabled;
  const empty=source.options[0]&&source.options[0].value===''?source.options[0].textContent.trim():'';
@@ -7344,30 +7586,40 @@ function lookupAttach(source){
  const isSelect=source.tagName==='SELECT';
  if(isSelect&&(source.multiple||source.size>1))return;
  if(isSelect&&[...source.options].filter(o=>o.value!=='').length<lookupMinOptions&&!source.hasAttribute('data-lookup')&&!source.dataset.lookupRows)return;
+ if(!isSelect){source._lookupList=document.getElementById(source.getAttribute('list'));source.dataset.lookupList=source.getAttribute('list');source.removeAttribute('list');}
+ const isProduct=source._lookupList?.dataset.lookupValues==='products',isBound=isSelect||isProduct;
  const box=document.createElement('div');box.className='lookup';box.id=`lookup${++lookupCount}`;box._lookupSource=source;source._lookupBox=box;
  let input;
- if(isSelect){
+ if(isBound){
   input=document.createElement('input');input.type='search';input.autocomplete='off';input.className='lookup-input';
-  // The <select> stays the required field (forms check it by name); when the browser flags it, the message is
+  // The original stays the required field (forms check it by name); when the browser flags it, the message is
   // shown on the search box instead of the hidden list.
-  source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity('Choose one from the list');input.reportValidity();});
+  source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity(source.validity.customError?source.validationMessage:'Choose one from the list');input.reportValidity();});
   const labelledBy=source.getAttribute('aria-labelledby');
   if(labelledBy)input.setAttribute('aria-labelledby',labelledBy);
   else input.setAttribute('aria-label',source.getAttribute('aria-label')||[...(source.labels||[])].map(label=>label.textContent.trim()).join(' ')||source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
   source.classList.add('lookup-source');source.tabIndex=-1;source.setAttribute('aria-hidden','true');
+  if(isProduct){
+   source.hidden=true;
+   const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value'),setValidity=source.setCustomValidity.bind(source);
+   Object.defineProperty(source,'value',{configurable:true,get(){return setter.get.call(this)},set(value){setter.set.call(this,value);lookupSync(box);}});
+   source.setCustomValidity=message=>{setValidity(message);input.setCustomValidity(message);};
+   if(source.validity.customError)input.setCustomValidity(source.validationMessage);
+   source.form?.addEventListener('reset',()=>setTimeout(()=>{source.setCustomValidity('');input.value='';lookupSync(box);lookupClose(box);},0));
+  }
   source.parentNode.insertBefore(box,source);box.append(input,source);
  }else{
-  input=source;source._lookupList=document.getElementById(source.getAttribute('list'));source.dataset.lookupList=source.getAttribute('list');source.removeAttribute('list');
+  input=source;
   input.classList.add('lookup-input');source.parentNode.insertBefore(box,source);box.append(source);
  }
  input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');input.setAttribute('aria-controls',`${box.id}-list`);
  const list=document.createElement('ul');list.className='lookup-list';list.id=`${box.id}-list`;list.setAttribute('role','listbox');list.hidden=true;box.append(list);
- let timer=0;
- input.addEventListener('input',e=>{if(e.isTrusted===false&&!isSelect)return;clearTimeout(timer);timer=setTimeout(()=>lookupRender(box),60);
-  if(isSelect){if(source.value!==''){source.value='';source.dispatchEvent(new Event('change',{bubbles:true}));}input.setCustomValidity('');}});
- input.addEventListener('focus',()=>{box._lookupItems=null;const chosen=isSelect&&source.value!=='';if(chosen)input.select();lookupRender(box,chosen);});
- input.addEventListener('click',()=>{if(list.hidden){box._lookupItems=null;lookupRender(box,isSelect&&source.value!=='');}});
+ input.addEventListener('input',e=>{if(e.isTrusted===false&&!isBound)return;clearTimeout(box._lookupTimer);box._lookupTimer=setTimeout(()=>{box._lookupTimer=0;lookupRender(box);},60);
+  if(isBound){source.setCustomValidity('');input.setCustomValidity('');if(source.value!==''){source.value='';if(isProduct)source.dispatchEvent(new Event('input',{bubbles:true}));source.dispatchEvent(new Event('change',{bubbles:true}));}}});
+ input.addEventListener('focus',()=>{box._lookupItems=null;const chosen=isBound&&source.value!=='';if(chosen)input.select();lookupRender(box,chosen);});
+ input.addEventListener('click',()=>{if(list.hidden){box._lookupItems=null;lookupRender(box,isBound&&source.value!=='');}});
  input.addEventListener('keydown',e=>{
+  if(box._lookupTimer&&['ArrowDown','ArrowUp','Enter'].includes(e.key)){clearTimeout(box._lookupTimer);box._lookupTimer=0;lookupRender(box);}
   if(e.key==='ArrowDown'){e.preventDefault();list.hidden?lookupRender(box):lookupMove(box,1);}
   else if(e.key==='ArrowUp'){e.preventDefault();lookupMove(box,-1);}
   else if(e.key==='Enter'&&!list.hidden&&box._lookupRows?.length){e.preventDefault();lookupPick(box,box._lookupRows[box._lookupActive]);}
@@ -7377,14 +7629,14 @@ function lookupAttach(source){
  // or mouse is on the list (scrolling on a phone blurs the box), the list stays open.
  const leave=()=>{
   lookupClose(box);box._lookupHold=false;
-  if(isSelect){if(source.value===''&&input.value.trim())input.setCustomValidity('Choose one from the list');lookupSync(box);}
+  if(isBound){if(source.value===''&&input.value.trim())input.setCustomValidity(source.validity.customError?source.validationMessage:'Choose one from the list');else lookupSync(box);}
  };
  box._lookupLeave=leave;
  input.addEventListener('blur',()=>setTimeout(()=>{if(box._lookupHold||document.activeElement===input)return;leave();},150));
  list.addEventListener('pointerdown',()=>{box._lookupHold=true;});
  list.addEventListener('mousedown',e=>e.preventDefault());
  list.addEventListener('click',e=>{const li=e.target.closest('li[data-i]');if(li)lookupPick(box,box._lookupRows[Number(li.dataset.i)]);});
- if(isSelect){
+ if(isBound){
   new MutationObserver(()=>{box._lookupItems=null;lookupSync(box);}).observe(source,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']});
   source.addEventListener('change',()=>lookupSync(box));
   lookupSync(box);
@@ -7456,6 +7708,17 @@ if(/^#\/go\//.test(location.hash))navReplay(location.hash);
 const navOpenKey='erp-nav-open';
 function navOpenGroups(){try{return new Set(JSON.parse(localStorage.getItem(navOpenKey)||'[]'))}catch{return new Set()}}
 function navSaveGroups(set){try{localStorage.setItem(navOpenKey,JSON.stringify([...set]))}catch{}}
+function navMobileSet(open,restoreFocus=false){
+ const nav=document.getElementById('nav'),toggle=document.getElementById('workspaceMenuToggle');
+ nav.dataset.mobileOpen=String(open);toggle.setAttribute('aria-expanded',String(open));
+ if(restoreFocus&&matchMedia('(max-width:800px)').matches)toggle.focus({preventScroll:true});
+}
+function navMobileSync(){
+ const nav=document.getElementById('nav'),toggle=document.getElementById('workspaceMenuToggle');if(!toggle)return;
+ toggle.hidden=nav.hidden;if(nav.hidden)navMobileSet(false);
+ const current=nav.querySelector('[data-view].active:not([hidden])');
+ toggle.textContent=current?`Menu · ${current.textContent.trim()}`:'Menu';
+}
 function navDropdownSetup(){
  const nav=document.getElementById('nav');if(!nav||nav.dataset.dropdown)return;nav.dataset.dropdown='1';
  const open=navOpenGroups();
@@ -7467,11 +7730,20 @@ function navDropdownSetup(){
   set(open.has(name)||name==='Main'||!!group.querySelector('button.active'));
   toggle.onclick=()=>{const on=group.classList.contains('collapsed');set(on);const s=navOpenGroups();on?s.add(name):s.delete(name);navSaveGroups(s);};
  });
+ const toggle=document.createElement('button');toggle.id='workspaceMenuToggle';toggle.type='button';toggle.setAttribute('aria-controls','nav');
+ nav.before(toggle);navMobileSet(false);navMobileSync();
+ toggle.onclick=()=>navMobileSet(toggle.getAttribute('aria-expanded')!=='true');
+ nav.addEventListener('click',event=>{
+  if(!event.defaultPrevented&&event.target.closest('[data-view]')&&matchMedia('(max-width:800px)').matches)navMobileSet(false,true);
+ });
+ nav.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&matchMedia('(max-width:800px)').matches){event.preventDefault();navMobileSet(false,true);}
+ });
 }
-function navDropdownSync(){document.querySelectorAll('#nav .nav-group.collapsed').forEach(g=>{if(g.querySelector('[data-view].active'))g.classList.remove('collapsed'),g.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded','true');});}
+function navDropdownSync(){document.querySelectorAll('#nav .nav-group.collapsed').forEach(g=>{if(g.querySelector('[data-view].active'))g.classList.remove('collapsed'),g.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded','true');});navMobileSync();}
 // Once the menu exists, watch only the menu: when another page becomes active, its group opens.
 const navDropdownWatch=new MutationObserver(()=>{const nav=document.getElementById('nav');if(!nav)return;navDropdownSetup();navDropdownWatch.disconnect();
- new MutationObserver(navDropdownSync).observe(nav,{subtree:true,attributes:true,attributeFilter:['class']});navDropdownSync();});
+ new MutationObserver(navDropdownSync).observe(nav,{subtree:true,attributes:true,attributeFilter:['class','hidden']});navDropdownSync();});
 navDropdownWatch.observe(document.documentElement,{childList:true,subtree:true});
 document.addEventListener('DOMContentLoaded',navDropdownSetup);
 ;// list-cache.js
@@ -7576,7 +7848,7 @@ function loadLists(){
  return listsLoading;
 }
 function firstAccount(){return sortedAccounts(organizations.filter(o=>!o.parent_id))[0]?.id||'';}
-async function load(){const loadEpoch=++sessionLoadEpoch;message('Loading your workspace…');const u=await client.auth.getUser();if(loadEpoch!==sessionLoadEpoch)return;if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;const r=await loadMyStaffRow(u.data.user.id);if(loadEpoch!==sessionLoadEpoch)return;if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button> <span class="identity-name">${esc(employeeName(me.user_id))}</span> <button id="changePassword" type="button">Change password</button> <button id="logout">Sign out</button>`;$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('')}
+async function load(){const loadEpoch=++sessionLoadEpoch;message('Loading your workspace…');const u=await client.auth.getUser();if(loadEpoch!==sessionLoadEpoch)return;if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;const r=await loadMyStaffRow(u.data.user.id);if(loadEpoch!==sessionLoadEpoch)return;if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button><details id="accountMenu" class="account-menu"><summary aria-label="Account options for ${esc(employeeName(me.user_id))}"><span class="identity-name">${esc(employeeName(me.user_id))}</span></summary><div class="account-menu-actions"><button type="button" data-view="settings">My settings</button><button id="changePassword" type="button">Change password</button><button id="logout" type="button">Sign out</button></div></details>`;$('#accountMenu').onkeydown=event=>{if(event.key==='Escape'&&event.currentTarget.open){event.preventDefault();event.currentTarget.open=false;event.currentTarget.querySelector('summary').focus()}};$('#accountMenu').onclick=event=>{if(event.target.closest('button'))event.currentTarget.open=false};$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('')}
 // The signed-in person's staff record. If the per-person access list is not on the server yet (screens updated
 // before the database), fall back to the older record so nobody is signed out; the database still decides access.
 async function loadMyStaffRow(userId){

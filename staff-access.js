@@ -129,19 +129,23 @@ async function headStaffPage(){
 // Staff page (owner only): who can use the accounting forms, with a switch per person. Changes are logged.
 async function decorateStaffAccounting(){
  if(me?.role!=='owner')return;
- const result=await client.rpc('staff_accounting_access');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_accounting_access');if(me!==actor)return;
  const on=new Set((result.data||[]).filter(r=>r.active).map(r=>r.user_id));
- document.querySelectorAll('[data-staff-row]').forEach(row=>{
-  const id=row.dataset.staffRow,cell=row.querySelector('.actions');if(!cell||cell.querySelector('[data-accounting]'))return;
-  cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}">${on.has(id)?'Accounting: on · remove':'Give accounting access'}</button>`);
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-accounting-status]'),cell=row.querySelector('.actions');
+  if(status)status.textContent=result.error?'Accounting unavailable':on.has(id)?'Accounting: on':'Accounting: off';
+  if(result.error||!cell)return;
+  if(!cell.querySelector('[data-accounting]'))cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}" aria-label="${on.has(id)?'Remove':'Give'} accounting access for ${esc(employeeName(id))}">${on.has(id)?'Remove accounting access':'Give accounting access'}</button>`);
+  const button=cell.querySelector('[data-accounting]');button.onclick=()=>run(async()=>{
+   const turnOn=button.dataset.on!=='true',name=employeeName(id);
+   if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
+   const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(me!==actor||!row.isConnected)return;if(r.error)throw Error(r.error.message);
+   button.dataset.on=String(turnOn);button.textContent=turnOn?'Remove accounting access':'Give accounting access';
+   button.setAttribute('aria-label',`${turnOn?'Remove':'Give'} accounting access for ${name}`);if(status)status.textContent=turnOn?'Accounting: on':'Accounting: off';
+   message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
+  });
  });
- document.querySelectorAll('[data-accounting]').forEach(button=>button.onclick=()=>run(async()=>{
-  const id=button.dataset.accounting,turnOn=button.dataset.on!=='true',name=employeeName(id);
-  if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
-  const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(r.error)throw Error(r.error.message);
-  button.dataset.on=String(turnOn);button.textContent=turnOn?'Accounting: on · remove':'Give accounting access';
-  message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
- }));
 }
 
 // Staff page (owner): create many logins from a prepared list (format anudha-staff-list-v1). The owner ticks who to

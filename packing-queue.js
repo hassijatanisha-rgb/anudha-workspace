@@ -58,6 +58,7 @@ function orderLiveText(s,now=Date.now(),proformaStatus=''){
  if(s.status==='delivered'&&s.remaining_quantity>0)text=`Partly delivered · ${s.remaining_quantity} units still to deliver`;
  if(s.status==='sent_to_sales'&&s.customer_waiting)text+=' · customer waiting';
  if(s.status==='sent_to_sales'&&s.blocked_reason)text+=` · ${s.blocked_reason}`;
+ if(s.quantity_summary){const q=s.quantity_summary;text=`${Number(q.invoiced).toLocaleString('en-GB')} of ${Number(q.ordered).toLocaleString('en-GB')} units invoiced · ${Number(q.pending).toLocaleString('en-GB')} pending invoice. ${text}`;}
  if(s.call_customer)text+=' · Call the customer';
  return text;
 }
@@ -107,7 +108,7 @@ function packingQueueHtml(){
   :`<div class="packing-take"><button type="button" class="primary-action packing-big" data-packing-take ${b.waiting.length?'':'disabled'}>Take next</button><p class="muted">${b.waiting.length?`${b.waiting.length} waiting. You get the top order: customers waiting in the lobby first, then the oldest delivery.`:'Nothing is waiting to be packed.'}</p></div>`}
  <h2>Waiting · ${b.waiting.length}</h2>
  ${b.waiting.length?`<ol class="packing-waiting-list">${b.waiting.map(packingWaitingRow).join('')}</ol>`:'<p class="empty">Nothing waiting.</p>'}
- ${b.coming?.count?`<p class="muted">Coming from accounts: ${esc(b.coming.count)}${b.coming.customer_waiting?` (${esc(b.coming.customer_waiting)} with the customer waiting)`:''}.</p>`:''}
+ ${b.coming?.count?`<section class="notice"><h2>Awaiting Accounts release · ${esc(b.coming.count)}</h2><p>These existing deliveries are not in the packing queue yet. Accounts must finish the step shown for each order.</p>${(b.coming.items||[]).map(row=>`<p><strong>${esc(row.delivery_number)}</strong> · ${esc(row.organization)} · ${row.status==='tax_invoice_created'?'Invoice reserved; Accounts must send to packing':'Invoice and stock reservation required'} · ${row.owner_name?'Current step owner: '+esc(row.owner_name):'No step owner assigned'} <button type="button" data-packing-open-incoming="${esc(row.id)}">Open delivery</button></p>`).join('')}</section>`:''}
  <h2>Being packed · ${b.packing.length}</h2>
  ${others.length?others.map(row=>packingCard(row)).join(''):'<p class="muted">Nobody else is packing.</p>'}
  </section>`;
@@ -188,6 +189,7 @@ function bindPackingQueue(){
    await packingAct(()=>client.rpc('packing_release',{p_id:b.dataset.packingRelease,p_expected_version:Number(b.dataset.version),p_reason:values.reason}),'Put back in the packing queue.');
   });
  });
+ document.querySelectorAll('[data-packing-open-incoming]').forEach(button=>button.onclick=()=>run(()=>workOpenRecord({record_type:'delivery',record_id:button.dataset.packingOpenIncoming})));
  document.querySelectorAll('[data-packing-screen]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="screen"]')?.click();});
  document.querySelectorAll('[data-packing-exit]').forEach(b=>b.onclick=()=>{document.querySelector('#nav [data-view="packing"][data-workspace-section="queue"]')?.click();});
 }

@@ -44,10 +44,10 @@ const howToTopics=[
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
   'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Books.',
-  'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
+  'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Partially delivered, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
  {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
   'After Sales presses **Submit to accounting**, open **Customer invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
-  'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units; the remaining quantities appear automatically in **Pending stock orders**.',
+  'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units, queues them for packing and creates requested machine installation plans. The remaining quantities appear automatically in **Pending stock orders**.',
   'The delivery note is created with those reserved units. Pack and deliver it, then return to the same Pro forma when more stock arrives to invoice the balance. Use **Print** next to each invoice for a copy.',
   'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
   'A wrong invoice is never edited. Cancel its delivery before dispatch, void any allocated receipts, then **Void** the invoice with a reason. Its quantities return to the pending balance. Dispatched deliveries prevent voiding.']},
@@ -73,13 +73,13 @@ const howToTopics=[
   'The clock on your order turns amber after 20 minutes. After 30 minutes it turns red and the stores head and the owner are told.',
   'Owner and stores head: press **Put back in queue** and write why, for example when a packer has to leave. The order keeps its place.',
   'Leave **Packing TV screen** open on the television in stores. It shows the waiting orders as big numbers and who is packing what, and updates by itself.',
-  'Accounts or sales: when you press **Record Accounts approval**, choose whether the customer is waiting in the lobby (cash, collecting now) or it is a delivery. You can change it on the delivery note until packing starts.']},
+  'Posting an invoice queues its selected units for packing. Accounts or sales can mark the customer as waiting in the lobby (cash, collecting now) on the delivery note until packing starts.']},
  {id:'delivery',role:'stores',title:'Pack and deliver an order',screens:['sales:delivery'],steps:[
   'Open **Delivery progress**. Each order shows the step it is on and who has it.',
   'When the order reaches you, press the button for the step you have just finished: **Send to downstairs sales**, **Start packing**, **Mark ready for delivery** or **Mark out for delivery**.',
   'After the customer signs, press **Record signed delivery note**.',
   'Press **Upload / view documents** to keep a photo or scan of the signed note with the order.',
-  'A machine delivery creates an installation job for the service team by itself.']},
+  'The invoice already created the requested machine installation plans. Signed delivery links the delivered machines and serials to those plans, or reuses an existing installation, and allows on-site work to start.']},
  {id:'pending',role:'sales',title:'Customer wants more than we have',screens:['pending'],steps:[
   'For an accepted Pro forma, invoice the units available now in Books. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
   'For a manual request, choose the client and product and type the quantity still needed, then press **Save pending order**.',
@@ -93,10 +93,10 @@ const howToTopics=[
   'When the goods arrive, press **Goods arrived — close** and type the delivery note number.',
   'New suppliers are added under **Suppliers** with **New supplier**.']},
  {id:'install',role:'service',title:'Install a machine',screens:['service:installations'],steps:[
-  'Open **Machines to install**. Every machine on a signed delivery note is listed here.',
-  'Press **Assign engineer** and **Set work date**.',
-  'On the day, press **Start on-site work**.',
-  'When you finish, press **Complete official report**. Fill in the machine details, who was trained and both signatures.',
+  'Open **Machines to install**. Requested machine installation plans appear when their units are invoiced, before delivery.',
+  'Press **Assign engineer** and **Set work date** while delivery is being arranged. A coordinator handoff is separate from the engineer assignment.',
+  'Wait for signed delivery. Once the delivered machine is linked and the engineer is on site, press **Start on-site work**.',
+  'When you finish, press **Work finished · complete report**, then **Complete official report**. Fill in the machine details, who was trained and both signatures.',
   'Press **Print official report** for the customer copy. The next maintenance visit is added to the schedule by itself.']},
  {id:'service',role:'service',title:'Record a repair or service visit',screens:['service:schedule'],steps:[
   'Open **Service & maintenance schedule**. Planned visits are listed by date.',

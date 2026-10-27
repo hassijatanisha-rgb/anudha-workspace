@@ -41,14 +41,14 @@ test('line fields keep a read-only unit price and a canonical discount percentag
 });
 test('configured prices handle product, currency and placement without fabricating a missing price',()=>{
  const ctx=load();ctx.setPrices([price()]);const {row,form,nodes}=lineForm();ctx.pricingRefreshRow(row,form);assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.match(nodes.get('[data-pricing-feedback]').textContent,/Actual discount:.*20.00.*10%/);
- const missing=lineForm({currency:'USD'});ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'');assert.match(missing.nodes.get('[data-pricing-feedback]').textContent,/No configured USD price/);
+ const missing=lineForm({currency:'USD'});ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'');assert.match(missing.nodes.get('[data-pricing-feedback]').textContent,/No configured USD price/);assert.match(missing.nodes.get('[name="productChoice"]').validity,/No configured USD/);assert.equal(missing.nodes.get('[name="discount"]').validity,'');
  ctx.setPrices([price(0,'USD')]);ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'0.00');
  const placement=lineForm({kind:'placement'});ctx.pricingRefreshRow(placement.row,placement.form);assert.equal(placement.nodes.get('[name="unitPrice"]').value,'0.00');
  assert.throws(()=>ctx.pricingReadLine(row,{quantity:2,unitPriceMinor:10000}),/No configured TZS/);
 });
 test('opening an older draft does not silently replace its base price; invalid amounts remain blocked',()=>{
  const ctx=load(),{row,form,nodes,listeners}=lineForm({price:'80.00'});ctx.setPrices([price()]);ctx.pricingBindForm(form);
- assert.equal(nodes.get('[name="unitPrice"]').value,'80.00');assert.match(nodes.get('[name="discount"]').validity,/Saved unit price differs/);
+ assert.equal(nodes.get('[name="unitPrice"]').value,'80.00');assert.match(nodes.get('[name="productChoice"]').validity,/Saved unit price differs/);assert.equal(nodes.get('[name="discount"]').validity,'');
  listeners.change({target:{name:'productChoice',closest:()=>row}});assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.equal(nodes.get('[name="discount"]').validity,'');
  nodes.get('[name="discountMode"]').value='amount';listeners.change({target:{name:'discountMode',value:'amount',closest:()=>row}});assert.equal(nodes.get('[name="discountAmount"]').value,'20.00');
  nodes.get('[name="discountAmount"]').value='999.99';listeners.input({target:{name:'discountAmount',closest:()=>row}});assert.match(nodes.get('[name="discountAmount"]').validity,/cannot exceed/);assert.equal(nodes.get('[name="discount"]').value,'10','bad amount never misstates percentage');

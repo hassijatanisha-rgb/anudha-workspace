@@ -12,9 +12,9 @@ const task=(extra={})=>({id:'t1',task_number:'TK-000001',title:'Call the officia
 
 test('the person doing a task sees Reschedule until 3 moves are used, never Edit',()=>{
  const {teamTaskCard}=load(worker);
- for(const n of [0,1,2]){const html=teamTaskCard(task({reschedule_count:n}));assert.match(html,/data-team-task-move=/);assert.match(html,/Mark done/);assert.doesNotMatch(html,/data-team-task-edit=/);}
+ for(const n of [0,1,2]){const html=teamTaskCard(task({reschedule_count:n}));assert.match(html,/data-team-task-move=/);assert.match(html,/Complete assigned task/);assert.doesNotMatch(html,/data-team-task-edit=/);}
  const used=teamTaskCard(task({reschedule_count:3}));
- assert.doesNotMatch(used,/data-team-task-move=/);assert.match(used,/Mark done/);assert.match(used,/Rescheduled 3 of 3/);assert.match(used,/ask Asha/);
+ assert.doesNotMatch(used,/data-team-task-move=/);assert.match(used,/Complete assigned task/);assert.match(used,/Rescheduled 3 of 3/);assert.match(used,/ask Asha/);
  assert.doesNotMatch(teamTaskCard(task({status:'done',closed_at:'2099-01-01T00:00:00Z'})),/data-team-task-move=/);
 });
 test('the person who gave the task edits or cancels as before and does not reschedule',()=>{
