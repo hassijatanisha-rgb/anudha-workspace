@@ -31,6 +31,13 @@ test('self profile escapes values, accepts contact email separately, and keeps r
  assert.match(html,/name="contact_email" type="email"[^>]*maxlength="254"/);assert.match(html,/shared department email/);assert.match(html,/This email is for contact details\. Your sign-in stays the same/);
  assert.match(html,/data-profile-role>&#60;owner&#62;/);assert.doesNotMatch(html,/name="(?:role|department|access|user_id|password)"/);
 });
+test('read-only department shows Not assigned when empty on load and save, and preserves assigned labels',async()=>{
+ for(const [department,label] of [['','Not assigned'],['sales','Sales']]){
+  const f=fixture({get:async()=>({data:{...initial,department}}),save:async(_name,args)=>({data:{...initial,...args.p_values,name_version:3,department}})});
+  await f.start();assert.match(f.section.innerHTML,new RegExp('data-profile-department>'+label+'</strong>'));
+  f.fill();await f.send();assert.equal(f.status.textContent,'Profile saved.');assert.equal(f.form.querySelector('[data-profile-department]').textContent,label);
+ }
+});
 test('save sends the exact loaded snapshot and only self-editable fields; confirmation updates the current header without changing the page',async()=>{
  const f=fixture();await f.start();f.fill();f.elements.role={value:'owner'};f.elements.department={value:'management'};
  await f.send();
