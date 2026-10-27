@@ -71,6 +71,20 @@ test('team tasks: one line per person, most late first; only the owner and heads
  ctx.me={user_id:'s',role:'staff'};assert.equal(ctx.dashboardTeamVisible(),false);assert.equal(ctx.dashboardTeamSection(),'');
  ctx.me={user_id:'o',role:'owner'};assert.equal(ctx.dashboardTeamVisible(),true);
 });
+test('team summaries keep inactive people accessible without obscuring active tasks',()=>{
+ const ctx=load({employeeName:id=>id==='idle'?'Name <unsafe>':id,me:{user_id:'o',role:'owner'}});
+ vm.runInContext(`dashboardTeam=[{user_id:'idle',department:'Sales <unsafe>',open_count:0,completed_count:0,late_count:0},{user_id:'active',open_count:1,completed_count:0,late_count:1}];`,ctx);
+ const html=ctx.dashboardTeamSection(),inactiveStart=html.indexOf('<details id="dashboardTeamInactive"');
+ assert.ok(html.indexOf('data-dashboard-person="active"')<inactiveStart);
+ assert.ok(html.indexOf('data-dashboard-person="idle"')>inactiveStart);
+ assert.match(html,/People with no task activity <span>\(1\)<\/span>/);
+ assert.match(html,/Name &#60;unsafe&#62;/);assert.match(html,/Sales &#60;unsafe&#62;/);
+ assert.doesNotMatch(html,/<unsafe>/);
+ assert.match(ctx.dashboardTeamSection(true),/id="dashboardTeamInactive" class="dashboard-team-inactive" open/);
+ vm.runInContext(`dashboardPerson={user_id:'idle',rows:[],error:''};`,ctx);
+ assert.match(ctx.dashboardTeamSection(),/id="dashboardTeamInactive" class="dashboard-team-inactive" open/,'the expanded task panel remains visible when it reloads');
+ assert.match(ctx.dashboardTeamSection(),/data-dashboard-person="idle" aria-expanded="true"/);
+});
 test('a person\'s task shows whether it was late and the result written when it was done',()=>{
  const ctx=load({employeeName:()=>'Owner'}),now=Date.parse('2026-10-07T09:00:00Z');
  const done=ctx.dashboardPersonTask({title:'Send <quote>',task_number:'TK-000001',status:'done',due_at:'2026-10-05T14:00:00Z',closed_at:'2026-10-06T08:00:00Z',close_note:'Sent by email',assigned_by:'o'},now);
@@ -143,7 +157,7 @@ test('clickable cards open existing lists with filters those lists already have;
  assert.equal(dashboardTarget('periodic','opportunities'),null,'no list can be filtered by creation date');
  assert.equal(dashboardTarget('open','overdue'),null);
  assert.match(dashboardTile('open',{key:'tasks',label:'Tasks',tone:'tasks',value:4740,target:{view:'personal'}}),/^<button type="button" class="dashboard-tile dashboard-tasks"[^>]* data-dashboard-open="open:tasks"[^>]*>.*4,740/);
- assert.match(dashboardTile('open',{key:'contacts',label:'Contacts <b>',tone:'contacts',value:1,target:null}),/^<div class="dashboard-tile dashboard-contacts"><span>Contacts &#60;b&#62;<\/span>/);
+ assert.match(dashboardTile('open',{key:'contacts',label:'Contacts <b>',tone:'contacts',value:1,target:null}),/^<div class="dashboard-tile dashboard-contacts" data-dashboard-count="1"><span>Contacts &#60;b&#62;<\/span>/);
 });
 test('opening a card sets the same screen state as its menu entry',async()=>{
  const calls=[];

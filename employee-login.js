@@ -89,22 +89,54 @@ function openStaffPhone(userId,name,phone){
   if(view==='staff')await staff();message(`Phone saved for ${name}.`);
  });
 }
+function staffSearchValue(person){return [employeeName(person.user_id),person.phone||'',roleLabels[person.role]||person.role,departmentLabel(person.department)].join(' ').toLowerCase();}
 function staffListHtml(rows){
  const owner=me?.role==='owner',sorted=[...rows].sort((a,b)=>Number(b.active)-Number(a.active)||employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  if(!sorted.length)return '<p class="muted">Nobody here yet.</p>';
- return `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Department</th><th>Can use</th><th>Phone</th><th>Login</th><th></th></tr></thead><tbody>${sorted.map(x=>{
+ const active=sorted.filter(x=>x.active).length;
+ return `<div class="staff-directory" data-staff-directory><div class="staff-directory-tools"><label><span>Find an employee</span><input type="search" data-staff-search placeholder="Name, phone, role or department" autocomplete="off"></label><label><span>Show</span><select data-staff-filter><option value="active">Active (${active})</option><option value="all">All staff (${sorted.length})</option><option value="inactive">Switched off (${sorted.length-active})</option></select></label></div><p class="staff-directory-count" data-staff-count role="status">${active} active · ${sorted.length} total employees</p><p class="staff-directory-help">${owner?'Department changes save automatically. Wait for the saved confirmation.':'Open workflow areas to see each employee’s access.'}</p><p data-staff-empty hidden>No employees match this search. Try another name or choose All staff.</p><div class="table-wrap"><table class="staff-directory-table" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Employee</th><th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Department</th><th role="columnheader" scope="col">Workflow areas</th><th role="columnheader" scope="col">Login</th><th role="columnheader" scope="col">Actions</th></tr></thead><tbody role="rowgroup">${sorted.map(x=>{
   const self=x.user_id===me?.user_id,manage=canManagePerson(x)&&!self,id=esc(x.user_id),name=esc(employeeName(x.user_id));
+  const areas=accessAreas.filter(([key])=>x.role==='owner'||(x.access||[]).includes(key));
   const role=owner&&!self?`<select data-staff-role="${id}" aria-label="Role for ${name}">${Object.entries(roleLabels).map(([v,l])=>`<option value="${v}" ${x.role===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(roleLabels[x.role]||x.role);
-  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(departmentLabel(x.department));
-  const access=`${esc(accessSummary(x))}${manage&&x.role!=='owner'?` <button type="button" data-staff-access="${id}">Change access</button>`:''}`;
-  const login=`${x.active?'Active':'Switched off'}${manage&&x.role!=='owner'?` <button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}">${x.active?'Switch off':'Switch on'}</button>`:''}`;
-  const actions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" data-staff-reset="${id}">Reset password</button><button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}">Phone</button>`:'';
-  return `<tr data-staff-row="${id}"><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
+  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}" aria-describedby="staff-department-status-${id}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select><span class="staff-field-status" data-staff-department-status id="staff-department-status-${id}"></span>`:esc(x.department?departmentLabel(x.department):'No department');
+  const access=`<details class="staff-area-details"><summary aria-label="Workflow areas for ${name}: ${areas.length}">${areas.length?`${areas.length} ${areas.length===1?'area':'areas'}`:'No areas'}</summary>${areas.length?`<ul>${areas.map(([,label])=>`<li>${esc(label)}</li>`).join('')}</ul>`:'<p>No workflow areas assigned.</p>'}${manage&&x.role!=='owner'?`<button type="button" data-staff-access="${id}" aria-label="Change access for ${name}">Change access</button>`:''}</details>`;
+  const login=`<span class="staff-login-state${x.active?'':' is-off'}">${x.active?'Active':'Switched off'}</span>`;
+  const phone=manage?`<button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}" aria-label="Edit phone for ${name}">Edit phone</button>`:'';
+  const accountActions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" class="danger" data-staff-reset="${id}" aria-label="Reset password for ${name}">Reset password</button>${x.role!=='owner'?`<button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}" aria-label="${x.active?'Switch off':'Switch on'} login for ${name}">${x.active?'Switch off login':'Switch on login'}</button>`:''}`:'';
+  const account=manage||self||owner?`<details class="staff-account-details"><summary><span>Account actions</span><span class="staff-account-status"><span data-staff-two-step-status>Two-step: checking…</span>${owner?'<span data-staff-accounting-status>Accounting: checking…</span>':''}</span></summary><div class="actions">${accountActions}</div></details>`:'<span class="muted">Read only</span>';
+  return `<tr data-staff-row="${id}" role="row" data-staff-search-value="${esc(staffSearchValue(x))}" data-staff-state="${x.active?'active':'inactive'}"${x.active?'':' hidden'}><th role="rowheader" scope="row" class="staff-identity"><span class="staff-cell-label" aria-hidden="true">Employee</span><strong>${name}${self?' <span class="staff-self">You</span>':''}</strong><div class="staff-phone-line"><span class="staff-phone-value">${esc(x.phone||'No phone added')}</span>${phone}</div></th><td role="cell" class="staff-role-cell"><span class="staff-cell-label" aria-hidden="true">Role</span>${role}</td><td role="cell" class="staff-department-cell"><span class="staff-cell-label" aria-hidden="true">Department</span>${dept}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Workflow areas</span>${access}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Login</span>${login}</td><td role="cell" class="staff-actions-cell"><span class="staff-cell-label" aria-hidden="true">Actions</span>${account}</td></tr>`;}).join('')}</tbody></table></div></div>`;
 }
 function bindStaffList(rows=[]){
  const row=id=>rows.find(r=>r.user_id===id),reload=()=>staff();
+ document.querySelectorAll('[data-staff-directory]').forEach(directory=>{
+  const search=directory.querySelector('[data-staff-search]'),filter=directory.querySelector('[data-staff-filter]'),entries=[...directory.querySelectorAll('[data-staff-row]')];
+  const update=()=>{
+   const terms=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);let shown=0;
+   for(const entry of entries){entry.hidden=!(filter.value==='all'||entry.dataset.staffState===filter.value)||!terms.every(term=>entry.dataset.staffSearchValue.includes(term));if(!entry.hidden)shown++;}
+   directory.querySelector('[data-staff-count]').textContent=`${shown} ${filter.value==='all'?'employees':filter.value==='active'?'active employees':'switched off employees'} · ${entries.length} total`;
+   directory.querySelector('[data-staff-empty]').hidden=shown!==0;
+  };
+  search.oninput=update;filter.onchange=update;update();
+ });
  document.querySelectorAll('[data-staff-reset]').forEach(button=>button.onclick=()=>run(async()=>openStaffPasswordReset(button.dataset.staffReset,employeeName(button.dataset.staffReset))));
- document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>run(async()=>{const r=await client.rpc('set_staff_department',{p_user_id:select.dataset.staffDepartment,p_department:select.value});if(r.error)throw Error(r.error.message);message(`Department saved for ${employeeName(select.dataset.staffDepartment)}.`);}));
+ document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>{
+  const person=row(select.dataset.staffDepartment),status=select.parentElement.querySelector('[data-staff-department-status]');
+  const state=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
+  if(busy){select.value=person.department||'';state('Not saved. Try again when the current change finishes.',true);message(`Department not saved for ${employeeName(person.user_id)}. Another change is still saving. Please try again.`,true);return;}
+  const department=select.value,actor=me,current=()=>me===actor&&select.isConnected;
+  select.disabled=true;state('Saving…');
+  return run(async()=>{
+   try{
+    const r=await client.rpc('set_staff_department',{p_user_id:person.user_id,p_department:department});
+    if(!current())return;if(r.error)throw Error(r.error.message);
+    person.department=department;
+    const entry=select.closest('[data-staff-row]');entry.dataset.staffSearchValue=staffSearchValue(person);
+    entry.closest('[data-staff-directory]').querySelector('[data-staff-search]').oninput();
+    state('Saved');message(`Department saved for ${employeeName(person.user_id)}.`);
+   }catch(error){if(!current())return;select.value=person.department||'';state(error.message||'Not saved. Please try again.',true);throw error;}
+   finally{if(current())select.disabled=false;}
+  });
+ });
  document.querySelectorAll('[data-staff-phone]').forEach(button=>button.onclick=()=>openStaffPhone(button.dataset.staffPhone,employeeName(button.dataset.staffPhone),button.dataset.phone));
  document.querySelectorAll('[data-staff-access]').forEach(button=>button.onclick=()=>run(async()=>openStaffAccess(row(button.dataset.staffAccess),reload)));
  document.querySelectorAll('[data-staff-active]').forEach(button=>button.onclick=()=>run(()=>setStaffActive(row(button.dataset.staffActive),button.dataset.active==='true',reload)));

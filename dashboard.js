@@ -91,11 +91,11 @@ function dashboardNumber(n){return Number(n).toLocaleString('en-GB');}
 function dashboardTile(column,tile){
  const body=`<span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?`<small>${esc(tile.breakdown)}</small>`:''}`;
  return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
-  :`<div class="dashboard-tile dashboard-${tile.tone}">${body}</div>`;
+  :`<div class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}">${body}</div>`;
 }
 function dashboardGroup(column,tile){
  if(!tile.items)return dashboardTile(column,tile);
- return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3>${esc(tile.label)} <strong>(${esc(dashboardNumber(tile.value))})</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
+ return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3><span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
 }
 // The chosen period, remembered per person on this device. Storage can be missing or blocked (private window): the
 // page then simply starts on Today.
@@ -113,11 +113,11 @@ function dashboardSavePeriod(userId,choice,storage=dashboardStorage()){
 }
 function dashboardPicker(range){
  const choice=dashboardPeriod;
- return `<div class="dashboard-period" role="group" aria-label="Period"><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-range">New work, scheduling and outcomes${dashboardTeamVisible()?' and Team tasks':''}: ${esc(dashboardRangeLabel(choice,range))}</p></div>`;
+ return `<div class="dashboard-period" role="group" aria-label="Reporting period"><div class="dashboard-period-heading"><span>Reporting period</span><p class="dashboard-range">${esc(dashboardRangeLabel(choice,range))}</p></div><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-period-help">Applies to activity, outcomes${dashboardTeamVisible()?' and team tasks':''}. Current work shows all open items.</p></div>`;
 }
-function dashboardColumn(column,title){
+function dashboardColumn(column,title,description){
  const tiles=dashboardTiles(column,dashboardData);
- return `<section class="dashboard-column dashboard-${column}" aria-label="${title}"><h2>${title}</h2><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
+ return `<section class="dashboard-column dashboard-${column}" aria-labelledby="dashboard-${column}-title"><div class="dashboard-column-heading"><h2 id="dashboard-${column}-title">${esc(title)}</h2><p>${esc(description)}</p></div><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
 }
 
 // Team tasks: the owner sees everyone, a department head their own department. The database decides who is listed.
@@ -138,11 +138,16 @@ function dashboardPersonPanel(person){
  if(!person.rows)return '<div class="dashboard-person-tasks"><p role="status">Loading tasks…</p></div>';
  return `<div class="dashboard-person-tasks">${person.rows.length?`<ol>${person.rows.map(task=>dashboardPersonTask(task)).join('')}</ol>`:'<p class="muted">No tasks in this period.</p>'}</div>`;
 }
-function dashboardTeamSection(){
+function dashboardTeamList(rows){
+ return `<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><span class="dashboard-person-identity"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}</span><span class="dashboard-person-counts">${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`;
+}
+function dashboardTeamSection(inactiveOpen=false){
  if(!dashboardTeamVisible())return '';
  const rows=dashboardTeam?dashboardTeamOrder(dashboardTeam):[];
- const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}<span>${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`:'<p class="muted">Nobody in your department yet.</p>';
- return `<section class="dashboard-team" aria-label="Team tasks"><h2>Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it. Press a name to see their tasks and results.</p>${body}</section>`;
+ const active=[],inactive=[];
+ for(const row of rows)(Number(row.open_count)>0||Number(row.completed_count)>0||Number(row.late_count)>0?active:inactive).push(row);
+ const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`${active.length?dashboardTeamList(active):'<p class="dashboard-team-empty">No task activity for this period.</p>'}${inactive.length?`<details id="dashboardTeamInactive" class="dashboard-team-inactive"${inactiveOpen||inactive.some(row=>dashboardPerson?.user_id===row.user_id)?' open':''}><summary>People with no task activity <span>(${dashboardNumber(inactive.length)})</span></summary>${dashboardTeamList(inactive)}</details>`:''}`:'<p class="muted">Nobody in your department yet.</p>';
+ return `<section class="dashboard-team" aria-labelledby="dashboard-team-title"><div class="dashboard-team-heading"><div><h2 id="dashboard-team-title">Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Select a person to view tasks and results.</p></div><details class="dashboard-team-key"><summary>How counts work</summary><p>Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it.</p></details></div>${body}</section>`;
 }
 async function dashboardOpenPerson(userId,range){
  if(dashboardPerson?.user_id===userId){dashboardPerson=null;return renderDashboard(range,userId);}
@@ -154,7 +159,8 @@ async function dashboardOpenPerson(userId,range){
  renderDashboard(range,userId);
 }
 function renderDashboard(range,focusPerson=''){
- $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><small>MAIN</small><h1>Dashboard</h1><p class="muted">Start with overdue work and tasks due today. Buttons open the linked work; plain counts are summaries. Choose a period for new work, scheduling and outcomes.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Open now')}${dashboardColumn('periodic','Created / scheduled in period')}${dashboardColumn('result','Outcomes in period')}</div>`:''}${dashboardTeamSection()}</section>`;
+ const inactiveOpen=$('#dashboardTeamInactive')?.open;
+ $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><h1>Dashboard</h1><p class="muted">Your work, activity and team at a glance.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Current work','Open items and customer records')}${dashboardColumn('periodic','Activity','Created or scheduled in the period')}${dashboardColumn('result','Outcomes','Completed or closed in the period')}</div>`:''}${dashboardTeamSection(inactiveOpen)}</section>`;
  $('#dashboardRefresh').onclick=()=>run(dashboardWorkspace);
  document.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
  document.querySelectorAll('[data-dashboard-preset]').forEach(button=>button.onclick=()=>{

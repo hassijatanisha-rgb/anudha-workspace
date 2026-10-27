@@ -1651,9 +1651,9 @@ async function pricesWorkspace(target=$('#content')){
  catch(error){if(current()){target.innerHTML=`<section class="card"><h1>Product prices</h1><p role="alert">${esc(error.message)}</p><button type="button" data-pricing-reload>Retry loading prices</button></section>`;target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));}return;}
  if(!current()||rows===null)return;
  const canEdit=actor.role==='owner'||(!access.error&&access.data===true);
- target.innerHTML=`<section class="card"><div class="heading"><div><h1>Product prices</h1><p>Prices are configured per product and currency. Sales staff use these base prices and request approval for discounts.</p></div><button type="button" data-pricing-reload>Refresh</button></div>${canEdit?`<form data-price-editor><div class="grid"><label><span>Product</span><input name="productChoice" list="pricingProductChoices" required autocomplete="off" placeholder="Choose a product"></label><datalist id="pricingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Configured unit price</span><input name="price" inputmode="decimal" required></label><label><span>Reason</span><textarea name="reason" minlength="2" maxlength="1000" required></textarea></label></div><p data-price-current class="muted">Choose a product. Enter zero explicitly only when it is the approved price.</p><button type="submit">Save configured price</button></form>`:'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}<label><span>Find configured price</span><input data-price-search type="search" placeholder="Product or currency"></label><div data-price-register></div></section>`;
+ target.innerHTML=`<section class="prices-workspace"><div class="heading prices-heading"><div><h1>Product prices</h1><p class="muted">Set the base selling price for each product and currency. Sales requests approval for discounts.</p></div><button type="button" data-pricing-reload>Refresh prices</button></div><div class="prices-layout">${canEdit?`<section class="card price-edit-panel"><h2>Set a selling price</h2><p class="muted">All fields are required. Each saved change keeps its history.</p><form data-price-editor><div class="grid price-fields"><label class="price-product"><span>Product</span><input name="productChoice" list="pricingProductChoices" required autocomplete="off" placeholder="Search product name or model"></label><datalist id="pricingProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><label><span>Currency</span><select name="currency"><option>TZS</option><option>USD</option><option>EUR</option></select></label><label><span>Unit price</span><input name="price" inputmode="decimal" required></label><label class="price-reason"><span>Reason for this price</span><textarea name="reason" minlength="2" maxlength="1000" rows="2" required></textarea></label></div><p data-price-current class="muted" role="status">Choose a product. Enter zero explicitly only when it is the approved price.</p><button type="submit">Save configured price</button></form></section>`:''}<section class="card price-register-panel"><h2>Selling price register</h2>${canEdit?'':'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}<label><span>Find a price</span><input data-price-search type="search" placeholder="Search product or currency"></label><div data-price-register></div></section></div></section>`;
  const register=target.querySelector('[data-price-register]'),search=target.querySelector('[data-price-search]');
- const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=!rows.length?`<div class="notice"><strong>No selling prices configured.</strong><p>Sales cannot quote a product until its currency price is configured. ${canEdit?'Choose a product above or import a source price list below.':'Ask Accounts to configure the required product and currency, then refresh.'} Missing prices are never treated as zero.</p></div>`:!shown.length?'<p class="empty">No configured price matches this search. Clear or change the search.</p>':`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
+ const draw=()=>{const query=search.value.trim().toLowerCase(),shown=rows.filter(row=>`${salesProduct(row.product_id).name} ${row.currency}`.toLowerCase().includes(query));register.innerHTML=!rows.length?`<div class="notice"><strong>No selling prices configured.</strong><p>Sales cannot quote a product until its currency price is configured. ${canEdit?'Use Set a selling price or import an approved price list below.':'Ask Accounts to configure the required product and currency, then refresh.'} Missing prices are never treated as zero.</p></div>`:!shown.length?'<p class="empty">No configured price matches this search. Clear or change the search.</p>':`<p>${shown.length} configured prices${shown.length>100?' · showing the first 100; narrow your search':''}</p><div class="table-wrap"><table><thead><tr><th>Product</th><th>Currency</th><th>Price</th><th>Updated</th></tr></thead><tbody>${shown.slice(0,100).map(row=>`<tr><td>${esc(salesProduct(row.product_id).name)}</td><td>${esc(row.currency)}</td><td>${esc(moneyDisplay(Number(row.unit_price_minor),row.currency))}</td><td>${esc(employeeName(row.updated_by))} · ${esc(new Date(row.updated_at).toLocaleString())}</td></tr>`).join('')}</tbody></table></div>`;};
  search.oninput=draw;draw();target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));
  const form=target.querySelector('[data-price-editor]');if(!form)return;
  if(typeof bindProductPriceImport==='function')bindProductPriceImport(target,current);
@@ -4045,7 +4045,7 @@ function renderReports(range,error=''){
 }
 ;// user-settings.js
 'use strict';
-// Per-person display settings (this browser only) and an honest list of outside connections.
+// Personal profile, display settings (this browser only), and an honest list of outside connections.
 // zoom, not root font-size: the stylesheets use fixed pixel sizes, which zoom scales together with spacing.
 const textSizes={normal:{label:'Normal',scale:'1'},large:{label:'Large',scale:'1.15'},xlarge:{label:'Extra large',scale:'1.3'}};
 // Status only changes here after a real provider is configured and tested; nothing is simulated.
@@ -4058,12 +4058,62 @@ const externalConnections=[
 function readTextSize(){try{const value=localStorage.getItem('anudha.textSize');return textSizes[value]?value:'normal';}catch{return 'normal';}}
 function applyTextSize(size=readTextSize()){document.documentElement.style.zoom=(textSizes[size]||textSizes.normal).scale;document.documentElement.dataset.textSize=textSizes[size]?size:'normal';}
 function saveTextSize(size){if(!textSizes[size])throw Error('Choose a text size from the list.');try{localStorage.setItem('anudha.textSize',size);}catch{}applyTextSize(size);}
+function settingsProfileRow(row,actor){
+ if(!row||row.user_id!==actor.user_id||!Number.isInteger(row.name_version)||row.name_version<0||!['display_name','phone','contact_email'].every(key=>typeof row[key]==='string'||row[key]===null)||typeof row.role!=='string'||typeof row.department!=='string')throw Error('The server did not return your profile. Reload and try again.');
+ return row;
+}
+function settingsProfileForm(profile){
+ return `<form id="settingsProfileForm"><div class="grid"><label class="wide"><span>Full name</span><input name="display_name" autocomplete="name" required maxlength="120" value="${esc(profile.display_name)}"></label><label><span>Phone · with country code</span><input name="phone" type="tel" autocomplete="tel" maxlength="24" placeholder="+255712345678" value="${esc(profile.phone)}"><small>Optional. Include the country code.</small></label><label><span>Contact email</span><input name="contact_email" type="email" autocomplete="email" maxlength="254" aria-describedby="settingsContactEmailHelp" value="${esc(profile.contact_email)}"></label></div><p id="settingsContactEmailHelp" class="muted">This email is for contact details. Your sign-in stays the same. You may use a shared department email or leave it empty.</p><div class="details"><div><small>Role</small><strong data-profile-role>${esc(roleLabels[profile.role]||profile.role)}</strong></div><div><small>Department</small><strong data-profile-department>${esc(departmentLabel(profile.department))}</strong></div></div><p class="muted">Your administrator assigns your role and department.</p><div class="actions"><button type="submit">Save profile</button><button type="button" data-profile-reload hidden>Reload saved details</button></div><p data-profile-status role="status" aria-live="polite"></p><p data-profile-error class="error" role="alert"></p><p data-profile-reload-help class="muted" hidden>Reloading replaces your unsaved edits with the saved profile.</p></form>`;
+}
+async function loadSettingsProfile(section){
+ const actor=me,current=()=>me===actor&&view==='settings'&&section.isConnected;
+ if(!actor||!current())return;
+ section.innerHTML='<p role="status">Loading your profile…</p>';
+ try{
+  const result=await client.rpc('get_my_staff_profile');if(!current())return;
+  if(result.error)throw Error(result.error.message||'Your profile could not load.');
+  let profile=settingsProfileRow(result.data,actor);
+  section.innerHTML=settingsProfileForm(profile);
+  const form=section.querySelector('form'),status=form.querySelector('[data-profile-status]'),error=form.querySelector('[data-profile-error]'),reload=form.querySelector('[data-profile-reload]'),reloadHelp=form.querySelector('[data-profile-reload-help]');
+  let saving=false;
+  reload.onclick=()=>{if(current()&&!saving)return loadSettingsProfile(section)};
+  form.onsubmit=async event=>{
+   event.preventDefault();if(saving||!current()||!form.reportValidity())return;
+   const values={display_name:form.elements.display_name.value.trim(),phone:form.elements.phone.value.trim().replace(/[\s()-]/g,''),contact_email:form.elements.contact_email.value.trim().toLowerCase()};
+   error.textContent='';status.textContent='';
+   if(!values.display_name){error.textContent='Enter your full name.';return;}
+   if(values.phone&&!/^\+[0-9]{8,15}$/.test(values.phone)){error.textContent='Enter the phone with country code, for example +255712345678, or leave it empty.';return;}
+   const expected={display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+   saving=true;const controls=[...form.querySelectorAll('input,button')];controls.forEach(control=>control.disabled=true);status.textContent='Saving profile…';
+   try{
+    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});if(!current())return;
+    if(result.error)throw Error(result.error.message||'Your profile could not be saved.');
+    const saved=settingsProfileRow(result.data,actor);
+    if(saved.name_version<profile.name_version||saved.display_name!==values.display_name||(saved.phone||'')!==values.phone||(saved.contact_email||'')!==values.contact_email)throw Error('The server did not confirm these profile details. Reload to check the saved profile.');
+    profile=saved;
+    for(const key of ['display_name','phone','contact_email'])form.elements[key].value=saved[key]||'';
+    form.querySelector('[data-profile-role]').textContent=roleLabels[saved.role]||saved.role;
+    form.querySelector('[data-profile-department]').textContent=departmentLabel(saved.department);
+    employeeDirectory.set(actor.user_id,{...employeeDirectory.get(actor.user_id),user_id:actor.user_id,display_name:saved.display_name,name_version:saved.name_version});
+    const name=$('#identity .identity-name');if(name)name.textContent=saved.display_name;
+    $('#accountMenu > summary')?.setAttribute('aria-label',`Account options for ${saved.display_name}`);
+    status.textContent='Profile saved.';reload.hidden=true;reloadHelp.hidden=true;
+   }catch(cause){if(current()){status.textContent='';error.textContent=`Profile save was not confirmed. ${cause.message||'Check your connection and try again.'} Your edits are still here.`;reload.hidden=false;reloadHelp.hidden=false;}}
+   finally{saving=false;if(current())controls.forEach(control=>control.disabled=false);}
+  };
+ }catch(cause){
+  if(!current())return;
+  section.innerHTML=`<p class="error" role="alert">Your profile could not load: ${esc(cause.message||'Check your connection and try again.')}</p><button type="button" data-profile-reload>Reload profile</button>`;
+  section.querySelector('[data-profile-reload]').onclick=()=>{if(current())return loadSettingsProfile(section)};
+ }
+}
 function settingsWorkspace(){
  syncWorkspaceNavigation();
  const size=readTextSize();
- $('#content').innerHTML=`<section class="settings-workspace"><div class="heading"><div><small>SYSTEM</small><h1>My settings</h1></div></div><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>My account</h2><p>${esc(employeeName(me.user_id))} · ${esc(me.role)}</p><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Language</h2><p>English. Kiswahili, Chinese and Hindi have been requested but are not available yet.</p></section><section class="card"><h2>In-app updates</h2><p>Use the bell and My tasks for assigned work and order updates. The bell checks while the ERP is open, on navigation and every two minutes. Open the bell and press Refresh updates to check now. Email and WhatsApp are not active delivery channels.</p></section><section class="card"><h2>Connections to other systems</h2><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></section></section>`;
+ $('#content').innerHTML=`<section class="settings-workspace"><div class="heading"><div><small>SYSTEM</small><h1>My settings</h1></div></div><section class="card"><h2>My account</h2><div id="settingsProfile"></div><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>Language</h2><p>English. Kiswahili, Chinese and Hindi have been requested but are not available yet.</p></section><section class="card"><h2>In-app updates</h2><p>Use the bell and My tasks for assigned work and order updates. The bell checks while the ERP is open, on navigation and every two minutes. Open the bell and press Refresh updates to check now. Email and WhatsApp are not active delivery channels.</p></section><section class="card"><h2>Connections to other systems</h2><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></section></section>`;
  document.querySelectorAll('[name="textSize"]').forEach(input=>input.onchange=()=>{saveTextSize(input.value);message(`Text size set to ${textSizes[input.value].label.toLowerCase()} on this device.`);});
  $('#settingsPassword').onclick=()=>run(async()=>openChangePassword());
+ loadSettingsProfile($('#settingsProfile'));
  if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('.settings-workspace')).catch(()=>{});
 }
 applyTextSize();
@@ -4919,11 +4969,11 @@ function dashboardNumber(n){return Number(n).toLocaleString('en-GB');}
 function dashboardTile(column,tile){
  const body=`<span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?`<small>${esc(tile.breakdown)}</small>`:''}`;
  return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
-  :`<div class="dashboard-tile dashboard-${tile.tone}">${body}</div>`;
+  :`<div class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}">${body}</div>`;
 }
 function dashboardGroup(column,tile){
  if(!tile.items)return dashboardTile(column,tile);
- return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3>${esc(tile.label)} <strong>(${esc(dashboardNumber(tile.value))})</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
+ return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3><span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
 }
 // The chosen period, remembered per person on this device. Storage can be missing or blocked (private window): the
 // page then simply starts on Today.
@@ -4941,11 +4991,11 @@ function dashboardSavePeriod(userId,choice,storage=dashboardStorage()){
 }
 function dashboardPicker(range){
  const choice=dashboardPeriod;
- return `<div class="dashboard-period" role="group" aria-label="Period"><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-range">New work, scheduling and outcomes${dashboardTeamVisible()?' and Team tasks':''}: ${esc(dashboardRangeLabel(choice,range))}</p></div>`;
+ return `<div class="dashboard-period" role="group" aria-label="Reporting period"><div class="dashboard-period-heading"><span>Reporting period</span><p class="dashboard-range">${esc(dashboardRangeLabel(choice,range))}</p></div><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-period-help">Applies to activity, outcomes${dashboardTeamVisible()?' and team tasks':''}. Current work shows all open items.</p></div>`;
 }
-function dashboardColumn(column,title){
+function dashboardColumn(column,title,description){
  const tiles=dashboardTiles(column,dashboardData);
- return `<section class="dashboard-column dashboard-${column}" aria-label="${title}"><h2>${title}</h2><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
+ return `<section class="dashboard-column dashboard-${column}" aria-labelledby="dashboard-${column}-title"><div class="dashboard-column-heading"><h2 id="dashboard-${column}-title">${esc(title)}</h2><p>${esc(description)}</p></div><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
 }
 
 // Team tasks: the owner sees everyone, a department head their own department. The database decides who is listed.
@@ -4966,11 +5016,16 @@ function dashboardPersonPanel(person){
  if(!person.rows)return '<div class="dashboard-person-tasks"><p role="status">Loading tasks…</p></div>';
  return `<div class="dashboard-person-tasks">${person.rows.length?`<ol>${person.rows.map(task=>dashboardPersonTask(task)).join('')}</ol>`:'<p class="muted">No tasks in this period.</p>'}</div>`;
 }
-function dashboardTeamSection(){
+function dashboardTeamList(rows){
+ return `<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><span class="dashboard-person-identity"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}</span><span class="dashboard-person-counts">${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`;
+}
+function dashboardTeamSection(inactiveOpen=false){
  if(!dashboardTeamVisible())return '';
  const rows=dashboardTeam?dashboardTeamOrder(dashboardTeam):[];
- const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}<span>${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`:'<p class="muted">Nobody in your department yet.</p>';
- return `<section class="dashboard-team" aria-label="Team tasks"><h2>Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it. Press a name to see their tasks and results.</p>${body}</section>`;
+ const active=[],inactive=[];
+ for(const row of rows)(Number(row.open_count)>0||Number(row.completed_count)>0||Number(row.late_count)>0?active:inactive).push(row);
+ const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`${active.length?dashboardTeamList(active):'<p class="dashboard-team-empty">No task activity for this period.</p>'}${inactive.length?`<details id="dashboardTeamInactive" class="dashboard-team-inactive"${inactiveOpen||inactive.some(row=>dashboardPerson?.user_id===row.user_id)?' open':''}><summary>People with no task activity <span>(${dashboardNumber(inactive.length)})</span></summary>${dashboardTeamList(inactive)}</details>`:''}`:'<p class="muted">Nobody in your department yet.</p>';
+ return `<section class="dashboard-team" aria-labelledby="dashboard-team-title"><div class="dashboard-team-heading"><div><h2 id="dashboard-team-title">Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Select a person to view tasks and results.</p></div><details class="dashboard-team-key"><summary>How counts work</summary><p>Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it.</p></details></div>${body}</section>`;
 }
 async function dashboardOpenPerson(userId,range){
  if(dashboardPerson?.user_id===userId){dashboardPerson=null;return renderDashboard(range,userId);}
@@ -4982,7 +5037,8 @@ async function dashboardOpenPerson(userId,range){
  renderDashboard(range,userId);
 }
 function renderDashboard(range,focusPerson=''){
- $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><small>MAIN</small><h1>Dashboard</h1><p class="muted">Start with overdue work and tasks due today. Buttons open the linked work; plain counts are summaries. Choose a period for new work, scheduling and outcomes.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Open now')}${dashboardColumn('periodic','Created / scheduled in period')}${dashboardColumn('result','Outcomes in period')}</div>`:''}${dashboardTeamSection()}</section>`;
+ const inactiveOpen=$('#dashboardTeamInactive')?.open;
+ $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><h1>Dashboard</h1><p class="muted">Your work, activity and team at a glance.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Current work','Open items and customer records')}${dashboardColumn('periodic','Activity','Created or scheduled in the period')}${dashboardColumn('result','Outcomes','Completed or closed in the period')}</div>`:''}${dashboardTeamSection(inactiveOpen)}</section>`;
  $('#dashboardRefresh').onclick=()=>run(dashboardWorkspace);
  document.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
  document.querySelectorAll('[data-dashboard-preset]').forEach(button=>button.onclick=()=>{
@@ -6779,18 +6835,22 @@ async function startTwoStepSetup(box,onDone=null){
 // Staff page (owner, or a head for their own department): who has it on, and a reset for a lost phone.
 async function decorateStaffTwoStep(){
  if(me?.role!=='owner'&&me?.role!=='head')return;
- const result=await client.rpc('staff_two_step_status');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_two_step_status');if(me!==actor)return;
  const on=new Map((result.data||[]).map(r=>[r.user_id,r.enabled]));
- document.querySelectorAll('[data-staff-reset]').forEach(button=>{
-  const id=button.dataset.staffReset,cell=button.closest('.actions');if(!cell||cell.querySelector('[data-two-step-reset]'))return;
-  cell.insertAdjacentHTML('beforeend',on.get(id)?`<button type="button" data-two-step-reset="${esc(id)}">Reset two-step</button>`:'<span class="muted two-step-off">Two-step off</span>');
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-two-step-status]');
+  if(status)status.textContent=result.error||!on.has(id)?'Two-step unavailable':on.get(id)?'Two-step: on':'Two-step: off';
+  const cell=row.querySelector('[data-staff-reset]')?.closest('.actions');
+  if(!result.error&&on.get(id)&&cell&&!cell.querySelector('[data-two-step-reset]'))cell.insertAdjacentHTML('beforeend',`<button type="button" class="danger" data-two-step-reset="${esc(id)}" aria-label="Reset two-step for ${esc(employeeName(id))}">Reset two-step</button>`);
+  row.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
+   const name=employeeName(id);
+   if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
+   await staffAccountsCall({action:'reset_two_step',user_id:id});if(me!==actor||!row.isConnected)return;
+   if(status)status.textContent='Two-step: off';
+   button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
+  }));
  });
- document.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
-  const name=employeeName(button.dataset.twoStepReset);
-  if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
-  await staffAccountsCall({action:'reset_two_step',user_id:button.dataset.twoStepReset});
-  button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
- }));
 }
 ;// staff-access.js
 'use strict';
@@ -6924,19 +6984,23 @@ async function headStaffPage(){
 // Staff page (owner only): who can use the accounting forms, with a switch per person. Changes are logged.
 async function decorateStaffAccounting(){
  if(me?.role!=='owner')return;
- const result=await client.rpc('staff_accounting_access');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_accounting_access');if(me!==actor)return;
  const on=new Set((result.data||[]).filter(r=>r.active).map(r=>r.user_id));
- document.querySelectorAll('[data-staff-row]').forEach(row=>{
-  const id=row.dataset.staffRow,cell=row.querySelector('.actions');if(!cell||cell.querySelector('[data-accounting]'))return;
-  cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}">${on.has(id)?'Accounting: on · remove':'Give accounting access'}</button>`);
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-accounting-status]'),cell=row.querySelector('.actions');
+  if(status)status.textContent=result.error?'Accounting unavailable':on.has(id)?'Accounting: on':'Accounting: off';
+  if(result.error||!cell)return;
+  if(!cell.querySelector('[data-accounting]'))cell.insertAdjacentHTML('beforeend',`<button type="button" data-accounting="${esc(id)}" data-on="${on.has(id)}" aria-label="${on.has(id)?'Remove':'Give'} accounting access for ${esc(employeeName(id))}">${on.has(id)?'Remove accounting access':'Give accounting access'}</button>`);
+  const button=cell.querySelector('[data-accounting]');button.onclick=()=>run(async()=>{
+   const turnOn=button.dataset.on!=='true',name=employeeName(id);
+   if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
+   const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(me!==actor||!row.isConnected)return;if(r.error)throw Error(r.error.message);
+   button.dataset.on=String(turnOn);button.textContent=turnOn?'Remove accounting access':'Give accounting access';
+   button.setAttribute('aria-label',`${turnOn?'Remove':'Give'} accounting access for ${name}`);if(status)status.textContent=turnOn?'Accounting: on':'Accounting: off';
+   message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
+  });
  });
- document.querySelectorAll('[data-accounting]').forEach(button=>button.onclick=()=>run(async()=>{
-  const id=button.dataset.accounting,turnOn=button.dataset.on!=='true',name=employeeName(id);
-  if(!turnOn&&!confirm(`Remove accounting access for ${name}?`))return;
-  const r=await client.rpc('set_accounting_access',{p_user_id:id,p_active:turnOn});if(r.error)throw Error(r.error.message);
-  button.dataset.on=String(turnOn);button.textContent=turnOn?'Accounting: on · remove':'Give accounting access';
-  message(`Accounting access ${turnOn?'given to':'removed for'} ${name}.`);
- }));
 }
 
 // Staff page (owner): create many logins from a prepared list (format anudha-staff-list-v1). The owner ticks who to
@@ -7089,22 +7153,54 @@ function openStaffPhone(userId,name,phone){
   if(view==='staff')await staff();message(`Phone saved for ${name}.`);
  });
 }
+function staffSearchValue(person){return [employeeName(person.user_id),person.phone||'',roleLabels[person.role]||person.role,departmentLabel(person.department)].join(' ').toLowerCase();}
 function staffListHtml(rows){
  const owner=me?.role==='owner',sorted=[...rows].sort((a,b)=>Number(b.active)-Number(a.active)||employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  if(!sorted.length)return '<p class="muted">Nobody here yet.</p>';
- return `<div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Department</th><th>Can use</th><th>Phone</th><th>Login</th><th></th></tr></thead><tbody>${sorted.map(x=>{
+ const active=sorted.filter(x=>x.active).length;
+ return `<div class="staff-directory" data-staff-directory><div class="staff-directory-tools"><label><span>Find an employee</span><input type="search" data-staff-search placeholder="Name, phone, role or department" autocomplete="off"></label><label><span>Show</span><select data-staff-filter><option value="active">Active (${active})</option><option value="all">All staff (${sorted.length})</option><option value="inactive">Switched off (${sorted.length-active})</option></select></label></div><p class="staff-directory-count" data-staff-count role="status">${active} active · ${sorted.length} total employees</p><p class="staff-directory-help">${owner?'Department changes save automatically. Wait for the saved confirmation.':'Open workflow areas to see each employee’s access.'}</p><p data-staff-empty hidden>No employees match this search. Try another name or choose All staff.</p><div class="table-wrap"><table class="staff-directory-table" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Employee</th><th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Department</th><th role="columnheader" scope="col">Workflow areas</th><th role="columnheader" scope="col">Login</th><th role="columnheader" scope="col">Actions</th></tr></thead><tbody role="rowgroup">${sorted.map(x=>{
   const self=x.user_id===me?.user_id,manage=canManagePerson(x)&&!self,id=esc(x.user_id),name=esc(employeeName(x.user_id));
+  const areas=accessAreas.filter(([key])=>x.role==='owner'||(x.access||[]).includes(key));
   const role=owner&&!self?`<select data-staff-role="${id}" aria-label="Role for ${name}">${Object.entries(roleLabels).map(([v,l])=>`<option value="${v}" ${x.role===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(roleLabels[x.role]||x.role);
-  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select>`:esc(departmentLabel(x.department));
-  const access=`${esc(accessSummary(x))}${manage&&x.role!=='owner'?` <button type="button" data-staff-access="${id}">Change access</button>`:''}`;
-  const login=`${x.active?'Active':'Switched off'}${manage&&x.role!=='owner'?` <button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}">${x.active?'Switch off':'Switch on'}</button>`:''}`;
-  const actions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" data-staff-reset="${id}">Reset password</button><button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}">Phone</button>`:'';
-  return `<tr data-staff-row="${id}"><td>${name}</td><td>${role}</td><td>${dept}</td><td>${access}</td><td>${esc(x.phone||'—')}</td><td>${login}</td><td><div class="actions">${actions}</div></td></tr>`;}).join('')}</tbody></table></div>`;
+  const dept=owner?`<select data-staff-department="${id}" aria-label="Department for ${name}" aria-describedby="staff-department-status-${id}">${departmentLabels.map(([v,l])=>`<option value="${v}" ${(x.department||'')===v?'selected':''}>${l}</option>`).join('')}</select><span class="staff-field-status" data-staff-department-status id="staff-department-status-${id}"></span>`:esc(x.department?departmentLabel(x.department):'No department');
+  const access=`<details class="staff-area-details"><summary aria-label="Workflow areas for ${name}: ${areas.length}">${areas.length?`${areas.length} ${areas.length===1?'area':'areas'}`:'No areas'}</summary>${areas.length?`<ul>${areas.map(([,label])=>`<li>${esc(label)}</li>`).join('')}</ul>`:'<p>No workflow areas assigned.</p>'}${manage&&x.role!=='owner'?`<button type="button" data-staff-access="${id}" aria-label="Change access for ${name}">Change access</button>`:''}</details>`;
+  const login=`<span class="staff-login-state${x.active?'':' is-off'}">${x.active?'Active':'Switched off'}</span>`;
+  const phone=manage?`<button type="button" data-staff-phone="${id}" data-phone="${esc(x.phone||'')}" aria-label="Edit phone for ${name}">Edit phone</button>`:'';
+  const accountActions=self?'<span class="muted">You · use Change password</span>':manage?`<button type="button" class="danger" data-staff-reset="${id}" aria-label="Reset password for ${name}">Reset password</button>${x.role!=='owner'?`<button type="button" data-staff-active="${id}" data-active="${x.active?'false':'true'}" aria-label="${x.active?'Switch off':'Switch on'} login for ${name}">${x.active?'Switch off login':'Switch on login'}</button>`:''}`:'';
+  const account=manage||self||owner?`<details class="staff-account-details"><summary><span>Account actions</span><span class="staff-account-status"><span data-staff-two-step-status>Two-step: checking…</span>${owner?'<span data-staff-accounting-status>Accounting: checking…</span>':''}</span></summary><div class="actions">${accountActions}</div></details>`:'<span class="muted">Read only</span>';
+  return `<tr data-staff-row="${id}" role="row" data-staff-search-value="${esc(staffSearchValue(x))}" data-staff-state="${x.active?'active':'inactive'}"${x.active?'':' hidden'}><th role="rowheader" scope="row" class="staff-identity"><span class="staff-cell-label" aria-hidden="true">Employee</span><strong>${name}${self?' <span class="staff-self">You</span>':''}</strong><div class="staff-phone-line"><span class="staff-phone-value">${esc(x.phone||'No phone added')}</span>${phone}</div></th><td role="cell" class="staff-role-cell"><span class="staff-cell-label" aria-hidden="true">Role</span>${role}</td><td role="cell" class="staff-department-cell"><span class="staff-cell-label" aria-hidden="true">Department</span>${dept}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Workflow areas</span>${access}</td><td role="cell"><span class="staff-cell-label" aria-hidden="true">Login</span>${login}</td><td role="cell" class="staff-actions-cell"><span class="staff-cell-label" aria-hidden="true">Actions</span>${account}</td></tr>`;}).join('')}</tbody></table></div></div>`;
 }
 function bindStaffList(rows=[]){
  const row=id=>rows.find(r=>r.user_id===id),reload=()=>staff();
+ document.querySelectorAll('[data-staff-directory]').forEach(directory=>{
+  const search=directory.querySelector('[data-staff-search]'),filter=directory.querySelector('[data-staff-filter]'),entries=[...directory.querySelectorAll('[data-staff-row]')];
+  const update=()=>{
+   const terms=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);let shown=0;
+   for(const entry of entries){entry.hidden=!(filter.value==='all'||entry.dataset.staffState===filter.value)||!terms.every(term=>entry.dataset.staffSearchValue.includes(term));if(!entry.hidden)shown++;}
+   directory.querySelector('[data-staff-count]').textContent=`${shown} ${filter.value==='all'?'employees':filter.value==='active'?'active employees':'switched off employees'} · ${entries.length} total`;
+   directory.querySelector('[data-staff-empty]').hidden=shown!==0;
+  };
+  search.oninput=update;filter.onchange=update;update();
+ });
  document.querySelectorAll('[data-staff-reset]').forEach(button=>button.onclick=()=>run(async()=>openStaffPasswordReset(button.dataset.staffReset,employeeName(button.dataset.staffReset))));
- document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>run(async()=>{const r=await client.rpc('set_staff_department',{p_user_id:select.dataset.staffDepartment,p_department:select.value});if(r.error)throw Error(r.error.message);message(`Department saved for ${employeeName(select.dataset.staffDepartment)}.`);}));
+ document.querySelectorAll('[data-staff-department]').forEach(select=>select.onchange=()=>{
+  const person=row(select.dataset.staffDepartment),status=select.parentElement.querySelector('[data-staff-department-status]');
+  const state=(text,error=false)=>{status.textContent=text;status.classList.toggle('error',error);};
+  if(busy){select.value=person.department||'';state('Not saved. Try again when the current change finishes.',true);message(`Department not saved for ${employeeName(person.user_id)}. Another change is still saving. Please try again.`,true);return;}
+  const department=select.value,actor=me,current=()=>me===actor&&select.isConnected;
+  select.disabled=true;state('Saving…');
+  return run(async()=>{
+   try{
+    const r=await client.rpc('set_staff_department',{p_user_id:person.user_id,p_department:department});
+    if(!current())return;if(r.error)throw Error(r.error.message);
+    person.department=department;
+    const entry=select.closest('[data-staff-row]');entry.dataset.staffSearchValue=staffSearchValue(person);
+    entry.closest('[data-staff-directory]').querySelector('[data-staff-search]').oninput();
+    state('Saved');message(`Department saved for ${employeeName(person.user_id)}.`);
+   }catch(error){if(!current())return;select.value=person.department||'';state(error.message||'Not saved. Please try again.',true);throw error;}
+   finally{if(current())select.disabled=false;}
+  });
+ });
  document.querySelectorAll('[data-staff-phone]').forEach(button=>button.onclick=()=>openStaffPhone(button.dataset.staffPhone,employeeName(button.dataset.staffPhone),button.dataset.phone));
  document.querySelectorAll('[data-staff-access]').forEach(button=>button.onclick=()=>run(async()=>openStaffAccess(row(button.dataset.staffAccess),reload)));
  document.querySelectorAll('[data-staff-active]').forEach(button=>button.onclick=()=>run(()=>setStaffActive(row(button.dataset.staffActive),button.dataset.active==='true',reload)));
@@ -7752,7 +7848,7 @@ function loadLists(){
  return listsLoading;
 }
 function firstAccount(){return sortedAccounts(organizations.filter(o=>!o.parent_id))[0]?.id||'';}
-async function load(){const loadEpoch=++sessionLoadEpoch;message('Loading your workspace…');const u=await client.auth.getUser();if(loadEpoch!==sessionLoadEpoch)return;if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;const r=await loadMyStaffRow(u.data.user.id);if(loadEpoch!==sessionLoadEpoch)return;if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button> <span class="identity-name">${esc(employeeName(me.user_id))}</span> <button id="changePassword" type="button">Change password</button> <button id="logout">Sign out</button>`;$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('')}
+async function load(){const loadEpoch=++sessionLoadEpoch;message('Loading your workspace…');const u=await client.auth.getUser();if(loadEpoch!==sessionLoadEpoch)return;if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;const r=await loadMyStaffRow(u.data.user.id);if(loadEpoch!==sessionLoadEpoch)return;if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}me=r.data;const actor=me,first=view==='dashboard',lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button><details id="accountMenu" class="account-menu"><summary aria-label="Account options for ${esc(employeeName(me.user_id))}"><span class="identity-name">${esc(employeeName(me.user_id))}</span></summary><div class="account-menu-actions"><button type="button" data-view="settings">My settings</button><button id="changePassword" type="button">Change password</button><button id="logout" type="button">Sign out</button></div></details>`;$('#accountMenu').onkeydown=event=>{if(event.key==='Escape'&&event.currentTarget.open){event.preventDefault();event.currentTarget.open=false;event.currentTarget.querySelector('summary').focus()}};$('#accountMenu').onclick=event=>{if(event.target.closest('button'))event.currentTarget.open=false};$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();if(first&&me===actor)(listsLoading||loadLists()).then(current=>{if(current&&!selected&&view!=='contacts')selected=firstAccount()},e=>{if(me===actor)message(friendlyError(e),true)});message('')}
 // The signed-in person's staff record. If the per-person access list is not on the server yet (screens updated
 // before the database), fall back to the older record so nobody is signed out; the database still decides access.
 async function loadMyStaffRow(userId){

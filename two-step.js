@@ -85,16 +85,20 @@ async function startTwoStepSetup(box,onDone=null){
 // Staff page (owner, or a head for their own department): who has it on, and a reset for a lost phone.
 async function decorateStaffTwoStep(){
  if(me?.role!=='owner'&&me?.role!=='head')return;
- const result=await client.rpc('staff_two_step_status');if(result.error)return;
+ const actor=me,rows=[...document.querySelectorAll('[data-staff-row]')],result=await client.rpc('staff_two_step_status');if(me!==actor)return;
  const on=new Map((result.data||[]).map(r=>[r.user_id,r.enabled]));
- document.querySelectorAll('[data-staff-reset]').forEach(button=>{
-  const id=button.dataset.staffReset,cell=button.closest('.actions');if(!cell||cell.querySelector('[data-two-step-reset]'))return;
-  cell.insertAdjacentHTML('beforeend',on.get(id)?`<button type="button" data-two-step-reset="${esc(id)}">Reset two-step</button>`:'<span class="muted two-step-off">Two-step off</span>');
+ rows.forEach(row=>{
+  if(!row.isConnected)return;
+  const id=row.dataset.staffRow,status=row.querySelector('[data-staff-two-step-status]');
+  if(status)status.textContent=result.error||!on.has(id)?'Two-step unavailable':on.get(id)?'Two-step: on':'Two-step: off';
+  const cell=row.querySelector('[data-staff-reset]')?.closest('.actions');
+  if(!result.error&&on.get(id)&&cell&&!cell.querySelector('[data-two-step-reset]'))cell.insertAdjacentHTML('beforeend',`<button type="button" class="danger" data-two-step-reset="${esc(id)}" aria-label="Reset two-step for ${esc(employeeName(id))}">Reset two-step</button>`);
+  row.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
+   const name=employeeName(id);
+   if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
+   await staffAccountsCall({action:'reset_two_step',user_id:id});if(me!==actor||!row.isConnected)return;
+   if(status)status.textContent='Two-step: off';
+   button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
+  }));
  });
- document.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
-  const name=employeeName(button.dataset.twoStepReset);
-  if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
-  await staffAccountsCall({action:'reset_two_step',user_id:button.dataset.twoStepReset});
-  button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
- }));
 }
