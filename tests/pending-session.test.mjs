@@ -6,7 +6,7 @@ const source=readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 function fixture(all=async()=>[]){
  const content={innerHTML:'Clients'};
- const c=vm.createContext({me:{user_id:'first'},view:'pending',all,salesLoaded:true,salesProformas:[],syncWorkspaceNavigation(){},$:()=>content});
+ const c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'first'},view:'pending',all,salesLoaded:true,salesProformas:[],syncWorkspaceNavigation(){},$:()=>content});
  vm.runInContext(source,c);
  vm.runInContext("renderPendingStock=()=>{$('#content').innerHTML=pendingLoadError||'Current pending orders'}",c);
  return {c,content,get:expression=>vm.runInContext(expression,c)};

@@ -21,7 +21,7 @@ test('index.html loads one stylesheet and one script, named by content',()=>{
 test('bundles hold every source file once, in page order',()=>{
  const page=read('index.src.html'),js=read('app.bundle.js'),css=read('app.bundle.css');
  const scripts=[...page.matchAll(/<script src="([^"?]+)/g)].map(m=>m[1]),styles=[...page.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)].map(m=>m[1]);
- assert.ok(scripts.length>50&&scripts.includes('vendor/supabase.js')&&scripts.at(-1)==='action-forms.js');
+ assert.ok(scripts.length>50&&scripts.includes('vendor/supabase.js')&&scripts.at(-1)==='workspace-refresh.js');
  assert.ok(js.startsWith("'use strict';"),'every page script runs in strict mode');
  let at=0;for(const f of scripts){const i=js.indexOf(`\n;// ${f}\n`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}
  at=0;for(const f of styles){const i=css.indexOf(`/* ${f} */`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}

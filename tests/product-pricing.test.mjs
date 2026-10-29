@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../product-pricing.js',import.meta.url),'utf8'),domain=readFileSync(new URL('../sales-domain.js',import.meta.url),'utf8');
 function load(extra={}){
- const ctx=vm.createContext({me:{user_id:'sales',role:'staff'},view:'prices',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProductFromChoice:value=>value==='machine'?{id:'machine'}:null,crypto:{randomUUID:()=> 'request-1'},...extra});
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'sales',role:'staff'},view:'prices',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProductFromChoice:value=>value==='machine'?{id:'machine'}:null,crypto:{randomUUID:()=> 'request-1'},...extra});
  vm.runInContext(domain+'\n'+source+';Object.assign(globalThis,{pricingDiscount,pricingMinorText,pricingLineFields,pricingReadLine,pricingRefreshRow,pricingRefreshForm,pricingBindForm,pricingLoad,pricesWorkspace,clearProductPricing,setPrices:rows=>{productPricingActor=me;productSalePrices=new Map(rows.map(r=>[pricingKey(r.product_id,r.currency),r]));}})',ctx);return ctx;
 }
 function lineForm({price='100.00',percent='10',amount='',mode='percent',currency='TZS',kind='sale',quantity='2'}={}){

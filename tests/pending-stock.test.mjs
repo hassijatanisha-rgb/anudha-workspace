@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
- const ctx=vm.createContext({orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],me:{user_id:'a',role:'staff'},
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],me:{user_id:'a',role:'staff'},
   esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String});
  vm.runInContext(readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8'),ctx);return ctx;
 }

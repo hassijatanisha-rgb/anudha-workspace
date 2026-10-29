@@ -106,7 +106,7 @@ function pricingBindForm(form){
 }
 async function pricesWorkspace(target=$('#content')){
  const actor=me,epoch=++productPriceViewEpoch,current=()=>me===actor&&view==='prices'&&epoch===productPriceViewEpoch&&target.isConnected;
- if(!current())return;target.innerHTML='<p role="status">Loading product prices…</p>';
+ if(!current())return;workspaceLoading('Loading product prices…');
  let rows,access;
  try{[rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);}
  catch(error){if(current()){target.innerHTML=`<section class="card"><h1>Product prices</h1><p role="alert">${esc(error.message)}</p><button type="button" data-pricing-reload>Retry loading prices</button></section>`;target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));}return;}

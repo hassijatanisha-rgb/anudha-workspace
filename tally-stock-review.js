@@ -12,7 +12,7 @@ function tallyGodownReview(source,corrections,godown,search){
 }
 async function tallyStockScreen(){
  const actor=me?.user_id;
- $('#content').innerHTML='<p role="status">Loading Tally stock review…</p>';
+ workspaceLoading('Loading Tally stock review…');
  try{
   const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
   if(me?.user_id!==actor||inventorySection!=='review')return;

@@ -17,17 +17,21 @@ actionDialog.addEventListener('cancel',e=>{if(actionSaving)e.preventDefault()});
 actionDialog.addEventListener('close',()=>{actionSubmit=null});
 actionEditorForm.addEventListener('submit',async e=>{
  e.preventDefault();if(actionSaving||!actionSubmit)return;
+ if(!actionEditorForm.reportValidity())return;
  const values=Object.fromEntries(new FormData(actionEditorForm));
  for(const key of Object.keys(values))if(typeof values[key]==='string')values[key]=values[key].trim();
  for(const control of actionFields.querySelectorAll('[required]'))if(!values[control.name]){actionError.textContent='Complete '+(control.labels?.[0]?.textContent.trim()||'the required field')+'.';control.focus();return;}
- actionSaving=true;actionSave.disabled=true;actionCancel.disabled=true;actionSave.textContent='Saving…';actionError.textContent='';
- try{await actionSubmit(values);actionDialog.close()}
- catch(error){actionError.textContent=error.message||'Could not save. Please retry.'}
- finally{actionSaving=false;actionSave.disabled=false;actionCancel.disabled=false;actionSave.textContent='Save'}
+ const submit=actionSubmit,actor=me?.user_id,epoch=actionFeedbackEpoch;
+ await run(async()=>{
+  actionSaving=true;const cancelDisabled=actionCancel.disabled;actionCancel.disabled=true;
+  try{await submit(values);if(me?.user_id===actor&&actionFeedbackEpoch===epoch)actionDialog.close()}
+  finally{actionSaving=false;actionCancel.disabled=cancelDisabled}
+ },{origin:actionSave,errorTarget:actionError,busyLabel:'Saving…'});
 });
 
 function actionForm(title,fields,onSubmit){
  if(actionSaving)return actionEditorForm;
+ if(typeof actionFeedbackRememberDialog==='function')actionFeedbackRememberDialog(actionDialog);
  actionEditorForm.reset();actionEditorForm.querySelector('#actionTitle').textContent=title;
  actionFields.replaceChildren();
  if(typeof fields==='string')actionFields.innerHTML=fields;else actionFields.append(fields);

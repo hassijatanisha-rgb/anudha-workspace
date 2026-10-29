@@ -53,7 +53,7 @@ function installWorkspaceNavigation(){
   if(button&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&busy){navWhileBusy=button;return;}
+  if(button&&busy){navWhileBusy=button;if(typeof actionFeedbackQueueNavigation==='function')actionFeedbackQueueNavigation(button);event.preventDefault?.();event.stopImmediatePropagation?.();return;}
   if(!button)return;
   const section=button.dataset.workspaceSection;
  // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.

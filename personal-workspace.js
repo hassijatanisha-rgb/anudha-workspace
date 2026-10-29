@@ -16,7 +16,7 @@ async function personalWorkspace(){
  // My tasks are team tasks (team-tasks.js); personal to-dos are kept as reminders on the notes page.
  if(personalSection==='task'&&typeof teamTasksWorkspace==='function')return teamTasksWorkspace();
  const epoch=++personalEpoch,actor=me?.user_id,kind=personalSection,target=$('#content');
- target.innerHTML='<p role="status">Loading your workspace…</p>';
+ workspaceLoading('Loading your workspace…');
  let query=client.from('workspace_entries').select('*').is('deleted_at',null);
  query=kind==='note'?query.in('kind',['note','task']):query.eq('kind',kind);
  if(kind==='event'){

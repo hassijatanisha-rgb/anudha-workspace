@@ -8,7 +8,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(files,all=async()=>[]){
  const content={innerHTML:'Current page'};
  const q={select(){return this},order(){return this},limit(){return this},then(ok){return Promise.resolve({data:[]}).then(ok)}};
- const c=vm.createContext({me:{user_id:'a'},view:'service',all,client:{from:()=>q},esc:String,$:()=>content,document:{addEventListener(){},querySelectorAll:()=>[]},window:{addEventListener(){}},location:{hash:''},syncWorkspaceNavigation(){}});
+ const c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'a'},view:'service',all,client:{from:()=>q},esc:String,$:()=>content,document:{addEventListener(){},querySelectorAll:()=>[]},window:{addEventListener(){}},location:{hash:''},syncWorkspaceNavigation(){}});
  for(const file of ['business-date.js',...files])vm.runInContext(read(file),c);
  return {c,content,get:code=>vm.runInContext(code,c)};
 }
@@ -51,7 +51,7 @@ test('service rows reject excess input instead of truncating it',()=>{
 });
 
 function loginGate({mfa=false,password=true,setup=false}={}){
- const events=[],c=vm.createContext({sessionLoadEpoch:0,message(){},client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}})}},twoStepNeeded:async()=>mfa,requirePasswordChange:()=>{events.push('password');return password;},twoStepSetupRequired:async()=>setup,showTwoStepPrompt:()=>events.push('mfa'),showTwoStepSetupRequired:()=>events.push('setup'),loadMyStaffRow:async()=>{events.push('business');throw Error('Business data reached');}});
+ const events=[],c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,sessionLoadEpoch:0,message(){},client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}})}},twoStepNeeded:async()=>mfa,requirePasswordChange:()=>{events.push('password');return password;},twoStepSetupRequired:async()=>setup,showTwoStepPrompt:()=>events.push('mfa'),showTwoStepSetupRequired:()=>events.push('setup'),loadMyStaffRow:async()=>{events.push('business');throw Error('Business data reached');}});
  vm.runInContext(read('app.js').split('\n').find(line=>line.startsWith('async function load(){')),c);return {c,events};
 }
 test('existing MFA challenge precedes temporary-password replacement and all business reads',async()=>{

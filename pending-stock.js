@@ -81,7 +81,7 @@ async function pendingStockWorkspace(force=false){
  if(!current())return;
  syncWorkspaceNavigation();
  // Stock may change in another workspace during the same day; check it on every entry.
- $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
+ workspaceLoading('Loading pending stock orders…');
  try{if(!(await loadPendingStock(force||pendingAvailabilityDay!==pendingToday())))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  if(!current())return;
  renderPendingStock();

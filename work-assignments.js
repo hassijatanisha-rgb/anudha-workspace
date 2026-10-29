@@ -1,7 +1,7 @@
 'use strict';
 // Handoffs: who is responsible for each Pro forma, delivery, service job, lead and pending order, and the
 // resulting per-person task list. Writes go through hand_off_work / close_work_assignment only.
-let workEpoch=0;
+let workEpoch=0,workNoticeLoad=0,unownedWorkLoad=0;
 const workSuggestedTasks={
  proforma:['Send Pro forma to the customer','Follow up customer acceptance','Approve and record the tax invoice','Revise the Pro forma'],
  delivery:['Assign packing','Pack the order','Check packing and mark ready','Deliver and collect signed delivery note'],
@@ -16,7 +16,7 @@ const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service 
 const workSteps=[['invoice','Customer invoice and TRA receipt','After the customer accepts a Pro forma'],['packing','Packing','After invoice approval, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
 function workCanAssign(type){const area={proforma:'proformas',delivery:'deliveries',tally_invoice:'deliveries',service:'service',lead:'leads',purchase:'purchasing',pending:null};return !!me?.user_id&&me.active!==false&&Object.hasOwn(area,type)&&(!area[type]||me.role==='owner'||(me.access||[]).includes(area[type]));}
 function workRecordClosed(type,record){return ({proforma:['rejected','cancelled'],delivery:['delivered','cancelled'],service:['completed','cancelled']}[type]||[]).includes(record?.status);}
-function clearWorkAssignments(){workEpoch++;workPendingHandoff=null;}
+function clearWorkAssignments(){workEpoch++;workNoticeLoad++;unownedWorkLoad++;workPendingHandoff=null;}
 // A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
 function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
@@ -172,8 +172,9 @@ async function workOpenRecord(row){
 // Work handed to the signed-in employee, shown at the top of To-do tasks. Overdue first, then by due date.
 async function renderMyHandoffs(target){
  const epoch=++workEpoch,actor=me;if(!actor?.user_id||!target)return false;
- const box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
- const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
+ let box=target.querySelector('.my-handoffs');
+ if(!box){box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
+ const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);}
  let result;try{result={data:await workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at',query=>query.eq('assignee_user_id',actor.user_id).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}))};}catch(error){result={error};}
  if(epoch!==workEpoch||me!==actor||!box.isConnected)return false;
  if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return false;}
@@ -190,9 +191,11 @@ async function renderMyHandoffs(target){
 
 // Updates for the signed-in employee (for example: your Pro forma was invoiced and sent to packing).
 async function renderWorkNotices(target){
- const actor=me?.user_id;if(!actor||!target)return;
+ const load=++workNoticeLoad,actor=me?.user_id;if(!actor||!target)return;
  const result=await client.from('work_notices').select('id,record_type,record_id,record_label,message,created_at').eq('user_id',actor).is('read_at',null).order('created_at',{ascending:false}).limit(50);
- if(me?.user_id!==actor||result.error||!(result.data||[]).length)return;
+ if(me?.user_id!==actor||load!==workNoticeLoad||!target.isConnected||result.error)return;
+ target.querySelector('.work-notices')?.remove();
+ if(!(result.data||[]).length)return;
  const box=document.createElement('section');box.className='card work-notices';
  box.innerHTML=`<h2>Updates · ${result.data.length}</h2><ol class="handoff-list">${result.data.map(n=>`<li><strong>${esc(n.record_label)}</strong> · ${esc(n.message)}<br><small>${esc(workSince(n.created_at))} ago</small> <button type="button" data-notice-open="${esc(n.id)}">Open</button> <button type="button" data-notice-dismiss="${esc(n.id)}">Got it</button></li>`).join('')}</ol>`;
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
@@ -201,9 +204,10 @@ async function renderWorkNotices(target){
 }
 // Open orders and jobs that nobody is responsible for. Everyone sees them, so nothing waits unseen.
 async function renderUnownedWork(target){
- const actor=me?.user_id;if(!actor||!target)return;
+ const load=++unownedWorkLoad,actor=me?.user_id;if(!actor||!target)return;
  const result=await client.rpc('unowned_work');
- if(me?.user_id!==actor)return;
+ if(me?.user_id!==actor||load!==unownedWorkLoad||!target.isConnected)return;
+ target.querySelector('.unowned-work')?.remove();
  const box=document.createElement('section');box.className='card unowned-work';
  if(result.error){box.innerHTML=`<h2>Nobody responsible</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;}
  else{

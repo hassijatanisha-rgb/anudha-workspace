@@ -41,7 +41,7 @@ test('actions follow the stage rules',()=>{
 test('menu, router, sign-out and Pro forma prefill are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
  assert.match(read('workspace-navigation.js'),/\['Leads','leads','leads'\]/);assert.doesNotMatch(read('workspace-navigation.js'),/Inquiries|Lead \/ Opportunity/);
- assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{clearEmployeeNames\(\);if\(typeof clearLeads==='function'\)clearLeads\(\);/);
+ assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{[^\n]*\bclearEmployeeNames\(\)/);assert.match(read('app.js'),/function clear\(\)\{[^\n]*if\(typeof clearLeads==='function'\)clearLeads\(\);/);
  assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>salesNavigate\(\(\)=>\{salesPrefill=null;/);
  const html=read('index.src.html');assert.ok(html.indexOf('sales-leads.js')>html.indexOf('sales-delivery.js')&&html.indexOf('sales-leads.js')<html.indexOf('app.js'));
 });

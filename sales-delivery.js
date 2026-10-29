@@ -228,7 +228,7 @@ async function salesDeliveryWorkspace(force=false){
  if(!salesConfirmLeave())return;
  const actor=me,epoch=salesEpoch,request=++salesWorkspaceRequest,current=()=>me===actor&&salesEpoch===epoch&&request===salesWorkspaceRequest&&view==='sales';
  syncWorkspaceNavigation();
- $('#content').innerHTML='<p role="status">Loading Pro forma invoices and deliveries…</p>';
+ workspaceLoading('Loading Pro forma invoices and deliveries…');
  if(salesSection==='documents'){$('#content').innerHTML=officialDocumentsScreen();bindSalesDelivery();return;}
  if(force||!salesLoaded)await loadSalesDelivery();
  if(!current())return;

@@ -9,7 +9,7 @@ function contractActive(row,on=companyDate()){return row?.status==='approved'&&r
 function contractSummary(row){return `<strong>${esc(row.contract_number)} · ${esc(row.title)}</strong><p>${esc(contractKindLabel(row.kind))} · ${esc(contractCustomerLabel(row.organization_id))} · ${esc(row.status)}${row.status==='approved'&&!contractActive(row)?' · outside effective dates':''}</p><p>${esc(row.starts_on)} — ${esc(row.ends_on||'No end date')} · ${esc(row.reference||'No reference')}</p>`;}
 async function contractsWorkspace(){
  const actor=me,epoch=++contractEpoch,current=()=>me===actor&&contractEpoch===epoch&&view==='contracts';
- const target=$('#content');target.innerHTML='<p role="status">Loading contracts…</p>';
+ const target=$('#content');workspaceLoading('Loading contracts…');
  try{
   let query=client.from('customer_contracts').select('*').order('updated_at',{ascending:false}).order('id',{ascending:false});
   if(contractFocus)query=query.eq('id',contractFocus);else {if(contractKind)query=query.eq('kind',contractKind);if(contractCustomer)query=query.eq('organization_id',contractCustomer);query=query.range(contractPage*30,contractPage*30+30);}

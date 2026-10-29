@@ -7,7 +7,7 @@ function fixture(){
  const content={innerHTML:'2 installation jobs'},reads=[];
  let submit,finish;
  const response=new Promise(resolve=>{finish=resolve;});
- const c=vm.createContext({me:{user_id:'actor'},view:'sales',esc:String,$:()=>content,
+ const c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'actor'},view:'sales',esc:String,$:()=>content,
   document:{querySelectorAll:()=>[]},syncWorkspaceNavigation(){},message(){},
   actionForm(title,fields,callback){submit=callback;},
   all:async table=>{reads.push(table);return table==='service_cases'?Array.from({length:4},(_,i)=>({id:'case-'+i,case_type:'installation'})):[];},

@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 function fixture(){
  const content={innerHTML:''},calls=[];
  const query={select(){return this},order(){return this},limit(){return this},then(ok){return Promise.resolve({data:[]}).then(ok)}};
- const ctx=vm.createContext({
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,
   document:{addEventListener(){},querySelectorAll(){return []}},$ :selector=>selector==='#content'?content:null,
   esc:String,client:{from:()=>query,rpc:async(name,args)=>{calls.push({name,args});return {data:{}}}},
   all:async table=>{if(table==='product_detail_reviews')throw Error('Correction connection unavailable');return [];},products:[{id:'p',name:'Raw source identity',source:{}}],

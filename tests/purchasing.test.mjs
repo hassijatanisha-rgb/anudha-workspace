@@ -67,3 +67,42 @@ test('after a step only that order is read again; the rest of the list is kept',
  assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
  assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
 });
+function supplierSaveContext(){
+ const ctx=load('owner'),calls=[],scroll=[];
+ ctx.FormData=class {constructor(form){this.values=form.values;}get(key){return this.values[key]??null;}has(key){return key in this.values;}};
+ ctx.crypto={randomUUID:()=> 'supplier-new'};ctx.window={scrollX:12,scrollY:340,scrollTo:(...position)=>scroll.push(position)};ctx.message=text=>calls.push(['message',text]);
+ ctx.renderPurchasing=()=>calls.push(['render']);ctx.purchasingWorkspace=async()=>{throw Error('Unexpected full reload');};
+ ctx.client={from:()=>{throw Error('Unexpected readback');}};
+ vm.runInContext(`view='purchasing';purchaseSection='suppliers';purchaseLoaded=true;purchaseSearch='fixture';purchaseFilter='ordered';purchasePage=2;supplierEditing='s1';suppliers=[{id:'s1',name:'Fixture Medical',active:true,version:1},{id:'s2',name:'Other supplier',active:true,version:3}];`,ctx);
+ const form={dataset:{id:'s1',version:'1'},isConnected:true,values:{name:'Updated Fixture',email:'SUPPLIER@example.com'}};
+ return {ctx,calls,scroll,form};
+}
+test('supplier save merges the confirmed row without reloading orders and preserves current list position',async()=>{
+ const {ctx,calls,scroll,form}=supplierSaveContext(),before=vmJson(ctx,'purchaseLines');
+ ctx.client.rpc=async(name,args)=>{assert.equal(name,'save_supplier');assert.equal(args.p_id,'s1');return {data:[{id:'s1',name:'Updated Fixture',email:'supplier@example.com',active:true,version:2}]};};
+ await ctx.saveSupplierForm(form);
+ assert.deepEqual(vmJson(ctx,'suppliers.map(row=>[row.id,row.version,row.email||null])'),[['s1',2,'supplier@example.com'],['s2',3,null]]);
+ assert.deepEqual(vmJson(ctx,'purchaseLines'),before);assert.deepEqual(vmJson(ctx,'[purchaseSearch,purchaseFilter,purchasePage,supplierEditing]'),['fixture','ordered',2,'']);
+ assert.deepEqual(calls,[['render'],['message','Updated Fixture saved.']]);assert.deepEqual(scroll,[[12,340]]);
+});
+test('new supplier keeps its retry ID after an uncertain save and inserts only one confirmed row',async()=>{
+ const {ctx,form}=supplierSaveContext(),ids=[];form.dataset={id:'',version:'0'};
+ ctx.client.rpc=async(name,args)=>{ids.push(args.p_id);if(ids.length===1)throw Error('Connection unavailable');return {data:{id:args.p_id,name:args.p_fields.name,active:true,version:1}};};
+ await assert.rejects(ctx.saveSupplierForm(form),/Connection unavailable/);await ctx.saveSupplierForm(form);
+ assert.deepEqual(ids,['supplier-new','supplier-new']);assert.equal(vmJson(ctx,'suppliers.filter(row=>row.id==="supplier-new").length'),1);assert.equal(vmJson(ctx,'supplierPendingSave'),null);
+});
+test('supplier response cannot repaint another section, overwrite a newer load, or cross sign-out',async()=>{
+ for(const change of ['section','epoch','logout']){
+  const {ctx,calls,form}=supplierSaveContext();let finish;ctx.client.rpc=()=>new Promise(resolve=>{finish=resolve;});
+  const saving=ctx.saveSupplierForm(form);
+  if(change==='section')vm.runInContext(`purchaseSection='orders';supplierEditing='another';`,ctx);
+  if(change==='epoch')vm.runInContext(`purchaseEpoch++;suppliers=[{id:'s1',version:3,name:'Newest'}];`,ctx);
+  if(change==='logout'){ctx.clearPurchasing();ctx.me=null;}
+  finish({data:{id:'s1',version:2,name:'Saved'}});
+  if(change==='logout')await assert.rejects(saving,/Login changed/);else await saving;
+  assert.deepEqual(calls,[]);
+  if(change==='section')assert.equal(vmJson(ctx,'supplierEditing'),'another');
+  if(change==='epoch')assert.equal(vmJson(ctx,'suppliers[0].version'),3);
+  if(change==='logout')assert.deepEqual(vmJson(ctx,'suppliers'),[]);
+ }
+});

@@ -684,7 +684,7 @@ function tallyGodownReview(source,corrections,godown,search){
 }
 async function tallyStockScreen(){
  const actor=me?.user_id;
- $('#content').innerHTML='<p role="status">Loading Tally stock review…</p>';
+ workspaceLoading('Loading Tally stock review…');
  try{
   const [rows,corrections]=await Promise.all([all('tally_stock_sources','id,source_file,source_row,godown,product_name,quantity,unit,balance_date,imported_at'),all('tally_stock_corrections','*')]);
   if(me?.user_id!==actor||inventorySection!=='review')return;
@@ -1083,7 +1083,7 @@ function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='own
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
  const actor=me,section=inventorySection;if(!actor||view!=='inventory')return;
- $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
+ workspaceLoading('Loading godowns, stock and transfers…');
  const loading=!inventoryLoaded||force?loadInventoryOperations():null,epoch=inventoryEpoch;
  if(loading)await loading;
  if(me!==actor||epoch!==inventoryEpoch||view!=='inventory'||inventorySection!==section)return;
@@ -1492,7 +1492,7 @@ function contractActive(row,on=companyDate()){return row?.status==='approved'&&r
 function contractSummary(row){return `<strong>${esc(row.contract_number)} · ${esc(row.title)}</strong><p>${esc(contractKindLabel(row.kind))} · ${esc(contractCustomerLabel(row.organization_id))} · ${esc(row.status)}${row.status==='approved'&&!contractActive(row)?' · outside effective dates':''}</p><p>${esc(row.starts_on)} — ${esc(row.ends_on||'No end date')} · ${esc(row.reference||'No reference')}</p>`;}
 async function contractsWorkspace(){
  const actor=me,epoch=++contractEpoch,current=()=>me===actor&&contractEpoch===epoch&&view==='contracts';
- const target=$('#content');target.innerHTML='<p role="status">Loading contracts…</p>';
+ const target=$('#content');workspaceLoading('Loading contracts…');
  try{
   let query=client.from('customer_contracts').select('*').order('updated_at',{ascending:false}).order('id',{ascending:false});
   if(contractFocus)query=query.eq('id',contractFocus);else {if(contractKind)query=query.eq('kind',contractKind);if(contractCustomer)query=query.eq('organization_id',contractCustomer);query=query.range(contractPage*30,contractPage*30+30);}
@@ -1645,7 +1645,7 @@ function pricingBindForm(form){
 }
 async function pricesWorkspace(target=$('#content')){
  const actor=me,epoch=++productPriceViewEpoch,current=()=>me===actor&&view==='prices'&&epoch===productPriceViewEpoch&&target.isConnected;
- if(!current())return;target.innerHTML='<p role="status">Loading product prices…</p>';
+ if(!current())return;workspaceLoading('Loading product prices…');
  let rows,access;
  try{[rows,access]=await Promise.all([pricingLoad(),client.rpc('accounting_access')]);}
  catch(error){if(current()){target.innerHTML=`<section class="card"><h1>Product prices</h1><p role="alert">${esc(error.message)}</p><button type="button" data-pricing-reload>Retry loading prices</button></section>`;target.querySelector('[data-pricing-reload]').onclick=()=>run(()=>pricesWorkspace(target));}return;}
@@ -1940,7 +1940,7 @@ async function salesDeliveryWorkspace(force=false){
  if(!salesConfirmLeave())return;
  const actor=me,epoch=salesEpoch,request=++salesWorkspaceRequest,current=()=>me===actor&&salesEpoch===epoch&&request===salesWorkspaceRequest&&view==='sales';
  syncWorkspaceNavigation();
- $('#content').innerHTML='<p role="status">Loading Pro forma invoices and deliveries…</p>';
+ workspaceLoading('Loading Pro forma invoices and deliveries…');
  if(salesSection==='documents'){$('#content').innerHTML=officialDocumentsScreen();bindSalesDelivery();return;}
  if(force||!salesLoaded)await loadSalesDelivery();
  if(!current())return;
@@ -2739,7 +2739,7 @@ async function loadLeads(){
 async function leadsWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!leadLoaded){
-  $('#content').innerHTML='<p role="status">Loading inquiries and leads…</p>';
+  workspaceLoading('Loading inquiries and leads…');
   try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
  }
  if(view!=='leads'||me?.user_id!==actor)return;
@@ -2910,7 +2910,7 @@ async function pendingStockWorkspace(force=false){
  if(!current())return;
  syncWorkspaceNavigation();
  // Stock may change in another workspace during the same day; check it on every entry.
- $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
+ workspaceLoading('Loading pending stock orders…');
  try{if(!(await loadPendingStock(force||pendingAvailabilityDay!==pendingToday())))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  if(!current())return;
  renderPendingStock();
@@ -2983,7 +2983,7 @@ async function showPendingHistory(id){
 'use strict';
 // Handoffs: who is responsible for each Pro forma, delivery, service job, lead and pending order, and the
 // resulting per-person task list. Writes go through hand_off_work / close_work_assignment only.
-let workEpoch=0;
+let workEpoch=0,workNoticeLoad=0,unownedWorkLoad=0;
 const workSuggestedTasks={
  proforma:['Send Pro forma to the customer','Follow up customer acceptance','Approve and record the tax invoice','Revise the Pro forma'],
  delivery:['Assign packing','Pack the order','Check packing and mark ready','Deliver and collect signed delivery note'],
@@ -2998,7 +2998,7 @@ const workTypeLabels={proforma:'Pro forma',delivery:'Delivery',service:'Service 
 const workSteps=[['invoice','Customer invoice and TRA receipt','After the customer accepts a Pro forma'],['packing','Packing','After invoice approval, and while the delivery is packed'],['delivery','Delivery','When the order goes out for delivery'],['installation','Installation','New installation jobs, until an engineer is assigned'],['service','Service','New service jobs, until an engineer is assigned'],['purchase_approval','Purchase approval','New purchase requests']];
 function workCanAssign(type){const area={proforma:'proformas',delivery:'deliveries',tally_invoice:'deliveries',service:'service',lead:'leads',purchase:'purchasing',pending:null};return !!me?.user_id&&me.active!==false&&Object.hasOwn(area,type)&&(!area[type]||me.role==='owner'||(me.access||[]).includes(area[type]));}
 function workRecordClosed(type,record){return ({proforma:['rejected','cancelled'],delivery:['delivered','cancelled'],service:['completed','cancelled']}[type]||[]).includes(record?.status);}
-function clearWorkAssignments(){workEpoch++;workPendingHandoff=null;}
+function clearWorkAssignments(){workEpoch++;workNoticeLoad++;unownedWorkLoad++;workPendingHandoff=null;}
 // A card's record by id; lists can hold tens of thousands of leads or orders, so the indexed lookup is used.
 function workRow(rows,id){return typeof rowById==='function'?rowById(rows,id):rows.find(row=>row.id===id)}
 function workRecordCards(){
@@ -3154,8 +3154,9 @@ async function workOpenRecord(row){
 // Work handed to the signed-in employee, shown at the top of To-do tasks. Overdue first, then by due date.
 async function renderMyHandoffs(target){
  const epoch=++workEpoch,actor=me;if(!actor?.user_id||!target)return false;
- const box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
- const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
+ let box=target.querySelector('.my-handoffs');
+ if(!box){box=document.createElement('section');box.className='card my-handoffs';box.innerHTML='<h2>Work handed to me</h2><p role="status">Loading…</p>';
+ const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);}
  let result;try{result={data:await workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at',query=>query.eq('assignee_user_id',actor.user_id).eq('status','open').order('due_on',{ascending:true,nullsFirst:false}))};}catch(error){result={error};}
  if(epoch!==workEpoch||me!==actor||!box.isConnected)return false;
  if(result.error){box.innerHTML=`<h2>Work handed to me</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;return false;}
@@ -3172,9 +3173,11 @@ async function renderMyHandoffs(target){
 
 // Updates for the signed-in employee (for example: your Pro forma was invoiced and sent to packing).
 async function renderWorkNotices(target){
- const actor=me?.user_id;if(!actor||!target)return;
+ const load=++workNoticeLoad,actor=me?.user_id;if(!actor||!target)return;
  const result=await client.from('work_notices').select('id,record_type,record_id,record_label,message,created_at').eq('user_id',actor).is('read_at',null).order('created_at',{ascending:false}).limit(50);
- if(me?.user_id!==actor||result.error||!(result.data||[]).length)return;
+ if(me?.user_id!==actor||load!==workNoticeLoad||!target.isConnected||result.error)return;
+ target.querySelector('.work-notices')?.remove();
+ if(!(result.data||[]).length)return;
  const box=document.createElement('section');box.className='card work-notices';
  box.innerHTML=`<h2>Updates · ${result.data.length}</h2><ol class="handoff-list">${result.data.map(n=>`<li><strong>${esc(n.record_label)}</strong> · ${esc(n.message)}<br><small>${esc(workSince(n.created_at))} ago</small> <button type="button" data-notice-open="${esc(n.id)}">Open</button> <button type="button" data-notice-dismiss="${esc(n.id)}">Got it</button></li>`).join('')}</ol>`;
  const heading=target.querySelector('.heading');if(heading)heading.after(box);else target.prepend(box);
@@ -3183,9 +3186,10 @@ async function renderWorkNotices(target){
 }
 // Open orders and jobs that nobody is responsible for. Everyone sees them, so nothing waits unseen.
 async function renderUnownedWork(target){
- const actor=me?.user_id;if(!actor||!target)return;
+ const load=++unownedWorkLoad,actor=me?.user_id;if(!actor||!target)return;
  const result=await client.rpc('unowned_work');
- if(me?.user_id!==actor)return;
+ if(me?.user_id!==actor||load!==unownedWorkLoad||!target.isConnected)return;
+ target.querySelector('.unowned-work')?.remove();
  const box=document.createElement('section');box.className='card unowned-work';
  if(result.error){box.innerHTML=`<h2>Nobody responsible</h2><p role="alert">Could not load: ${esc(result.error.message)}</p>`;}
  else{
@@ -3311,12 +3315,16 @@ async function saveSupplierForm(form){
  const fields={name:String(f.get('name')||'').trim(),country:f.get('country')||'',contact_name:f.get('contact_name')||'',phone:f.get('phone')||'',email:String(f.get('email')||'').trim(),tin:f.get('tin')||'',payment_terms:f.get('payment_terms')||'',notes:f.get('notes')||'',active:f.has('active')?f.get('active')==='true':(existing?.active??true)};
  if(fields.name.length<2)throw Error('Enter the supplier name.');
  if(!id&&supplierPendingSave?.name!==fields.name)supplierPendingSave={name:fields.name,id:crypto.randomUUID()};
- const requestId=id||supplierPendingSave.id,actor=me?.user_id,result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});
+ const requestId=id||supplierPendingSave.id,actor=me?.user_id,epoch=purchaseEpoch,section=purchaseSection,result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});
  if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
+ if(epoch!==purchaseEpoch)return;
+ const current=suppliers.find(row=>row.id===saved.id);
+ if(!current||current.version<=saved.version)suppliers=[saved,...suppliers.filter(row=>row.id!==saved.id)];
+ if(supplierPendingSave?.id===requestId)supplierPendingSave=null;
+ if(view==='purchasing'&&purchaseSection===section&&form.isConnected){supplierEditing='';const x=window.scrollX,y=window.scrollY;renderPurchasing();window.scrollTo(x,y);message(`${saved.name} saved.`);}
 }
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
 async function purchaseRefreshOne(id){
@@ -3342,7 +3350,7 @@ async function loadPurchasing(){
 async function purchasingWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
-  $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
+  workspaceLoading('Loading purchasing…');
   try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
  if(view!=='purchasing'||me?.user_id!==actor)return;
@@ -3498,7 +3506,7 @@ async function stockCountWorkspace(force=false){
  if(!stockCountEnabled()){$('#content').innerHTML='<section class="card"><h1>Stock count is switched off</h1><p class="muted">The physical count is finished. Stock is managed in Inventory.</p></section>';return;}
  if(!countGodown)countGodown=countRememberedGodown();
  if(force||!countLoaded){
-  $('#content').innerHTML='<p role="status">Loading the product list and counts…</p>';
+  workspaceLoading('Loading the product list and counts…');
   const epoch=countEpoch+1;try{if(!(await loadStockCount(force)))return;}catch(error){if(me!==actor||countEpoch!==epoch)return;countLoadError=error.message;countLoaded=false;}
  }
  if(view!=='stockcount'||me!==actor)return;
@@ -3688,7 +3696,7 @@ async function loadTallyInvoices(){
 async function tallyInvoicesWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!tallyInvoiceLoaded){
-  $('#content').innerHTML='<p role="status">Loading Tally invoices…</p>';
+  workspaceLoading('Loading Tally invoices…');
   try{if(!(await loadTallyInvoices()))return;}catch(error){if(me?.user_id!==actor)return;tallyInvoiceError=error.message;tallyInvoiceLoaded=false;}
  }
  if(view!=='tallyinvoices'||me?.user_id!==actor)return;
@@ -4243,7 +4251,7 @@ function bindServiceIntake(form){
   }finally{if(current())button.disabled=false;}});
  });
 }
-async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;$('#content').innerHTML='<p role="status">Loading service and installation jobs…</p>';const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
+async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;workspaceLoading('Loading service and installation jobs…');const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
 
 async function focusServiceCase(id){
  const actor=me,epoch=serviceEpoch,origin=view;
@@ -4266,7 +4274,7 @@ function approvalReceiptMatches(answer,attempt,actor){
 async function projectApprovals(){
  const target=$('#content'),actor=me?.user_id||me?.id,load=++approvalLoad;
  if(me?.role!=='owner'){target.innerHTML='<section class="card"><h1>Questions for the owner</h1><p>Owner access is required to answer project decisions.</p></section>';return;}
- target.innerHTML='<p role="status">Loading project decisions…</p>';
+ workspaceLoading('Loading project decisions…');
  let questions,answers;
  try{[questions,answers]=await Promise.all([
   client.from('project_approval_questions').select('*').order('created_at').limit(100),
@@ -4330,7 +4338,7 @@ async function personalWorkspace(){
  // My tasks are team tasks (team-tasks.js); personal to-dos are kept as reminders on the notes page.
  if(personalSection==='task'&&typeof teamTasksWorkspace==='function')return teamTasksWorkspace();
  const epoch=++personalEpoch,actor=me?.user_id,kind=personalSection,target=$('#content');
- target.innerHTML='<p role="status">Loading your workspace…</p>';
+ workspaceLoading('Loading your workspace…');
  let query=client.from('workspace_entries').select('*').is('deleted_at',null);
  query=kind==='note'?query.in('kind',['note','task']):query.eq('kind',kind);
  if(kind==='event'){
@@ -4426,7 +4434,7 @@ function travelCard(row){
 async function travelWorkspace(force=false){
  const epoch=++travelEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!travelLoaded){
-  $('#content').innerHTML='<p role="status">Loading travel requests…</p>';
+  workspaceLoading('Loading travel requests…');
   const result=await client.from('travel_requests').select('*').order('depart_at',{ascending:false}).limit(500);
   if(epoch!==travelEpoch||me?.user_id!==actor||view!=='travel')return;
   if(result.error){$('#content').innerHTML=`<h1>Travel requests</h1><p role="alert">Travel requests could not load: ${esc(result.error.message)}</p>`;return;}
@@ -4444,6 +4452,13 @@ function renderTravel(){
  document.querySelectorAll('[data-travel-filter]').forEach(button=>button.onclick=()=>{travelFilter=button.dataset.travelFilter;renderTravel();});
  document.querySelectorAll('[data-travel-edit]').forEach(button=>button.onclick=()=>openTravelEditor(travelRows.find(row=>row.id===button.dataset.travelEdit)));
  document.querySelectorAll('[data-travel-action]').forEach(button=>button.onclick=()=>openTravelAction(travelRows.find(row=>row.id===button.dataset.id),button.dataset.travelAction));
+}
+function travelApplySaved(saved,id,version){
+ if(saved?.id!==id||saved.version!==version+1)throw Error('The server did not confirm the trip revision. Retry with the same values.');
+ const current=travelRows.find(row=>row.id===id);
+ if(!current||current.version<=saved.version)travelRows=[saved,...travelRows.filter(row=>row.id!==id)];
+ if(view!=='travel')return false;
+ const x=window.scrollX,y=window.scrollY;renderTravel();window.scrollTo(x,y);return true;
 }
 function travelLocalInput(value){if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
 function travelStopEditor(stop={}){
@@ -4467,7 +4482,7 @@ function travelReadStops(form){
  if(!stops.length||stops.length>20)throw Error('Add between 1 and 20 itinerary stops.');return stops;
 }
 function openTravelEditor(row){
- const people=row?.travellers||[me.user_id],id=row?.id||crypto.randomUUID(),actor=me?.user_id,operation=crypto.randomUUID();
+ const people=row?.travellers||[me.user_id],id=row?.id||crypto.randomUUID(),actor=me?.user_id,epoch=travelEpoch,operation=crypto.randomUUID();
  const employees=[...employeeDirectory.values()].filter(e=>e.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);tomorrow.setHours(8,0,0,0);const back=new Date(tomorrow);back.setHours(17,0,0,0);
  const purposes=row?.purposes?.length?row.purposes:[row?.purpose||'meeting'];
@@ -4492,7 +4507,8 @@ function openTravelEditor(row){
   const rate=moneyMinor(values.perDiemRate),intercity=moneyMinor(values.intercity),local=moneyMinor(values.local);travelCosts(values.perDiemDays,rate,intercity,local);
   const result=await client.rpc('save_travel_visit_plan',{p_id:id,p_expected_version:row?.version||0,p_operation_id:operation,p_travellers:travellers,p_depart_at:depart.toISOString(),p_return_at:ret.toISOString(),p_transport:values.transport||'',p_notes:values.notes||'',p_purposes:selectedPurposes,p_itinerary:itinerary,p_currency:values.currency,p_per_diem_days:Number(values.perDiemDays),p_per_diem_rate_minor:rate,p_intercity_transport_minor:intercity,p_local_transport_minor:local});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');if(result.error)throw Error(result.error.message);
-  const saved=Array.isArray(result.data)?result.data[0]:result.data;await travelWorkspace(true);message(`${saved?.request_number||'Travel request'} ${row?'updated':'sent for approval'}.`);
+  if(epoch!==travelEpoch)return;
+  const saved=Array.isArray(result.data)?result.data[0]:result.data;if(travelApplySaved(saved,id,row?.version||0))message(`${saved.request_number} ${row?'updated':'sent for approval'}.`);
  });
  const length=()=>{form.querySelector('#travelLength').textContent=`Trip duration: ${travelDuration(form.elements.depart.value,form.elements.return.value)||'Choose trip dates'}`;};
  form.elements.depart.oninput=length;form.elements.return.oninput=length;length();
@@ -4508,7 +4524,7 @@ function openTravelEditor(row){
 }
 function openTravelAction(row,action){
  if(!row)return;
- const actor=me?.user_id,operation=crypto.randomUUID(),titles={approve:'Approve trip',decline:'Decline trip',done:'Post-visit report',cancel:'Cancel trip'};
+ const actor=me?.user_id,epoch=travelEpoch,operation=crypto.randomUUID(),titles={approve:'Approve trip',decline:'Decline trip',done:'Post-visit report',cancel:'Cancel trip'};
  const label={approve:'Note · optional',decline:'Why is it declined?',done:'Post-visit report · overall results, issues and recommendations',cancel:'Why is it cancelled? · optional'}[action];
  const outcomes=action==='done'?(row.itinerary||[]).map((stop,i)=>`<fieldset class="travel-step" data-travel-outcome="${esc(stop.id)}"><legend>Stop ${i+1}: ${esc(travelStopPlace(stop))}</legend><p>${esc(stop.contact_name)} · ${esc(stop.appointment_purpose)}</p><label><span>Visit outcome</span><textarea name="outcome_${esc(stop.id)}" data-outcome-field="outcome" required minlength="3" maxlength="2000"></textarea></label><label><span>Follow-up action · optional</span><textarea name="followup_${esc(stop.id)}" data-outcome-field="follow_up" maxlength="2000"></textarea></label><label><span>Follow-up date · optional</span><input name="followup_on_${esc(stop.id)}" data-outcome-field="follow_up_on" type="date"></label></fieldset>`).join(''):'';
  const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(travelPlace(row))} · ${esc(travelDuration(row.depart_at,row.return_at))}</p>${outcomes}<label><span>${label}</span><textarea name="note" maxlength="${action==='done'?6000:['approve','decline'].includes(action)?1000:2000}"${['decline','done'].includes(action)?' required minlength="3"':''}></textarea></label>`;
@@ -4517,7 +4533,8 @@ function openTravelAction(row,action){
   const outcomes=[...form.querySelectorAll('[data-travel-outcome]')].map(group=>{const item={stop_id:group.dataset.travelOutcome};group.querySelectorAll('[data-outcome-field]').forEach(input=>item[input.dataset.outcomeField]=input.value.trim());return item;});
   const result=await client.rpc('advance_travel_visit',{p_id:row.id,p_expected_version:row.version,p_operation_id:operation,p_action:action,p_note:values.note||'',p_outcomes:outcomes});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the trip.');if(result.error)throw Error(result.error.message);
-  await travelWorkspace(true);message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
+  if(epoch!==travelEpoch)return;
+  const saved=Array.isArray(result.data)?result.data[0]:result.data;if(travelApplySaved(saved,row.id,row.version))message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }
 ;// customer-requests.js
@@ -4569,7 +4586,7 @@ function requestCard(row){
 async function customerRequestsWorkspace(force=false){
  const epoch=++requestEpoch,actor=me;if(!actor||view!=='requests')return;syncWorkspaceNavigation();
  if(force||!requestLoaded){
-  $('#content').innerHTML='<p role="status">Loading requests…</p>';
+  workspaceLoading('Loading requests…');
   const since=new Date(Date.now()-requestRecentDays*864e5).toISOString();
   let rows;try{rows=await all('customer_requests','*',q=>q.or(`status.in.(received,in_progress),updated_at.gte.${since}`));}
   catch(error){if(epoch!==requestEpoch||me!==actor||view!=='requests')return;$('#content').innerHTML=`<h1>${esc(requestSections[requestSection].title)}</h1><p role="alert">Requests could not load: ${esc(error.message)}</p><button type="button" id="requestRetry">Try again</button>`;$('#requestRetry').onclick=()=>run(()=>customerRequestsWorkspace(true));return;}
@@ -4688,7 +4705,7 @@ async function teamTasksWorkspace(){
  const epoch=++teamTaskEpoch,actor=me,target=$('#content');
  const current=()=>epoch===teamTaskEpoch&&me===actor&&view==='personal'&&personalSection==='task'&&target.isConnected;
  const markSeen=kinds=>{if(current()&&typeof bellMarkSeen==='function'){bellMarkSeen(actor.user_id,kinds);if(typeof refreshNotificationBell==='function')refreshNotificationBell(true).catch(()=>{});}};
- target.innerHTML=`<section class="team-tasks"><div class="heading"><div><h1>My tasks</h1><p class="muted">See tasks from your head of department and team beside work handed to you. Add progress as you go; instructions and comments stay in history.</p></div><div class="actions"><button type="button" id="teamTaskRefresh">Refresh</button><button type="button" class="primary-action" id="teamTaskNew">+ New task</button></div></div><div class="team-task-columns"><section class="team-task-column" aria-labelledby="teamTaskHeading"><h2 id="teamTaskHeading">HOD and team tasks</h2><div id="manualTasks"><p role="status">Loading your tasks…</p></div></section><div id="orderSteps" class="team-task-column"></div></div><div id="teamTaskRelated"></div><div id="teamTaskFinished"></div></section>`;
+ if(!workspaceRefreshRetaining())target.innerHTML=`<section class="team-tasks"><div class="heading"><div><h1>My tasks</h1><p class="muted">See tasks from your head of department and team beside work handed to you. Add progress as you go; instructions and comments stay in history.</p></div><div class="actions"><button type="button" id="teamTaskRefresh">Refresh</button><button type="button" class="primary-action" id="teamTaskNew">+ New task</button></div></div><div class="team-task-columns"><section class="team-task-column" aria-labelledby="teamTaskHeading"><h2 id="teamTaskHeading">HOD and team tasks</h2><div id="manualTasks"><p role="status">Loading your tasks…</p></div></section><div id="orderSteps" class="team-task-column"></div></div><div id="teamTaskRelated"></div><div id="teamTaskFinished"></div></section>`;
  const manual=$('#manualTasks'),finishedBox=$('#teamTaskFinished'),steps=$('#orderSteps'),related=$('#teamTaskRelated');
  $('#teamTaskRefresh').onclick=()=>run(teamTasksWorkspace);
  $('#teamTaskNew').onclick=()=>openTeamTaskEditor(null);
@@ -4716,7 +4733,7 @@ async function teamTasksWorkspace(){
  teamTasks=teamTaskOrder(loaded.rows);teamTaskMoves=loaded.moves;teamTaskEvents=loaded.history;teamTaskMore=new Map();
  const forMe=teamTasks.filter(row=>row.status==='open'&&row.assignee_user_id===actor.user_id),gave=teamTasks.filter(row=>row.status==='open'&&row.assigned_by===actor.user_id&&row.assignee_user_id!==actor.user_id),results=teamTasks.filter(row=>row.status!=='open'&&row.assigned_by===actor.user_id&&row.assignee_user_id!==actor.user_id&&Date.parse(row.closed_at)>Date.now()-7*86400000).sort((a,b)=>Date.parse(b.closed_at)-Date.parse(a.closed_at)),finished=teamTasks.filter(row=>row.status!=='open'&&(row.assignee_user_id===actor.user_id||row.assigned_by===actor.user_id)&&!results.includes(row));
  manual.innerHTML=`<section class="team-task-group"><h3>To do · ${forMe.length}</h3>${teamTaskCards(forMe)||'<p class="muted">Nothing given to you right now.</p>'}</section>${gave.length?`<section class="team-task-group"><h3>Tasks I gave others · ${gave.length}</h3>${teamTaskCards(gave)}</section>`:''}`;
- finishedBox.innerHTML=`${results.length?`<section class="team-task-group"><h2>Results of tasks I gave · last 7 days · ${results.length}</h2>${teamTaskCards(results)}</section>`:''}${finished.length?`<details class="team-task-group"><summary>Finished in the last 30 days · ${finished.length}</summary>${teamTaskCards(finished)}</details>`:''}`;
+ finishedBox.innerHTML=`${results.length?`<section class="team-task-group"><h2>Results of tasks I gave · last 7 days · ${results.length}</h2>${teamTaskCards(results)}</section>`:''}${finished.length?`<details class="team-task-group" data-task-finished><summary>Finished in the last 30 days · ${finished.length}</summary>${teamTaskCards(finished)}</details>`:''}`;
  markSeen(['tasks','results']);
  await handoffs;
 }
@@ -4838,7 +4855,8 @@ async function renderDeadlineRequests(target){
   card.querySelector('[data-team-task-ask]')?.remove();
   (card.querySelector('.actions')||card).insertAdjacentHTML('beforebegin',deadlineRequestCardNote(request));
  }
- if(groups.toDecide.length&&!document.querySelector('[data-deadline-requests]'))
+ document.querySelector('[data-deadline-requests]')?.remove();
+ if(groups.toDecide.length)
   target.insertAdjacentHTML('beforebegin',`<section class="team-task-group" data-deadline-requests><h2>Deadline requests waiting for you · ${groups.toDecide.length}</h2>${groups.toDecide.map(deadlineRequestHtml).join('')}</section>`);
  document.querySelectorAll('[data-deadline-decide]').forEach(button=>button.onclick=()=>openDeadlineDecision(deadlineRequests.find(row=>row.id===button.dataset.id),button.dataset.deadlineDecide));
 }
@@ -5463,6 +5481,125 @@ function orderLiveHtml(record,tag='p'){
  return `<${tag} class="order-live" data-live-status="${esc(record.id)}" data-live-proforma-status="accepted" aria-live="polite" hidden></${tag}>`;
 }
 setInterval(()=>{if((()=>{try{return typeof me}catch{return 'undefined'}})()!=='undefined'&&me&&!document.hidden&&document.querySelector('[data-live-status]')){liveStatusCache.clear();decorateOrderLiveStatus().catch(()=>{});}},30000);
+;// action-feedback.js
+'use strict';
+
+let actionFeedbackEvent=null,actionFeedbackActive=null,actionFeedbackEpoch=0,actionFeedbackOpeners=new WeakMap();
+const actionFeedbackEntries=new Set();
+
+function actionFeedbackOrigin(){return (actionFeedbackEvent?.event.eventPhase?actionFeedbackEvent.node:null)||actionFeedbackActive?.origin?.node||null;}
+function actionFeedbackReference(node){
+ if(!node)return null;
+ const container=node.closest('form,.actions,td,.heading,article,section');
+ return {node,id:node.id,data:Object.entries(node.dataset||{}),container:container?.id==='content'?null:container};
+}
+function actionFeedbackResolve(reference){
+ if(!reference)return null;
+ const visible=node=>node?.isConnected&&!node.hidden&&(!node.closest('dialog')||node.closest('dialog').open);
+ if(visible(reference.node))return reference.node;
+ const byId=reference.id&&document.getElementById(reference.id);
+ if(visible(byId))return byId;
+ if(reference.data.length){
+  const match=[...document.querySelectorAll('button,input,select,textarea,[role="button"]')].find(node=>visible(node)&&reference.data.every(([key,value])=>node.dataset[key]===value));
+  if(match)return match;
+ }
+ return visible(reference.container)?reference.container:null;
+}
+function actionFeedbackCurrent(context){return context.epoch===actionFeedbackEpoch&&(!context.actor||context.actor===me?.user_id);}
+function actionFeedbackRemove(entry){clearTimeout(entry.timer);entry.node.remove();actionFeedbackEntries.delete(entry);}
+function clearActionFeedback(session=false){
+ for(const entry of actionFeedbackEntries)if(session||entry.kind!=='busy')actionFeedbackRemove(entry);
+ const notice=document.querySelector('#notice');if(notice){notice.textContent='';notice.className='';}
+ if(session){actionFeedbackEpoch++;actionFeedbackEvent=null;actionFeedbackOpeners=new WeakMap();if((()=>{try{return typeof navWhileBusy}catch{return 'undefined'}})()!=='undefined')navWhileBusy=null;}
+}
+function actionFeedbackPlace(entry){
+ const anchor=actionFeedbackResolve(entry.reference);
+ if(anchor){
+  const actions=anchor.closest('.actions');
+  if(actions)actions.after(entry.node);
+  else if(anchor.matches('form,section,article,.heading,td'))anchor.append(entry.node);
+  else anchor.after(entry.node);
+ }else document.querySelector('#content')?.prepend(entry.node);
+}
+function actionFeedbackReanchor(){for(const entry of actionFeedbackEntries)if(!entry.node.isConnected)actionFeedbackPlace(entry);}
+function actionFeedbackShow(reference,text,kind='success',target=null){
+ if(target?.isConnected){target.textContent=text;target.setAttribute('aria-live','polite');return null;}
+ for(const entry of actionFeedbackEntries)if(entry.reference?.node===reference?.node)actionFeedbackRemove(entry);
+ if(!text)return null;
+ const node=document.createElement('span'),entry={node,reference,kind,timer:null};
+ node.className='action-feedback action-feedback-'+kind;
+ if(kind==='busy'&&reference?.node.matches('button,input[type="submit"],input[type="button"]'))node.classList.add('action-feedback-sr-only');
+ node.setAttribute('role',kind==='error'?'alert':'status');node.setAttribute('aria-live','polite');node.setAttribute('aria-atomic','true');node.textContent=text;
+ actionFeedbackEntries.add(entry);actionFeedbackPlace(entry);
+ if(kind==='success')entry.timer=setTimeout(()=>actionFeedbackRemove(entry),5000);
+ return entry;
+}
+function actionFeedbackMessage(text,error=false){
+ const context=actionFeedbackActive;
+ if(context){
+  if(!actionFeedbackCurrent(context))return true;
+  if(!context.origin)return false;
+  const reference=!error&&context.successOrigin?context.successOrigin:context.origin;
+  actionFeedbackShow(reference,text,error?'error':'success',error?context.errorTarget:null);return true;
+ }
+ const origin=actionFeedbackOrigin();if(!origin)return false;
+ actionFeedbackShow(actionFeedbackReference(origin),text,error?'error':'success');return true;
+}
+function actionFeedbackRefuse(origin=actionFeedbackOrigin(),target=null){
+ const text='Another action is still running. Wait for it to finish, then try again.';
+ if(origin||target)actionFeedbackShow(actionFeedbackReference(origin),text,'error',target);else message(text,true);
+}
+function actionFeedbackQueueNavigation(button){
+ for(const entry of actionFeedbackEntries)if(entry.kind==='queued')actionFeedbackRemove(entry);
+ actionFeedbackShow(actionFeedbackReference(button),'Will open when the current action finishes.','queued');
+}
+function actionFeedbackRememberDialog(dialog){clearActionFeedback();actionFeedbackOpeners.set(dialog,actionFeedbackReference(actionFeedbackOrigin()));}
+function actionFeedbackBegin(options={}){
+ const node=options.origin||actionFeedbackOrigin(),origin=actionFeedbackReference(node),dialog=node?.closest('dialog');
+ const context={origin,dialog,wasFocused:node===document.activeElement,successOrigin:options.successOrigin||actionFeedbackOpeners.get(dialog),errorTarget:options.errorTarget,epoch:actionFeedbackEpoch,actor:(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'?null:me?.user_id,state:null,pending:null};
+ clearActionFeedback();if(context.errorTarget)context.errorTarget.textContent='';
+ if(node){
+  const button=node.matches('button,input[type="submit"],input[type="button"]'),label=options.busyLabel||(node.dataset.view?'Loading…':/refresh/i.test(node.textContent||node.value||'')?'Refreshing…':node.type==='submit'&&node.form?'Saving…':'Working…');
+  context.state={node,button,label,disabled:node.disabled,busy:node.getAttribute('aria-busy'),hadClass:node.classList.contains('action-is-busy'),children:button&&node.tagName==='BUTTON'?[...node.childNodes]:null,value:node.value};
+  node.setAttribute('aria-busy','true');node.classList.add('action-is-busy');
+  if(button){node.disabled=true;if(node.tagName==='BUTTON'){node.textContent=label;context.state.busyChildren=[...node.childNodes];}else node.value=label;}
+  context.pending=actionFeedbackShow(origin,label,'busy');
+ }
+ actionFeedbackActive=context;return context;
+}
+function actionFeedbackFinish(context){
+ if(!context)return;
+ if(context.pending&&actionFeedbackEntries.has(context.pending))actionFeedbackRemove(context.pending);
+ const state=context.state;
+ if(state){
+  const {node}=state;
+  if(state.button){
+   // Forms that disabled before run own their final disabled state and may set a retry label.
+   if(!state.disabled)node.disabled=false;
+   if(state.children){if(node.textContent===state.label&&node.childNodes.length===state.busyChildren.length&&[...node.childNodes].every((child,index)=>child===state.busyChildren[index]))node.replaceChildren(...state.children);}
+   else if(node.value===state.label)node.value=state.value;
+  }
+  if(state.busy===null)node.removeAttribute('aria-busy');else node.setAttribute('aria-busy',state.busy);
+  if(!state.hadClass)node.classList.remove('action-is-busy');
+ }
+ if(actionFeedbackActive===context)actionFeedbackActive=null;
+ actionFeedbackReanchor();
+ const {dialog}=context,active=document.activeElement;
+ let target=null;
+ if(actionFeedbackCurrent(context)&&![...document.querySelectorAll('dialog')].some(other=>other!==dialog&&other.open)){
+  if(dialog&&(active===document.body||!dialog.open&&active?.closest('dialog')===dialog))target=dialog.open?context.origin?.node:actionFeedbackResolve(context.successOrigin);
+  else if(!dialog&&context.wasFocused&&active===document.body)target=actionFeedbackResolve(context.origin);
+ }
+ if(target?.isConnected&&!target.disabled&&!target.closest('[hidden],[inert]')&&target.matches('button,input,select,textarea,a[href],[tabindex]')&&target.getClientRects().length&&getComputedStyle(target).visibility!=='hidden')target.focus({preventScroll:true});
+}
+
+// Capture only the event being dispatched; a later background refresh has no originating control.
+for(const type of ['click','submit','change'])document.addEventListener(type,event=>{
+ const node=type==='submit'?event.submitter||event.target.querySelector('[type="submit"],button:not([type])')||event.target:event.target.closest('button,input,select,textarea,[role="button"]');
+ if(!node)return;
+ clearActionFeedback();const capture={node,event};actionFeedbackEvent=capture;
+ setTimeout(()=>{if(actionFeedbackEvent===capture)actionFeedbackEvent=null;},0);
+},true);
 ;// workspace-navigation.js
 'use strict';
 
@@ -5519,7 +5656,7 @@ function installWorkspaceNavigation(){
   if(button&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
   if(button&&typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&busy){navWhileBusy=button;return;}
+  if(button&&busy){navWhileBusy=button;if(typeof actionFeedbackQueueNavigation==='function')actionFeedbackQueueNavigation(button);event.preventDefault?.();event.stopImmediatePropagation?.();return;}
   if(!button)return;
   const section=button.dataset.workspaceSection;
  // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
@@ -5702,7 +5839,7 @@ function accountingSearchLinks(records,query,selectedId,kind){
 async function accountingWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me);
  if(me?.user_id!==actor||view!=='accounting')return;
- $('#content').innerHTML='<p role="status">Loading accounting drafts…</p>';
+ workspaceLoading('Loading accounting drafts…');
  const r=await client.from('accounting_drafts').select('id,kind,version,organization_id,contact_id,body,updated_at').order('updated_at',{ascending:false}).range(accountingPage*25,accountingPage*25+24);
  if(me?.user_id!==actor||view!=='accounting')return;
  if(r.error)throw Error(`Accounting drafts could not load: ${r.error.message}`);
@@ -5848,7 +5985,7 @@ async function booksWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
  const current=()=>me?.user_id===actor&&view==='books'&&epoch===booksEpoch;
  if(!current())return;
- $('#content').innerHTML='<p role="status">Loading the books…</p>';
+ workspaceLoading('Loading the books…');
  const data=await loadBooksData();
  if(!current())return;
  booksData=data;
@@ -7800,10 +7937,10 @@ let client,me,organizations=[],contacts=[],products=[],duplicates=new Map(),sele
 let orgIndex=new Map(),childrenByParent=new Map();
 let contactIssues=new Map(),accountIssues=new Map(),accountReviewCounts=new Map();
 const normalize=s=>String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
-function message(s,error=false){$('#notice').textContent=s;$('#notice').className=s?(error?'notice error':'notice'):''}
+function message(s,error=false){if(typeof actionFeedbackMessage==='function'&&actionFeedbackMessage(s,error))return;$('#notice').textContent=s;$('#notice').className=s?(error?'notice error':'notice'):''}
 // #editor and #actionEditor are built once when the page loads; every other dialog belongs to one sign-in.
-function clear(){clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearCoreSession==='function')clearCoreSession();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
-function clearCoreSession(){if(typeof clearCustomerContracts==='function')clearCustomerContracts();if(typeof clearProductPricing==='function')clearProductPricing();sessionLoadEpoch++;listsEpoch++;listsLoaded=false;listsLoading=null;selected='';search='';page=0;editing=null;orgIndex.clear();childrenByParent.clear();contactIssues.clear();accountIssues.clear();accountReviewCounts.clear();if(typeof clearInventoryOperations==='function')clearInventoryOperations();if(typeof clearServiceWorkflow==='function')clearServiceWorkflow();if(typeof clearSalesDelivery==='function')clearSalesDelivery();if(typeof clearBooks==='function')clearBooks();if(typeof clearBranchHistory==='function')clearBranchHistory();if(typeof clearPersonalWorkspace==='function')clearPersonalWorkspace();if(typeof clearTeamTasks==='function')clearTeamTasks();if(typeof clearDeadlineRequests==='function')clearDeadlineRequests();if(typeof clearFinancialImport==='function')clearFinancialImport();if(typeof clearOpeningReceivables==='function')clearOpeningReceivables();if(typeof clearReturnCreditPosting==='function')clearReturnCreditPosting();}
+function clear(){if(typeof clearActionFeedback==='function')clearActionFeedback(true);clearEmployeeNames();if(typeof clearLeads==='function')clearLeads();if(typeof clearCoreSession==='function')clearCoreSession();if(typeof clearPendingStock==='function')clearPendingStock();if(typeof clearWorkAssignments==='function')clearWorkAssignments();if(typeof clearReports==='function')clearReports();if(typeof clearTravel==='function')clearTravel();if(typeof clearCustomerRequests==='function')clearCustomerRequests();if(typeof clearPurchasing==='function')clearPurchasing();if(typeof clearStockCount==='function')clearStockCount();if(typeof clearTallyInvoices==='function')clearTallyInvoices();if(typeof clearDashboard==='function')clearDashboard();if(typeof clearNotificationBell==='function')clearNotificationBell();if(typeof clearPackingQueue==='function')clearPackingQueue();organizations=[];contacts=[];products=[];duplicates.clear();me=null;$('#nav').hidden=true;$('#identity').innerHTML='';document.querySelectorAll('dialog').forEach(dialog=>{dialog.close();if(dialog.id!=='editor'&&dialog.id!=='actionEditor')dialog.remove()});$('#fields').innerHTML=''}
+function clearCoreSession(){if(typeof clearWorkspaceRefresh==='function')clearWorkspaceRefresh();if(typeof clearCustomerContracts==='function')clearCustomerContracts();if(typeof clearProductPricing==='function')clearProductPricing();sessionLoadEpoch++;listsEpoch++;listsLoaded=false;listsLoading=null;selected='';search='';page=0;editing=null;orgIndex.clear();childrenByParent.clear();contactIssues.clear();accountIssues.clear();accountReviewCounts.clear();if(typeof clearInventoryOperations==='function')clearInventoryOperations();if(typeof clearServiceWorkflow==='function')clearServiceWorkflow();if(typeof clearSalesDelivery==='function')clearSalesDelivery();if(typeof clearBooks==='function')clearBooks();if(typeof clearBranchHistory==='function')clearBranchHistory();if(typeof clearPersonalWorkspace==='function')clearPersonalWorkspace();if(typeof clearTeamTasks==='function')clearTeamTasks();if(typeof clearDeadlineRequests==='function')clearDeadlineRequests();if(typeof clearFinancialImport==='function')clearFinancialImport();if(typeof clearOpeningReceivables==='function')clearOpeningReceivables();if(typeof clearReturnCreditPosting==='function')clearReturnCreditPosting();}
 function field(name,label,value='',type='text',required=false){return `<label><span>${label}</span><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} maxlength="200"></label>`}
 function setup(){clear();$('#content').innerHTML='<div class="login card"><small>ANUDHA · FIRST RELEASE</small><h1>Connect your workspace</h1><p>Contacts and inventory, with individual staff logins.</p><p class="warning">The secure backend is not connected yet. Real records and staff access are not live.</p><p>Your administrator must complete the free Supabase setup and add the public project URL and publishable key to config.js.</p><a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open Supabase setup ↗</a></div>'}
 function login(){if(typeof listCacheClear==='function')listCacheClear();clear();message('');$('#content').innerHTML=`<form id="login" class="login card"><small>ANUDHA WORKSPACE</small><h1>Welcome back</h1><p class="muted">Sign in with your employee ID or your work email.</p>${field('email','Employee ID or work email','','text',true)}${field('password','Password','','password',true)}<button type="submit">Sign in</button><p class="muted">Access is provided by your administrator. No public sign-up.</p></form>`;$('#login').onsubmit=async e=>{e.preventDefault();await run(async()=>{let f=new FormData(e.target),r=await client.auth.signInWithPassword({email:employeeLoginEmail(f.get('email')),password:f.get('password')});if(r.error)throw r.error;await load()})}}
@@ -7879,7 +8016,7 @@ function inContactView(c,v){if(c.status==='incorrect')return false;return v==='r
 // for the reason and holds its first contact's id; a list is made only when a second contact shares it.
 const duplicateReasons={P:'Phone',E:'Email',N:'Same name at organisation'};
 function scan(){indexCompleteness();duplicates.clear();const groups=new Map(),add=(key,id)=>{const seen=groups.get(key);if(seen===undefined)groups.set(key,id);else if(Array.isArray(seen))seen.push(id);else groups.set(key,[seen,id]);};for(const c of contacts){if(c.status==='incorrect')continue;const phone=(c.country_code+c.phone).replace(/\D/g,'');if(phone.length>=7)add('P'+c.organization_id+':'+phone,c.id);if(c.email)add('E'+c.organization_id+':'+c.email.trim().toLowerCase(),c.id);const name=normalize(c.first_name+c.last_name);if(name.length>=3)add('N'+c.organization_id+':'+name,c.id);}for(const [key,ids] of groups)if(Array.isArray(ids))for(const id of ids){const list=duplicates.get(id)||[];list.push({reason:duplicateReasons[key[0]],ids:ids.filter(x=>x!==id)});duplicates.set(id,list)}for(const c of contacts)if(duplicates.has(c.id)&&c.status==='kept'&&!(contactIssues.get(c.id)||[]).length)accountReviewCounts.set(c.organization_id,(accountReviewCounts.get(c.organization_id)||0)+1);rollupReviewCounts()}
-function render(){if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();if(view==='books')return booksWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='contracts')return contractsWorkspace();else if(view==='prices')return pricesWorkspace();else if(view==='packing')return packingWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
+function render(){if(typeof syncWorkspaceRefresh==='function')syncWorkspaceRefresh();if(!me)return;if(view==='dashboard'&&me.role==='staff'){view='personal';if(typeof personalSection!=='undefined')personalSection='task';}syncWorkspaceNavigation();if(typeof accessBlocked==='function'&&accessBlocked())return;if(view!=='dashboard'&&!listsLoaded){message('Loading your workspace…');return (listsLoading||loadLists()).then(()=>{message('');return render()},e=>message(friendlyError(e),true))}if(view==='accounting')return accountingWorkspace();if(view==='books')return booksWorkspace();else if(view==='dashboard')return dashboardWorkspace();else if(view==='personal')return personalWorkspace();else if(view==='review')return reviewQueue();else if(view==='inventory')return inventoryWorkspace();else if(view==='sales')return salesDeliveryWorkspace();else if(view==='contracts')return contractsWorkspace();else if(view==='prices')return pricesWorkspace();else if(view==='packing')return packingWorkspace();else if(view==='leads')return leadsWorkspace();else if(view==='pending')return pendingStockWorkspace();else if(view==='purchasing')return purchasingWorkspace();else if(view==='tallyinvoices')return tallyInvoicesWorkspace();else if(view==='stockcount')return stockCountWorkspace();else if(view==='reports')return reportsWorkspace();else if(view==='travel')return travelWorkspace();else if(view==='requests')return customerRequestsWorkspace();else if(view==='settings')return settingsWorkspace();else if(view==='service')return serviceWorkspace();else if(view==='recycle')return renderRecycleBin();else if(view==='staff')return staff();else if(view==='approvals')return projectApprovals();else if(view==='checklist')return checklist();else if(view==='guide')return guide();else return profileView()}
 function reviewQueue(){
  const rows=contactReviewQueue(contacts,organizations,duplicates),q=search.trim().toLowerCase(),matches=rows.filter(({contact,organization,reasons})=>`${contact.first_name||''} ${contact.last_name||''} ${organization.name||''} ${organization.location||''} ${reasons.join(' ')}`.toLowerCase().includes(q));
  const pages=Math.max(1,Math.ceil(matches.length/30));page=Math.min(Math.max(page,0),pages-1);
@@ -7903,6 +8040,7 @@ function contactView(){
 }
 function card(c){const missing=contactIssues.get(c.id)||[],hits=duplicates.get(c.id)||[],revision=contactNeedsRevision(c,missing,hits),targets=[...new Set(hits.flatMap(h=>h.ids))],quality=typeof contactQuality==='function'?contactQuality(missing,hits):{level:'',issues:[]};return `<article class="contact ${hits.length?'duplicate':''} ${revision?'incomplete':''} ${quality.level?'quality-'+quality.level:''}"><div class="heading"><h3>${c.title&&c.title!=='N/A'?esc(c.title)+' ':''}${esc(c.first_name)} ${esc(c.last_name)}</h3>${typeof qualityBadge==='function'?qualityBadge(quality.level,quality.issues):''}<span class="tag ${revision?'warn':''}">${revision?'Needs revision':'Complete'}</span></div><p class="contact-account">${esc(orgIndex.get(c.organization_id)?.name||'Account missing')}</p>${missing.length?`<p class="revision-label">Needs revision · ${missing.map(esc).join(', ')}</p>`:''}${hits.length?`<span class="tag warn">Possible duplicate · ${[...new Set(hits.map(h=>h.reason))].map(esc).join(', ')}</span><details><summary>Compare ${targets.length} matching record(s)</summary>${targets.slice(0,20).map(id=>{const t=contacts.find(x=>x.id===id),o=organizations.find(x=>x.id===t.organization_id);return `<p>${esc(t.first_name+' '+t.last_name)} · ${esc(o?.name)} · ${esc(t.country_code+t.phone)} <button data-goto="${t.organization_id}">Open organisation</button></p>`}).join('')}</details>`:''}<div class="details"><div><small>Position</small>${esc(c.position||'Missing')}</div><div><small>Phone</small>${esc(c.country_code)} ${esc(c.phone||'Missing')}</div><div><small>Email · optional</small>${esc(c.email||'—')}</div></div><div class="actions contact-actions">${canEditRecords()?`<button class="primary-action" data-edit="${c.id}">Edit contact</button>${revision?`<button data-keep="${c.id}">Mark complete ✓</button>`:''}`:''}${canEditRecords()?`<button class="danger" data-delete-contact="${c.id}">Delete contact</button>`:''}</div></article>`}
 async function edit(c){
+ if(typeof actionFeedbackRememberDialog==='function')actionFeedbackRememberDialog($('#editor'));
  editing={...c};const contactRoot=rootAccount(orgIndex.get(c.organization_id)||orgIndex.get(selected));
  const branchOptions=[...familyIds(contactRoot)].map(id=>orgIndex.get(id)).filter(o=>!(childrenByParent.get(o.id)?.length)||o.id===c.organization_id);
  $('#editForm').noValidate=true;
@@ -7947,13 +8085,15 @@ function friendlyError(e){
  if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. We could not confirm the result. Reconnect and check the record before submitting again.';
  return text||'Something went wrong. Please retry.';
 }
-async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
+async function run(fn){const options=arguments[1]||{};if(busy){if(typeof actionFeedbackRefuse==='function')actionFeedbackRefuse(options.origin,options.errorTarget);return;}busy=true;const feedback=typeof actionFeedbackBegin==='function'?actionFeedbackBegin(options):null;try{await fn()}catch(e){if(!feedback||actionFeedbackCurrent(feedback)){if(options.onError)options.onError(e);message(friendlyError(e),true)}}finally{if(feedback)actionFeedbackFinish(feedback);busy=false;replayQueuedNavigation()}}
 // The menu item pressed while the last action was still running (workspace-navigation.js), pressed again now.
 function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(button){navWhileBusy=null;if(button.isConnected&&!button.hidden){button.click();return;}}if(typeof navResumePending==='function')navResumePending();}
-$('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};
-$('#closeEditor').onclick=()=>$('#editor').close();
+let editSaving=false;
+$('#editForm').onsubmit=async e=>{e.preventDefault();if(editSaving)return;const form=e.target,actor=me?.user_id,epoch=actionFeedbackEpoch,values=Object.fromEntries(new FormData(form));await run(async()=>{editSaving=true;const close=$('#closeEditor'),disabled=close.disabled;close.disabled=true;try{showFieldErrors(form,{});await save({...editing,...values});if(me?.user_id===actor&&actionFeedbackEpoch===epoch)$('#editor').close()}finally{editSaving=false;close.disabled=disabled}},{origin:e.submitter||form.querySelector('[type="submit"]'),errorTarget:$('#formError'),onError:err=>showFieldErrors(form,err.fields||{})})};
+$('#editor').addEventListener('cancel',e=>{if(editSaving)e.preventDefault()});
+$('#closeEditor').onclick=()=>{if(!editSaving)$('#editor').close()};
 document.addEventListener('click',e=>{
- const b=e.target.closest('button');if(!b||busy)return;
+ const b=e.target.closest('button');if(!b||b.form&&b.type==='submit')return;if(busy){if(typeof actionFeedbackRefuse==='function'&&actionFeedbackActive?.origin?.node!==b)actionFeedbackRefuse(b);return;}
  if(b.dataset.view){view=b.dataset.view;search='';page=0;if(view==='contacts')return goProfile('clients');return run(async()=>render())}
  if(b.dataset.org||b.dataset.goto)return goProfile(b.dataset.goto?'branch':'client',b.dataset.org||b.dataset.goto);
  if(b.dataset.filter){filter=b.dataset.filter;page=0;return render()}
@@ -7972,6 +8112,7 @@ document.addEventListener('click',e=>{
  if(b.dataset.match)return openMatchForm(products.find(x=>x.id===b.dataset.match));
  if(b.dataset.group)return openBranchForm(orgIndex.get(b.dataset.parent),orgIndex.get(b.dataset.group));
  if(b.dataset.linkParent)return openBranchForm(orgIndex.get(b.dataset.linkParent));
+ if(!['logout','refresh','ungroupAccount'].includes(b.id)&&!b.dataset.approveOrg&&!b.dataset.keep&&!b.dataset.restore)return;
  run(async()=>{
  if(b.id==='logout'){if(typeof forgetThisDevice==='function')forgetThisDevice();await client.auth.signOut();login()}
  else if(b.id==='refresh'){inventoryLoaded=false;await load();}
@@ -8046,17 +8187,21 @@ actionDialog.addEventListener('cancel',e=>{if(actionSaving)e.preventDefault()});
 actionDialog.addEventListener('close',()=>{actionSubmit=null});
 actionEditorForm.addEventListener('submit',async e=>{
  e.preventDefault();if(actionSaving||!actionSubmit)return;
+ if(!actionEditorForm.reportValidity())return;
  const values=Object.fromEntries(new FormData(actionEditorForm));
  for(const key of Object.keys(values))if(typeof values[key]==='string')values[key]=values[key].trim();
  for(const control of actionFields.querySelectorAll('[required]'))if(!values[control.name]){actionError.textContent='Complete '+(control.labels?.[0]?.textContent.trim()||'the required field')+'.';control.focus();return;}
- actionSaving=true;actionSave.disabled=true;actionCancel.disabled=true;actionSave.textContent='Saving…';actionError.textContent='';
- try{await actionSubmit(values);actionDialog.close()}
- catch(error){actionError.textContent=error.message||'Could not save. Please retry.'}
- finally{actionSaving=false;actionSave.disabled=false;actionCancel.disabled=false;actionSave.textContent='Save'}
+ const submit=actionSubmit,actor=me?.user_id,epoch=actionFeedbackEpoch;
+ await run(async()=>{
+  actionSaving=true;const cancelDisabled=actionCancel.disabled;actionCancel.disabled=true;
+  try{await submit(values);if(me?.user_id===actor&&actionFeedbackEpoch===epoch)actionDialog.close()}
+  finally{actionSaving=false;actionCancel.disabled=cancelDisabled}
+ },{origin:actionSave,errorTarget:actionError,busyLabel:'Saving…'});
 });
 
 function actionForm(title,fields,onSubmit){
  if(actionSaving)return actionEditorForm;
+ if(typeof actionFeedbackRememberDialog==='function')actionFeedbackRememberDialog(actionDialog);
  actionEditorForm.reset();actionEditorForm.querySelector('#actionTitle').textContent=title;
  actionFields.replaceChildren();
  if(typeof fields==='string')actionFields.innerHTML=fields;else actionFields.append(fields);
@@ -8123,4 +8268,94 @@ function openBranchForm(parent,initialBranch=null){
  const populate=()=>{const previous=select.value||initialBranch?.id||'',q=searchInput.value.trim().toLowerCase(),rows=eligible.filter(x=>(x.name+' '+x.location+' '+x.type).toLowerCase().includes(q));select.replaceChildren(new Option(rows.length?'Choose an existing account':'No eligible accounts found',''));for(const x of rows)select.add(new Option(`${x.name} · ${x.location||'Location missing'} · ${x.type||'Type missing'}`,x.id));if(rows.some(x=>x.id===previous))select.value=previous;describe()};
  searchInput.addEventListener('input',populate);select.addEventListener('change',describe);populate();
  return form;
+}
+;// workspace-refresh.js
+'use strict';
+
+// Keep the current screen readable during a refresh. Workflow renderers still replace
+// their markup so decorators and event handlers always receive the freshly fetched data.
+let workspaceRefreshReady=null,workspaceRefreshActive=null;
+function workspaceRefreshScope(){
+ const sections={inventory:()=>inventorySection,sales:()=>[salesSection,salesFocusedProforma,salesFocusedDelivery,salesEditing],service:()=>serviceSection,personal:()=>[personalSection,personalPage,personalMonth],purchasing:()=>[purchaseSection,purchaseEditing,supplierEditing],leads:()=>[leadSection,leadEditing],requests:()=>requestSection,books:()=>booksSection,stockcount:()=>countTab,packing:()=>packingSection};
+ return JSON.stringify([view,sections[view]?.()]);
+}
+function workspaceRefreshReference(node){
+ if(!node)return null;
+ const data=Object.entries(node.dataset||{}).filter(([key])=>!['version','busy'].includes(key));
+ if(node.id||data.length)return {tag:node.tagName,id:node.id,data};
+ if(node.tagName==='DETAILS'){
+  const card=node.closest('article,.card,section');
+  return {tag:'DETAILS',summary:node.querySelector('summary')?.textContent,heading:card?.querySelector('h2,h3')?.textContent};
+ }
+ return null;
+}
+function workspaceRefreshResolve(target,reference){
+ if(!reference)return null;
+ const matches=[...target.querySelectorAll(reference.tag.toLowerCase())].filter(node=>{
+  if(reference.id)return node.id===reference.id;
+  if(reference.data?.length)return reference.data.every(([key,value])=>node.dataset[key]===value);
+  const card=node.closest('article,.card,section');
+  return node.querySelector('summary')?.textContent===reference.summary&&card?.querySelector('h2,h3')?.textContent===reference.heading;
+ });
+ return matches.length===1?matches[0]:null;
+}
+function clearWorkspaceRefresh(){
+ const state=workspaceRefreshActive;workspaceRefreshActive=null;workspaceRefreshReady=null;
+ if(!state)return;
+ const {target,capture}=state;
+ document.removeEventListener('focusin',capture);document.removeEventListener('toggle',capture,true);window.removeEventListener('scroll',capture);
+ target.classList.remove('workspace-first-load','workspace-refreshing');
+ for(const item of state.inertNodes)item.node.inert=item.inert;
+ if(state.previousBusy===null)target.removeAttribute('aria-busy');else target.setAttribute('aria-busy',state.previousBusy);
+}
+function syncWorkspaceRefresh(){
+ if(workspaceRefreshActive&&(workspaceRefreshActive.actor!==me||workspaceRefreshActive.scope!==workspaceRefreshScope()))clearWorkspaceRefresh();
+}
+function workspaceRefreshRetaining(){return workspaceRefreshActive?.retain===true;}
+function workspaceLoading(label){
+ const target=document.querySelector('#content'),state=workspaceRefreshActive;
+ if(!target)return;
+ if(state?.target===target&&state.retain)return;
+ const status=document.createElement('p');status.setAttribute('role','status');status.textContent=label;
+ target.replaceChildren(status);if(state)state.loadingNode=status;target.classList.add('workspace-first-load');
+}
+async function workspaceRefreshRun(renderScreen,receiver,args){
+ const target=document.querySelector('#content'),actor=me,scope=workspaceRefreshScope();
+ if(!target)return renderScreen.apply(receiver,args);
+ // Nested renderers (My tasks inside personalWorkspace) share the outer lifecycle.
+ if(workspaceRefreshActive?.target===target&&workspaceRefreshActive.actor===actor&&workspaceRefreshActive.scope===scope&&workspaceRefreshActive.rendering)return renderScreen.apply(receiver,args);
+ const previousState=workspaceRefreshActive;
+ const retain=workspaceRefreshReady?.actor===actor&&workspaceRefreshReady.scope===scope&&target.firstChild===workspaceRefreshReady.first;
+ const state={target,actor,scope,retain,rendering:true,first:target.firstChild,focus:null,details:[],x:window.scrollX,y:window.scrollY,previousBusy:previousState?.target===target?previousState.previousBusy:target.getAttribute('aria-busy'),inertNodes:previousState?.target===target?previousState.inertNodes:[]};
+ workspaceRefreshActive=state;
+ const capture=()=>{
+  if(!retain||target.firstChild!==state.first)return;
+  const active=document.activeElement;
+  if(target.contains(active))state.focus=workspaceRefreshReference(active);else if(active!==document.body)state.focus=null;
+  state.details=[...target.querySelectorAll('details')].map(node=>({reference:workspaceRefreshReference(node),open:node.open}));
+  state.x=window.scrollX;state.y=window.scrollY;
+ };
+ state.capture=capture;capture();document.addEventListener('focusin',capture);document.addEventListener('toggle',capture,true);window.addEventListener('scroll',capture,{passive:true});
+ target.setAttribute('aria-busy','true');target.classList.toggle('workspace-refreshing',retain);if(retain)for(const node of target.children){if(!state.inertNodes.some(item=>item.node===node))state.inertNodes.push({node,inert:node.inert});node.inert=true;}
+ try{const pending=renderScreen.apply(receiver,args);state.rendering=false;return await pending;}
+ finally{
+  state.rendering=false;document.removeEventListener('focusin',capture);document.removeEventListener('toggle',capture,true);window.removeEventListener('scroll',capture);
+  if(workspaceRefreshActive===state){
+   workspaceRefreshActive=null;target.classList.remove('workspace-first-load','workspace-refreshing');
+   for(const item of state.inertNodes)item.node.inert=item.inert;if(state.previousBusy===null)target.removeAttribute('aria-busy');else target.setAttribute('aria-busy',state.previousBusy);
+   if(me===actor&&workspaceRefreshScope()===scope){
+    workspaceRefreshReady=target.firstChild===state.loadingNode?null:{actor,scope,first:target.firstChild};
+    if(retain){
+     for(const item of state.details){const node=workspaceRefreshResolve(target,item.reference);if(node)node.open=item.open;}
+     const active=document.activeElement,node=workspaceRefreshResolve(target,state.focus);
+     if(node&&!node.disabled&&(active===document.body||!active?.isConnected||target.contains(active)))node.focus({preventScroll:true});
+     window.scrollTo({left:state.x,top:state.y,behavior:'instant'});
+    }
+   }else workspaceRefreshReady=null;
+  }
+ }
+}
+for(const name of ['inventoryWorkspace','salesDeliveryWorkspace','serviceWorkspace','purchasingWorkspace','leadsWorkspace','customerRequestsWorkspace','personalWorkspace','teamTasksWorkspace','accountingWorkspace','booksWorkspace','pendingStockWorkspace','contractsWorkspace','pricesWorkspace','travelWorkspace','stockCountWorkspace','tallyInvoicesWorkspace','projectApprovals']){
+ const renderScreen=globalThis[name];
+ if(typeof renderScreen==='function')globalThis[name]=function(...args){return workspaceRefreshRun(renderScreen,this,args);};
 }

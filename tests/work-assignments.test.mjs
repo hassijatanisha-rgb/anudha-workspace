@@ -107,11 +107,24 @@ test('task layout loads handoffs in their own column and related notices below, 
  for(const role of ['owner','staff']){
   const nodes=new Map(),node=()=>({innerHTML:'',isConnected:true,querySelector:()=>({})}),targets=[];
   for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew'])nodes.set(key,node());
-  const ctx=load({me:{user_id:'a',role},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),all:async()=>[],run:fn=>fn()});
+  const ctx=load({workspaceRefreshRetaining:()=>false,me:{user_id:'a',role},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),all:async()=>[],run:fn=>fn()});
   vm.runInContext(readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8'),ctx);
   ctx.renderMyHandoffs=async target=>{targets.push(['handoffs',target]);return true;};ctx.renderWorkNotices=async target=>targets.push(['notices',target]);ctx.renderUnownedWork=async target=>targets.push(['unowned',target]);
   await ctx.teamTasksWorkspace();assert.match(nodes.get('#content').innerHTML,/team-task-columns/);
   assert.equal(targets.find(([name])=>name==='handoffs')[1],nodes.get('#orderSteps'));assert.equal(targets.find(([name])=>name==='notices')[1],nodes.get('#teamTaskRelated'));
   if(role==='owner')assert.equal(targets.find(([name])=>name==='unowned')[1],nodes.get('#teamTaskRelated'));else assert.equal(targets.some(([name])=>name==='unowned'),false);
  }
+});
+
+test('My tasks refresh retains the loaded shell and tasks while independent handoffs start immediately',async()=>{
+ const nodes=new Map(),node=html=>({innerHTML:html,isConnected:true,querySelector:()=>({})});
+ for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew'])nodes.set(key,node('Previous '+key));
+ let release;const pending=new Promise(resolve=>release=resolve),started=[];
+ const ctx=load({workspaceRefreshRetaining:()=>true,me:{user_id:'a',role:'staff'},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),run:fn=>fn()});
+ vm.runInContext(readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8'),ctx);
+ ctx.loadTeamTasks=()=>pending;ctx.renderMyHandoffs=async()=>{started.push('handoffs');return true;};ctx.renderWorkNotices=async()=>{};
+ const refreshing=ctx.teamTasksWorkspace();
+ assert.equal(nodes.get('#content').innerHTML,'Previous #content');assert.equal(nodes.get('#manualTasks').innerHTML,'Previous #manualTasks');assert.deepEqual(started,['handoffs']);
+ release({rows:[],moves:[],history:[]});await refreshing;
+ assert.match(nodes.get('#manualTasks').innerHTML,/Nothing given to you/);assert.equal(nodes.get('#content').innerHTML,'Previous #content');
 });

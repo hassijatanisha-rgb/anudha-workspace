@@ -13,7 +13,7 @@ function accountingSearchLinks(records,query,selectedId,kind){
 async function accountingWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me);
  if(me?.user_id!==actor||view!=='accounting')return;
- $('#content').innerHTML='<p role="status">Loading accounting drafts…</p>';
+ workspaceLoading('Loading accounting drafts…');
  const r=await client.from('accounting_drafts').select('id,kind,version,organization_id,contact_id,body,updated_at').order('updated_at',{ascending:false}).range(accountingPage*25,accountingPage*25+24);
  if(me?.user_id!==actor||view!=='accounting')return;
  if(r.error)throw Error(`Accounting drafts could not load: ${r.error.message}`);

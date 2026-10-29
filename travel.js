@@ -52,7 +52,7 @@ function travelCard(row){
 async function travelWorkspace(force=false){
  const epoch=++travelEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!travelLoaded){
-  $('#content').innerHTML='<p role="status">Loading travel requests…</p>';
+  workspaceLoading('Loading travel requests…');
   const result=await client.from('travel_requests').select('*').order('depart_at',{ascending:false}).limit(500);
   if(epoch!==travelEpoch||me?.user_id!==actor||view!=='travel')return;
   if(result.error){$('#content').innerHTML=`<h1>Travel requests</h1><p role="alert">Travel requests could not load: ${esc(result.error.message)}</p>`;return;}
@@ -70,6 +70,13 @@ function renderTravel(){
  document.querySelectorAll('[data-travel-filter]').forEach(button=>button.onclick=()=>{travelFilter=button.dataset.travelFilter;renderTravel();});
  document.querySelectorAll('[data-travel-edit]').forEach(button=>button.onclick=()=>openTravelEditor(travelRows.find(row=>row.id===button.dataset.travelEdit)));
  document.querySelectorAll('[data-travel-action]').forEach(button=>button.onclick=()=>openTravelAction(travelRows.find(row=>row.id===button.dataset.id),button.dataset.travelAction));
+}
+function travelApplySaved(saved,id,version){
+ if(saved?.id!==id||saved.version!==version+1)throw Error('The server did not confirm the trip revision. Retry with the same values.');
+ const current=travelRows.find(row=>row.id===id);
+ if(!current||current.version<=saved.version)travelRows=[saved,...travelRows.filter(row=>row.id!==id)];
+ if(view!=='travel')return false;
+ const x=window.scrollX,y=window.scrollY;renderTravel();window.scrollTo(x,y);return true;
 }
 function travelLocalInput(value){if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
 function travelStopEditor(stop={}){
@@ -93,7 +100,7 @@ function travelReadStops(form){
  if(!stops.length||stops.length>20)throw Error('Add between 1 and 20 itinerary stops.');return stops;
 }
 function openTravelEditor(row){
- const people=row?.travellers||[me.user_id],id=row?.id||crypto.randomUUID(),actor=me?.user_id,operation=crypto.randomUUID();
+ const people=row?.travellers||[me.user_id],id=row?.id||crypto.randomUUID(),actor=me?.user_id,epoch=travelEpoch,operation=crypto.randomUUID();
  const employees=[...employeeDirectory.values()].filter(e=>e.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id)));
  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);tomorrow.setHours(8,0,0,0);const back=new Date(tomorrow);back.setHours(17,0,0,0);
  const purposes=row?.purposes?.length?row.purposes:[row?.purpose||'meeting'];
@@ -118,7 +125,8 @@ function openTravelEditor(row){
   const rate=moneyMinor(values.perDiemRate),intercity=moneyMinor(values.intercity),local=moneyMinor(values.local);travelCosts(values.perDiemDays,rate,intercity,local);
   const result=await client.rpc('save_travel_visit_plan',{p_id:id,p_expected_version:row?.version||0,p_operation_id:operation,p_travellers:travellers,p_depart_at:depart.toISOString(),p_return_at:ret.toISOString(),p_transport:values.transport||'',p_notes:values.notes||'',p_purposes:selectedPurposes,p_itinerary:itinerary,p_currency:values.currency,p_per_diem_days:Number(values.perDiemDays),p_per_diem_rate_minor:rate,p_intercity_transport_minor:intercity,p_local_transport_minor:local});
   if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');if(result.error)throw Error(result.error.message);
-  const saved=Array.isArray(result.data)?result.data[0]:result.data;await travelWorkspace(true);message(`${saved?.request_number||'Travel request'} ${row?'updated':'sent for approval'}.`);
+  if(epoch!==travelEpoch)return;
+  const saved=Array.isArray(result.data)?result.data[0]:result.data;if(travelApplySaved(saved,id,row?.version||0))message(`${saved.request_number} ${row?'updated':'sent for approval'}.`);
  });
  const length=()=>{form.querySelector('#travelLength').textContent=`Trip duration: ${travelDuration(form.elements.depart.value,form.elements.return.value)||'Choose trip dates'}`;};
  form.elements.depart.oninput=length;form.elements.return.oninput=length;length();
@@ -134,7 +142,7 @@ function openTravelEditor(row){
 }
 function openTravelAction(row,action){
  if(!row)return;
- const actor=me?.user_id,operation=crypto.randomUUID(),titles={approve:'Approve trip',decline:'Decline trip',done:'Post-visit report',cancel:'Cancel trip'};
+ const actor=me?.user_id,epoch=travelEpoch,operation=crypto.randomUUID(),titles={approve:'Approve trip',decline:'Decline trip',done:'Post-visit report',cancel:'Cancel trip'};
  const label={approve:'Note · optional',decline:'Why is it declined?',done:'Post-visit report · overall results, issues and recommendations',cancel:'Why is it cancelled? · optional'}[action];
  const outcomes=action==='done'?(row.itinerary||[]).map((stop,i)=>`<fieldset class="travel-step" data-travel-outcome="${esc(stop.id)}"><legend>Stop ${i+1}: ${esc(travelStopPlace(stop))}</legend><p>${esc(stop.contact_name)} · ${esc(stop.appointment_purpose)}</p><label><span>Visit outcome</span><textarea name="outcome_${esc(stop.id)}" data-outcome-field="outcome" required minlength="3" maxlength="2000"></textarea></label><label><span>Follow-up action · optional</span><textarea name="followup_${esc(stop.id)}" data-outcome-field="follow_up" maxlength="2000"></textarea></label><label><span>Follow-up date · optional</span><input name="followup_on_${esc(stop.id)}" data-outcome-field="follow_up_on" type="date"></label></fieldset>`).join(''):'';
  const fields=`<p><strong>${esc(row.request_number)}</strong> · ${esc(travelPlace(row))} · ${esc(travelDuration(row.depart_at,row.return_at))}</p>${outcomes}<label><span>${label}</span><textarea name="note" maxlength="${action==='done'?6000:['approve','decline'].includes(action)?1000:2000}"${['decline','done'].includes(action)?' required minlength="3"':''}></textarea></label>`;
@@ -143,6 +151,7 @@ function openTravelAction(row,action){
   const outcomes=[...form.querySelectorAll('[data-travel-outcome]')].map(group=>{const item={stop_id:group.dataset.travelOutcome};group.querySelectorAll('[data-outcome-field]').forEach(input=>item[input.dataset.outcomeField]=input.value.trim());return item;});
   const result=await client.rpc('advance_travel_visit',{p_id:row.id,p_expected_version:row.version,p_operation_id:operation,p_action:action,p_note:values.note||'',p_outcomes:outcomes});
   if(me?.user_id!==actor)throw Error('Login changed. Reopen the trip.');if(result.error)throw Error(result.error.message);
-  await travelWorkspace(true);message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
+  if(epoch!==travelEpoch)return;
+  const saved=Array.isArray(result.data)?result.data[0]:result.data;if(travelApplySaved(saved,row.id,row.version))message(`${row.request_number}: ${titles[action].toLowerCase()} saved.`);
  });
 }

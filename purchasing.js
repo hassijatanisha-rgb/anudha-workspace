@@ -94,12 +94,16 @@ async function saveSupplierForm(form){
  const fields={name:String(f.get('name')||'').trim(),country:f.get('country')||'',contact_name:f.get('contact_name')||'',phone:f.get('phone')||'',email:String(f.get('email')||'').trim(),tin:f.get('tin')||'',payment_terms:f.get('payment_terms')||'',notes:f.get('notes')||'',active:f.has('active')?f.get('active')==='true':(existing?.active??true)};
  if(fields.name.length<2)throw Error('Enter the supplier name.');
  if(!id&&supplierPendingSave?.name!==fields.name)supplierPendingSave={name:fields.name,id:crypto.randomUUID()};
- const requestId=id||supplierPendingSave.id,actor=me?.user_id,result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});
+ const requestId=id||supplierPendingSave.id,actor=me?.user_id,epoch=purchaseEpoch,section=purchaseSection,result=await client.rpc('save_supplier',{p_id:requestId,p_expected_version:version,p_fields:fields});
  if(me?.user_id!==actor)throw Error('Login changed. Nothing else was saved.');
  if(result.error)throw Error(result.error.message);
  const saved=Array.isArray(result.data)?result.data[0]:result.data;
  if(saved?.id!==requestId)throw Error('The server did not confirm the save. Press save again to retry safely.');
- supplierPendingSave=null;supplierEditing='';await purchasingWorkspace(true);message(`${saved.name} saved.`);
+ if(epoch!==purchaseEpoch)return;
+ const current=suppliers.find(row=>row.id===saved.id);
+ if(!current||current.version<=saved.version)suppliers=[saved,...suppliers.filter(row=>row.id!==saved.id)];
+ if(supplierPendingSave?.id===requestId)supplierPendingSave=null;
+ if(view==='purchasing'&&purchaseSection===section&&form.isConnected){supplierEditing='';const x=window.scrollX,y=window.scrollY;renderPurchasing();window.scrollTo(x,y);message(`${saved.name} saved.`);}
 }
 // After a save or a step, only that order is read again, so the page stays quick however many orders are listed.
 async function purchaseRefreshOne(id){
@@ -125,7 +129,7 @@ async function loadPurchasing(){
 async function purchasingWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
-  $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
+  workspaceLoading('Loading purchasing…');
   try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
  if(view!=='purchasing'||me?.user_id!==actor)return;

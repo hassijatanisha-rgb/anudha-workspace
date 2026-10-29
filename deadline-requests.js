@@ -44,7 +44,8 @@ async function renderDeadlineRequests(target){
   card.querySelector('[data-team-task-ask]')?.remove();
   (card.querySelector('.actions')||card).insertAdjacentHTML('beforebegin',deadlineRequestCardNote(request));
  }
- if(groups.toDecide.length&&!document.querySelector('[data-deadline-requests]'))
+ document.querySelector('[data-deadline-requests]')?.remove();
+ if(groups.toDecide.length)
   target.insertAdjacentHTML('beforebegin',`<section class="team-task-group" data-deadline-requests><h2>Deadline requests waiting for you · ${groups.toDecide.length}</h2>${groups.toDecide.map(deadlineRequestHtml).join('')}</section>`);
  document.querySelectorAll('[data-deadline-decide]').forEach(button=>button.onclick=()=>openDeadlineDecision(deadlineRequests.find(row=>row.id===button.dataset.id),button.dataset.deadlineDecide));
 }

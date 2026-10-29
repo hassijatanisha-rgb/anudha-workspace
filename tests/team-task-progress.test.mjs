@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const source=readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8');
 const task=(extra={})=>({id:'task',title:'Call clinic',details:'Original instructions',task_number:'TK-1',assigned_by:'giver',assignee_user_id:'worker',status:'open',due_at:'2099-01-01T09:00:00Z',urgency:'normal',version:1,...extra});
 function load(extra={}){
- const ctx=vm.createContext({me:{user_id:'worker',role:'staff'},employeeName:id=>({giver:'Asha',worker:'Baraka'}[id]||id),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),crypto:{randomUUID:()=> 'request-1'},...extra});
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'worker',role:'staff'},employeeName:id=>({giver:'Asha',worker:'Baraka'}[id]||id),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),crypto:{randomUUID:()=> 'request-1'},...extra});
  vm.runInContext(source+';Object.assign(globalThis,{teamTaskCard,teamTaskProgress,teamTaskAssignments,openTeamTaskComment,teamTasksWorkspace,loadTeamTasks,clearTeamTasks,setEvents:events=>{teamTaskEvents=events;}})',ctx);return ctx;
 }
 test('cards show the latest four comments and retain the full dated, escaped history',()=>{

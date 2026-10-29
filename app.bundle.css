@@ -1090,3 +1090,23 @@ main .staff-account-details .actions{display:flex;flex-direction:column;align-it
 @container(max-width:26rem){.staff-directory-table tbody tr{grid-template-columns:minmax(0,1fr);gap:1rem}.staff-directory-table .staff-identity{grid-column:auto}}
 @media(prefers-contrast:more){.staff-login-state,.staff-login-state.is-off{border-color:currentColor}.staff-directory-help,.staff-phone-value,.staff-account-status,.staff-field-status{color:inherit}}
 @media(forced-colors:active){.staff-login-state,.staff-login-state.is-off{background:Canvas;color:CanvasText;border-color:CanvasText}.staff-field-status.error{color:CanvasText}.staff-area-details>summary:focus-visible,.staff-account-details>summary:focus-visible{outline-color:Highlight}}
+
+/* Keep action feedback with the control or form that produced it. */
+.action-feedback{display:block;flex-basis:100%;max-width:100%;margin:.375rem 0;font-size:.875rem;font-weight:500;line-height:1.5;overflow-wrap:anywhere;color:var(--muted,#61736b)}
+.action-feedback-sr-only{position:absolute;width:1px;height:1px;padding:0!important;margin:-1px!important;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.action-feedback-success{color:#235a37;animation:action-feedback-fade .18s ease-out 4.82s forwards}
+.action-feedback-error{color:#a32323}
+.action-feedback-busy:not(.action-feedback-sr-only)::before,.action-is-busy::before{content:"";display:inline-block;width:.8em;height:.8em;margin-right:.5em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-.1em;animation:action-feedback-spin .75s linear infinite}
+.action-is-busy{cursor:progress}
+#nav .action-feedback{padding:0 .75rem;font-size:.75rem}
+@keyframes action-feedback-spin{to{transform:rotate(360deg)}}
+@keyframes action-feedback-fade{from{opacity:1}to{opacity:0}}
+@media(prefers-reduced-motion:reduce){.action-feedback-success{animation:action-feedback-fade .18s ease-out 4.82s forwards!important}}
+@media(prefers-contrast:more){.action-feedback{color:inherit}.action-feedback-error{font-weight:700}}
+@media(forced-colors:active){.action-feedback{color:CanvasText}}
+
+/* First-load placeholders stay static; refreshes keep the readable page in place. */
+#content.workspace-first-load{min-height:14rem}
+#content.workspace-first-load::after,#manualTasks>p[role="status"]::after{content:"";display:block;width:min(100%,42rem);height:8rem;margin:1.5rem 0;border-radius:.375rem;background:linear-gradient(var(--line,#dce4df),var(--line,#dce4df)) 0 0/70% .75rem no-repeat,linear-gradient(var(--line,#dce4df),var(--line,#dce4df)) 0 2rem/100% .75rem no-repeat,linear-gradient(var(--line,#dce4df),var(--line,#dce4df)) 0 4rem/85% .75rem no-repeat;opacity:.6}
+#content.workspace-refreshing{cursor:progress}
+@media(forced-colors:active){#content.workspace-first-load::after,#manualTasks>p[role="status"]::after{border:1px solid CanvasText;opacity:1}}

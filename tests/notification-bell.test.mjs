@@ -17,7 +17,7 @@ function fakeClient(answer=()=>({count:0,data:[],error:null})){
  }};
 }
 function load(extra={}){
- const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Amina',j:'Jagroop'})[id]||'?',
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Amina',j:'Jagroop'})[id]||'?',
   document:{addEventListener(){},getElementById:()=>null,querySelector:()=>null,hidden:false},setInterval:()=>0,Date,...extra});
  vm.runInContext(read('notification-bell.js')+';Object.assign(globalThis,{bellKinds});',ctx);return ctx;
 }

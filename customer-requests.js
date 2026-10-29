@@ -46,7 +46,7 @@ function requestCard(row){
 async function customerRequestsWorkspace(force=false){
  const epoch=++requestEpoch,actor=me;if(!actor||view!=='requests')return;syncWorkspaceNavigation();
  if(force||!requestLoaded){
-  $('#content').innerHTML='<p role="status">Loading requests…</p>';
+  workspaceLoading('Loading requests…');
   const since=new Date(Date.now()-requestRecentDays*864e5).toISOString();
   let rows;try{rows=await all('customer_requests','*',q=>q.or(`status.in.(received,in_progress),updated_at.gte.${since}`));}
   catch(error){if(epoch!==requestEpoch||me!==actor||view!=='requests')return;$('#content').innerHTML=`<h1>${esc(requestSections[requestSection].title)}</h1><p role="alert">Requests could not load: ${esc(error.message)}</p><button type="button" id="requestRetry">Try again</button>`;$('#requestRetry').onclick=()=>run(()=>customerRequestsWorkspace(true));return;}

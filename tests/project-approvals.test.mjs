@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../project-approvals.js',import.meta.url),'utf8');
 test('approval receipt validates every identity and payload field',()=>{
- const context=vm.createContext({window:{addEventListener(){}}});
+ const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,window:{addEventListener(){}}});
  vm.runInContext(source,context);
  const attempt={p_id:'request',p_question_id:'question',p_version:1,p_answer:'Yes'};
  const receipt={id:'request',question_id:'question',question_version:1,answer:'Yes',answered_by:'owner'};
@@ -14,7 +14,7 @@ test('approval receipt validates every identity and payload field',()=>{
 });
 test('non-owner cannot query approval data',async()=>{
  const target={innerHTML:''};let calls=0;
- const context=vm.createContext({window:{addEventListener(){}},$:()=>target,me:{role:'staff',user_id:'staff'},client:{from(){calls++;}}});
+ const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,window:{addEventListener(){}},$:()=>target,me:{role:'staff',user_id:'staff'},client:{from(){calls++;}}});
  vm.runInContext(source,context);await context.projectApprovals();
  assert.equal(calls,0);assert.match(target.innerHTML,/Owner access is required/);
 });
@@ -31,7 +31,7 @@ function formHarness(rpc){
  const form={dataset:{approval:'q'},elements:{answer:input},querySelector:s=>s==='button'?button:status,parentElement:{querySelector:s=>s==='details'?history:tag}};
  const target={innerHTML:'',querySelectorAll:()=>[form]};
  const client={from(table){return {select(){return this;},order(){return this;},limit(){return Promise.resolve({data:table.endsWith('questions')?[{id:'q',version:1,title:'Question',question:'Decide'}]:[]});}};},rpc};
- const context=vm.createContext({window:{addEventListener(){}},$:()=>target,me:{role:'owner',user_id:'owner'},view:'approvals',client,crypto:{randomUUID:()=> 'request'},esc:s=>String(s).replaceAll('<','&lt;')});
+ const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,window:{addEventListener(){}},$:()=>target,me:{role:'owner',user_id:'owner'},view:'approvals',client,crypto:{randomUUID:()=> 'request'},esc:s=>String(s).replaceAll('<','&lt;')});
  vm.runInContext(source,context);
  return {context,form,status,button,input,history,tag};
 }

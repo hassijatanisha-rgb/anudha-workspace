@@ -8,7 +8,7 @@ function approvalReceiptMatches(answer,attempt,actor){
 async function projectApprovals(){
  const target=$('#content'),actor=me?.user_id||me?.id,load=++approvalLoad;
  if(me?.role!=='owner'){target.innerHTML='<section class="card"><h1>Questions for the owner</h1><p>Owner access is required to answer project decisions.</p></section>';return;}
- target.innerHTML='<p role="status">Loading project decisions…</p>';
+ workspaceLoading('Loading project decisions…');
  let questions,answers;
  try{[questions,answers]=await Promise.all([
   client.from('project_approval_questions').select('*').order('created_at').limit(100),

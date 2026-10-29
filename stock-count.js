@@ -79,7 +79,7 @@ async function stockCountWorkspace(force=false){
  if(!stockCountEnabled()){$('#content').innerHTML='<section class="card"><h1>Stock count is switched off</h1><p class="muted">The physical count is finished. Stock is managed in Inventory.</p></section>';return;}
  if(!countGodown)countGodown=countRememberedGodown();
  if(force||!countLoaded){
-  $('#content').innerHTML='<p role="status">Loading the product list and counts…</p>';
+  workspaceLoading('Loading the product list and counts…');
   const epoch=countEpoch+1;try{if(!(await loadStockCount(force)))return;}catch(error){if(me!==actor||countEpoch!==epoch)return;countLoadError=error.message;countLoaded=false;}
  }
  if(view!=='stockcount'||me!==actor)return;
