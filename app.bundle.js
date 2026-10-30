@@ -7883,10 +7883,24 @@ async function listCacheRead(userId,now=Date.now()){
 async function listCacheWrite(record){try{await listCacheRun('readwrite',store=>store.put({...record,schema:listCacheSchema},'lists'));}catch{}}
 async function listCacheClear(){try{await listCacheRun('readwrite',store=>store.clear());}catch{}}
 // Latest change time in a set of rows, as an ISO string; '' when there are none.
+// Kept exactly as the server wrote it (to the microsecond), so the next load can leave out rows carrying that very
+// time: they are already in this copy. Rounding it to milliseconds made every load download again all the rows
+// that share one time (migration 089 gave every existing client and contact the same time).
 function listCacheLatest(rows,previous=''){
- let best=Date.parse(previous)||0;
- for(const row of rows){const t=Date.parse(row.updated_at);if(t>best)best=t;}
- return best?new Date(best).toISOString():'';
+ let best=previous||'',bestTime=listCacheMicros(previous);
+ for(const row of rows){const t=listCacheMicros(row.updated_at);if(t&&t>=bestTime){best=String(row.updated_at);bestTime=t;}}
+ return bestTime?best:'';
+}
+// A time in microseconds since 1970 (the server keeps microseconds; Date.parse stops at milliseconds), 0 if unreadable.
+function listCacheMicros(value){
+ const ms=Date.parse(value);if(!Number.isFinite(ms))return 0;
+ const extra=/\.\d{3}(\d{1,3})/.exec(String(value));
+ return ms*1000+(extra?Number(extra[1].padEnd(3,'0')):0);
+}
+// Changed rows for a saved copy: from a little before the newest change seen, leaving out rows with exactly that time.
+function listCacheChanged(query,since){
+ const ranged=query.gte('updated_at',listCacheFrom(since));
+ return since?ranged.neq('updated_at',since):ranged;
 }
 // Ask from a little before the last change seen, so a save that committed late is not missed.
 function listCacheFrom(since){const t=Date.parse(since);return Number.isFinite(t)?new Date(t-listCacheOverlap).toISOString():'1970-01-01T00:00:00.000Z';}
@@ -7927,7 +7941,7 @@ async function fetchLists(userId){
  try{
   if(cached){
    // Changed rows only, archived ones included so they can leave the list.
-   const changed=(table,cols)=>all(table,cols,q=>q.gte('updated_at',listCacheFrom(cached.since[table])));
+   const changed=(table,cols)=>all(table,cols,q=>listCacheChanged(q,cached.since[table]));
    const [od,cd,pd]=await Promise.all([changed('organizations',C.organizations+',deleted_at,updated_at'),changed('contacts',C.contacts+',deleted_at,updated_at'),changed('products',C.products+',updated_at')]);
    const o=listCacheMerge(cached.organizations,od,false),c=listCacheMerge(cached.contacts,cd,false),p=listCacheMerge(cached.products,pd,true);
    return {o,c,p,record:{userId,savedAt:cached.savedAt,since:{organizations:listCacheLatest(od,cached.since.organizations),contacts:listCacheLatest(cd,cached.since.contacts),products:listCacheLatest(pd,cached.since.products)},organizations:o,contacts:c,products:p}};
