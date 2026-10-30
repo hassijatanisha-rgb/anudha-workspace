@@ -76,7 +76,7 @@ async function loadTallyInvoices(){
 async function tallyInvoicesWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!tallyInvoiceLoaded){
-  $('#content').innerHTML='<p role="status">Loading Tally invoices…</p>';
+  pageLoading('Loading Tally invoices…');
   try{if(!(await loadTallyInvoices()))return;}catch(error){if(me?.user_id!==actor)return;tallyInvoiceError=error.message;tallyInvoiceLoaded=false;}
  }
  if(view!=='tallyinvoices'||me?.user_id!==actor)return;

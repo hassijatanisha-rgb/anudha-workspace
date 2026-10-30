@@ -152,7 +152,7 @@ function friendlyError(e){
  if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. We could not confirm the result. Reconnect and check the record before submitting again.';
  return text||'Something went wrong. Please retry.';
 }
-async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
+async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;if(typeof pageSettle==='function')pageSettle();replayQueuedNavigation()}}
 // The menu item pressed while the last action was still running (workspace-navigation.js), pressed again now.
 function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(button){navWhileBusy=null;if(button.isConnected&&!button.hidden){button.click();return;}}if(typeof navResumePending==='function')navResumePending();}
 $('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};

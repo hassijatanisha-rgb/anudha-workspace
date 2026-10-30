@@ -108,7 +108,7 @@ function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='own
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
  const actor=me,section=inventorySection;if(!actor||view!=='inventory')return;
- $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
+ pageLoading('Loading godowns, stock and transfers…');
  const loading=!inventoryLoaded||force?loadInventoryOperations():null,epoch=inventoryEpoch;
  if(loading)await loading;
  if(me!==actor||epoch!==inventoryEpoch||view!=='inventory'||inventorySection!==section)return;
