@@ -11,7 +11,7 @@ function bindProductWorkbench(){
  if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
  document.querySelectorAll('[data-workbench-stock]').forEach(button=>button.onclick=()=>{
   const product=products.find(p=>p.id===button.dataset.workbenchStock);if(!product)return;
-  inventoryProductId=product.id;inventorySearch='';inventorySection='stock';run(()=>inventoryWorkspace());
+  inventoryProductId=product.id;inventorySearch='';if(typeof inventoryStockShown!=='undefined')inventoryStockShown=50;inventorySection='stock';run(()=>inventoryWorkspace());
  });
  document.querySelectorAll('[data-workbench-detail]').forEach(button=>button.onclick=()=>{
   const rows=catalogRows(),product=rows.find(p=>p.id===button.dataset.workbenchDetail);if(!product)return;
