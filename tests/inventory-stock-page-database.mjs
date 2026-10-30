@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const {PGlite}=await import(process.env.PGLITE_MODULE),db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const domain=vm.createContext({});vm.runInContext(readFileSync(new URL('../inventory-domain.js',import.meta.url),'utf8'),domain);
+try{
+ await db.exec(`create role anon;create role authenticated;
+ create function inventory_active_staff() returns boolean language sql stable as $$select current_setting('test.active',true)='yes' and current_setting('test.mfa',true)='yes'$$;
+ create table products(id uuid primary key,name text,sku text,source jsonb,deleted_at timestamptz);
+ create table product_detail_reviews(id uuid primary key,product_id uuid,version integer,name text,company text,specification text,unique(product_id,version));
+ create table inventory_locations(id uuid primary key,name text,code text,active boolean,is_dispatch_hub boolean);
+ create table product_pack_definitions(id uuid primary key,product_id uuid,version integer,base_unit text,units_per_carton integer,reason text);
+ create table inventory_lots(id uuid primary key,product_id uuid,location_id uuid,pack_definition_id uuid,batch_number text,expiry_date date,sealed_cartons integer,loose_units integer,reserved_units integer,stock_status text,version integer,updated_at timestamptz);
+ do $$declare t text;begin foreach t in array array['products','product_detail_reviews','inventory_locations','product_pack_definitions','inventory_lots'] loop
+ execute format('alter table %I enable row level security',t);execute format('create policy read_rows on %I for select to authenticated using (inventory_active_staff())',t);execute format('grant select on %I to authenticated',t);end loop;end $$;
+ set test.active='yes';set test.mfa='yes';`);
+ await db.exec(readFileSync(new URL('../supabase/migrations/202610290128_inventory_stock_page.sql',import.meta.url),'utf8'));
+ await db.query('insert into inventory_locations values($1,$2,$3,true,true),($4,$5,$6,true,false),($7,$8,$9,false,true)',[id(90001),'Haadi','HAA',id(90002),'Warehouse','WAR',id(90003),'Closed hub','OLD']);
+ await db.exec(`insert into products select ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Product '||n,'SKU-'||n,'{"company":"Maker","specification":"Spec","raw":"private source omitted"}'::jsonb,null from generate_series(1,8537) n;
+ insert into product_pack_definitions select id,id,1,'bottle',100,'Private provenance omitted' from products;
+ insert into inventory_lots select id,id,case when right(id::text,1) in ('0','2','4','6','8') then '${id(90001)}'::uuid else '${id(90002)}'::uuid end,id,'Batch '||sku,null,2,100,20,case when right(id::text,1)='0' then 'quarantine' else 'available' end,7,'2026-10-29 08:00Z' from products;`);
+ await db.query('insert into product_detail_reviews values($1,$2,1,$3,$4,$5),($6,$2,2,$7,$8,$9)',[id(95001),id(8537),'Old corrected name','Old maker','Old spec',id(95002),'Corrected reagent','Reviewed maker','Updated 200ml']);
+ await db.query("update inventory_lots set expiry_date=(current_timestamp at time zone 'Africa/Dar_es_Salaam')::date-1 where id=$1",[id(1)]);
+ await db.query("update inventory_lots set expiry_date=(current_timestamp at time zone 'Africa/Dar_es_Salaam')::date where id=$1",[id(2)]);
+ await db.query('update inventory_lots set sealed_cartons=0,loose_units=0,reserved_units=0 where id=$1',[id(3)]);
+ await db.query('update inventory_lots set location_id=$1 where id=$2',[id(90003),id(4)]);
+ const raw=(await db.query('select *,expiry_date::text as expiry_date from inventory_lots')).rows,places=(await db.query('select * from inventory_locations')).rows;
+ const today=(await db.query("select ((current_timestamp at time zone 'Africa/Dar_es_Salaam')::date)::text as today")).rows[0].today;
+ const expected=JSON.parse(JSON.stringify(domain.inventoryStockTotals(raw,places,today)));
+ const before=JSON.stringify(raw);await db.exec('set role authenticated');
+ const page=async({query='',location=null,status='',page=0,product=null}={})=>(await db.query('select inventory_stock_page($1,$2,$3,$4,$5) as result',[query,location,status,page,product])).rows[0].result;
+ const first=await page();assert.equal(first.total,8537);assert.equal(first.rows.length,50);assert.equal(first.products.length,50);assert.equal(first.packs.length,50);assert.equal(first.pages,171);assert.deepEqual(first.totals,expected);assert.equal(first.scope_count,8537);
+ assert.ok(first.products.every(row=>!row.source.raw));assert.ok(first.packs.every(row=>!row.reason));
+ const seen=[];for(let p=0;p<first.pages;p++)seen.push(...(await page({page:p})).rows.map(row=>row.id));assert.equal(new Set(seen).size,8537);assert.equal(seen.length,8537);
+ const last=await page({page:999999});assert.equal(last.page,170);assert.equal(last.rows.length,37);assert.deepEqual(last.totals,expected);
+ const empty=await page({query:'missing',page:999});assert.equal(empty.page,0);assert.equal(empty.pages,1);assert.equal(empty.rows.length,0);assert.deepEqual(empty.totals,expected);
+ for(const query of ['Corrected reagent','Reviewed maker','Updated 200ml','SKU-8537','Batch SKU-8537']){const data=await page({query});assert.equal(data.total,1);assert.equal(data.rows[0].product_id,id(8537));assert.equal(data.products[0].name,'Corrected reagent');}
+ assert.equal((await page({query:'Old corrected name'})).total,0);assert.equal((await page({query:'private source'})).total,0);
+ const quarantine=await page({status:'quarantine',location:id(90001)});assert.ok(quarantine.rows.every(row=>row.stock_status==='quarantine'&&row.location_id===id(90001)));assert.deepEqual(quarantine.totals,expected);
+ assert.equal((await page({status:'expired'})).total,1);assert.equal((await page({status:'empty'})).total,1);
+ const scope=await page({product:id(8537),query:'missing'});assert.equal(scope.total,0);assert.equal(scope.scope_count,1);assert.equal(scope.products[0].id,id(8537));assert.equal(scope.totals.loose,100);
+ assert.equal((await page({product:id(99999)})).scope_count,0);
+ await assert.rejects(page({page:-1}),/valid stock page/);await assert.rejects(page({status:'bad'}),/valid stock status/);await assert.rejects(page({query:'x'.repeat(2001)}),/2000 characters/);
+ await db.exec("set test.mfa='no'");await assert.rejects(page(),/Active staff/);await db.exec("set test.mfa='yes';set test.active='no'");await assert.rejects(page(),/Active staff/);
+ await db.exec("reset role;set test.active='yes';set role anon");await assert.rejects(page(),/permission denied/);await db.exec('reset role');
+ assert.equal((await db.query("select prosecdef from pg_proc where proname='inventory_stock_page'")).rows[0].prosecdef,false);
+ assert.equal(JSON.stringify((await db.query('select *,expiry_date::text as expiry_date from inventory_lots')).rows),before);
+ await db.exec(`create policy scoped_lot on inventory_lots as restrictive for select to authenticated using (id<>'${id(8537)}');set role authenticated`);
+ assert.equal((await page({query:'Corrected reagent'})).total,0);assert.equal((await page()).scope_count,8536);
+ await db.exec('reset role');await db.query('update inventory_lots set reserved_units=101 where id=$1',[id(1)]);await db.exec('set role authenticated');await assert.rejects(page(),/Invalid stock or reservation/);
+ console.log('PASS: 8,537 rows; bounded 50-row RPC and payload; exact full-scope totals match JS domain; reviewed search, statuses, expiry-today, exact product scope, all pages, validation, unchanged quantities, invoker/MFA/anonymous and restrictive RLS.');
+}finally{await db.close();}

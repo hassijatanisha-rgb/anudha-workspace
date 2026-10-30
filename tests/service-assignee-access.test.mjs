@@ -26,10 +26,10 @@ Object.assign(context,{
  me:{user_id:'engineer',active:true,role:'staff',access:['service']},view:'service',esc:String,
  inventoryProduct:()=>({name:'Fixture machine'}),message(){},
  actionForm:(title,html,handler)=>{fields=html;submit=handler;return {querySelector:()=>selfButton,elements:{namedItem:name=>name==='assignee'?assignee:note}};},
- client:{rpc:async(name,args)=>{rpcArgs={name,...args};return {data:{status:'assigned'}};}}
+ client:{rpc:async(name,args)=>{rpcArgs={name,...args};return {data:{id:'case',version:4,status:'assigned',updated_at:'2026-10-29T08:00:00Z'}};}}
 });
 vm.runInContext(fs.readFileSync('service-domain.js','utf8'),context);
-vm.runInContext('serviceWorkspace=async()=>{}',context);
+vm.runInContext('updateServiceCase=async()=>({historyError:""})',context);
 context.openServiceAction({id:'case',version:3,status:'new',case_number:'INS-FIXTURE'},'assign');
 assert.match(fields,/type="button" data-service-assign-me>Assign engineer to me/);
 selfButton.onclick();

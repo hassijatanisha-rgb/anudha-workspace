@@ -2,10 +2,12 @@
 // Stock quantities still use the established count transaction; receipt identities are saved atomically with it.
 function receivingSerialCount(pack,lot,sealed,loose){return Number(sealed)*Number(pack.units_per_carton)+Number(loose)-(lot?Number(lot.sealed_cartons)*Number(pack.units_per_carton)+Number(lot.loose_units):0)}
 function receivingSerialFieldsHtml(){return '<div class="wide" data-receiving-serials hidden><p>For machines and other serial-tracked products, enter the real serial of every additional unit received. Include units inside sealed cartons. Existing stock is identified separately while packing.</p><label><span data-receiving-serial-count>Serial numbers of added units</span><textarea name="receivingSerials" rows="4" placeholder="One real serial number per line"></textarea></label><p class="muted">To receive more into this lot, enter the new total physical counts above. Reducing serial-tracked stock needs a reviewed serial adjustment.</p></div>'}
+const receivingSerialRefreshers=new WeakMap();
 function bindReceivingSerialForms(){
  document.querySelectorAll('form[data-inventory-action="opening"],form[data-inventory-action="correct"]').forEach(form=>{
   if(!form.querySelector('[data-receiving-serials]'))form.querySelector('.grid')?.insertAdjacentHTML('beforeend',receivingSerialFieldsHtml());
-  const refresh=()=>{
+  let refresh=receivingSerialRefreshers.get(form);
+  if(!refresh){refresh=()=>{
    const lot=inventoryLots.find(row=>row.id===form.dataset.lot),pack=inventoryPacks.find(row=>row.id===(lot?.pack_definition_id||form.elements.packId?.value));
    const tracked=!!pack&&serialRequired(pack.product_id),panel=form.querySelector('[data-receiving-serials]');if(!panel)return;
    panel.hidden=!tracked;const field=panel.querySelector('textarea');field.disabled=!tracked;
@@ -13,7 +15,8 @@ function bindReceivingSerialForms(){
    const added=pack?receivingSerialCount(pack,lot,form.elements.sealedCartons.value,form.elements.looseUnits.value):0;
    field.required=tracked&&added>0;panel.querySelector('[data-receiving-serial-count]').textContent=`Real serial numbers · ${Math.max(0,added)} additional units`;
   };
-  form.addEventListener('input',refresh);form.addEventListener('change',refresh);refresh();
+  receivingSerialRefreshers.set(form,refresh);form.addEventListener('input',refresh);form.addEventListener('change',refresh);}
+  refresh();
  });
  bindTransferSerialForms();
  document.querySelectorAll('form[data-inventory-action="issue"]').forEach(form=>{

@@ -1,0 +1,67 @@
+// Disposable PostgreSQL fixture; executes migration 136 without an ERP connection.
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const {PGlite}=await import(process.env.PGLITE_MODULE),db=new PGlite();
+const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
+const OWNER=id(9001),HEAD=id(9002),DELIVERY=id(9003),PROFORMA=id(9004),INACTIVE=id(9005);
+let checks=0;const check=async fn=>{await fn();checks++;};
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create table staff(user_id uuid primary key,role text,active boolean,access text[],display_name text);
+ insert into staff values('${OWNER}','owner',true,'{}','Asha <owner>'),('${HEAD}','head',true,'{deliveries,proformas}','Baraka'),('${DELIVERY}','staff',true,'{deliveries}','Delivery staff'),('${PROFORMA}','staff',true,'{proformas}','Sales staff'),('${INACTIVE}','staff',false,'{deliveries}','Inactive');
+ create function inventory_active_staff() returns boolean language sql stable security definer set search_path=public,pg_temp as $$select exists(select 1 from staff where user_id=auth.uid() and active) and current_setting('test.mfa',true)='yes'$$;
+ create function has_access(area text) returns boolean language sql stable security definer set search_path=public,pg_temp as $$select inventory_active_staff() and exists(select 1 from staff where user_id=auth.uid() and (role='owner' or area=any(access)))$$;
+ create table organizations(id uuid primary key,name text,location text,deleted_at timestamptz);
+ create table contacts(id uuid primary key,title text,first_name text,last_name text,deleted_at timestamptz);
+ create table sales_proformas(id uuid primary key,document_number text,organization_id uuid,contact_id uuid,status text,created_at timestamptz,deleted_at timestamptz);
+ create table sales_proforma_lines(id uuid primary key,proforma_id uuid,quantity integer);
+ create table sales_delivery_notes(id uuid primary key,delivery_number text,proforma_id uuid,organization_id uuid,contact_id uuid,status text,created_at timestamptz,expected_delivery_date date,tax_invoice_reference text,
+ customer_waiting boolean default false,packer_user_id uuid,packing_taken_at timestamptz,packing_blocked_reason text,promise_kind text,promised_by timestamptz,proof_reference text);
+ create table sales_delivery_lines(id uuid primary key,delivery_note_id uuid,proforma_line_id uuid,quantity integer);
+ create table work_assignments(id uuid primary key,record_type text,record_id uuid,status text,assignee_user_id uuid,assigned_by uuid,task text,created_at timestamptz,due_on date);
+ create table work_delays(id uuid primary key,assignment_id uuid,reason text,expected_on date,recorded_at timestamptz);
+ grant usage on schema auth to authenticated;
+ do $$declare t text;begin foreach t in array array['staff','organizations','contacts','sales_proformas','sales_proforma_lines','sales_delivery_notes','sales_delivery_lines','work_assignments','work_delays'] loop
+ execute format('alter table %I enable row level security',t);execute format('grant select on %I to authenticated',t);
+ execute format('create policy read_rows on %I for select to authenticated using ((select inventory_active_staff()))',t);
+ end loop;end $$;
+ create policy names_visible on staff as restrictive for select to authenticated using(user_id=auth.uid() or auth.uid() in ('${OWNER}','${HEAD}'));
+ create policy notes_visible on sales_delivery_notes as restrictive for select to authenticated using((select has_access('deliveries')));
+ create policy items_visible on sales_delivery_lines as restrictive for select to authenticated using((select has_access('deliveries')));
+ create policy proformas_visible on sales_proformas as restrictive for select to authenticated using((select has_access('proformas')) or (select has_access('deliveries')));
+ create policy lines_visible on sales_proforma_lines as restrictive for select to authenticated using((select has_access('proformas')) or (select has_access('deliveries')));
+ set test.mfa='yes';`);
+ await db.exec(read('supabase/migrations/202610290136_sales_delivery_page.sql'));
+ await db.query("insert into organizations values($1,'Clinic <one>','Arusha',null);",[id(8001)]);
+ await db.query("insert into contacts values($1,'Dr','Named','Contact',null)",[id(8101)]);
+ const created=n=>new Date(Date.UTC(2026,9,1+n%20)).toISOString(),statuses=['accounts_approved','tax_invoice_created','sent_to_sales','packing','ready','out_for_delivery','delivered','cancelled'];
+ const parents=Array.from({length:1064},(_,n)=>({id:id(n+1),document_number:'PF-'+String(n+1).padStart(4,'0'),organization_id:id(8001),contact_id:id(8101),status:n===1?'draft':n===2?'sent':'accepted',created_at:created(n),deleted_at:n===1063?created(n):null}));
+ const notes=parents.map((p,n)=>({id:id(20000+n),delivery_number:'DN-'+String(n+1).padStart(4,'0'),proforma_id:p.id,organization_id:p.organization_id,contact_id:p.contact_id,status:statuses[n%statuses.length],created_at:created(n),expected_delivery_date:'2026-11-05',tax_invoice_reference:n%3?'INV-'+n:null,customer_waiting:n%5===0,packer_user_id:OWNER,packing_taken_at:created(n),packing_blocked_reason:n%8===2?'Waiting for stock':null,promise_kind:'next_day',promised_by:'2026-10-28T12:00:00Z',proof_reference:'PRIVATE RAW DETAIL '.repeat(1000)}));
+ const lines=parents.filter((_,n)=>n!==6).map((p,n)=>({id:id(40000+n),proforma_id:p.id,quantity:10}));lines.push({id:id(49000),proforma_id:parents[3].id,quantity:6});
+ const allocations=lines.filter(line=>line.id!==id(49000)).map((line,n)=>({id:id(60000+n),delivery_note_id:notes.find(note=>note.proforma_id===line.proforma_id).id,proforma_line_id:line.id,quantity:[0,4,10,12][n%4]}));
+ await db.query('insert into sales_proformas select * from jsonb_to_recordset($1::jsonb) as x(id uuid,document_number text,organization_id uuid,contact_id uuid,status text,created_at timestamptz,deleted_at timestamptz)',[JSON.stringify(parents)]);
+ await db.query(`insert into sales_delivery_notes select * from jsonb_to_recordset($1::jsonb) as x(id uuid,delivery_number text,proforma_id uuid,organization_id uuid,contact_id uuid,status text,created_at timestamptz,expected_delivery_date date,tax_invoice_reference text,customer_waiting boolean,packer_user_id uuid,packing_taken_at timestamptz,packing_blocked_reason text,promise_kind text,promised_by timestamptz,proof_reference text)`,[JSON.stringify(notes)]);
+ await db.query('insert into sales_proforma_lines select * from jsonb_to_recordset($1::jsonb) as x(id uuid,proforma_id uuid,quantity integer)',[JSON.stringify(lines)]);
+ await db.query('insert into sales_delivery_lines select * from jsonb_to_recordset($1::jsonb) as x(id uuid,delivery_note_id uuid,proforma_line_id uuid,quantity integer)',[JSON.stringify(allocations)]);
+ const latest=notes.filter(note=>note.created_at===created(19)).sort((a,b)=>a.id.localeCompare(b.id))[0];
+ await db.query("insert into work_assignments values($1,'delivery',$2,'done',$3,$4,'Closed task','2026-10-01','2026-10-10'),($5,'delivery',$2,'open',$3,$4,'Arrange <delivery>','2026-10-02','2026-11-05')",[id(75001),latest.id,OWNER,HEAD,id(75002)]);
+ await db.query("insert into work_delays values($1,$2,'Old delay','2026-11-04','2026-10-03'),($3,$2,'Current <reason>','2026-11-06','2026-10-04')",[id(76001),id(75002),id(76002)]);
+ const as=async actor=>{await db.exec('reset role');await db.query("select set_config('test.actor',$1,false)",[actor]);await db.exec('set role authenticated');};
+ const page=async(filter='notes',n=0)=>(await db.query('select sales_delivery_page($1,$2) result',[filter,n])).rows[0].result;
+ const legacy=vm.createContext({});for(const file of ['row-index.js','business-date.js','sales-domain.js','sales-delivery.js'])vm.runInContext(read(file),legacy);
+ const expectedAwaiting=async()=>{legacy.parents=(await db.query('select * from sales_proformas order by created_at desc,id')).rows;legacy.lines=(await db.query('select * from sales_proforma_lines')).rows;legacy.notes=(await db.query('select * from sales_delivery_notes order by created_at desc,id')).rows;legacy.allocations=(await db.query('select * from sales_delivery_lines')).rows;vm.runInContext('salesProformas=parents;salesProformaLines=lines;salesDeliveryNotes=notes;salesDeliveryLines=allocations',legacy);return legacy.parents.filter(legacy.canCreateDelivery).map(row=>row.id);};
+ await as(OWNER);const expected=await expectedAwaiting(),first=await page();
+ await check(async()=>{assert.equal(first.total,1064);assert.equal(first.rows.length,50);assert.equal(first.pages,22);assert.equal(first.counts.awaiting,expected.length);assert.ok(JSON.stringify(first).length<100000);assert.ok(!JSON.stringify(first).includes('PRIVATE RAW DETAIL'));});
+ await check(async()=>{const found=[];for(let n=0;n<first.pages;n++)found.push(...(await page('notes',n)).rows);assert.equal(new Set(found.map(row=>row.id)).size,1064);assert.deepEqual(found.map(row=>row.id),legacy.notes.map(row=>row.id));for(const row of found){const note=notes.find(note=>note.id===row.id);assert.equal(row.status,note.status);assert.equal(row.customer_waiting,note.customer_waiting);assert.equal(row.tax_invoice_reference,note.tax_invoice_reference);}assert.equal((await page('notes',1000000)).page,21);});
+ await check(async()=>{const firstAwaiting=await page('awaiting'),found=[];for(let n=0;n<firstAwaiting.pages;n++)found.push(...(await page('awaiting',n)).rows.map(row=>row.id));assert.deepEqual(found,expected);assert.ok(!found.includes(parents[1].id));assert.ok(!found.includes(parents[6].id));assert.ok(found.includes(parents[7].id),'cancelled allocation releases remaining quantities');assert.ok(found.includes(parents[3].id),'another unallocated line remains eligible');assert.equal(firstAwaiting.counts.notes,1064);});
+ await check(async()=>{const row=first.rows[0];assert.equal(row.organization.name,'Clinic <one>');assert.equal(row.contact_name,'Dr Named Contact');assert.equal(row.proforma_number,parents.find(p=>p.id===row.proforma_id).document_number);assert.equal(row.packer_name,'Asha <owner>');assert.equal(row.responsible.assignee_name,'Asha <owner>');assert.equal(row.responsible.sender_name,'Baraka');assert.equal(row.responsible.task,'Arrange <delivery>');assert.equal(row.responsible_delay.reason,'Current <reason>');});
+ await check(async()=>{await as(HEAD);assert.equal((await page()).total,1064);await as(DELIVERY);const result=await page();assert.equal(result.total,1064);assert.equal(result.counts.awaiting,expected.length);assert.equal(result.rows[0].packer_name,null);assert.equal(result.rows[0].responsible.assignee_name,null);assert.equal(result.rows[0].responsible.assignee_user_id,OWNER);});
+ await check(async()=>{await as(PROFORMA);await assert.rejects(page(),/Delivery access/);await as(INACTIVE);await assert.rejects(page(),/Delivery access/);await as(OWNER);await db.exec("set test.mfa='no'");await assert.rejects(page(),/Delivery access/);await db.exec("set test.mfa='yes'");});
+ await check(async()=>{await assert.rejects(page('other'),/valid delivery filter/);await assert.rejects(page(null),/valid delivery filter/);for(const n of [-1,null,1000001])await assert.rejects(page('notes',n),/valid delivery page/);});
+ await check(async()=>{await db.exec(`reset role;create policy hide_one_note on sales_delivery_notes as restrictive for select to authenticated using(id<>'${latest.id}');create policy hide_one_order on sales_proformas as restrictive for select to authenticated using(id<>'${expected[0]}');set role authenticated`);const visible=await expectedAwaiting(),result=await page();assert.equal(result.total,1063);assert.equal(result.counts.awaiting,visible.length);assert.ok(!result.rows.some(row=>row.id===latest.id));const awaiting=await page('awaiting');assert.ok(!awaiting.rows.some(row=>row.id===expected[0]));});
+ await check(async()=>{await db.exec('reset role;create policy hide_labels on organizations as restrictive for select to authenticated using(false);create policy hide_contacts on contacts as restrictive for select to authenticated using(false);create policy hide_handoff on work_assignments as restrictive for select to authenticated using(false);set role authenticated');const result=await page();assert.equal(result.rows[0].organization.name,'Client unavailable');assert.equal(result.rows[0].contact_name,'Contact unavailable');assert.ok(result.rows.every(row=>row.responsible===null&&row.responsible_delay===null));assert.equal(result.total,1063);});
+ await check(async()=>{await db.exec('reset role;set role anon');await assert.rejects(page(),/permission denied/);await db.exec('reset role');assert.deepEqual((await db.query("select prosecdef,provolatile from pg_proc where proname='sales_delivery_page'")).rows[0],{prosecdef:false,provolatile:'s'});});
+ console.log(`PASS: ${checks} delivery page database checks; 1064 notes, complete 50-row pages, actual awaiting-quantity parity, bounded payload, joined labels/owners, roles/MFA/RLS and anonymous denial.`);
+}finally{await db.close();}

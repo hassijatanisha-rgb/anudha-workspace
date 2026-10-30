@@ -1,9 +1,10 @@
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function context(){
- const c=vm.createContext({Intl,Date,console,crypto:{randomUUID:()=> 'new-id'},esc:s=>String(s??''),orgIndex:new Map(),contacts:[],products:[],me:{user_id:'actor'},companyFormBrand:()=>'<header>ANUDHA LIMITED</header>'});
+ const c=vm.createContext({statusTone,Intl,Date,console,crypto:{randomUUID:()=> 'new-id'},esc:s=>String(s??''),orgIndex:new Map(),contacts:[],products:[],me:{user_id:'actor'},companyFormBrand:()=>'<header>ANUDHA LIMITED</header>'});
  vm.runInContext(readFileSync('row-index.js','utf8')+'\n'+readFileSync('company-forms.js','utf8')+'\n'+readFileSync('sales-domain.js','utf8')+'\n'+readFileSync('proforma-commercial.js','utf8')+'\n'+readFileSync('sales-delivery.js','utf8'),c);return c;
 }
 test('Pro forma actions distinguish recording external sending from accounting submission',()=>{

@@ -6,11 +6,12 @@ import vm from 'node:vm';
 function fixture(options={}){
  const calls=[],buttons=[],previous={},next={};
  const target={isConnected:true,innerHTML:'',querySelector:s=>s.includes('previous')?previous:next,querySelectorAll:()=>buttons};
- const row={id:'saved-1',organization_id:'org',document_number:'PF-1',revision:3,acceptance_reference:'LPO <one>'};
+ const row={id:'saved-1',organization_id:'org',customer:{name:'Customer'},document_number:'PF-1',revision:3,acceptance_reference:'LPO <one>'};
  let page=0;
  const query={select(value){calls.push(['select',value]);return this},eq(...args){calls.push(['eq',...args]);return this},order(...args){calls.push(['order',...args]);return this},range(start,end){calls.push(['range',start,end]);buttons.splice(0,buttons.length,...(start===0?[{dataset:{proformaAccountingOpen:row.id}}]:[]));return options.query?options.query():Promise.resolve(options.error?{error:{message:'Unavailable'}}:{data:page++===0?Array.from({length:25},(_,i)=>({...row,id:i?`saved-${i+1}`:row.id})):[]})}};
  const ctx=vm.createContext({me:{user_id:'one'},view:'accounting',organizations:[{id:'org',name:'Customer'}],client:{rpc:options.rpc|| (async()=>({data:true})),from:table=>{calls.push(['from',table]);return query}},esc:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),run:fn=>fn(),salesSection:'delivery',salesEditing:'new',salesDeliveryWorkspace:async force=>{calls.push(['workspace',force])},document:{querySelectorAll:()=>[{dataset:{documentCard:'saved-1'},scrollIntoView:()=>calls.push(['scroll'])}]},message:()=>{}});
  ctx.salesFocusedProforma='';
+ vm.runInContext('function workspaceSkeleton(kind,label)'+readFileSync(new URL('../workspace-refresh.js',import.meta.url),'utf8').split('function workspaceSkeleton(kind,label)')[1].split('function workspaceLoading')[0],ctx);
  for(const file of ['accounting-access.js','proforma-accounting-queue.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  return {ctx,target,calls,buttons,previous,next};
 }

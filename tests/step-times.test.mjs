@@ -1,8 +1,9 @@
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-function load(){const ctx=vm.createContext({esc:s=>String(s??''),employeeName:id=>({a:'Mujtaba',b:'Jagroop'}[id]||id),Date,Math,Number,String,Map});vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);return ctx;}
+function load(){const ctx=vm.createContext({statusTone,esc:s=>String(s??''),employeeName:id=>({a:'Mujtaba',b:'Jagroop'}[id]||id),Date,Math,Number,String,Map});vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);return ctx;}
 const H=3600000,now=Date.parse('2026-10-05T12:00:00Z'),ago=h=>new Date(now-h*H).toISOString();
 test('durations read naturally',()=>{const c=load();assert.equal(c.workDuration(5*60000),'5 min');assert.equal(c.workDuration(30*H),'30 h');assert.equal(c.workDuration(50*H),'2 days 2 h');assert.equal(c.workDuration(72*H),'3 days');});
 test('colour: over a day yellow, over two days red; an expected date or due date takes over',()=>{
@@ -28,5 +29,5 @@ test('latest delay per step wins; card shows waiting, total, expected date and s
  const html=c.workResponsibleHtml(open,{expected_on:'2099-01-01',reason:'Waiting for stock'},t);
  assert.match(html,/Current step owner: <strong>Jagroop<\/strong> · Pack PF-1 · waiting <strong>3 h<\/strong> · 27 h since the start · <strong>Staff task expected 2099-01-01<\/strong>: Waiting for stock/);
  assert.match(c.workTimelineHtml(t),/Step times · 2 steps.*Mujtaba.*24 h.*Jagroop.*3 h so far/s);
- assert.match(c.workResponsibleHtml(null,null,c.workTimeline([{id:'1',assignee_user_id:'a',task:'x',status:'done',created_at:new Date(Date.now()-5*H).toISOString(),closed_at:new Date(Date.now()-H).toISOString()}])),/Handoff task: <strong>closed<\/strong> · took 4 h in total/);
+ assert.match(c.workResponsibleHtml(null,null,c.workTimeline([{id:'1',assignee_user_id:'a',task:'x',status:'done',created_at:new Date(Date.now()-5*H).toISOString(),closed_at:new Date(Date.now()-H).toISOString()}])),/Handoff task: <strong class="chip chip--neutral">closed<\/strong> · took 4 h in total/);
 });

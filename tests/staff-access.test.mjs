@@ -1,9 +1,10 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(me){
- const ctx=vm.createContext({me,esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id});
+ const ctx=vm.createContext({workspacePageHeader,me,esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id});
  vm.runInContext(readFileSync(new URL('../staff-access.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 const head={user_id:'h',role:'head',department:'sales',access:['leads','proformas','travel']};
@@ -56,7 +57,7 @@ test('sign-in keeps working if the screens go live before the access list exists
  const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
  const start=app.indexOf('async function loadMyStaffRow'),src=app.slice(start,app.indexOf('\n}\n',start)+3);
  const asked=[],client={from:()=>({select:cols=>{asked.push(cols);return {eq:()=>({single:async()=>cols.includes('access')?{error:{message:'column staff.access does not exist'}}:{data:{user_id:'u',role:'staff',active:true}}})};}})};
- const ctx=vm.createContext({client});vm.runInContext(src,ctx);
+ const ctx=vm.createContext({workspacePageHeader,client});vm.runInContext(src,ctx);
  const r=await ctx.loadMyStaffRow('u');
  assert.equal(r.data.active,true);assert.equal(r.data.access.length,9);assert.equal(asked.length,2);
  client.from=()=>({select:()=>({eq:()=>({single:async()=>({error:{message:'JWT expired'}})})})});
@@ -127,9 +128,9 @@ test('screens: client and item buttons follow Clients & items data; import and P
  assert.match(read('action-forms.js'),/client\.rpc\('add_product',\{p_id:id,p_name:values\.name,p_sku:values\.sku,p_source:\{origin:'manual'\}\}\)/);
  assert.doesNotMatch(app+read('action-forms.js'),/rpc\('import_records',\{p_products:\[/,'the Add product button no longer uses bulk import');
  assert.match(app,/item\.dataset\.view==='recycle'&&canEditRecords\(\)/,'Deleted items menu for records holders');
- assert.match(profiles,/canEditRecords\(\)\?'<button class="primary-action" id="newOrg">\+ Add client<\/button>'/);
+ assert.match(profiles,/canEditRecords\(\)\?'<button class="primary-action" id="newOrg">Add client<\/button>'/);
  assert.doesNotMatch(profiles+recycle+forms.slice(0,forms.indexOf('function openProductForm')),/role!=='owner'|role==='owner'/);
  assert.match(admin,/kind==='product'\?canEditRecords\(\):me\?\.role==='owner'/);
- assert.match(inv,/\$\{canEditRecords\(\)\?`<details class="card"><summary>1\. Set a product carton size/);
+ assert.match(inv,/\$\{canEditRecords\(\)\?`<details class="card" data-stock-form="pack"><summary>1\. Set a product carton size/);
  assert.match(inv,/me\.role==='owner'\?inventorySetupProgress\(\)\+inventoryImportPanel\(\)/,'product import panel stays owner-only');
 });

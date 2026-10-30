@@ -1,9 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(role='staff',user='a'){
- const ctx=vm.createContext({me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date,clearTimeout});
  for(const file of ['business-date.js','row-index.js','purchasing.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  vm.runInContext(`suppliers=[{id:'s1',name:'Fixture Medical',active:true}];purchaseLines=[{purchase_order_id:'o1',line_number:1,product_id:'p1',quantity:10,unit_price_minor:500},{purchase_order_id:'o1',line_number:2,product_id:'p2',quantity:2,unit_price_minor:1000},{purchase_order_id:'o2',line_number:1,product_id:'p2',quantity:5,unit_price_minor:null}];`,ctx);
  return ctx;
@@ -58,51 +60,9 @@ test('loads every open order but only six months of finished ones, items nested 
  assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
 });
 function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
-test('after a step only that order is read again; the rest of the list is kept',async()=>{
- const ctx=load('owner');let asked=0,full=0;
- ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]}})};return q;}};
- vm.runInContext(`purchaseLoaded=true;view='purchasing';purchaseOrders=[{id:'o1',status:'requested'},{id:'o2',status:'requested'}];renderPurchasing=()=>{};purchasingWorkspace=async()=>{globalThis.fullReload=(globalThis.fullReload||0)+1};`,ctx);
- await ctx.purchaseRefreshOne('o1');
- assert.equal(asked,1);assert.equal(vmJson(ctx,'globalThis.fullReload||0'),0,'no full reload');
- assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
- assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
+test('the scoped order reader returns joined lines without mutating complete caches or rendering',async()=>{
+ const ctx=load('owner');let asked=0;const data={id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]};
+ ctx.client={from:table=>{assert.equal(table,'purchase_orders');asked++;const q={select:()=>q,eq:(key,id)=>{assert.equal(key,'id');assert.equal(id,'o1');return q},maybeSingle:async()=>({data})};return q;}};
+ const before=vmJson(ctx,'purchaseLines');assert.equal(await ctx.purchaseRefreshOne('o1'),data);assert.equal(asked,1);assert.deepEqual(vmJson(ctx,'purchaseLines'),before);
 });
-function supplierSaveContext(){
- const ctx=load('owner'),calls=[],scroll=[];
- ctx.FormData=class {constructor(form){this.values=form.values;}get(key){return this.values[key]??null;}has(key){return key in this.values;}};
- ctx.crypto={randomUUID:()=> 'supplier-new'};ctx.window={scrollX:12,scrollY:340,scrollTo:(...position)=>scroll.push(position)};ctx.message=text=>calls.push(['message',text]);
- ctx.renderPurchasing=()=>calls.push(['render']);ctx.purchasingWorkspace=async()=>{throw Error('Unexpected full reload');};
- ctx.client={from:()=>{throw Error('Unexpected readback');}};
- vm.runInContext(`view='purchasing';purchaseSection='suppliers';purchaseLoaded=true;purchaseSearch='fixture';purchaseFilter='ordered';purchasePage=2;supplierEditing='s1';suppliers=[{id:'s1',name:'Fixture Medical',active:true,version:1},{id:'s2',name:'Other supplier',active:true,version:3}];`,ctx);
- const form={dataset:{id:'s1',version:'1'},isConnected:true,values:{name:'Updated Fixture',email:'SUPPLIER@example.com'}};
- return {ctx,calls,scroll,form};
-}
-test('supplier save merges the confirmed row without reloading orders and preserves current list position',async()=>{
- const {ctx,calls,scroll,form}=supplierSaveContext(),before=vmJson(ctx,'purchaseLines');
- ctx.client.rpc=async(name,args)=>{assert.equal(name,'save_supplier');assert.equal(args.p_id,'s1');return {data:[{id:'s1',name:'Updated Fixture',email:'supplier@example.com',active:true,version:2}]};};
- await ctx.saveSupplierForm(form);
- assert.deepEqual(vmJson(ctx,'suppliers.map(row=>[row.id,row.version,row.email||null])'),[['s1',2,'supplier@example.com'],['s2',3,null]]);
- assert.deepEqual(vmJson(ctx,'purchaseLines'),before);assert.deepEqual(vmJson(ctx,'[purchaseSearch,purchaseFilter,purchasePage,supplierEditing]'),['fixture','ordered',2,'']);
- assert.deepEqual(calls,[['render'],['message','Updated Fixture saved.']]);assert.deepEqual(scroll,[[12,340]]);
-});
-test('new supplier keeps its retry ID after an uncertain save and inserts only one confirmed row',async()=>{
- const {ctx,form}=supplierSaveContext(),ids=[];form.dataset={id:'',version:'0'};
- ctx.client.rpc=async(name,args)=>{ids.push(args.p_id);if(ids.length===1)throw Error('Connection unavailable');return {data:{id:args.p_id,name:args.p_fields.name,active:true,version:1}};};
- await assert.rejects(ctx.saveSupplierForm(form),/Connection unavailable/);await ctx.saveSupplierForm(form);
- assert.deepEqual(ids,['supplier-new','supplier-new']);assert.equal(vmJson(ctx,'suppliers.filter(row=>row.id==="supplier-new").length'),1);assert.equal(vmJson(ctx,'supplierPendingSave'),null);
-});
-test('supplier response cannot repaint another section, overwrite a newer load, or cross sign-out',async()=>{
- for(const change of ['section','epoch','logout']){
-  const {ctx,calls,form}=supplierSaveContext();let finish;ctx.client.rpc=()=>new Promise(resolve=>{finish=resolve;});
-  const saving=ctx.saveSupplierForm(form);
-  if(change==='section')vm.runInContext(`purchaseSection='orders';supplierEditing='another';`,ctx);
-  if(change==='epoch')vm.runInContext(`purchaseEpoch++;suppliers=[{id:'s1',version:3,name:'Newest'}];`,ctx);
-  if(change==='logout'){ctx.clearPurchasing();ctx.me=null;}
-  finish({data:{id:'s1',version:2,name:'Saved'}});
-  if(change==='logout')await assert.rejects(saving,/Login changed/);else await saving;
-  assert.deepEqual(calls,[]);
-  if(change==='section')assert.equal(vmJson(ctx,'supplierEditing'),'another');
-  if(change==='epoch')assert.equal(vmJson(ctx,'suppliers[0].version'),3);
-  if(change==='logout')assert.deepEqual(vmJson(ctx,'suppliers'),[]);
- }
-});
+// Save, retry and session-guard coverage uses actual retained DOM in purchasing-record-update.test.mjs.

@@ -5,6 +5,8 @@ import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.ATTACHMENTS_BROWSER_QA==='1';
 const source=readFileSync(new URL('../document-attachments.js',import.meta.url),'utf8');
+const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+const feedback=readFileSync(new URL('../action-feedback.js',import.meta.url),'utf8')+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+app.slice(app.indexOf('function friendlyError('),app.indexOf('let editSaving=false;'));
 const recordId='00000000-0000-0000-0000-000000000006';
 const pdf={name:'Fictional-example.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.7\n% Fictional attachment browser fixture\n%%EOF')};
 let browser;
@@ -20,7 +22,7 @@ async function fixture(t){
  await page.route('**/*',route=>route.abort());
  await page.setContent('<main id="content">Original page</main><p id="notice">Original notice</p>');
  await page.evaluate(()=>{
-  window.me={user_id:'fixture-actor'};window.view='sales';window.allowed=true;
+  window.busy=false;window.$=selector=>document.querySelector(selector);window.me={user_id:'fixture-actor'};window.view='sales';window.allowed=true;
   window.esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let sequence=40;crypto.randomUUID=()=>`00000000-0000-0000-0000-${String(++sequence).padStart(12,'0')}`;
   window.calls=[];window.rows=[];window.objects=new Map();window.uploadReturned=false;
@@ -38,7 +40,8 @@ async function fixture(t){
    objects.set(path,file);window.uploadReturned=true;return {data:{path}};
   },download:async path=>{calls.push({kind:'download',bucket,path});return objects.has(path)?{data:objects.get(path)}:{error:{statusCode:'404',message:'Missing fixture object'}};}})}};
  });
- await page.addScriptTag({content:source});return page;
+ await page.addStyleTag({content:readFileSync(new URL('../tokens.css',import.meta.url),'utf8')+readFileSync(new URL('../ui-polish.css',import.meta.url),'utf8')});
+ await page.addScriptTag({content:feedback});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:source});return page;
 }
 const open=(page,type='proforma')=>page.evaluate(({type,id})=>openDocumentAttachments(type,id,'Fictional record'),{type,id:recordId});
 async function submit(page,file=pdf){await page.locator('[data-attachment-file]').setInputFiles(file);await page.locator('.document-attachments [type="submit"]').click();}
@@ -102,7 +105,7 @@ acceptance('Sales and service attachment buttons route each saved record to its 
 });
 acceptance('Accounting attachment button stays disabled until draft save and then routes the saved ID',async t=>{
  const page=await fixture(t);
- for(const name of ['company-forms.js','accounting-access.js','accounting-workspace.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
+ for(const name of ['ui-page-header.js','company-forms.js','accounting-access.js','accounting-workspace.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
  await page.evaluate(async()=>{
   window.$=selector=>document.querySelector(selector);window.run=fn=>fn();window.organizations=[];window.contacts=[];window.opened=[];view='accounting';
   openDocumentAttachments=async(...args)=>opened.push(args);

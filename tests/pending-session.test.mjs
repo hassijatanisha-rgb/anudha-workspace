@@ -6,7 +6,7 @@ const source=readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 function fixture(all=async()=>[]){
  const content={innerHTML:'Clients'};
- const c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'first'},view:'pending',all,salesLoaded:true,salesProformas:[],syncWorkspaceNavigation(){},$:()=>content});
+ const c=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'first'},view:'pending',all,salesLoaded:true,salesProformas:[],syncWorkspaceNavigation(){},$:selector=>selector==='#pendingSearch'?null:content,client:{rpc:async()=>({data:{rows:await all('pending_stock_requests'),total:0,page:0,pages:1,as_of:'2026-10-29',availability_error:false,mine_arrived:0,counts:{all:0,waiting:0,arrived:0,mine:0,due:0,closed:0}}})}});
  vm.runInContext(source,c);
  vm.runInContext("renderPendingStock=()=>{$('#content').innerHTML=pendingLoadError||'Current pending orders'}",c);
  return {c,content,get:expression=>vm.runInContext(expression,c)};
@@ -27,7 +27,7 @@ test('same user ID in a replacement session rejects stale pending rows',async()=
 test('old failed load cannot overwrite newer successful refresh',async()=>{
  const delay=deferred();let reads=0;const {c,content,get}=fixture(table=>table==='pending_stock_requests'&&++reads===1?delay.promise:Promise.resolve([]));
  const old=c.pendingStockWorkspace(true);await tick();await c.pendingStockWorkspace(true);delay.reject(Error('Old load failed'));await old;
- assert.equal(content.innerHTML,'Current pending orders');assert.equal(get('pendingLoadError'),'');assert.equal(get('pendingLoaded'),true);
+ assert.equal(content.innerHTML,'Current pending orders');assert.equal(get('pendingLoadError'),'');assert.ok(get('pendingPageData'));assert.equal(get('pendingLoaded'),false);
 });
 test('clear invalidates old failure even when the identical actor is restored',async()=>{
  const delay=deferred();const {c,content,get}=fixture(table=>table==='pending_stock_requests'?delay.promise:Promise.resolve([]));

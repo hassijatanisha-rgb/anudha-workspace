@@ -1,25 +1,50 @@
-/* Five clear groups. Labels, not colour alone, identify every section. */
-body:has(#nav:not([hidden])){--sidebar-width:250px}
-body>header{position:sticky;top:0;z-index:30;min-height:84px;padding:14px 24px}
-#nav:not([hidden]){position:fixed;inset:var(--workspace-header-height,84px) auto 0 0;width:var(--sidebar-width);display:block;overflow-y:auto;overscroll-behavior:contain;padding:16px 12px 32px;background:#fff;border-right:1px solid var(--line);z-index:25}
-body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:none;padding:28px 32px}
-.nav-group{--group-color:#315c32;margin:0 0 20px;border-left:4px solid var(--group-color);padding-left:8px}
-.nav-group h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--group-color);margin:0 0 6px;padding:4px 8px}
-.nav-orders{--group-color:#805319}.nav-service{--group-color:#245b8a}.nav-inventory{--group-color:#614387}.nav-system{--group-color:#53606e}
-#nav .nav-group button{display:block;width:100%;text-align:left;min-height:44px;margin:3px 0;border-color:transparent;white-space:normal;border-radius:6px}
-#nav .nav-group button[hidden]{display:none}
-#nav .nav-group button.active{border-color:var(--group-color);box-shadow:inset 3px 0 var(--group-color);background:#edf5e8;color:#20352f;font-weight:700}
-.nav-unavailable{padding:8px;font-size:13px;color:#66736d}
-.nav-unavailable small{display:block;font-size:11px;color:#66736d}
-@media(max-width:800px){body>header{position:static}#nav:not([hidden]){position:static;width:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;max-height:42vh;border-right:0;border-bottom:1px solid var(--line)}body:has(#nav:not([hidden]))>main{margin-left:0;padding:20px 16px}.nav-group{margin-bottom:8px}}
-@media print{#nav{display:none!important}body:has(#nav:not([hidden]))>main{margin-left:0;padding:0}}
-/* Original ERP identity; retain the current five-group navigation and mobile flow. */
-@media screen{
- #nav:not([hidden]){background:#1f3928;color:#c5d4c6;border-right-color:#38533d;scrollbar-color:#6a826a #1f3928}
- #nav .nav-group{border-left-color:var(--group-color)}
- #nav .nav-group h2{color:#c5d4c6}
- #nav .nav-group button{background:transparent;color:#e0e9df;border-radius:8px}
- #nav .nav-group button:hover,#nav .nav-group button.active{background:rgba(130,188,74,.18);color:#fff}
- #nav .nav-group button.active{border-color:transparent;box-shadow:inset 3px 0 #83bb41}
- #nav .nav-unavailable,#nav .nav-unavailable small{color:#c5d4c6}
+/* The original menu remains authoritative in the sidebar, icon rail and phone More panel. */
+body>header{position:sticky;top:0;z-index:30;min-height:var(--header-height);padding:var(--space-1) var(--space-5)}
+body>header .brand-logo{width:7.7rem;height:auto;max-width:30vw}
+#nav:not([hidden]){position:fixed;inset:var(--workspace-header-height,var(--header-height)) auto 0 0;width:var(--sidebar-width);display:block;overflow-y:auto;overscroll-behavior:contain;padding:var(--space-4) var(--space-3) var(--space-6);background:var(--surface-2);color:var(--ink);border-right:1px solid var(--line);z-index:25;scrollbar-color:var(--ink-2) var(--surface-2)}
+body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:none;padding:var(--space-6)}
+#nav .nav-group{margin:0 0 var(--space-5);padding:0;border:0}
+#nav .nav-group h2{display:block;width:100%;margin:0;padding:0;color:var(--ink-2);font-size:var(--t-overline);line-height:var(--lh-overline);font-weight:var(--w-overline);letter-spacing:var(--ls-overline);text-transform:uppercase}
+#nav .nav-group button{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:var(--control-h);padding:var(--space-3);margin:var(--space-1) 0;text-align:left;border:0;border-radius:var(--r-sm);background:transparent;color:var(--ink);white-space:normal;box-shadow:var(--e-0)}
+#nav .nav-group button[data-view]{position:relative;font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0}
+#nav .nav-group button[data-view].active{background:var(--surface);color:var(--brand-strong)}
+#nav .nav-group button[data-view].active::before{content:'';position:absolute;left:0;top:var(--space-2);bottom:var(--space-2);width:3px;border-radius:var(--r-sm);background:var(--brand)}
+#nav .nav-group button:hover{background:var(--surface)}
+#nav .nav-group button:focus-visible,#workspaceShortcuts button:focus-visible{outline:3px solid var(--brand);outline-offset:-3px}
+#nav .nav-group-toggle{font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink-2)}
+#nav .nav-group-toggle::after{content:'';flex:none;margin-left:auto;width:.45rem;height:.45rem;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform var(--m-base) var(--ease-out)}
+#nav .nav-group.collapsed .nav-group-toggle::after{transform:rotate(-45deg)}
+#nav .nav-group-items[hidden]{display:none}
+.nav-icon{flex:none;width:1.25rem;height:1.25rem}
+.nav-label{min-width:0;overflow-wrap:anywhere}
+#nav .nav-group-toggle>.nav-icon{display:none}
+.nav-unavailable{padding:var(--space-3);font-size:var(--t-caption);line-height:var(--lh-caption);letter-spacing:var(--ls-caption);color:var(--ink-2)}
+.nav-unavailable small{display:block}
+#workspaceShortcuts{display:none}
+#workspaceMenuPanel:has(#nav[hidden]),body:has(#nav[hidden]) #workspaceShortcuts{display:none}
+@media(min-width:600.01px) and (max-width:1199.99px){
+ #nav:not([hidden]){width:var(--sidebar-compact-width);padding:var(--space-3) var(--space-2)}
+ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-compact-width)}
+ #nav .nav-group{margin-bottom:var(--space-4)}
+ #nav .nav-group button{justify-content:center;padding:var(--space-3) var(--space-2)}
+ #nav .nav-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ #nav .nav-group-toggle>.nav-icon{display:block}
+ #nav .nav-group-toggle::after{display:none}
 }
+@media(max-width:600px){
+ body>header{min-height:var(--header-phone-height);padding:0 var(--space-3)}
+ body>header .brand-logo{width:5.5rem;max-width:28vw}
+ body>header .brand>span:last-child{display:none}
+ #workspaceShortcuts:not([hidden]){position:fixed;left:0;right:0;bottom:0;z-index:35;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(var(--control-h) + var(--space-2))),1fr));gap:var(--space-2);padding:var(--space-1) var(--space-1) max(var(--space-1),env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
+ #workspaceShortcuts>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);min-width:44px;min-height:52px;padding:0;margin:0;border:0;border-radius:var(--r-sm);background:transparent;color:var(--ink-2);font-size:var(--t-caption);line-height:var(--lh-caption);font-weight:var(--w-caption);letter-spacing:var(--ls-caption);white-space:normal;overflow-wrap:normal}
+ #workspaceShortcuts .nav-icon{width:20px;height:20px}
+ #workspaceShortcuts .nav-label{overflow-wrap:normal;word-break:normal}
+ #workspaceShortcuts>button[aria-current="page"],#workspaceShortcuts>button[aria-expanded="true"]{color:var(--brand-strong);background:var(--surface-2)}
+ #workspaceMenuPanel{position:fixed;left:var(--space-3);right:var(--space-3);bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--space-2));z-index:34;max-height:calc(100dvh - var(--workspace-header-height,var(--header-phone-height)) - var(--workspace-shortcut-height,var(--shortcut-height)) - var(--space-5));overflow:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--e-3)}
+ #workspaceMenuPanel #nav:not([hidden]){position:static;inset:auto;width:auto;max-height:none;overflow:visible;padding:var(--space-3);border:0;background:transparent}
+ #nav .nav-group{margin-bottom:var(--space-3)}
+ body:has(#nav:not([hidden]))>main{margin-left:0;padding:var(--space-5) var(--space-4) calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--space-5))}
+}
+@media(prefers-reduced-motion:reduce){#nav .nav-group-toggle::after{transition:none}}
+@media print{#workspaceMenuPanel,#workspaceShortcuts{display:none!important}body:has(#nav:not([hidden]))>main{margin-left:0;padding:0}}
+body.packing-tv #workspaceMenuPanel,body.packing-tv #workspaceShortcuts{display:none!important}

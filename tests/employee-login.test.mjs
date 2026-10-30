@@ -1,10 +1,12 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {installWorkspaceDialogFixture} from './helpers/workspace-dialog-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(lookup=()=>null){
  const calls=[];
- const ctx=vm.createContext({window:{ERP_CONFIG:{staffLoginDomain:'staff.anudha.com'}},crypto:globalThis.crypto,Uint8Array,
+ const ctx=vm.createContext({workspacePageHeader,window:{ERP_CONFIG:{staffLoginDomain:'staff.anudha.com'}},crypto:globalThis.crypto,Uint8Array,
   client:{rpc:async(name,args)=>{calls.push([name,args]);return {data:lookup(args.p_email)}}}});
  vm.runInContext(readFileSync(new URL('../employee-login.js',import.meta.url),'utf8'),ctx);
  return {ctx,calls};
@@ -55,9 +57,9 @@ test('password changes accept eight characters, reject shorter or mismatched val
  for(const required of [false,true]){
   const {ctx}=load(),updates=[],events={},button={disabled:false},alert={},cancel={},form={elements:{password:{value:''},confirm:{value:''}},querySelector:s=>s==='[type="submit"]'?button:alert,reset(){this.resetCalled=true;}};
   const dialog={isConnected:true,setAttribute(){},addEventListener(name,handler){events[name]=handler;},querySelector:s=>s==='form'?form:s==='[data-close]'?cancel:null,showModal(){},close(){this.closed=true;}};
-  ctx.me={user_id:'actor'};ctx.document={createElement:()=>dialog,body:{append(){}}};ctx.message=()=>{};let loaded=false;ctx.load=async()=>{loaded=true;};
+  ctx.view='settings';ctx.busy=false;ctx.run=fn=>fn();ctx.me={user_id:'actor'};ctx.document={createElement:()=>dialog,body:{append(){}}};ctx.message=()=>{};let loaded=false;ctx.load=async()=>{loaded=true;};
   ctx.client.auth={updateUser:async payload=>{updates.push(payload);return {};}};
-  ctx.openChangePassword({required});
+  installWorkspaceDialogFixture(ctx);ctx.openChangePassword({required});
   assert.equal((dialog.innerHTML.match(/minlength="8"/g)||[]).length,2);
   assert.equal((dialog.innerHTML.match(/maxlength="72"/g)||[]).length,2);
   if(required){assert.equal(cancel.hidden,true);let prevented=false;events.cancel({preventDefault(){prevented=true;}});assert.equal(prevented,true);}

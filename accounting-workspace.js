@@ -1,5 +1,5 @@
 'use strict';
-let accountingPage=0;
+let accountingPage=0,accountingRequest=0;
 function accountingLinkLabel(record,kind){
  return kind==='contact'?[record.first_name,record.last_name].filter(Boolean).join(' ')||record.email||'Unnamed contact':[record.name,record.location].filter(Boolean).join(' · ')||'Unnamed customer / branch';
 }
@@ -11,14 +11,16 @@ function accountingSearchLinks(records,query,selectedId,kind){
  return {rows,matches:matches.length};
 }
 async function accountingWorkspace(){
+ const session=me,request=++accountingRequest;
  const actor=await requireAccountingAccess(client,()=>me);
- if(me?.user_id!==actor||view!=='accounting')return;
+ const current=()=>me===session&&me?.user_id===actor&&view==='accounting'&&accountingRequest===request;
+ if(!current())return;
  workspaceLoading('Loading accounting drafts…');
- const r=await client.from('accounting_drafts').select('id,kind,version,organization_id,contact_id,body,updated_at').order('updated_at',{ascending:false}).range(accountingPage*25,accountingPage*25+24);
- if(me?.user_id!==actor||view!=='accounting')return;
+ const r=await client.from('accounting_drafts').select('id,kind,version,organization_id,contact_id,body,updated_at,customer:organizations(name)').order('updated_at',{ascending:false}).order('id').range(accountingPage*25,accountingPage*25+24);
+ if(!current())return;
  if(r.error)throw Error(`Accounting drafts could not load: ${r.error.message}`);
  const rows=r.data||[];
- $('#content').innerHTML=`<h1>Accounting</h1><p>Prepare, save and print company forms.</p><section class="card"><h2>Create a draft</h2><div class="actions">${Object.entries(companyFormDefinitions()).map(([kind,d])=>`<button data-accounting-new="${kind}">${esc(d.title)}</button>`).join('')}</div></section><section class="card"><h2>Saved drafts</h2>${rows.map(row=>`<article class="contact"><strong>${esc(companyFormDefinition(row.kind).title)} · ${esc(row.body.number||'Number not assigned')}</strong><p>${esc(organizations.find(o=>o.id===row.organization_id)?.name||'Customer not selected')} · revision ${row.version}</p><button data-accounting-open="${row.id}">Open saved draft</button></article>`).join('')||'<p>No saved drafts on this page.</p>'}<div class="actions"><button id="accountingPrevious" ${accountingPage===0?'disabled':''}>Previous</button><span>Page ${accountingPage+1}</span><button id="accountingNext" ${rows.length<25?'disabled':''}>Next</button></div></section>`;
+ $('#content').innerHTML=`${workspacePageHeader({title:'Accounting',subtitle:'Prepare, save and print company forms.'})}<section class="card"><h2>Create a draft</h2><div class="actions">${Object.entries(companyFormDefinitions()).map(([kind,d])=>`<button data-accounting-new="${kind}">${esc(d.title)}</button>`).join('')}</div></section><section class="card"><h2>Saved drafts</h2>${rows.map(row=>`<article class="contact"><strong>${esc(companyFormDefinition(row.kind).title)} · ${esc(row.body.number||'Number not assigned')}</strong><p>${esc(row.customer?.name||(row.organization_id?'Customer unavailable':'Customer not selected'))} · revision ${row.version}</p><button data-accounting-open="${row.id}">Open saved draft</button></article>`).join('')||'<p>No saved drafts on this page.</p>'}<div class="actions"><button id="accountingPrevious" ${accountingPage===0?'disabled':''}>Previous</button><span>Page ${accountingPage+1}</span><button id="accountingNext" ${rows.length<25?'disabled':''}>Next</button></div></section>`;
  document.querySelectorAll('[data-accounting-new]').forEach(b=>b.onclick=()=>run(()=>accountingEditor({id:crypto.randomUUID(),kind:b.dataset.accountingNew,version:0,body:{}},actor)));
  document.querySelectorAll('[data-accounting-open]').forEach(b=>b.onclick=()=>run(()=>accountingEditor(rows.find(r=>r.id===b.dataset.accountingOpen),actor)));
  $('#accountingPrevious').onclick=()=>run(()=>{accountingPage--;return accountingWorkspace()});$('#accountingNext').onclick=()=>run(()=>{accountingPage++;return accountingWorkspace()});
@@ -27,9 +29,10 @@ async function accountingWorkspace(){
  await mountProformaAccountingQueue(queue,actor);
 }
 async function accountingEditor(row,actor){
- await requireAccountingAccess(client,()=>me);if(me?.user_id!==actor||view!=='accounting')return;
+ const session=me;await requireAccountingAccess(client,()=>me);if(me!==session||me?.user_id!==actor||view!=='accounting')return;
+ if(!listsLoaded){await (listsLoading||loadLists());if(me!==session||me?.user_id!==actor||view!=='accounting')return;if(!listsLoaded)throw Error('Customer records could not load. Reopen the draft.');}
  const partyLabel=row.kind==='purchase'?'supplier / branch':'customer / branch';
- $('#content').innerHTML=`<button id="accountingBack">← Saved drafts</button><section class="card"><p id="accountingLinkHelp">Search, then choose a linked record. Searching keeps your current selection. Links do not change the names or other text entered on the form below.</p><label for="accountingCustomerSearch">Search ${partyLabel}</label><input id="accountingCustomerSearch" type="search" autocomplete="off" aria-controls="accountingCustomer" aria-describedby="accountingLinkHelp accountingCustomerResults"><label for="accountingCustomer">Link ${partyLabel}</label><select id="accountingCustomer" aria-describedby="accountingCustomerResults"></select><p id="accountingCustomerResults" role="status" aria-atomic="true"></p><label for="accountingContactSearch">Search specific contact person</label><input id="accountingContactSearch" type="search" autocomplete="off" aria-controls="accountingContact" aria-describedby="accountingLinkHelp accountingContactResults"><label for="accountingContact">Link specific contact person</label><select id="accountingContact" aria-describedby="accountingContactResults"></select><p id="accountingContactResults" role="status" aria-atomic="true"></p><button id="accountingSave" type="button">Save draft</button><p id="accountingSaveStatus" role="status"></p></section><section id="accountingForm"></section>`;
+ $('#content').innerHTML=`${workspacePageHeader({title:companyFormDefinition(row.kind).title,back:'<button id="accountingBack">← Saved drafts</button>'})}<section class="card"><p id="accountingLinkHelp">Search, then choose a linked record. Searching keeps your current selection. Links do not change the names or other text entered on the form below.</p><label for="accountingCustomerSearch">Search ${partyLabel}</label><input id="accountingCustomerSearch" type="search" autocomplete="off" aria-controls="accountingCustomer" aria-describedby="accountingLinkHelp accountingCustomerResults"><label for="accountingCustomer">Link ${partyLabel}</label><select id="accountingCustomer" aria-describedby="accountingCustomerResults"></select><p id="accountingCustomerResults" role="status" aria-atomic="true"></p><label for="accountingContactSearch">Search specific contact person</label><input id="accountingContactSearch" type="search" autocomplete="off" aria-controls="accountingContact" aria-describedby="accountingLinkHelp accountingContactResults"><label for="accountingContact">Link specific contact person</label><select id="accountingContact" aria-describedby="accountingContactResults"></select><p id="accountingContactResults" role="status" aria-atomic="true"></p><button id="accountingSave" type="button">Save draft</button><p id="accountingSaveStatus" role="status"></p></section><section id="accountingForm"></section>`;
  const target=$('#accountingForm');mountCompanyForm(target,row.kind,row.body);
  const status=$('#accountingSaveStatus');status.textContent=row.version?`Saved revision ${row.version}. Further edits are unsaved until you press Save draft.`:'New draft — not yet saved.';
  const attachments=document.createElement('button');attachments.type='button';attachments.textContent='Upload / view documents';attachments.disabled=!row.version;
@@ -55,22 +58,26 @@ async function accountingEditor(row,actor){
  $('#accountingCustomerSearch').oninput=()=>linkOptions('accountingCustomer',organizations,$('#accountingCustomer').value,'organization');
  $('#accountingContactSearch').oninput=()=>contactOptions($('#accountingContact').value);
  $('#accountingCustomer').onchange=()=>{$('#accountingContactSearch').value='';contactOptions('');};
- $('#accountingBack').onclick=()=>run(()=>{if(typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave())return;return accountingWorkspace();});
- $('#accountingSave').onclick=async()=>{
-  const button=$('#accountingSave');if(button.disabled)return;button.disabled=true;
-  try{
-   if(me?.user_id!==actor||view!=='accounting'||!target.isConnected)throw Error('Login or page changed. Reopen accounting.');
+ $('#accountingBack').onclick=()=>run(async()=>{const context=workspaceNavigationContext();if(!await confirmWorkspaceLeave(context.current)||!context.current())return;return accountingWorkspace();});
+ const saveButton=$('#accountingSave');saveButton.onclick=async()=>{
+  const button=saveButton;if(button.disabled)return;
+  if(busy)return run(async()=>{},{origin:button,errorTarget:status});
+  button.disabled=true;
+  await run(async()=>{try{
+   if(me!==session||me?.user_id!==actor||view!=='accounting'||!target.isConnected)throw Error('Login or page changed. Reopen accounting.');
    const body=companyFormRead(row.kind,target.querySelector('form'));
    const organizationId=$('#accountingCustomer').value||null,contactId=$('#accountingContact').value||null;
    if(organizationId&&!organizations.some(org=>org.id===organizationId&&!org.deleted_at))throw Error('Choose an available customer or supplier branch, or clear the saved link');
    if(contactId&&(!organizationId||!contacts.some(contact=>contact.id===contactId&&contact.organization_id===organizationId&&!contact.deleted_at)))throw Error('Choose a contact belonging to the selected branch, or clear the saved contact link');
    const result=await client.rpc('save_accounting_draft',{p_id:row.id,p_kind:row.kind,p_expected_version:row.version,p_organization_id:organizationId,p_contact_id:contactId,p_body:body});
-   if(me?.user_id!==actor||view!=='accounting'||!target.isConnected)return;
+   if(me!==session||me?.user_id!==actor||view!=='accounting'||!target.isConnected)return;
    if(result.error)throw result.error;
    const saved=Array.isArray(result.data)?result.data[0]:result.data;if(!saved?.version)throw Error('Server did not confirm the saved revision.');
    row=saved;if(typeof mountReturnCreditPosting==='function')mountReturnCreditPosting(posting,row);attachments.disabled=false;attachments.title='Documents linked to this saved accounting draft';status.textContent=`Saved revision ${row.version}. This is a draft; no accounting or stock was posted.`;
    target.querySelector('[role="status"]').textContent='Draft editor. Use Save draft after each change. Printing does not save changes.';
-  }catch(error){if(me?.user_id===actor&&target.isConnected)status.textContent=`Not confirmed saved: ${error.message}. Reopen the saved list to check before retrying.`;}
+   message(status.textContent);
+  }catch(error){if(me===session&&me?.user_id===actor&&view==='accounting'&&target.isConnected){status.textContent=`Not confirmed saved: ${error.message}. Reopen the saved list to check before retrying.`;message(status.textContent,true);}}
   finally{button.disabled=false;}
+  },{origin:button,errorTarget:status,busyLabel:'Saving draft…'});
  };
 }

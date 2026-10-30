@@ -1,0 +1,35 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+import {dom} from './helpers/dom-identity.mjs';
+const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
+const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
+const entry=(id='one',kind='note',patch={})=>({id,owner_id:'actor',kind,visibility:'personal',title:'Entry '+id,body:'Notes',version:1,starts_at:kind==='event'?'2026-10-04T10:00:00.000Z':null,ends_at:null,remind_at:null,completed:false,priority:'normal',...patch});
+async function fixture(kind='note'){
+ const document=dom(),target=document.createElement('main');target.attrs.id='content';document.body.append(target);const calls=[],forms=[],messages=[],scrolls=[];let readHook;
+ const c=vm.createContext({workspacePageHeader,document,me:{user_id:'actor',role:'owner'},view:'personal',window:{scrollX:2,scrollY:300,scrollTo:value=>scrolls.push(value)},$:selector=>target.querySelector(selector)||(selector==='#content'?target:null),esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),workspaceLoading(){},message:(...args)=>messages.push(args),run:fn=>fn(),crypto:{randomUUID:()=> 'new'},actionForm:(_title,_fields,submit)=>forms.push(submit),client:{from:table=>{const query={};for(const name of ['select','is','in','eq','gte','lt','order'])query[name]=()=>query;query.range=async(from,to)=>{calls.push({table,from,to});return readHook?readHook():{data:c.rows};};return query;},rpc:async(name,args)=>{calls.push({name,args});return {data:{}};}}});
+ for(const file of ['personal-workspace-domain.js','personal-workspace.js'])vm.runInContext(read(file),c);c.rows=[entry('one',kind),entry('two',kind),entry('three',kind)];vm.runInContext(`personalSection='${kind}';personalMonth='2026-10'`,c);await c.personalWorkspace();c.personalWorkspace=()=>assert.fail('No whole-page refresh after save');calls.length=0;
+ const open=(id='one')=>{target.querySelectorAll('[data-personal-edit]').find(button=>button.dataset.personalEdit===id).onclick();return forms.at(-1);};
+ return {c,document,target,calls,messages,forms,scrolls,open,setRead:fn=>readHook=fn};
+}
+test('notes and events update one bounded page while preserving header, pager, unchanged cards and calendar controls',async()=>{
+ for(const kind of ['note','event']){
+  const f=await fixture(kind),header=f.target.querySelector('.heading'),other=f.target.querySelector('[data-personal-entry="two"]'),next=f.target.querySelector('#personalNext'),month=f.target.querySelector('#personalMonth'),day=f.target.querySelector('[data-personal-day="2026-10-10"]'),save=f.open();f.c.rows=[entry('one',kind,{title:'Updated title',version:2}),entry('two',kind),entry('three',kind)];await save({title:'Updated title',body:'Notes',starts:'2026-10-04T10:00'});
+  assert.equal(f.target.querySelector('.heading'),header);assert.equal(f.target.querySelector('[data-personal-entry="two"]'),other);assert.equal(f.target.querySelector('#personalNext'),next);assert.equal(f.target.querySelector('#personalMonth'),month);assert.equal(f.target.querySelector('[data-personal-day="2026-10-10"]'),day);assert.match(f.target.querySelector('[data-personal-entry="one"]').textContent,/Updated title/);assert.deepEqual(f.calls.map(call=>call.name||call.table),['save_workspace_entry','workspace_entries']);assert.equal(f.calls[1].to,99);assert.ok(f.scrolls.every(value=>value.top===300&&value.left===2));assert.equal(f.calls[0].args.p_expected_version,1);assert.equal(f.calls[0].args.p_deleted,false);
+ }
+});
+test('read failure keeps existing records and exposes only a read retry after a confirmed save',async()=>{
+ const f=await fixture(),other=f.target.querySelector('[data-personal-entry="two"]'),save=f.open();f.setRead(()=>({error:{message:'Offline <now>'}}));await save({title:'Changed'});assert.equal(f.target.querySelector('[data-personal-entry="two"]'),other);assert.match(f.target.textContent,/Saved.*could not refresh/);assert.equal(f.target.querySelector('[data-personal-edit]').disabled,true);await assert.rejects(save({title:'Changed'}),/Already saved/);f.setRead(()=>({data:[entry('one','note',{title:'Changed',version:2}),entry('two'),entry('three')]}));await f.target.querySelector('[data-personal-save-retry]').onclick();assert.equal(f.calls.filter(call=>call.name==='save_workspace_entry').length,1);assert.equal(f.target.querySelector('[data-personal-entry="two"]'),other);assert.equal(f.target.querySelector('[data-personal-edit]').disabled,false);assert.equal(f.target.querySelector('[data-personal-save-retry]'),null);
+});
+test('new records and records moved outside the current month reconcile membership without replacing the shell',async()=>{
+ const f=await fixture('event'),header=f.target.querySelector('.heading'),other=f.target.querySelector('[data-personal-entry="two"]');const save=f.open();f.c.rows=[entry('two','event'),entry('three','event')];await save({title:'Later event',starts:'2026-11-02T10:00'});assert.equal(f.target.querySelector('.heading'),header);assert.equal(f.target.querySelector('[data-personal-entry="one"]'),null);assert.equal(f.target.querySelector('[data-personal-entry="two"]'),other);
+ const n=await fixture(),node=n.target.querySelector('[data-personal-entry="two"]');n.target.querySelector('#personalNewNote').emit('click');n.c.rows=[entry('new'),...n.c.rows];await n.forms.at(-1)({title:'New note'});assert.equal(n.target.querySelector('[data-personal-entry="two"]'),node);assert.ok(n.target.querySelector('[data-personal-entry="new"]'));assert.equal(n.calls[0].args.p_id,'new');assert.equal(n.calls[0].args.p_expected_version,0);
+});
+test('replacement actor, route, epoch and month suppress late write success and failures',async()=>{
+ for(const change of ['actor','route','epoch','month'])for(const fail of [false,true]){const f=await fixture(),save=f.open(),wait=deferred();f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return wait.promise;};const pending=save({title:'Changed'});if(change==='actor')f.c.me={...f.c.me};else if(change==='route')f.c.view='sales';else vm.runInContext(change==='epoch'?'personalEpoch++':"personalMonth='2026-11'",f.c);const before=f.target.innerHTML;if(fail)wait.reject(Error('Old error'));else wait.resolve({data:{}});await pending;assert.equal(f.target.innerHTML,before);assert.equal(f.calls.length,1);assert.equal(f.messages.length,0);}
+});
+test('late read outcomes do not overwrite another workspace',async()=>{
+ for(const fail of [false,true]){const f=await fixture(),save=f.open(),wait=deferred();f.setRead(()=>wait.promise);const pending=save({title:'Changed'});await new Promise(resolve=>setImmediate(resolve));f.c.view='sales';f.target.innerHTML='<p>Current workspace</p>';if(fail)wait.reject(Error('Old error'));else wait.resolve({data:[entry()]});await pending;assert.equal(f.target.textContent,'Current workspace');assert.equal(f.messages.length,0);}
+});

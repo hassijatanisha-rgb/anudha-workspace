@@ -204,7 +204,7 @@ function howToTopicCard(topic,open){
 function guide(){
  const visible=howToTopics.filter(howToVisible),focus=howToFocus?visible.filter(topic=>howToForScreen(topic,howToFocus)):[];
  const shown=visible.filter(topic=>howToMatches(topic,howToQuery,howToRole)&&!focus.includes(topic));
- $('#content').innerHTML=`<section class="howto"><div class="heading"><div><small>HELP</small><h1>How to use</h1><p class="muted">Choose what you want to do. Each guide lists the steps in order. Press Walk me through it to follow the steps on the real page.</p></div></div>
+ $('#content').innerHTML=`<section class="howto">${workspacePageHeader({title:'How to use',subtitle:'Choose what you want to do. Each guide lists the steps in order. Press Walk me through it to follow the steps on the real page.'})}
  ${focus.length?`<section class="howto-here"><h2>For the page you were on</h2>${focus.map(topic=>howToTopicCard(topic,true)).join('')}</section>`:''}
  <label class="howto-search"><span>What do you want to do?</span><input id="howToSearch" type="search" value="${esc(howToQuery)}" placeholder="For example: pro forma, Tally, delivery, password" autocomplete="off"></label>
  <div class="tabs" role="group" aria-label="Show guides for">${howToRoles.filter(([key])=>key!=='owner'||me?.role==='owner').map(([key,label])=>`<button type="button" data-howto-role="${key}"${key===howToRole?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div>

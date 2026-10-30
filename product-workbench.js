@@ -2,22 +2,20 @@
 // Authenticated ERP products only. Never load the local workbench's bundled data.js.
 function productWorkbenchTable(rows){
  if(!rows.length)return '<p class="empty">No products match. Clear the search or select another category.</p>';
- return '<div class="table-wrap"><table class="product-quality-table"><caption>Yellow = one thing to fix · Red = two or more</caption><thead><tr><th scope="col">Product / code</th><th scope="col">Manufacturer</th><th scope="col">Specification</th><th scope="col">Sale status</th><th scope="col">Category / data quality</th><th scope="col">Actions</th></tr></thead><tbody>'+(()=>{const duplicates=typeof productDuplicateCounts==='function'?productDuplicateCounts(catalogRows()):null;return rows.map(p=>{
-  const s=p.source||{},issues=catalogProductIssues(p),quality=typeof productQuality==='function'?productQuality(p,duplicates):{level:'',issues:[]},status=s.sale_status==='active'?'Active — for sale':s.sale_status==='inactive_serviced'?'Not sold — still serviced':'Needs review';
-  return `<tr class="${quality.level?'quality-'+quality.level:''}"><td><strong>${esc(p.name)}</strong><small>${esc(p.sku||'Stock code missing')}</small>${typeof qualityBadge==='function'?qualityBadge(quality.level,quality.issues):''}</td><td>${esc(s.company||'Needs review')}${!s.company&&s.suggested_company?`<small>Suggested: ${esc(s.suggested_company)} — confirm</small>`:''}${s.company&&s.company_note?`<small>${esc(s.company_note.startsWith('Found online')?'Found online — confirm on the label':s.company_note)}</small>`:''}</td><td>${esc(s.specification||s.model||'Needs review')}</td><td>${esc(status)}</td><td>${esc(catalogLabel(catalogCategoryOf(p)))}<details><summary>${issues.length?`${issues.length} checks needed`:'Details reviewed'}</summary>${issues.length?'<ul>'+issues.map(i=>`<li>${esc(i)}</li>`).join('')+'</ul>':'Stock must still be verified by godown.'}</details></td><td><div class="actions"><button type="button" data-product-review="${esc(p.id)}">Correct details</button>${canEditRecords()?`<button type="button" data-product-edit="${esc(p.id)}">Name / code</button>`:''}<button type="button" data-workbench-detail="${esc(p.id)}">More details</button><button type="button" data-workbench-stock="${esc(p.id)}">Stock by godown</button>${typeof productBrochuresButton==='function'?productBrochuresButton(p):''}</div></td></tr>`;
- }).join('');})()+'</tbody></table></div>';
+ const duplicates=typeof productDuplicateCounts==='function'?productDuplicateCounts(catalogRows()):null;
+ if(duplicates)for(const p of rows)if(p.catalog_current)duplicates.set(productDuplicateKey(p),p.catalog_duplicate_count);
+ return '<div class="table-wrap"><table class="product-quality-table" role="table"><caption>Product details and availability</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Product / code</th><th scope="col" role="columnheader">Manufacturer / model</th><th scope="col" role="columnheader">Status</th><th scope="col" role="columnheader">Actions</th></tr></thead><tbody role="rowgroup">'+rows.map(p=>{
+  const source=p.source||{},quality=typeof productQuality==='function'?productQuality(p,duplicates):{level:'',issues:[]};
+  const status=source.sale_status==='active'?'For sale':source.sale_status==='inactive_serviced'?'Service only':'Needs review';
+  return `<tr data-catalog-row="${esc(p.id)}" role="row" class="${quality.level?'quality-'+quality.level:''}"><td role="cell" data-label="Product / code"><span class="phone-cell-label" aria-hidden="true">Product / code</span><strong>${esc(p.name)}</strong><small>${esc(p.sku||'Stock code missing')} · ${esc(catalogLabel(catalogCategoryOf(p)))}</small></td><td role="cell" data-label="Manufacturer / model"><span class="phone-cell-label" aria-hidden="true">Manufacturer / model</span>${esc(source.company||'Company needs review')}<small>${esc(source.specification||source.model||'Specification needs review')}</small></td><td role="cell" data-label="Status"><span class="phone-cell-label" aria-hidden="true">Status</span>${esc(status)}${typeof qualityBadge==='function'?qualityBadge(quality.level,quality.issues):''}</td><td role="cell" data-label="Actions" class="phone-card-actions"><span class="phone-cell-label" aria-hidden="true">Actions</span><div class="actions"><button type="button" class="button-quiet" data-workbench-detail="${esc(p.id)}">Open product</button></div></td></tr>`;
+ }).join('')+'</tbody></table></div>';
 }
+
 function bindProductWorkbench(){
  if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
+ if(typeof catalogIsActive==='function'&&catalogIsActive())document.querySelectorAll('[data-product-brochures]').forEach(button=>button.onclick=()=>run(()=>openDocumentAttachments('product',button.dataset.productBrochures,catalogRows().find(p=>p.id===button.dataset.productBrochures)?.name||'Product')));
  document.querySelectorAll('[data-workbench-stock]').forEach(button=>button.onclick=()=>{
-  const product=products.find(p=>p.id===button.dataset.workbenchStock);if(!product)return;
-  inventoryProductId=product.id;inventorySearch='';inventorySection='stock';run(()=>inventoryWorkspace());
+  inventoryProductId=button.dataset.workbenchStock;inventorySearch='';inventorySection='stock';run(()=>inventoryWorkspace());
  });
- document.querySelectorAll('[data-workbench-detail]').forEach(button=>button.onclick=()=>{
-  const rows=catalogRows(),product=rows.find(p=>p.id===button.dataset.workbenchDetail);if(!product)return;
-  $('#content').innerHTML='<button type="button" id="workbenchBack">← Back to product workbench</button>'+catalogProduct(product,rows);
-  $('#workbenchBack').onclick=catalogInventory;
-  bindInventoryWorkspace();
-  if(typeof bindQuotationDocuments==='function')bindQuotationDocuments();
- });
+ document.querySelectorAll('[data-workbench-detail]').forEach(button=>button.onclick=()=>run(()=>openWorkspaceRecord('product',button.dataset.workbenchDetail),{origin:button}));
 }

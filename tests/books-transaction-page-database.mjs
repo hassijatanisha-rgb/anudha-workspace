@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const {PGlite}=await import(process.env.PGLITE_MODULE||'@electric-sql/pglite');
+const db=new PGlite(),read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create function inventory_active_staff() returns boolean language sql stable as $$select current_setting('test.active',true)='yes' and current_setting('test.mfa',true)='yes'$$;
+ create table auth.users(id uuid primary key);insert into auth.users values('00000000-0000-0000-0000-000000000001');
+ set test.actor='00000000-0000-0000-0000-000000000001';set test.active='yes';set test.mfa='yes';`);
+ await db.exec(read('supabase/migrations/202609230015_accounting_membership.sql'));
+ await db.exec(`insert into accounting_memberships(user_id,active,approved_by,approval_reference) values('00000000-0000-0000-0000-000000000001',true,'00000000-0000-0000-0000-000000000001','Fictional test fixture');
+ create table acc_settings(id boolean primary key,version integer,locked_through date);
+ create table organizations(id uuid primary key,name text,deleted_at timestamptz);
+ create table acc_receipts(id uuid primary key,receipt_number text,organization_id uuid,receipt_date date,amount_minor bigint,method text,reference text,voided_at timestamptz,void_reason text);
+ create table acc_receipt_allocations(receipt_id uuid,invoice_id uuid,amount_minor bigint);
+ create table acc_journal_entries(id uuid primary key,entry_number text,entry_date date,memo text,source_type text,created_by uuid,reverses_entry_id uuid);
+ create table acc_journal_lines(entry_id uuid,line_no integer,debit_minor bigint,credit_minor bigint,description text);
+ do $$declare t text;begin foreach t in array array['acc_settings','organizations','acc_receipts','acc_receipt_allocations','acc_journal_entries','acc_journal_lines'] loop execute format('alter table %I enable row level security',t);execute format('create policy visible on %I for select to authenticated using ((select accounting_access()))',t);execute format('grant select on %I to authenticated',t);end loop;end$$;
+ insert into acc_settings values(true,7,'2026-09-30');insert into organizations values('00000000-0000-0000-0000-000000000001','Fictional current customer',null);
+ insert into acc_receipts select ('10000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'RC-'||lpad(n::text,5,'0'),'00000000-0000-0000-0000-000000000001','2026-10-20'::date-(n%7),10000+n,case when n%2=0 then 'bank' else 'cash' end,'reference-'||n,case when n%11=0 then now() end,repeat('DETAIL-ONLY-VOID-REASON',20) from generate_series(1,1057)n;
+ insert into acc_receipt_allocations select id,'00000000-0000-0000-0000-000000000001',n*2 from acc_receipts cross join lateral(select right(id::text,12)::integer n)x where n%3<>0;
+ insert into acc_journal_entries select ('20000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'JE-'||lpad(n::text,5,'0'),'2026-10-20'::date-(n%5),'Memo '||n,case when n%4=0 then 'credit_note' when n%4=1 then 'manual' when n%4=2 then 'invoice' else 'receipt' end,'00000000-0000-0000-0000-000000000001',null from generate_series(1,1057)n;
+ insert into acc_journal_entries values('20000000-0000-0000-0000-000000001058','JE-01058','2026-10-28','Reversal outside original page','reversal','00000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001');
+ insert into acc_journal_lines select id,side,case when side=1 then n*5 else 0 end,case when side=2 then n*5 else 0 end,repeat('DETAIL-LINE-NARRATIVE',20) from acc_journal_entries cross join lateral(select right(id::text,12)::integer n)x cross join generate_series(1,2)side;`);
+ await db.exec(read('supabase/migrations/202610290146_books_transaction_page.sql'));await db.exec('set role authenticated');
+ const page=async(section,p=0)=>(await db.query('select acc_transaction_page($1,$2) data',[section,p])).rows[0].data;
+ const expectedReceipts=async()=>(await db.query(`select jsonb_build_object('amount_minor',coalesce(sum(r.amount_minor),0),'applied_minor',coalesce(sum(a.applied),0),'credit_minor',coalesce(sum(r.amount_minor-coalesce(a.applied,0)),0)) data from acc_receipts r left join (select receipt_id,sum(amount_minor) applied from acc_receipt_allocations group by receipt_id) a on a.receipt_id=r.id where r.voided_at is null`)).rows[0].data;
+ const expectedJournal=async()=>(await db.query(`select jsonb_build_object('debit_minor',coalesce(sum(l.debit_minor),0),'credit_minor',coalesce(sum(l.credit_minor),0)) data from acc_journal_entries e join acc_journal_lines l on l.entry_id=e.id`)).rows[0].data;
+ for(const section of ['receipts','journal']){
+  const first=await page(section);assert.equal(first.total,section==='receipts'?1057:1058);assert.equal(first.rows.length,25);assert.equal(first.pages,43);assert.equal(first.page,0);assert.equal(first.settings.version,7);assert.match(first.today,/^\d{4}-\d{2}-\d{2}$/);assert.deepEqual(first.summary,await(section==='receipts'?expectedReceipts():expectedJournal()));
+  const rows=[];for(let p=0;p<first.pages;p++){const next=await page(section,p);assert.deepEqual(next.summary,first.summary);assert.ok(next.rows.length<=25);rows.push(...next.rows);}
+  const table=section==='receipts'?'acc_receipts':'acc_journal_entries',date=section==='receipts'?'receipt_date':'entry_date',number=section==='receipts'?'receipt_number':'entry_number';
+  assert.deepEqual(rows.map(row=>row.id),(await db.query(`select id from ${table} order by ${date} desc,${number} desc,id`)).rows.map(row=>row.id));assert.equal(new Set(rows.map(row=>row.id)).size,first.total);
+  assert.ok(rows.every(row=>!Object.hasOwn(row,'lines')&&!Object.hasOwn(row,'allocations')&&!Object.hasOwn(row,'void_reason')));assert.ok(!JSON.stringify(rows).includes('DETAIL-'));
+  if(section==='receipts'){assert.ok(rows.every(row=>row.customer_name==='Fictional current customer'));assert.ok(rows.some(row=>row.voided_at));assert.equal(rows.find(row=>row.receipt_number==='RC-00003').applied_minor,0);}
+  else {assert.equal(rows.find(row=>row.entry_number==='JE-00001').reversed,true);assert.equal(rows.find(row=>row.entry_number==='JE-00002').reversed,false);assert.equal(rows.find(row=>row.entry_number==='JE-00004').source_type,'credit_note');assert.equal(rows.find(row=>row.entry_number==='JE-01058').source_type,'reversal');}
+  const last=await page(section,1000000);assert.equal(last.page,42);assert.equal(last.rows.length,section==='receipts'?7:8);
+ }
+ await db.exec('reset role;update organizations set deleted_at=now();set role authenticated');assert.ok((await page('receipts')).rows.every(row=>row.customer_name===null));await db.exec('reset role;update organizations set deleted_at=null;set role authenticated');
+ for(const args of [['receipts',-1],['journal',null],['journal',1000001],['unknown',0],[null,0]])await assert.rejects(page(...args),/valid transaction register page/);
+ for(const gate of ['active','mfa']){await db.exec(`set test.${gate}='no'`);await assert.rejects(page('receipts'),/Accounting access/);await assert.rejects(page('journal'),/Accounting access/);await db.exec(`set test.${gate}='yes'`);}
+ await db.exec("set test.actor=''");await assert.rejects(page('receipts'),/Accounting access/);await db.exec("set test.actor='00000000-0000-0000-0000-000000000001';reset role;update accounting_memberships set active=false;set role authenticated");await assert.rejects(page('journal'),/Accounting access/);await db.exec('reset role;update accounting_memberships set active=true;set role anon');await assert.rejects(page('receipts'),/permission denied/);
+ await db.exec(`reset role;create policy scoped_receipts on acc_receipts as restrictive for select to authenticated using(receipt_number<'RC-00031');create policy scoped_entries on acc_journal_entries as restrictive for select to authenticated using(entry_number<'JE-00031');create policy scoped_allocations on acc_receipt_allocations as restrictive for select to authenticated using(amount_minor>10);create policy scoped_lines on acc_journal_lines as restrictive for select to authenticated using(line_no=1);create policy hide_customers on organizations as restrictive for select to authenticated using(false);set role authenticated`);
+ const receipts=await page('receipts'),journal=await page('journal');assert.equal(receipts.total,30);assert.equal(journal.total,30);assert.ok(receipts.rows.every(row=>row.customer_name===null));assert.deepEqual(receipts.summary,await expectedReceipts());assert.deepEqual(journal.summary,await expectedJournal());assert.equal(journal.summary.credit_minor,0);assert.equal([...journal.rows,...(await page('journal',1)).rows].find(row=>row.entry_number==='JE-00001').reversed,false);
+ await db.exec(`reset role;create policy hide_receipts on acc_receipts as restrictive for select to authenticated using(false);create policy hide_entries on acc_journal_entries as restrictive for select to authenticated using(false);set role authenticated`);
+ for(const section of ['receipts','journal']){const empty=await page(section,20);assert.equal(empty.total,0);assert.equal(empty.page,0);assert.equal(empty.pages,1);assert.deepEqual(empty.rows,[]);assert.ok(Object.values(empty.summary).every(value=>value===0));}
+ await db.exec('reset role');assert.equal((await db.query("select prosecdef from pg_proc where proname='acc_transaction_page'")).rows[0].prosecdef,false);assert.equal((await db.query('select count(*)::integer n from acc_receipts')).rows[0].n,1057);assert.equal((await db.query('select count(*)::integer n from acc_journal_entries')).rows[0].n,1058);
+ console.log('PASS: 25-row limits, 1057 receipts/1058 entries all-page order, full-scope totals, void/allocation/reversal parity, no detail arrays, bounds/empty, actual accounting membership gate with active/MFA, anonymous denial, caller row/customer/allocation/line RLS, invoker and unchanged history.');
+}finally{await db.close();}

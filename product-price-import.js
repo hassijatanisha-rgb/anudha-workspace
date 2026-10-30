@@ -78,61 +78,64 @@ async function productPriceImportApply(backend,preview,current,onProgress=()=>{}
  }finally{preview.busy=false;}
 }
 function bindProductPriceImport(target,workspaceCurrent){
- const actor=me,productCount=productPriceImportCatalog(products).length;let workbook=null,preview=null,busy=false;
+ const actor=me,productCount=productPriceImportCatalog(products).length;let workbook=null,preview=null,working=false;
  const current=()=>me===actor&&workspaceCurrent()&&panel.isConnected;
  target.insertAdjacentHTML('beforeend',`<details class="card"><summary>Import product prices from Excel / CSV</summary><section data-price-import><p>Download a template for the currency and product page you need. Fill New Price and Reason only for approved changes. Blank New Price leaves a product unchanged. Up to ${productPriceImportLimit} rows and 5 MB per import.</p><div class="grid"><label>Template currency<select data-price-import-currency><option>TZS</option><option>USD</option><option>EUR</option></select></label><label>Template product page<select data-price-import-page>${Array.from({length:Math.max(1,Math.ceil(productCount/productPriceImportLimit))},(_,index)=>`<option value="${index}">${productCount?`${index*productPriceImportLimit+1}–${Math.min((index+1)*productPriceImportLimit,productCount)}`:'No active products'}</option>`).join('')}</select></label></div><div class="actions"><button type="button" data-price-import-excel>Download Excel template</button><button type="button" data-price-import-csv>Download CSV template</button></div><label>Completed Excel workbook or CSV<input type="file" data-price-import-file accept=".xlsx,.csv"></label><label>Sheet to review<select data-price-import-sheet disabled></select></label><button type="button" data-price-import-preview disabled>Preview current price changes</button><p>Product ID is the only match key. Product Name and Current Price in the file are references; the preview reloads current database prices and versions. No price changes are saved until you review and apply them. Prices save one at a time; if one fails, earlier confirmed changes remain and later rows stop.</p><div data-price-import-results></div><label><input type="checkbox" data-price-import-reviewed disabled>I have reviewed every listed price change and reason.</label><button type="button" data-price-import-apply disabled>Apply reviewed price changes</button><p data-price-import-status role="status" aria-live="polite"></p><button type="button" data-price-import-reset>Start another import</button></section></details>`);
  const panel=target.querySelector('[data-price-import]'),get=selector=>panel.querySelector(selector),file=get('[data-price-import-file]'),sheet=get('[data-price-import-sheet]'),review=get('[data-price-import-reviewed]'),apply=get('[data-price-import-apply]'),status=get('[data-price-import-status]'),previewButton=get('[data-price-import-preview]');
  const mutable=()=>!!preview?.rows.some(row=>['saving','saved','unconfirmed','rejected'].includes(row.status));
  function lock(){
-  file.disabled=busy||mutable();sheet.disabled=busy||!workbook||mutable();previewButton.disabled=busy||!workbook||mutable();review.disabled=busy||!preview||!!preview.errors.length||mutable();
-  apply.disabled=busy||!preview||!!preview.errors.length||!review.checked||preview.rows.some(row=>row.status==='rejected')||!preview.rows.some(row=>['ready','unconfirmed'].includes(row.status));
-  get('[data-price-import-reset]').disabled=busy||!!preview?.rows.some(row=>row.status==='unconfirmed');
-  for(const selector of ['[data-price-import-excel]','[data-price-import-csv]','[data-price-import-currency]','[data-price-import-page]'])get(selector).disabled=busy;
+  file.disabled=working||mutable();sheet.disabled=working||!workbook||mutable();previewButton.disabled=working||!workbook||mutable();review.disabled=working||!preview||!!preview.errors.length||mutable();
+  apply.disabled=working||!preview||!!preview.errors.length||!review.checked||preview.rows.some(row=>row.status==='rejected')||!preview.rows.some(row=>['ready','unconfirmed'].includes(row.status));
+  get('[data-price-import-reset]').disabled=working||!!preview?.rows.some(row=>row.status==='unconfirmed');
+  for(const selector of ['[data-price-import-excel]','[data-price-import-csv]','[data-price-import-currency]','[data-price-import-page]'])get(selector).disabled=working;
  }
  function render(){
   const rows=preview?.rows||[],errors=preview?.errors||[];
-  get('[data-price-import-results]').innerHTML=`${errors.length?`<div role="alert"><p>Correct these errors before applying:</p><ul>${errors.map(error=>`<li>${esc(error)}</li>`).join('')}</ul></div>`:''}${rows.length?`<div class="table-wrap"><table><thead><tr><th>Row / product UUID</th><th>Product</th><th>Currency</th><th>Current database price</th><th>New price</th><th>Reason</th><th>Result</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row.number}<small>${esc(row.productId)}</small></td><td>${esc(row.productName)}</td><td>${esc(row.currency)}</td><td>${row.beforeMinor===null?'Not configured':esc(pricingMinorText(row.beforeMinor))}<small>Version ${row.expectedVersion}</small></td><td>${row.unitPriceMinor===null?'Leave unchanged':esc(pricingMinorText(row.unitPriceMinor))}</td><td>${esc(row.reason)}</td><td>${esc(row.errors.length?'Invalid':row.status)}${row.error?`<small>${esc(row.error)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:''}`;lock();
+  get('[data-price-import-results]').innerHTML=`${errors.length?`<div role="alert"><p>Correct these errors before applying:</p><ul>${errors.map(error=>`<li>${esc(error)}</li>`).join('')}</ul></div>`:''}${rows.length?`<div class="table-wrap"><table><thead><tr><th>Row / product UUID</th><th>Product</th><th>Currency</th><th class="numeric-cell">Current database price</th><th class="numeric-cell">New price</th><th>Reason</th><th>Result</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row.number}<small>${esc(row.productId)}</small></td><td>${esc(row.productName)}</td><td>${esc(row.currency)}</td><td>${row.beforeMinor===null?'Not configured':esc(pricingMinorText(row.beforeMinor))}<small>Version ${row.expectedVersion}</small></td><td>${row.unitPriceMinor===null?'Leave unchanged':esc(pricingMinorText(row.unitPriceMinor))}</td><td>${esc(row.reason)}</td><td>${esc(row.errors.length?'Invalid':row.status)}${row.error?`<small>${esc(row.error)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:''}`;lock();
  }
  async function requireEditor(){
   if(!current())throw Error('Reopen product prices before importing.');const result=await client.rpc('accounting_access');
   if(!current())throw Error('Login or price view changed.');if(actor.role!=='owner'&&(result.error||result.data!==true))throw Error('Only the owner or approved accounting users can import prices.');
  }
- async function template(format){
-  if(busy||!current())return;busy=true;lock();
-  try{
+ async function template(format,origin){
+  if(working||!current())return;if(busy){actionFeedbackRefuse(origin,status);return;}working=true;lock();
+  return run(async()=>{try{
    await requireEditor();const rows=await pricingLoad();if(!current()||rows===null)return;
    const currency=get('[data-price-import-currency]').value,page=Number(get('[data-price-import-page]').value),values=productPriceImportTemplateRows(products,productSalePrices,currency,page);
    if(!values.length)throw Error('No active products on this template page. Refresh product prices.');
    if(format==='xlsx'){const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([productPriceImportHeaders,...values]),'Product Prices');XLSX.writeFile(book,`product-prices-${currency}-${page+1}.xlsx`);}
    else booksDownload(`product-prices-${currency}-${page+1}.csv`,'\uFEFF'+booksCsv(productPriceImportHeaders.map((header,index)=>[index,header]),values));
    status.textContent='Template download requested. Fill only approved New Price and Reason values, then upload it to preview.';
-  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+  }catch(error){if(current())status.textContent=error.message;}finally{working=false;if(current())lock();}
+  },{origin,errorTarget:status,busyLabel:'Preparing template…'});
  }
- get('[data-price-import-excel]').onclick=()=>template('xlsx');get('[data-price-import-csv]').onclick=()=>template('csv');
+ get('[data-price-import-excel]').onclick=()=>template('xlsx',get('[data-price-import-excel]'));get('[data-price-import-csv]').onclick=()=>template('csv',get('[data-price-import-csv]'));
  file.onchange=async()=>{
-  if(busy||mutable()||!current())return;busy=true;workbook=null;preview=null;review.checked=false;render();
+  if(working||mutable()||!current())return;working=true;workbook=null;preview=null;review.checked=false;render();
   try{
    await requireEditor();const loaded=await financialImportRead(file.files?.[0]);if(!current())return;workbook=loaded;
    sheet.innerHTML=loaded.SheetNames.map(name=>`<option>${esc(name)}</option>`).join('');status.textContent='Choose the sheet and preview its current price changes.';
-  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+  }catch(error){if(current())status.textContent=error.message;}finally{working=false;if(current())lock();}
  };
- sheet.onchange=()=>{if(!busy&&!mutable()&&current()){preview=null;review.checked=false;render();}};
+ sheet.onchange=()=>{if(!working&&!mutable()&&current()){preview=null;review.checked=false;render();}};
  previewButton.onclick=async()=>{
-  if(busy||mutable()||!workbook||!current())return;busy=true;preview=null;review.checked=false;render();
-  try{
+  if(working||mutable()||!workbook||!current())return;if(busy){actionFeedbackRefuse(previewButton,status);return;}working=true;preview=null;review.checked=false;render();
+  return run(async()=>{try{
    await requireEditor();const rows=await pricingLoad();if(!current()||rows===null)return;
    preview=productPriceImportPreview(workbook.Sheets[sheet.value],products,productSalePrices);render();status.textContent=preview.errors.length?'No prices have been saved. Correct the file and upload it again.':`${preview.rows.filter(row=>row.status==='ready').length} price changes ready for review. No prices have been saved.`;
-  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())lock();}
+  }catch(error){if(current())status.textContent=error.message;}finally{working=false;if(current())lock();}
+  },{origin:previewButton,errorTarget:status,busyLabel:'Preparing preview…'});
  };
- review.onchange=()=>{if(preview&&current()&&!busy){preview.reviewed=review.checked;lock();}};
+ review.onchange=()=>{if(preview&&current()&&!working){preview.reviewed=review.checked;lock();}};
  apply.onclick=async()=>{
-  if(busy||!preview||!review.checked||!current())return;busy=true;lock();
-  try{
+  if(working||!preview||!review.checked||!current())return;if(busy){actionFeedbackRefuse(apply,status);return;}working=true;lock();
+  return run(async()=>{try{
    await requireEditor();preview.reviewed=true;status.textContent='Applying reviewed prices one at a time…';
    const result=await productPriceImportApply(client,preview,current,render);if(!current()||!result)return;
    status.textContent=result.unconfirmed?`${result.saved} confirmed saved; 1 result not confirmed; ${result.pending} not attempted. Retry the same reviewed import to check the same request. Earlier confirmed saves remain saved.`:result.rejected?`${result.saved} confirmed saved; 1 rejected without saving; ${result.pending} not attempted. Start another import to correct the file and review fresh prices. Earlier confirmed saves remain saved.`:`${result.saved} confirmed saved. Blank and unchanged prices were skipped. Refresh product prices to see the updated register.`;
    apply.textContent=result.unconfirmed?'Retry unconfirmed and remaining prices':'Apply reviewed price changes';
-  }catch(error){if(current())status.textContent=error.message;}finally{busy=false;if(current())render();}
+  }catch(error){if(current())status.textContent=error.message;}finally{working=false;if(current())render();}
+  },{origin:apply,errorTarget:status,busyLabel:'Applying prices…'});
  };
- get('[data-price-import-reset]').onclick=()=>{if(busy||preview?.rows.some(row=>row.status==='unconfirmed')||!current())return;workbook=null;preview=null;file.value='';sheet.innerHTML='';review.checked=false;status.textContent='';apply.textContent='Apply reviewed price changes';render();};
+ get('[data-price-import-reset]').onclick=()=>{if(working||preview?.rows.some(row=>row.status==='unconfirmed')||!current())return;workbook=null;preview=null;file.value='';sheet.innerHTML='';review.checked=false;status.textContent='';apply.textContent='Apply reviewed price changes';render();};
 }

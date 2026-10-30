@@ -11,7 +11,7 @@ function fixture(options={}){
  const calls=[],nodes=new Map(),listeners={},checks=[];let zip;
  const node=selector=>{if(!nodes.has(selector))nodes.set(selector,{disabled:false,value:'0',textContent:'',innerHTML:'',querySelectorAll:()=>checks});return nodes.get(selector);};
  const dialog={isConnected:true,innerHTML:'',setAttribute(){},showModal(){},querySelector:node,addEventListener:(type,fn)=>listeners[type]=fn,close(){listeners.close?.();},remove(){this.isConnected=false;}};
- const ctx=vm.createContext({Blob,Uint8Array,DataView,TextEncoder,me:{user_id:'actor'},view:'sales',salesEpoch:0,
+ const ctx=vm.createContext({showWorkspaceDialog:dialog=>dialog.showModal(),closeWorkspaceDialog:async dialog=>{dialog.close();return true;},bindWorkspaceDialogDismiss:(dialog,options)=>async()=>{if(options.isBusy()||options.isDirty())return false;dialog.close();return true;},busy:false,actionFeedbackReference:node=>({node}),actionFeedbackRememberDialog:()=>{},message:()=>{},Blob,Uint8Array,DataView,TextEncoder,me:{user_id:'actor'},view:'sales',salesEpoch:0,
   esc:value=>String(value??'').replace(/[&<>"']/g,char=>'&#'+char.charCodeAt(0)+';'),run:fn=>fn(),salesProforma:()=>quote,salesProduct:()=>({name:'Live changed product'}),
   salesDocumentLines:()=>[{product_id:product,product_name:'Saved <Analyzer>'},{product_id:product,product_name:'Saved <Analyzer>'}],loadSalesRevision:async()=>calls.push(['snapshot']),printSalesDocument:id=>calls.push(['print',id]),
   URL:{createObjectURL:blob=>{zip=blob;calls.push(['url']);return 'blob:zip';},revokeObjectURL:url=>calls.push(['revoke',url])},setTimeout:(fn,ms)=>calls.push(['timer',fn,ms]),
@@ -76,8 +76,8 @@ test('list failures stay explicit and changed-page responses never display priva
  let release,started;const begun=new Promise(resolve=>started=resolve),f=fixture({list:()=>new Promise(resolve=>{release=resolve;started();})});const pending=f.ctx.openQuotationDocuments(quote);await begun;f.ctx.view='contacts';release({data:[row()]});await pending;
  assert.equal(f.dialog.isConnected,false);assert.equal(f.node('[data-quote-files]').innerHTML,'');
 });
-test('print closes the document selector before invoking existing customer-safe print',async()=>{
- const f=fixture();await f.ctx.openQuotationDocuments(quote);f.node('[data-quote-print]').onclick();assert.equal(f.dialog.isConnected,false);assert.ok(f.calls.some(call=>call[0]==='print'&&call[1]===quote.id));
+test('print initiates shared close and invokes existing customer-safe print synchronously',async()=>{
+ const f=fixture();await f.ctx.openQuotationDocuments(quote);const closing=f.node('[data-quote-print]').onclick();assert.ok(f.calls.some(call=>call[0]==='print'&&call[1]===quote.id));await closing;assert.equal(f.dialog.isConnected,false);
 });
 test('ZIP rejects unsafe names and preserves duplicate source filenames under unique prefixes',async()=>{
  const f=fixture();for(const name of ['../private.pdf','bad\\name.pdf','control\n.pdf'])assert.throws(()=>f.ctx.quotationSupportingZip([{name,bytes:new Uint8Array([1])}]),/filename/);

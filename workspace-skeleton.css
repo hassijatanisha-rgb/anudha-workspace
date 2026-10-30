@@ -1,0 +1,53 @@
+/* Placeholder widths/heights mirror page geometry; the hidden status uses the standard 1px clip. */
+.workspace-skeleton{min-width:0;margin-block:0 var(--space-5)}
+.workspace-skeleton-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.workspace-skeleton-shapes{display:grid;gap:var(--space-4);min-width:0}
+.workspace-skeleton-bar{display:block;background:var(--skeleton-fill);border-radius:var(--r-sm);height:1rem;max-width:100%;min-width:0}
+.workspace-skeleton-title{display:grid;gap:var(--space-3);flex:1}
+.workspace-skeleton-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-5);min-height:6.5rem;margin-bottom:var(--space-2)}
+.workspace-skeleton-eyebrow{width:9rem;height:.75rem}
+.workspace-skeleton-heading{width:19rem;height:2.25rem}
+.workspace-skeleton-subheading{width:15rem;height:1.4rem}
+.workspace-skeleton-copy{width:29rem}
+.workspace-skeleton-short{width:8rem}
+.workspace-skeleton-caption{width:5rem;height:.75rem}
+.workspace-skeleton-control{width:8rem;height:var(--control-h);flex-shrink:0}
+.workspace-skeleton-search{width:28rem;height:var(--control-h);flex:1}
+.workspace-skeleton-number{width:4rem;height:2rem}
+.workspace-skeleton-field{width:100%;height:var(--control-h)}
+.workspace-skeleton-multiline{width:100%;height:6rem}
+.workspace-skeleton-toolbar,.workspace-skeleton-pager{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+.workspace-skeleton-toolbar{margin-block:var(--space-1) var(--space-3)}
+.workspace-skeleton-card{display:grid;gap:var(--space-4);padding:var(--space-5);border:1px solid var(--skeleton-edge);border-radius:var(--r-sm);background:var(--surface)}
+.workspace-skeleton-facts,.workspace-skeleton-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.workspace-skeleton-facts>div,.workspace-skeleton-fields>div{display:grid;gap:var(--space-2)}
+.workspace-skeleton-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-4)}
+.workspace-skeleton-table{min-width:0;border:1px solid var(--skeleton-edge);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}
+.workspace-skeleton-row{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)) minmax(4rem,.7fr);align-items:center;gap:var(--space-5);min-height:4rem;padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--skeleton-edge)}
+.workspace-skeleton-row:last-child{border-bottom:0}
+.workspace-skeleton-table-head{min-height:3rem}
+.workspace-skeleton-row>.workspace-skeleton-control{width:4rem;height:2rem}
+.workspace-skeleton-group{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);min-height:3.75rem;padding:var(--space-4);border:1px solid var(--skeleton-edge);border-radius:var(--r-sm);background:var(--surface)}
+.workspace-skeleton-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--space-1)}
+.workspace-skeleton-day{min-height:5.5rem;padding:var(--space-2);border:1px solid var(--skeleton-edge);border-radius:var(--r-sm);background:var(--surface)}
+.workspace-skeleton-day>.workspace-skeleton-caption{width:1.25rem}
+.workspace-skeleton-screen{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-6)}
+.workspace-skeleton-screen>div{display:grid;align-content:start;gap:var(--space-4)}
+.workspace-skeleton--metrics{margin-block:var(--space-5)}
+.workspace-skeleton--profile .workspace-skeleton-fields>div:first-child{grid-column:1/-1}
+.workspace-skeleton--profile .workspace-skeleton-fields>div:last-child{display:none}
+.workspace-skeleton--task-cards .workspace-skeleton-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.packing-tv-screen>.workspace-skeleton{grid-column:1/-1;width:100%}
+@media(max-width:42rem){
+ .workspace-skeleton-header{align-items:flex-start;flex-wrap:wrap}
+ .workspace-skeleton-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .workspace-skeleton-row{gap:var(--space-2);padding:var(--space-3) var(--space-2);grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(2rem,.7fr)}
+ .workspace-skeleton-row>.workspace-skeleton-control{width:100%}
+ .workspace-skeleton-fields,.workspace-skeleton-screen{grid-template-columns:1fr}
+ .workspace-skeleton-day{min-height:4rem;padding:var(--space-1)}
+ .workspace-skeleton-group>.workspace-skeleton-short{width:3rem}
+}
+@media(forced-colors:active){
+ .workspace-skeleton-bar{border:1px solid GrayText}
+}
+@media print{.workspace-skeleton{display:none}}

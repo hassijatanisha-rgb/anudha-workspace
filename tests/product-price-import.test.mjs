@@ -74,7 +74,7 @@ test('malformed success remains unconfirmed and stale session prevents all later
 function uiFixture({allowed=true,actor={user_id:'owner',role:'owner'}}={}){
  const nodes=new Map(),calls=[],get=selector=>{if(!nodes.has(selector))nodes.set(selector,{value:'',files:[],checked:false,disabled:false,innerHTML:'',textContent:''});return nodes.get(selector);},panel={isConnected:true,querySelector:get};
  const target={innerHTML:'',insertAdjacentHTML(_,html){this.innerHTML+=html;},querySelector:()=>panel};let active=true;
- const ctx=load({me:actor,client:{rpc:async(name,args)=>{calls.push({name,args});return name==='accounting_access'?{data:allowed}:reply(args);}}});
+ const ctx=load({me:actor,busy:false,run:fn=>fn(),client:{rpc:async(name,args)=>{calls.push({name,args});return name==='accounting_access'?{data:allowed}:reply(args);}}});
  ctx.pricingLoad=async()=>{ctx.setPrices([...prices().values()]);return [...prices().values()];};ctx.bindProductPriceImport(target,()=>active);
  return {ctx,target,panel,get,calls,setActive:value=>active=value};
 }

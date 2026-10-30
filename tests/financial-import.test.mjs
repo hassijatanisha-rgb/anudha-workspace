@@ -1,3 +1,4 @@
+import {installLeaveContext} from './helpers/leave-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -111,18 +112,47 @@ test('an inflated XLSX archive is rejected before the workbook parser expands it
  await assert.rejects(run(ctx,'financialImportRead(file)'),/expanded workbook exceeds 25 MB/);
 });
 
-test('an account load finishing after sign-out cannot populate import data',async()=>{
+test('initial settings finishing after sign-out cannot populate import data',async()=>{
  const ctx=load();let finish;ctx.me={user_id:'actor'};ctx.current=()=>true;
- ctx.booksSelectAll=()=>new Promise(resolve=>{finish=resolve;});ctx.booksSelect=async()=>[];
- const pending=run(ctx,"financialImportWorkspace('actor',current)");ctx.me=null;finish(ctx.accounts);await pending;
+ ctx.booksSelectAll=async()=>{throw Error('Accounts must remain lazy')};ctx.booksSelect=()=>new Promise(resolve=>{finish=resolve;});
+ const pending=run(ctx,"financialImportWorkspace('actor',current)");ctx.me=null;finish([]);await pending;
  assert.equal(run(ctx,'financialImportState'),null);
 });
 
-test('navigation blocks unresolved posting and asks before discarding a preview',()=>{
- const ctx=load(),messages=[];ctx.view='books';ctx.message=(...args)=>messages.push(args);ctx.confirm=()=>false;
+test('navigation blocks unresolved posting and asks before discarding a preview',async()=>{
+ const ctx=load(),messages=[];installLeaveContext(ctx);ctx.view='books';ctx.message=(...args)=>messages.push(args);ctx.askConfirm=async()=>false;
  run(ctx,"booksSection='import';financialImportState={preview:{},busy:true}");
- assert.equal(run(ctx,'financialImportConfirmLeave()'),false);assert.match(messages[0][0],/Confirm this import/);
- run(ctx,'financialImportState.busy=false');assert.equal(run(ctx,'financialImportConfirmLeave()'),false);assert.notEqual(run(ctx,'financialImportState'),null);
- ctx.confirm=()=>true;assert.equal(run(ctx,'financialImportConfirmLeave()'),true);assert.equal(run(ctx,'financialImportState'),null);
- ctx.view='sales';run(ctx,'financialImportState={preview:{},uncertain:true}');assert.equal(run(ctx,'financialImportConfirmLeave()'),true);
+ assert.equal(await run(ctx,'financialImportConfirmLeave()'),false);assert.match(messages[0][0],/Confirm this import/);
+ run(ctx,'financialImportState.busy=false');assert.equal(await run(ctx,'financialImportConfirmLeave()'),false);assert.notEqual(run(ctx,'financialImportState'),null);
+ ctx.askConfirm=async()=>true;assert.equal(await run(ctx,'financialImportConfirmLeave()'),true);assert.equal(run(ctx,'financialImportState'),null);
+ ctx.view='sales';run(ctx,'financialImportState={preview:{},uncertain:true}');assert.equal(await run(ctx,'financialImportConfirmLeave()'),true);
+});
+
+function importWorkspaceFixture(){
+ const ctx=load(),calls=[],downloads=[],nodes=new Map();
+ const form=Object.fromEntries(['kind','source','file','sheet'].map(name=>[name,{value:'',files:[],innerHTML:'',disabled:false}]));form.source.value='Reviewed opening ledger';
+ for(const id of ['booksBody','financialSheetLabel','financialImportStatus','financialImportCommit','financialImportPreview','financialTemplate','financialCsvTemplate','financialImportNew'])nodes.set('#'+id,{innerHTML:'',textContent:'',disabled:false,hidden:false});nodes.set('#financialImportForm',form);
+ Object.assign(ctx,{me:{user_id:'owner'},view:'books',client:{},esc:String,$:selector=>nodes.get(selector),run:fn=>fn(),booksSelect:async table=>{calls.push(table);return [{locked_through:null}]},booksSelectAll:async table=>{calls.push(table);return ctx.accounts}});
+ ctx.XLSX.writeFile=(workbook,name)=>downloads.push({workbook,name});run(ctx,"booksSection='import'");
+ return {ctx,calls,downloads,nodes,form};
+}
+test('financial import opens without account data; template requests share one complete lazy load',async()=>{
+ const f=importWorkspaceFixture();await f.ctx.financialImportWorkspace('owner');assert.deepEqual(f.calls,['acc_settings']);assert.equal(run(f.ctx,'financialImportState.accounts'),null);
+ let release;f.ctx.booksSelectAll=async table=>{f.calls.push(table);return new Promise(resolve=>{release=resolve})};
+ const first=f.nodes.get('#financialTemplate').onclick(),second=f.nodes.get('#financialTemplate').onclick();assert.deepEqual(f.calls,['acc_settings','acc_accounts']);
+ const accounts=Array.from({length:1201},(_,n)=>({id:'account-'+n,code:String(n),name:'Account '+n,account_type:'asset',active:true}));release(accounts);await Promise.all([first,second]);assert.equal(f.downloads.length,2);assert.equal(f.downloads[0].workbook.Sheets.Accounts.B1202.v,'Account 1200');assert.equal(run(f.ctx,'financialImportState.accounts.length'),1201);
+});
+test('financial file preview waits for complete accounts and retains exact balanced minor amounts',async()=>{
+ const f=importWorkspaceFixture();await f.ctx.financialImportWorkspace('owner');let release;
+ f.ctx.booksSelectAll=()=>new Promise(resolve=>{release=resolve});f.ctx.financialImportRead=async()=>({SheetNames:['Journal'],Sheets:{Journal:sheet(f.ctx,rows())}});
+ const reading=f.form.file.onchange();await new Promise(setImmediate);assert.equal(run(f.ctx,'financialImportState.preview'),null);assert.equal(f.nodes.get('#financialImportCommit').disabled,true);
+ release(f.ctx.accounts);await reading;assert.equal(run(f.ctx,'financialImportState.preview.errors.length'),0);assert.equal(run(f.ctx,'financialImportState.preview.entries[0].lines[0].debit_minor'),12550);assert.equal(f.nodes.get('#financialImportCommit').disabled,false);
+});
+test('failed financial account reads cannot enable import and an explicit retry can recover',async()=>{
+ const f=importWorkspaceFixture();await f.ctx.financialImportWorkspace('owner');let attempts=0;f.ctx.booksSelectAll=async()=>{if(++attempts===1)throw Error('Ledger accounts offline');return f.ctx.accounts};f.ctx.financialImportRead=async()=>({SheetNames:['Journal'],Sheets:{Journal:sheet(f.ctx,rows())}});
+ await f.form.file.onchange();assert.match(f.nodes.get('#financialImportStatus').textContent,/Ledger accounts offline/);assert.equal(run(f.ctx,'financialImportState.preview'),null);assert.equal(f.nodes.get('#financialImportCommit').disabled,true);
+ await f.form.file.onchange();assert.equal(run(f.ctx,'financialImportState.preview.errors.length'),0);assert.equal(attempts,2);
+});
+test('late financial account reads cannot fill a same-ID replacement session or download its template',async()=>{
+ const f=importWorkspaceFixture();await f.ctx.financialImportWorkspace('owner');let release;f.ctx.booksSelectAll=()=>new Promise(resolve=>{release=resolve});const download=f.nodes.get('#financialTemplate').onclick();f.ctx.me={user_id:'owner'};release(f.ctx.accounts);await download;assert.equal(f.downloads.length,0);assert.equal(run(f.ctx,'financialImportState.accounts'),null);
 });

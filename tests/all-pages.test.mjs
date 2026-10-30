@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -6,15 +7,16 @@ const source=readFileSync(new URL('../app.js',import.meta.url),'utf8').split('\n
 
 // A table of `rows` rows whose reported count is `counted` (a count can be stale by the time pages are read).
 function table(rows,counted=rows,fail=-1){
- const calls=[];
+ const calls=[];let active=0,peak=0;
  const client={from:name=>({select:(columns,options)=>{
   const q={filters:[],eq(k,v){this.filters.push([k,v]);return this},order(){return this},range(from,to){
    calls.push({name,columns,from,to,count:options?.count,filters:this.filters});
    const data=from===fail?null:Array.from({length:Math.max(0,Math.min(to+1,rows)-from)},(_,i)=>({id:from+i}));
-   return Promise.resolve(from===fail?{error:Error('page failed')}:{data,count:options?.count?counted:null});
+   active++;peak=Math.max(peak,active);
+   return Promise.resolve(from===fail?{error:Error('page failed')}:{data,count:options?.count?counted:null}).finally(()=>{active--;});
   }};return q;}})};
- const ctx=vm.createContext({client});vm.runInContext(source,ctx);
- return {all:(...a)=>vm.runInContext('all',ctx)(...a),calls};
+ const ctx=vm.createContext({workspacePageHeader,client});vm.runInContext(source,ctx);
+ return {all:(...a)=>vm.runInContext('all',ctx)(...a),calls,get peak(){return peak;}};
 }
 
 test('all() reads every row once, in id order, whatever the size',async()=>{
@@ -24,12 +26,13 @@ test('all() reads every row once, in id order, whatever the size',async()=>{
  }
 });
 
-test('all() asks for the pages after the first four at once',async()=>{
+test('all() reads remaining pages in bounded concurrent batches',async()=>{
  const t=table(20400);await t.all('contacts','id');
  assert.equal(t.calls.length,21);
+ assert.equal(t.peak,4,'a large list must not start an unbounded number of parallel requests');
  assert.deepEqual(t.calls.filter(c=>c.count).map(c=>c.from),[0],'only the first page is counted');
- const small=table(500);await small.all('x','id');assert.equal(small.calls.length,4,'up to 4000 rows: one round as before');
- const uncounted=table(9540,null);await uncounted.all('x','id');assert.equal(uncounted.calls.length,12,'no count: four pages per round as before');
+ const small=table(500);await small.all('x','id');assert.equal(small.calls.length,1,'a short first page needs no speculative reads');
+ const uncounted=table(9540,null);await uncounted.all('x','id');assert.equal(uncounted.calls.length,13,'no count: one first page then four pages per round');
 });
 
 test('a stale count never cuts the list short or loses the filter',async()=>{

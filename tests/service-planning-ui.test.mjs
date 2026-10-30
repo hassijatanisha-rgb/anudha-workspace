@@ -1,3 +1,4 @@
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -5,7 +6,7 @@ import {readFileSync} from 'node:fs';
 
 function fixture(){
  const forms=[],calls=[];
- const context=vm.createContext({me:{user_id:'engineer'},view:'service',
+ const context=vm.createContext({statusTone,me:{user_id:'engineer'},view:'service',
   esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
   employeeName:id=>id,inventoryProduct:()=>({name:'Fixture machine'}),
   orgIndex:new Map([['customer',{name:'Fixture customer',location:'Ward'}]]),

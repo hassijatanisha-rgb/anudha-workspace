@@ -1,3 +1,6 @@
+import {installDisclosureMotion} from './helpers/disclosure-motion.mjs';
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -5,7 +8,9 @@ import vm from 'node:vm';
 const source=readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8');
 const task=(extra={})=>({id:'task',title:'Call clinic',details:'Original instructions',task_number:'TK-1',assigned_by:'giver',assignee_user_id:'worker',status:'open',due_at:'2099-01-01T09:00:00Z',urgency:'normal',version:1,...extra});
 function load(extra={}){
- const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'worker',role:'staff'},employeeName:id=>({giver:'Asha',worker:'Baraka'}[id]||id),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),crypto:{randomUUID:()=> 'request-1'},...extra});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,workspaceLoading(){},workspaceRefreshRetaining:()=>false,view:'personal',personalSection:'task',me:{user_id:'worker',role:'staff'},employeeName:id=>({giver:'Asha',worker:'Baraka'}[id]||id),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),crypto:{randomUUID:()=> 'request-1'},...extra});
+ installDisclosureMotion(ctx);
+ vm.runInContext('function workspaceSkeleton(kind,label)'+readFileSync(new URL('../workspace-refresh.js',import.meta.url),'utf8').split('function workspaceSkeleton(kind,label)')[1].split('function workspaceLoading')[0],ctx);
  vm.runInContext(source+';Object.assign(globalThis,{teamTaskCard,teamTaskProgress,teamTaskAssignments,openTeamTaskComment,teamTasksWorkspace,loadTeamTasks,clearTeamTasks,setEvents:events=>{teamTaskEvents=events;}})',ctx);return ctx;
 }
 test('cards show the latest four comments and retain the full dated, escaped history',()=>{
@@ -36,18 +41,18 @@ test('late progress responses do not refresh or message another login',async()=>
  let form,resolve;const ctx=load({actionForm:(_,__,submit)=>{form=submit;},client:{rpc:()=>new Promise(r=>{resolve=r;})},message:()=>assert.fail('stale success message')});
  ctx.teamTasksWorkspace=()=>assert.fail('stale refresh');ctx.openTeamTaskComment(task());const pending=form({note:'Waiting for confirmation'});ctx.me={user_id:'other',role:'staff'};resolve({data:{}});await pending;
 });
-test('a login change during the success refresh suppresses the progress confirmation',async()=>{
- let form;const ctx=load({actionForm:(_,__,submit)=>{form=submit;},client:{rpc:async()=>({data:{}})},message:()=>assert.fail('stale success message')});
- ctx.teamTasksWorkspace=async()=>{ctx.me={user_id:'other',role:'staff'};};ctx.openTeamTaskComment(task());await form({note:'Confirmed with the clinic'});
+test('leaving the task page during a successful request suppresses the late confirmation',async()=>{
+ let form,resolve;const ctx=load({actionForm:(_,__,submit)=>{form=submit;},client:{rpc:()=>new Promise(done=>{resolve=done;})},message:()=>assert.fail('stale success message')});
+ ctx.teamTasksWorkspace=()=>assert.fail('full refresh');ctx.openTeamTaskComment(task());const pending=form({note:'Confirmed with the clinic'});ctx.personalSection='notes';resolve({data:{}});await pending;
 });
 function workspace(extra={}){
- const nodes=new Map(),node=()=>({innerHTML:'',isConnected:true,querySelector:()=>({})});
+ const nodes=new Map(),node=()=>({innerHTML:'',isConnected:true,querySelectorAll:()=>[],querySelector:()=>({})});
  for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew','#teamTaskRetry'])nodes.set(key,node());
- const seen=[],ctx=load({$:selector=>nodes.get(selector),view:'personal',personalSection:'task',run:fn=>fn(),bellMarkSeen:(_,kinds)=>seen.push(...kinds),refreshNotificationBell:async()=>{},...extra});
+ const seen=[],ctx=load({$:selector=>nodes.get(selector),document:{querySelectorAll:()=>[]},client:{rpc:async()=>({data:{groups:Object.fromEntries(['forMe','gave','results','finished'].map(key=>[key,{rows:[],total:0,page:0,pages:1}]))}})},view:'personal',personalSection:'task',run:fn=>fn(),bellMarkSeen:(_,kinds)=>seen.push(...kinds),refreshNotificationBell:async()=>{},...extra});
  return {ctx,nodes,seen};
 }
 test('handoffs render when manual task loading fails; only successful visible panes mark notifications seen',async()=>{
- let resolveWork;const {ctx,nodes,seen}=workspace({all:async()=>{throw Error('Task load failed');},renderMyHandoffs:async target=>{target.innerHTML='Visible handoff';return new Promise(r=>{resolveWork=r;});}});
+ let resolveWork;const {ctx,nodes,seen}=workspace({client:{rpc:async()=>{throw Error('Task load failed');}},renderMyHandoffs:async target=>{target.innerHTML='Visible handoff';return new Promise(r=>{resolveWork=r;});}});
  const pending=ctx.teamTasksWorkspace();await new Promise(r=>setImmediate(r));
  assert.match(nodes.get('#manualTasks').innerHTML,/Task load failed/);assert.equal(nodes.get('#orderSteps').innerHTML,'Visible handoff');assert.deepEqual(seen,[]);
  resolveWork(true);await pending;assert.deepEqual(seen,['work']);assert.match(nodes.get('#content').innerHTML,/team-task-columns/);
@@ -62,8 +67,40 @@ test('failed, detached and superseded handoff loads cannot clear work notificati
  }
 });
 test('task history loading drops data after a session switch and clearing tasks removes cached comments',async()=>{
- let resolveEvents,calls=0;
- const ctx=load({all:async()=>{calls++;if(calls===1)return [task()];return new Promise(r=>{resolveEvents=r;});}});
- const pending=ctx.loadTeamTasks();await new Promise(r=>setImmediate(r));ctx.me={user_id:'someone-else'};resolveEvents([{task_id:'task',action:'progress',note:'Private comment'}]);assert.equal(await pending,null);
+ let resolveEvents;
+ const ctx=load({all:()=>new Promise(r=>{resolveEvents=r;})});
+ const pending=ctx.loadTeamTaskHistory(['task'],ctx.me,vm.runInContext('teamTaskEpoch',ctx));await new Promise(r=>setImmediate(r));ctx.me={user_id:'someone-else'};resolveEvents([{task_id:'task',action:'progress',note:'Private comment'}]);assert.equal(await pending,null);
  ctx.setEvents(new Map([['task',[{action:'progress',note:'Private',created_at:'2026-10-20'}]]]));ctx.clearTeamTasks();assert.equal(ctx.teamTaskProgress(task()),'');
+});
+
+test('task and handoff loading refresh the bell once after both panes settle, including failures',async()=>{
+ for(const tasksFail of [false,true])for(const handoffsFail of [false,true]){
+  let resolveWork;const refreshes=[];
+  const {ctx,seen}=workspace({renderMyHandoffs:()=>new Promise(resolve=>{resolveWork=resolve;}),refreshNotificationBell:async forced=>refreshes.push({forced,seen:[...seen]})});
+  if(tasksFail)ctx.client.rpc=async()=>{throw Error('Tasks unavailable');};
+  const pending=ctx.teamTasksWorkspace();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(refreshes.length,0,'the first completed pane must not trigger a second summary request');
+  resolveWork(!handoffsFail);await pending;
+  assert.equal(refreshes.length,1);assert.equal(refreshes[0].forced,true);
+  assert.deepEqual(refreshes[0].seen.sort(),[...(!tasksFail?['tasks','results']:[]),...(!handoffsFail?['work']:[])].sort());
+ }
+});
+
+test('a replaced login or departed task page cannot trigger a late bell refresh',async()=>{
+ for(const leave of [ctx=>{ctx.me={...ctx.me};},ctx=>{ctx.personalSection='note';},ctx=>ctx.clearTeamTasks()]){
+  let finish;const refreshes=[];
+  const {ctx}=workspace({renderMyHandoffs:()=>new Promise(resolve=>{finish=resolve;}),refreshNotificationBell:async()=>refreshes.push(true)});
+  const pending=ctx.teamTasksWorkspace();await new Promise(resolve=>setImmediate(resolve));leave(ctx);finish(true);await pending;
+  assert.deepEqual(refreshes,[]);
+ }
+});
+
+
+test('task chips separate overdue or urgent work from completed and cancelled history',()=>{
+ const ctx=load();
+ const cases=[['normal','open','2099-01-01','neutral','Normal'],['urgent','open','2099-01-01','warning','Urgent'],['do_now','open','2099-01-01','danger','Do now'],['normal','open','2000-01-01','danger','Late · Normal'],['do_now','done','2000-01-01','success','Done'],['urgent','cancelled','2000-01-01','neutral','Cancelled']];
+ for(const [urgency,status,due_at,tone,label] of cases){
+  const row=task({urgency,status,due_at,closed_at:'2026-10-29'});
+  for(const html of [ctx.teamTaskCard(row),ctx.teamTaskSummaryCard(row)])assert.match(html,new RegExp('chip chip--'+tone+'"[^>]*>'+label+'<'),status+' '+urgency);
+ }
 });

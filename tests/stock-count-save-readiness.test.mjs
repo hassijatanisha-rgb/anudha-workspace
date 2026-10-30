@@ -13,9 +13,9 @@ function fixture(){
  vm.runInContext(readFileSync(new URL('../stock-count.js',import.meta.url),'utf8'),ctx);
  vm.runInContext("countSessions=[{id:'session',status:'open'}];countGodown='Haadi';countPicked='AN-00001';countCatalogue=[{code:'AN-00001',product:'Product one'},{code:'AN-00002',product:'Product two'}]",ctx);
  ctx.renderStockCount=()=>{renders++;};ctx.bindStockCount();
- const form=(quantity='1.001')=>({isConnected:true,values:{quantity,unit:'KG',condition:'good',batch:'',notes:''}});
+ const form=(quantity='1.001')=>({dataset:{},isConnected:true,values:{quantity,unit:'KG',condition:'good',batch:'',notes:''}});
  const finish=(index=0)=>{const {args,resolve}=pending[index];resolve({data:{id:args.p_id,session_id:args.p_session_id,code:args.p_code,quantity:args.p_quantity,unit:args.p_unit,godown:args.p_godown}});};
- return {ctx,calls,messages,pending,form,finish,close:form=>{form.isConnected=false;close();},run:code=>vm.runInContext(code,ctx),get renders(){return renders;}};
+ return {ctx,calls,messages,pending,form,finish,close:form=>{form.isConnected=false;controls['#countCancel'].onclick();},run:code=>vm.runInContext(code,ctx),get renders(){return renders;}};
 }
 
 test('stock quantities accept exact thousandths, zero and the inclusive maximum',()=>{

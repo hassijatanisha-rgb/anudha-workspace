@@ -1,9 +1,10 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const read=n=>readFileSync(new URL('../'+n,import.meta.url),'utf8');
-function load(){const ctx=vm.createContext({Date,Math,Map,Set,Number,String,Object});vm.runInContext(read('reports.js'),ctx);return ctx;}
+function load(){const ctx=vm.createContext({workspacePageHeader,Date,Math,Map,Set,Number,String,Object});vm.runInContext(read('reports.js'),ctx);return ctx;}
 const H=3600000,now=Date.parse('2026-10-05T12:00:00Z'),at=h=>new Date(now-h*H).toISOString();
 test('finished steps, average time, open, overdue, longest wait and delays per person, with department subtotals',()=>{
  const c=load(),r=c.reportWork({now,departments:new Map([['m','accounts'],['j','stores'],['n','stores']]),

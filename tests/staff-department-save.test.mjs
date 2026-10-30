@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -8,16 +9,20 @@ const run=readFileSync(new URL('../app.js',import.meta.url),'utf8').split('\n').
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 function fixture(){
  const rows=[{user_id:'first',role:'head',department:''},{user_id:'second',role:'head',department:'sales'}],calls=[],messages=[],pending=[];
- let filtered=0;const search={oninput:()=>filtered++},directory={querySelector:()=>search};
+ let filtered=0;const directory={isConnected:true,staffRefresh:()=>filtered++};
  const entries=rows.map(()=>({dataset:{},closest:()=>directory})),statuses=rows.map(()=>({textContent:'',classList:{toggle(){}}}));
- const selects=rows.map((row,index)=>({dataset:{staffDepartment:row.user_id},value:row.department,disabled:false,isConnected:true,parentElement:{querySelector:()=>statuses[index]},closest:()=>entries[index]}));
- const ctx=vm.createContext({busy:false,me:{user_id:'owner',role:'owner'},
+ const selects=rows.map((row,index)=>({dataset:{staffDepartment:row.user_id},value:row.department,disabled:false,isConnected:true,parentElement:{querySelector:()=>statuses[index]},closest:selector=>selector==='[data-staff-directory]'?directory:entries[index]}));
+ const ctx=vm.createContext({workspacePageHeader,busy:false,me:{user_id:'owner',role:'owner'},
   document:{querySelectorAll:selector=>selector==='[data-staff-department]'?selects:[]},
   employeeName:id=>id,roleLabels:{head:'Department head'},departmentLabel:key=>({stores:'Stores & delivery',sales:'Sales',service:'Service'})[key]||'No department',message:(text,error=false)=>messages.push({text,error}),friendlyError:error=>error.message,replayQueuedNavigation(){},
   client:{rpc:(name,args)=>{calls.push({name,args});const wait=deferred();pending.push(wait);return wait.promise;}}});
- vm.runInContext(source+'\n'+run,ctx);ctx.bindStaffList(rows);
+ vm.runInContext(source+'\n'+run,ctx);
+ // This unit fixture covers the write/busy boundary; the actual scoped reread and DOM
+ // reconciliation execute in staff-record-update.test.mjs.
+ ctx.refreshSavedStaff=async(id,receipt,text,context)=>{if(!context.current())return;Object.assign(rows.find(row=>row.user_id===id),receipt);directory.staffRefresh();ctx.message(text);};
+ ctx.bindStaffList(rows);
  const change=(index,value)=>{selects[index].value=value;return selects[index].onchange();};
- return {ctx,rows,selects,statuses,entries,calls,messages,pending,change,filtered:()=>filtered};
+ return {ctx,rows,selects,statuses,entries,directory,calls,messages,pending,change,filtered:()=>filtered};
 }
 
 test('a second department change while saving is visibly restored and can be retried',async()=>{
@@ -29,7 +34,7 @@ test('a second department change while saving is visibly restored and can be ret
  assert.match(f.statuses[1].textContent,/Not saved/);
  f.pending[0].resolve({data:{department:'stores'}});await first;
  assert.equal(f.selects[0].disabled,false);assert.equal(f.rows[0].department,'stores');
- assert.equal(f.statuses[0].textContent,'Saved');assert.match(f.statuses[1].textContent,/Not saved/,'another row finishing does not erase the retry message');
+ assert.match(f.messages.at(-1).text,/Department saved/);assert.match(f.statuses[1].textContent,/Not saved/,'another row finishing does not erase the retry message');
  const retry=f.change(1,'service');f.pending[1].resolve({data:{department:'service'}});await retry;
  assert.equal(f.rows[1].department,'service');assert.equal(f.selects[1].value,'service');assert.equal(f.selects[1].disabled,false);
  assert.deepEqual(JSON.parse(JSON.stringify(f.calls)),[
@@ -48,12 +53,11 @@ test('failed department requests restore the saved selection and show the server
  }
 });
 
-test('a successful department save updates searchable text and reapplies the current filter',async()=>{
+test('a successful department save passes the confirmed receipt to scoped reconciliation',async()=>{
  const f=fixture(),save=f.change(1,'stores');f.pending[0].resolve({data:{department:'stores'}});await save;
- assert.match(f.entries[1].dataset.staffSearchValue,/stores & delivery/);
- assert.doesNotMatch(f.entries[1].dataset.staffSearchValue,/sales/);assert.equal(f.filtered(),1);
+ assert.equal(f.rows[1].department,'stores');assert.equal(f.filtered(),1);
  const failed=f.change(1,'service');f.pending[1].resolve({error:{message:'Not saved'}});await failed;
- assert.match(f.entries[1].dataset.staffSearchValue,/stores & delivery/);assert.equal(f.filtered(),1);
+ assert.equal(f.rows[1].department,'stores');assert.equal(f.filtered(),1);
 });
 
 test('a later rejected or busy change restores the latest successfully saved department',async()=>{
@@ -64,12 +68,19 @@ test('a later rejected or busy change restores the latest successfully saved dep
  assert.equal(f.calls.length,2);assert.equal(f.selects[0].value,'stores');assert.equal(f.rows[0].department,'stores');
 });
 
-test('department responses do not update a replacement session or detached staff control',async()=>{
+test('department responses do not update a replacement session or detached staff directory',async()=>{
  for(const replacement of ['same-user-session','detached'])for(const rejected of [false,true]){
   const f=fixture(),save=f.change(0,'stores');
-  if(replacement==='same-user-session')f.ctx.me={user_id:'owner',role:'owner'};else f.selects[0].isConnected=false;
+  if(replacement==='same-user-session')f.ctx.me={user_id:'owner',role:'owner'};else f.directory.isConnected=false;
   if(rejected)f.pending[0].reject(Error('Late failure'));else f.pending[0].resolve({data:{department:'stores'}});
   await save;
   assert.equal(f.rows[0].department,'');assert.equal(f.messages.length,0);assert.equal(f.ctx.busy,false);
  }
+});
+
+
+test('a department save completing after a page change updates the shared rows and current page',async()=>{
+ const f=fixture(),save=f.change(1,'stores');f.selects[1].isConnected=false;
+ f.pending[0].resolve({data:{department:'stores'}});await save;
+ assert.equal(f.rows[1].department,'stores');assert.equal(f.filtered(),1);assert.match(f.messages.at(-1).text,/Department saved/);
 });

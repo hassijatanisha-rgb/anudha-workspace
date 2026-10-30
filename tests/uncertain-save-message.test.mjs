@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -5,7 +6,7 @@ import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const start=source.indexOf('function friendlyError('),end=source.indexOf("$('#editForm').onsubmit",start);
 assert.ok(start>=0&&end>start);
-function fixture(){const messages=[];const ctx=vm.createContext({busy:false,message:(text,error)=>messages.push({text,error})});vm.runInContext(source.slice(start,end),ctx);return {ctx,messages};}
+function fixture(){const messages=[];const ctx=vm.createContext({workspacePageHeader,busy:false,message:(text,error)=>messages.push({text,error})});vm.runInContext(source.slice(start,end),ctx);return {ctx,messages};}
 test('lost write response does not claim rollback or encourage immediate duplicate submission',async()=>{
  const {ctx,messages}=fixture();let saved=false;
  await ctx.run(async()=>{saved=true;throw Object.assign(Error('response lost'),{name:'TimeoutError'});});

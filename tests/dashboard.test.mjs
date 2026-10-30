@@ -1,10 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 function load(extra={}){
- const ctx=vm.createContext({esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),...extra});
+ const ctx=vm.createContext({workspacePageHeader,esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),...extra});
  vm.runInContext(read('dashboard.js')+';Object.assign(globalThis,{dashboardCards,dashboardPresets,dashboardDefaultPeriod});',ctx);return ctx;
 }
 const plain=value=>JSON.parse(JSON.stringify(value));
@@ -76,14 +77,13 @@ test('team summaries keep inactive people accessible without obscuring active ta
  vm.runInContext(`dashboardTeam=[{user_id:'idle',department:'Sales <unsafe>',open_count:0,completed_count:0,late_count:0},{user_id:'active',open_count:1,completed_count:0,late_count:1}];`,ctx);
  const html=ctx.dashboardTeamSection(),inactiveStart=html.indexOf('<details id="dashboardTeamInactive"');
  assert.ok(html.indexOf('data-dashboard-person="active"')<inactiveStart);
- assert.ok(html.indexOf('data-dashboard-person="idle"')>inactiveStart);
+ assert.ok(html.indexOf('dashboard-person-inactive')>inactiveStart);assert.doesNotMatch(html,/data-dashboard-person="idle"/);
  assert.match(html,/People with no task activity <span>\(1\)<\/span>/);
  assert.match(html,/Name &#60;unsafe&#62;/);assert.match(html,/Sales &#60;unsafe&#62;/);
  assert.doesNotMatch(html,/<unsafe>/);
  assert.match(ctx.dashboardTeamSection(true),/id="dashboardTeamInactive" class="dashboard-team-inactive" open/);
  vm.runInContext(`dashboardPerson={user_id:'idle',rows:[],error:''};`,ctx);
- assert.match(ctx.dashboardTeamSection(),/id="dashboardTeamInactive" class="dashboard-team-inactive" open/,'the expanded task panel remains visible when it reloads');
- assert.match(ctx.dashboardTeamSection(),/data-dashboard-person="idle" aria-expanded="true"/);
+ assert.doesNotMatch(ctx.dashboardTeamSection(),/data-dashboard-person="idle"|dashboard-person-tasks/,'inactive people never expose a task drilldown');
 });
 test('a person\'s task shows whether it was late and the result written when it was done',()=>{
  const ctx=load({employeeName:()=>'Owner'}),now=Date.parse('2026-10-07T09:00:00Z');
@@ -93,15 +93,11 @@ test('a person\'s task shows whether it was late and the result written when it 
  assert.match(open,/Not done yet/);assert.doesNotMatch(open,/late|Result/);
 });
 test('one period feeds Periodic, Result and Team tasks',async()=>{
- const calls=[],html={};
- const ctx=load({me:{user_id:'h',role:'head'},view:'dashboard',employeeName:()=>'X',syncWorkspaceNavigation:()=>{},run:fn=>fn(),
-  $:()=>({set innerHTML(v){html.content=v},get innerHTML(){return html.content},value:''}),document:{querySelectorAll:()=>[]},
-  client:{rpc:async(name,args)=>{calls.push([name,args]);return {data:name==='team_task_counts'?[]:{open:{},periodic:{},result:{}},error:null};}},
-  localStorage:{getItem:()=>JSON.stringify({preset:'quarter'}),setItem:()=>{}}});
- ctx.dashboardDay=()=>'2026-10-06';
- await ctx.dashboardWorkspace();
- assert.deepEqual(plain(calls),[['dashboard_counts',{p_periodic_from:'2026-10-01',p_periodic_to:'2026-10-06',p_result_from:'2026-10-01',p_result_to:'2026-10-06'}],['team_task_counts',{p_from:'2026-10-01',p_to:'2026-10-06'}]]);
- assert.match(html.content,/aria-pressed="true" class="active">This quarter</);assert.match(html.content,/Team tasks/);
+ const f=dashboardHarness({preset:'quarter'});f.ctx.dashboardDay=()=>'2026-10-06';
+ const pending=f.ctx.dashboardWorkspace();
+ assert.deepEqual(plain(f.calls.map(({name,args})=>[name,args])),[['dashboard_counts',{p_periodic_from:'2026-10-01',p_periodic_to:'2026-10-06',p_result_from:'2026-10-01',p_result_to:'2026-10-06'}],['team_task_counts',{p_from:'2026-10-01',p_to:'2026-10-06'}]]);
+ f.calls[0].resolve({data:sample});f.calls[1].resolve({data:[]});await pending;
+ assert.match(f.nodes.get('#content').innerHTML,/aria-pressed="true" class="active">This quarter</);assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Team tasks/);
 });
 test('a custom range must be two real dates in order, one year or less apart',()=>{
  const {dashboardRange}=load(),c=(from,to)=>dashboardRange({preset:'custom',from,to},'2026-10-06');
@@ -177,7 +173,7 @@ test('opening a card sets the same screen state as its menu entry',async()=>{
 });
 test('Dashboard is wired in: first menu entry, its own screen, cleared on sign-out, loaded before app.js',()=>{
  const nav=read('workspace-navigation.js'),app=read('app.js'),html=read('index.src.html');
- assert.match(nav,/\{name:'Main',tone:'main',items:\[\n\s+\['Dashboard','dashboard'\],/);
+ assert.match(nav,/\{name:'Workspace',tone:'workspace',items:\[\n\s+\['Dashboard','dashboard'\],/);
  assert.match(app,/view==='dashboard'\)return dashboardWorkspace\(\)/);
  assert.match(app.split('\n').find(line=>line.startsWith('function clear()')),/typeof clearDashboard==='function'\)clearDashboard\(\)/);
  assert.match(app,/view=\/\^#\\\/\(clients\|client\|branch\)\\b\/\.test\(location\.hash\)\?'contacts':'dashboard'/,'Dashboard is the landing view unless a client link was opened');
@@ -217,4 +213,87 @@ test('migration 070: team counts check who is asking, heads see their own depart
  assert.match(sql,/grant execute on function public\.team_task_counts\(date,date\), public\.team_member_tasks\(uuid,date,date\) to authenticated;/);
  assert.ok((sql.match(/Africa\/Dar_es_Salaam/g)||[]).length>=2);
  assert.ok(readdirSync(new URL('./sql/',import.meta.url)).includes('team-task-counts.sql'),'database test for head visibility');
+});
+
+
+function dashboardHarness(period={preset:'today'}){
+ const nodes=new Map(),calls=[];let now=100000;
+ const document={activeElement:null,querySelectorAll:()=>[]};
+ function node(id){
+  const entry={id,attributes:{},writes:0,_html:'',value:'',dataset:{},setAttribute(name,value){this.attributes[name]=String(value);},querySelectorAll(){return [];},querySelector(){return null;},focus(){document.activeElement=this;}};
+  Object.defineProperty(entry,'innerHTML',{get(){return this._html;},set(value){this._html=value;this.writes++;for(const [,child] of value.matchAll(/id="([^"]+)"/g))if(!nodes.has('#'+child))nodes.set('#'+child,node(child));}});return entry;
+ }
+ nodes.set('#content',node('content'));
+ const ctx=load({me:{user_id:'owner',role:'owner'},view:'dashboard',employeeName:id=>'Employee '+id,document,$:selector=>nodes.get(selector)||null,syncWorkspaceNavigation(){},run:fn=>fn(),
+  Date:class extends Date{static now(){return now;}},localStorage:{getItem:()=>JSON.stringify(period),setItem(){}},
+  client:{rpc:(name,args)=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});calls.push({name,args,resolve,reject});return promise;}}});
+ ctx.dashboardDay=()=>'2026-10-29';
+ const complete=(start=0)=>{for(const call of calls.slice(start))call.resolve({data:call.name==='team_task_counts'?[]:call.name==='team_member_tasks'?[]:call.name==='dashboard_open_counts'?{today:sample.today,open:sample.open}:sample});};
+ return {ctx,nodes,calls,document,complete,tick:ms=>now+=ms};
+}
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('first paint has three count skeletons and an independent team skeleton; counts paint before a slow team',async()=>{
+ const f=dashboardHarness(),pending=f.ctx.dashboardWorkspace();
+ assert.equal((f.nodes.get('#content').innerHTML.match(/class="dashboard-skeleton"/g)||[]).length,4);
+ f.calls[0].resolve({data:sample});await flush();
+ assert.match(f.nodes.get('#dashboardCounts').innerHTML,/774/);assert.equal(f.nodes.get('#dashboardTeamPanel').writes,0);
+ assert.equal(f.nodes.get('#content').writes,1,'successful counts do not replace the toolbar');
+ f.calls[1].resolve({data:[{user_id:'one',open_count:2,completed_count:0,late_count:0}]});await pending;
+ assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Employee one/);assert.equal(f.nodes.get('#content').writes,1);
+});
+
+test('team paints before slow counts and survives a counts transport failure',async()=>{
+ const f=dashboardHarness(),pending=f.ctx.dashboardWorkspace();
+ f.calls[1].resolve({data:[{user_id:'one',open_count:2,completed_count:0,late_count:0}]});await flush();
+ assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Employee one/);assert.equal(f.nodes.get('#dashboardCounts').writes,0);
+ f.calls[0].reject(Error('Connection unavailable'));await pending;
+ assert.match(f.nodes.get('#dashboardStatus').innerHTML,/Connection unavailable/);assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Employee one/);assert.doesNotMatch(f.nodes.get('#dashboardCounts').innerHTML,/dashboard-skeleton/);
+});
+
+test('period totals cache for 60 seconds by actor and range while open and team counts always reload',async()=>{
+ const f=dashboardHarness();let pending=f.ctx.dashboardWorkspace();f.complete();await pending;
+ let start=f.calls.length;f.tick(59000);pending=f.ctx.dashboardWorkspace();
+ assert.deepEqual(f.calls.slice(start).map(call=>call.name),['dashboard_open_counts','team_task_counts']);
+ f.calls[start].resolve({data:{today:'2026-10-29',open:{tasks:99}}});f.calls[start+1].resolve({data:[]});await pending;
+ assert.equal(vm.runInContext('dashboardData.open.tasks',f.ctx),99);assert.equal(vm.runInContext('dashboardData.periodic.tasks',f.ctx),54);
+ start=f.calls.length;f.tick(1000);pending=f.ctx.dashboardWorkspace();assert.equal(f.calls[start].name,'dashboard_counts');f.complete(start);await pending;
+ start=f.calls.length;vm.runInContext("dashboardPeriod={preset:'month',from:'',to:''}",f.ctx);pending=f.ctx.dashboardWorkspace();assert.equal(f.calls[start].name,'dashboard_counts');f.complete(start);await pending;
+ start=f.calls.length;f.ctx.me={user_id:'replacement',role:'owner'};pending=f.ctx.dashboardWorkspace();assert.equal(f.calls[start].name,'dashboard_counts');f.complete(start);await pending;
+});
+
+test('superseded ranges and changed sessions cannot publish results or seed the period cache',async()=>{
+ for(const change of ['range','session','navigation']){
+  const f=dashboardHarness(),first=f.ctx.dashboardWorkspace();
+  if(change==='range'){vm.runInContext("dashboardPeriod={preset:'month',from:'',to:''}",f.ctx);const second=f.ctx.dashboardWorkspace();f.complete(2);await second;}
+  else if(change==='session'){f.ctx.clearDashboard();f.ctx.me={user_id:'new',role:'owner'};}
+  else f.ctx.view='staff';
+  const writes=f.nodes.get('#dashboardCounts').writes;f.calls[0].resolve({data:{...sample,open:{tasks:999}}});f.calls[1].resolve({data:[]});await first;
+  assert.equal(f.nodes.get('#dashboardCounts').writes,writes);assert.notEqual(vm.runInContext('dashboardData?.open?.tasks',f.ctx),999);
+  if(change==='session')assert.equal(vm.runInContext('dashboardPeriodCache.size',f.ctx),0);
+ }
+});
+
+test('zero tiles are neutral static content and inactive people have no drilldown control',()=>{
+ const ctx=load({employeeName:id=>id,me:{role:'owner'}});
+ const zero=ctx.dashboardTile('open',{key:'tasks',label:'Tasks',tone:'tasks',value:0,target:{view:'personal'}});
+ assert.match(zero,/^<div class="dashboard-tile dashboard-zero"/);assert.doesNotMatch(zero,/button|data-dashboard-open/);
+ const inactive=ctx.dashboardTeamList([{user_id:'idle',open_count:0,completed_count:0,late_count:0}]);assert.match(inactive,/dashboard-person-inactive/);assert.doesNotMatch(inactive,/button|data-dashboard-person|aria-expanded/);
+});
+
+test('same-range refresh keeps the toolbar and focused custom date input mounted',async()=>{
+ const f=dashboardHarness({preset:'custom',from:'2026-10-01',to:'2026-10-29'});let pending=f.ctx.dashboardWorkspace();f.complete();await pending;
+ const input=f.nodes.get('#dashboardFrom');input.value='2026-10-03';input.focus();const writes=f.nodes.get('#content').writes,start=f.calls.length;
+ pending=f.ctx.dashboardWorkspace();f.complete(start);await pending;
+ assert.equal(f.nodes.get('#content').writes,writes);assert.equal(f.document.activeElement,input);assert.equal(input.value,'2026-10-03');
+});
+
+test('selected-person results settle independently and a failed team summary does not hide live counts',async()=>{
+ const f=dashboardHarness();let pending=f.ctx.dashboardWorkspace();f.complete();await pending;
+ vm.runInContext("dashboardPerson={user_id:'one',rows:[],error:''}",f.ctx);const start=f.calls.length;pending=f.ctx.dashboardWorkspace();
+ assert.deepEqual(f.calls.slice(start).map(call=>call.name),['dashboard_open_counts','team_task_counts','team_member_tasks']);
+ f.calls[start].resolve({data:{open:{tasks:12}}});await flush();assert.match(f.nodes.get('#dashboardCounts').innerHTML,/>12</);
+ f.calls[start+1].resolve({error:{message:'Team unavailable'}});await flush();assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Team unavailable/);assert.match(f.nodes.get('#dashboardCounts').innerHTML,/>12</);
+ f.calls[start+2].resolve({data:[{title:'Finished',status:'done',due_at:'2026-10-28',closed_at:'2026-10-29',assigned_by:'owner'}]});await pending;
+ assert.equal(vm.runInContext('dashboardPerson.rows.length',f.ctx),1);assert.match(f.nodes.get('#dashboardTeamPanel').innerHTML,/Team unavailable/);
 });

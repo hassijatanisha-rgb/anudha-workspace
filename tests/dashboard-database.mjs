@@ -84,6 +84,21 @@ const call=async(who,pf=day(-1),pt=day(-1),rf=today,rt=today)=>{
 };
 let checks=0;const ok=()=>checks++;
 
+// Snapshot the old query before migration127; all count definitions and permissions must match.
+const baselines=[];
+for(const who of [owner,sales,engineer])for(const dates of [[day(-1),day(-1),today,today],[day(-31),today,day(-31),today]])baselines.push({who,dates,value:await call(who,...dates)});
+await db.exec(mig('202610290127_dashboard_read_latency.sql'));
+for(const baseline of baselines){assert.deepEqual(await call(baseline.who,...baseline.dates),baseline.value);ok();}
+for(const who of [owner,sales,engineer]){
+ const full=await call(who);
+ await db.exec(`select set_config('test.actor','${who}',false);set role authenticated`);
+ try{assert.deepEqual((await db.query('select public.dashboard_open_counts() d')).rows[0].d,{today:full.today,open:full.open});ok();}finally{await db.exec('reset role');}
+}
+for(const who of [gone,null]){
+ await db.exec(`select set_config('test.actor','${who||''}',false);set role ${who?'authenticated':'anon'}`);
+ try{await assert.rejects(db.query('select public.dashboard_open_counts()'));ok();}finally{await db.exec('reset role');}
+}
+
 // Owner: everything the business has, with Dar es Salaam day edges.
 const o=await call(owner);
 assert.equal(o.today,today,'today is the Dar es Salaam date');ok();
@@ -124,5 +139,6 @@ await assert.rejects(call(owner,null,today),/start and an end date/);ok();
 const f=(await db.query(`select p.prosecdef,p.provolatile,p.proconfig,has_function_privilege('anon',p.oid,'execute') anon,has_function_privilege('authenticated',p.oid,'execute') auth
  from pg_proc p where p.proname='dashboard_counts'`)).rows;
 assert.equal(f.length,1);assert.equal(f[0].prosecdef,false,'security invoker');assert.equal(f[0].provolatile,'s');ok();
-assert.deepEqual(f[0].proconfig,['search_path=public, pg_temp']);assert.equal(f[0].anon,false);assert.equal(f[0].auth,true);ok();
+assert.deepEqual(f[0].proconfig,['search_path=public, pg_temp','jit=off']);assert.equal(f[0].anon,false);assert.equal(f[0].auth,true);ok();
+assert.match((await db.query("select indexdef from pg_indexes where indexname='contacts_dashboard_active_idx'")).rows[0].indexdef,/deleted_at IS NULL.*status <> 'incorrect'/);ok();
 console.log(`dashboard database: ${checks} checks passed`);

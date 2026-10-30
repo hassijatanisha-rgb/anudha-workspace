@@ -9,16 +9,17 @@ test('header uses the real Anudha logo and loads its scoped theme',()=>{
  assert.doesNotMatch(html,/<span class="logo">A<\/span>/);
  for(const view of ['contacts','inventory','sales','service','approvals'])assert.ok(html.includes(`data-view="${view}"`));
 });
-test('theme preserves accessible dark actions, keyboard focus and wrapping navigation',()=>{
+test('theme consumes shared action colours and preserves keyboard focus and wrapping navigation',()=>{
  const css=read('legacy-brand.css');
- assert.match(css,/--brand-lime:#72ad3d/);
- assert.match(css,/--green-dark:#315c32/);
+ assert.match(read('tokens.css'),/--brand:#176149;--brand-strong:#104936/);
+ assert.match(css,/background:var\(--brand-strong\);color:var\(--on-brand\)/);
+ assert.doesNotMatch(css,/--brand-lime:|--green-dark:/);
  assert.match(css,/#nav\{flex-wrap:wrap/);
  assert.match(css,/focus-visible/);
  assert.match(css,/@media print/);
 });
-test('original forest sidebar keeps labelled groups, readable states and print exclusion',()=>{
+test('sidebar uses shared surfaces with an active rail, labelled groups and print exclusion',()=>{
  const css=read('workspace-navigation.css');
- assert.match(css,/background:#1f3928/);assert.match(css,/color:#e0e9df/);
- assert.match(css,/box-shadow:inset 3px 0 #83bb41/);assert.match(css,/@media print/);
+ assert.match(css,/background:var\(--surface\)/);assert.match(css,/color:var\(--ink\)/);
+ assert.match(css,/\.active::before\{[^}]*width:3px;[^}]*background:var\(--brand\)/);assert.match(css,/@media print/);
 });

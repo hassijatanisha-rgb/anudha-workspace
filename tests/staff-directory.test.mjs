@@ -1,12 +1,14 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {statusTone} from './helpers/status-ui.mjs';
 
 const files=['staff-access.js','employee-login.js','two-step.js'];
-function context(me={user_id:'owner',role:'owner'}){
+function context(me={user_id:'owner',role:'owner',department:'management'}){
  const names=new Map([['owner','Fixture Owner'],['employee','Alexandra Laboratory Support'],['other','Other Department'],['off','Former Employee']]);
- const ctx=vm.createContext({me,busy:false,employeeName:id=>names.get(id)||id,esc:value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,me,busy:false,employeeName:id=>names.get(id)||id,esc:value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')});
  for(const file of files)vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  return ctx;
 }
@@ -18,66 +20,67 @@ const rows=[
 ];
 const rowHtml=(html,id)=>html.match(new RegExp(`<tr data-staff-row="${id}"[\\s\\S]*?</tr>`))[0];
 
-test('staff directory retains every employee with an active default and explicit area/account disclosures',()=>{
+test('staff directory starts with only the signed-in department and compact primary identity',()=>{
  const html=context().staffListHtml(rows);
  assert.match(html,/value="active">Active \(3\)/);assert.match(html,/value="all">All staff \(4\)/);assert.match(html,/value="inactive">Switched off \(1\)/);
- assert.match(rowHtml(html,'off'),/data-staff-state="inactive" hidden/);
- assert.match(rowHtml(html,'employee'),/Workflow areas for Alexandra Laboratory Support: 2/);
- assert.match(rowHtml(html,'employee'),/<summary>[\s\S]*data-staff-two-step-status[\s\S]*data-staff-accounting-status[\s\S]*<\/summary><div class="actions">/);
- assert.match(html,/scope="col">Actions/);assert.match(html,/aria-label="Edit phone for Alexandra Laboratory Support"/);
- assert.match(html,/aria-label="Reset password for Alexandra Laboratory Support"/);
- assert.match(html,/<table[^>]+role="table"/);assert.equal((html.match(/role="columnheader"/g)||[]).length,6);
- assert.equal((rowHtml(html,'employee').match(/class="staff-cell-label" aria-hidden="true"/g)||[]).length,6);
+ assert.match(html,/data-staff-group="management" open/);assert.match(html,/data-staff-group="service"><summary/);
+ assert.equal((html.match(/data-staff-row=/g)||[]).length,1);assert.doesNotMatch(html,/data-staff-row="employee"|data-staff-row="off"/);
+ const self=rowHtml(html,'owner');assert.match(self,/data-staff-two-step-status/);
+ assert.match(html,/<table[^>]+role="table"/);assert.equal((html.match(/role="columnheader"/g)||[]).length,5);
+ assert.equal((self.match(/class="staff-cell-label" aria-hidden="true"/g)||[]).length,5);
+ assert.ok(self.indexOf('data-staff-two-step-status')<self.indexOf('staff-account-details'));
+});
+
+test('actual paging keeps a large directory under its DOM and text budget, including expanded controls',()=>{
+ const ctx=context({user_id:'owner',role:'owner',department:'service'});
+ const large=Array.from({length:500},(_,i)=>({user_id:'employee-'+String(i).padStart(3,'0'),role:'staff',active:true,department:i<250?'service':'sales',access:['leads','proformas','deliveries','service','purchasing','stock','stock_count','travel','reports','records'],phone:'+255700000001'}));
+ const state={search:'',filter:'active',department:'service',page:0},first=ctx.staffDirectoryGroups(large,state);
+ assert.equal((first.match(/data-staff-row=/g)||[]).length,6);assert.doesNotMatch(first,/employee-006/);assert.doesNotMatch(first,/employee-250/);
+ assert.ok((first.match(/<[a-z][^>]*>/g)||[]).length<1500);assert.ok(first.replace(/<[^>]*>/g,' ').split(/\s+/).length<1500);
+ state.page=1;const second=ctx.staffDirectoryGroups(large,state);assert.match(second,/employee-006/);assert.doesNotMatch(second,/data-staff-row="employee-000"/);
+ state.page=999;const last=ctx.staffDirectoryPage(large,state);assert.equal(state.page,41);assert.equal(last.visible.length,4);assert.equal(last.pages,42);
 });
 
 test('compact actions preserve owner self restrictions and department-head management boundaries',()=>{
- const owner=context().staffListHtml(rows),self=rowHtml(owner,'owner');
- assert.doesNotMatch(self,/data-staff-reset=|data-staff-phone=|data-staff-role=|data-staff-active=/);
- assert.match(self,/data-staff-department="owner"/);
- const head=context({user_id:'head',role:'head',department:'service',access:['service']}).staffListHtml(rows);
+ const owner=context().staffDirectoryRows(rows),self=rowHtml(owner,'owner');
+ assert.doesNotMatch(self,/data-staff-reset=|data-staff-phone=|data-staff-role=|data-staff-active=/);assert.match(self,/data-staff-department="owner"/);
+ const head=context({user_id:'head',role:'head',department:'service',access:['service']}).staffDirectoryRows(rows);
  assert.match(rowHtml(head,'employee'),/data-staff-reset="employee"/);assert.match(rowHtml(head,'employee'),/data-staff-access="employee"/);
  assert.doesNotMatch(rowHtml(head,'other'),/data-staff-reset=|data-staff-phone=|data-staff-access=|data-staff-active=/);
  assert.doesNotMatch(head,/data-staff-role=|data-staff-department=|data-staff-accounting-status/);
- assert.doesNotMatch(head,/Department changes save automatically/);
+ assert.match(rowHtml(head,'other'),/data-staff-two-step-status/);
+ assert.match(rowHtml(owner,'employee'),/staff-account-details[\s\S]*data-staff-role="employee"[\s\S]*data-staff-department="employee"[\s\S]*<div class="actions">[\s\S]*data-staff-reset="employee"/);
 });
 
-test('employee and phone text are escaped in visible identity, labels and searchable attributes',()=>{
+test('employee and phone text are escaped in visible identity and controls',()=>{
  const ctx=context();ctx.employeeName=()=>'<img src=x onerror=bad()> & Example';
- const html=ctx.staffListHtml([{...rows[1],phone:'" onmouseover="bad()'}]);
+ const html=ctx.staffDirectoryRows([{...rows[1],phone:'" onmouseover="bad()'}]);
  assert.doesNotMatch(html,/<img|<script/);assert.match(html,/&#60;img/);assert.match(html,/&#34; onmouseover=&#34;bad\(\)/);
 });
 
-function directory(entries){
- const search={value:''},filter={value:'active'},count={},empty={hidden:true};
- return {search,filter,count,empty,entries,querySelector:selector=>({'[data-staff-search]':search,'[data-staff-filter]':filter,'[data-staff-count]':count,'[data-staff-empty]':empty})[selector],querySelectorAll:()=>entries};
-}
-const entry=(id,state,text)=>({dataset:{staffRow:id,staffState:state,staffSearchValue:text},hidden:false});
-test('search and status filters combine without reordering or changing employee identities',()=>{
- const list=directory([entry('first','active','alex laboratory service +255700000001'),entry('second','active','sam laboratory sales'),entry('third','inactive','alex former service')]),ctx=context();
- ctx.document={querySelectorAll:selector=>selector==='[data-staff-directory]'?[list]:[]};ctx.bindStaffList([]);
- assert.deepEqual(list.entries.map(row=>row.hidden),[false,false,true]);
- list.search.value='LAB service';list.search.oninput();assert.deepEqual(list.entries.map(row=>row.hidden),[false,true,true]);
- list.filter.value='all';list.search.value='alex';list.filter.onchange();assert.deepEqual(list.entries.map(row=>row.hidden),[false,true,false]);
- list.filter.value='inactive';list.filter.onchange();assert.deepEqual(list.entries.map(row=>row.hidden),[true,true,false]);
- assert.match(list.count.textContent,/1 switched off employees · 3 total/);
- list.search.value='no match';list.search.oninput();assert.equal(list.empty.hidden,false);
- assert.deepEqual(list.entries.map(row=>row.dataset.staffRow),['first','second','third']);
+test('name search spans departments and status filtering changes the actual rendered slice',()=>{
+ const ctx=context(),state={search:'LABORATORY Support',filter:'active',department:'management',page:5};
+ const result=ctx.staffDirectoryPage(rows,state);assert.equal(state.department,'service');assert.equal(state.page,0);assert.deepEqual([...result.visible.map(row=>row.user_id)],['employee']);
+ state.search='';state.filter='inactive';const inactive=ctx.staffDirectoryGroups(rows,state);assert.match(inactive,/data-staff-row="off"/);assert.doesNotMatch(inactive,/data-staff-row="employee"/);
+ state.search='no match';const empty=ctx.staffDirectoryGroups(rows,state);assert.equal((empty.match(/data-staff-row=/g)||[]).length,0);
 });
 
-test('department-head list filters remain independent for own and other departments',()=>{
- const mine=directory([entry('mine','active','alex service')]),other=directory([entry('other','active','sam sales')]),ctx=context();
- ctx.document={querySelectorAll:selector=>selector==='[data-staff-directory]'?[mine,other]:[]};ctx.bindStaffList([]);
- mine.search.value='missing';mine.search.oninput();assert.equal(mine.entries[0].hidden,true);assert.equal(other.entries[0].hidden,false);
- assert.match(other.count.textContent,/1 active employees/);
+test('page and group changes refresh decorators on new rows without replacing the search field',()=>{
+ const ctx=context(),search={value:''},filter={value:'active'},count={},focus=[],calls=[];
+ let group={isConnected:true,open:false,dataset:{staffGroup:'service'}},next={dataset:{staffPage:'next'}};
+ const results={innerHTML:'',querySelectorAll:selector=>selector==='[data-staff-group]'?[group]:selector==='[data-staff-page]'?[next]:[],querySelector:selector=>({focus:()=>focus.push(selector)})};
+ const directory={isConnected:true,querySelectorAll:()=>[],querySelector:selector=>({'[data-staff-save-notice]':{replaceChildren(){}},'[data-staff-search]':search,'[data-staff-filter]':filter,'[data-staff-results]':results,'[data-staff-count]':count})[selector]};
+ ctx.document={querySelectorAll:selector=>selector==='[data-staff-directory]'?[directory]:[]};
+ ctx.decorateStaffTwoStep=async()=>calls.push('two-step');ctx.decorateStaffAccounting=async()=>calls.push('accounting');ctx.bindStaffList(rows);
+ group.open=true;group.ontoggle();assert.match(results.innerHTML,/data-staff-group="service" open/);assert.match(results.innerHTML,/data-staff-row="employee"/);assert.deepEqual(calls,['two-step','accounting']);
+ search.value='Other';search.oninput();assert.match(results.innerHTML,/data-staff-group="sales" open/);assert.match(results.innerHTML,/data-staff-row="other"/);assert.doesNotMatch(results.innerHTML,/data-staff-row="employee"/);assert.equal(search.value,'Other');
+ const previous=results.innerHTML;ctx.me={user_id:'replacement',role:'owner'};search.value='Fixture';search.oninput();assert.equal(results.innerHTML,previous);
 });
 
-test('filtering does not change the employee targeted by an account action',()=>{
- const list=directory([entry('employee','active','alexandra service'),entry('other','active','other sales')]),ctx=context(),opened=[];
- const buttons=list.entries.map(row=>({dataset:{staffPhone:row.dataset.staffRow,phone:'+255700000001'}}));
- ctx.document={querySelectorAll:selector=>selector==='[data-staff-directory]'?[list]:selector==='[data-staff-phone]'?buttons:[]};
- ctx.openStaffPhone=(...args)=>opened.push(args);ctx.bindStaffList(rows);
- list.search.value='other';list.search.oninput();assert.equal(list.entries[0].hidden,true);
- buttons[1].onclick();assert.deepEqual(opened,[['other','Other Department','+255700000001']]);
+test('paged account controls keep the exact employee identity',()=>{
+ const ctx=context(),opened=[],button={dataset:{staffPhone:'other',phone:'+255700000001'}};
+ ctx.document={querySelectorAll:selector=>selector==='[data-staff-phone]'?[button]:[]};ctx.openStaffPhone=(...args)=>opened.push(args);
+ ctx.bindStaffActions(rows);button.onclick();assert.deepEqual(opened,[['other','Other Department','+255700000001']]);
 });
 
 test('two-step status stays visible for self but reset actions follow the existing management control',async()=>{

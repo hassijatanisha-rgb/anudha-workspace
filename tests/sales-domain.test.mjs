@@ -7,6 +7,9 @@ const context={Intl,Error,Number,String,Math};vm.createContext(context);vm.runIn
 const {moneyMinor,proformaLineTotal,proformaNextActions,deliveryNextActions,remainingDeliveryQuantity}=context.api;
 
 assert.equal(moneyMinor('1250.50'),125050);
+assert.equal(context.api.moneyDisplay(125000000,'TZS').replace(/\s/g,' '),'TZS 1,250,000');
+assert.equal(context.api.moneyDisplay(125050,'USD').replace(/\s/g,' '),new Intl.NumberFormat('en-TZ',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(1250.50).replace(/\s/g,' '));
+assert.equal(context.api.moneyDisplay(125050,'TZS').replace(/\s/g,' '),'TZS 1,251');
 assert.throws(()=>moneyMinor('1.234'),/two decimal/);
 assert.deepEqual({...proformaLineTotal({quantity:2,unitPriceMinor:10000,discountBasisPoints:1000,taxBasisPoints:1800})},{gross:20000,discount:2000,tax:3240,total:21240});
 assert.deepEqual([...proformaNextActions('sent')],['accept','revise','reject','cancel']);

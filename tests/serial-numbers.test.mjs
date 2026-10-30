@@ -49,7 +49,7 @@ test('classified machines require serials even when the optional setting is abse
 test('serial tools label machine requirements and only offer removal for optional products',async()=>{
  let html='';const content={querySelector:()=>null,querySelectorAll:()=>[],insertAdjacentHTML:(_position,value)=>{html=value;}};
  const ctx=vm.createContext({me:{user_id:'owner',role:'owner'},products:[{id:'M',name:'Analyzer'},{id:'R',name:'Reagent'}],esc:String,
-  inventoryClassification:id=>({category:id==='M'?'machines':'reagents'}),inventoryProduct:id=>({name:id==='M'?'Analyzer':'Reagent'}),
+  inventoryProductChoices:()=>'',inventoryClassification:id=>({category:id==='M'?'machines':'reagents'}),inventoryProduct:id=>({name:id==='M'?'Analyzer':'Reagent'}),
   $:selector=>selector==='#content'?content:selector==='#inventoryRefresh'?{}:selector==='#serialSearch'?{}:null,
   client:{from:()=>({select:async()=>({data:[{product_id:'M',serial_required:false},{product_id:'R',serial_required:true}]})})}});
  vm.runInContext(fs.readFileSync(new URL('../serial-numbers.js',import.meta.url),'utf8'),ctx);await ctx.decorateSerialTools();
@@ -62,7 +62,7 @@ test('a planned line and actual recorded serials survive category correction wit
  assert.equal(context.deliveryLineSerialRequired(lines[0],serials),true);assert.equal(context.deliveryLineSerialRequired(lines[1],serials),true);assert.equal(context.deliveryLineSerialRequired(lines[2],serials),false);
  assert.match(context.deliverySerialPanelHtml({id:'N1',status:'packing'},lines,serials),/Enter serial numbers/);
  assert.equal(context.deliverySerialPanelHtml({id:'N2',status:'packing'},[lines[2]],[]),'');
- let fields;context.deliveryLines=()=>lines;context.actionForm=(_title,html)=>{fields=html};vm.runInContext("deliverySerials=[{delivery_line_id:'OLD',serial_number:'KNOWN-1'}]",context);
+ let fields;context.document={activeElement:null};context.customerReturnContext=()=>({current:()=>true});context.deliveryLines=()=>lines;context.actionForm=(_title,html)=>{fields=html};vm.runInContext("deliverySerials=[{delivery_line_id:'OLD',serial_number:'KNOWN-1'}]",context);
  context.openRecordSerials({id:'N1',delivery_number:'DN1',version:1});assert.match(fields,/name="serials_PLAN"/);assert.match(fields,/name="serials_OLD"/);assert.doesNotMatch(fields,/serials_OTHER/);
 });
 
@@ -96,4 +96,37 @@ test('serial decoration keeps later pages and a large planned JSON result, and r
  assert.deepEqual(pages,[[0,999],[1000,1999]]);assert.deepEqual(orders,['serial_number','id','serial_number','id']);assert.match(html,/SN-1000/);assert.match(html,/Not entered yet/);
  assert.equal(ctx.deliveryLineSerialRequired({id:'PLANNED',product_id:'M'}),true);failure=true;html='';await ctx.decorateDeliverySerials();
  assert.equal(html,'');assert.equal(ctx.deliveryLineSerialRequired({id:'PLANNED',product_id:'M'}),false);assert.equal(ctx.deliveryLineSerialRequired({id:'RECORDED',product_id:'M'}),false);assert.match(messages.at(-1),/Serial numbers could not load.*Synthetic page failed/);
+});
+
+for(const change of ['same-account-session','different-account','session-reset','newer-read'])test(`serial settings reject a late ${change} response before it can change transfer dispatch`,async()=>{
+ const pending=[],writes=[];
+ const ctx=vm.createContext({me:{user_id:'employee'},sessionLoadEpoch:1,inventoryTransfers:[{id:'T',product_id:'P',expected_units:1}],inventoryClassification:()=>({category:'consumables'}),
+  client:{from:()=>({select:()=>new Promise(resolve=>pending.push(resolve))}),rpc:async(name,args)=>{writes.push({name,args});return {data:{}};}}});
+ vm.runInContext(fs.readFileSync(new URL('../serial-numbers.js',import.meta.url),'utf8'),ctx);
+ vm.runInContext(fs.readFileSync(new URL('../receiving-serials.js',import.meta.url),'utf8').match(/async function saveInventoryTransferWithSerials\([\s\S]*?\n}/)[0],ctx);
+ const old=ctx.loadSerialSettings();
+ if(change==='same-account-session')ctx.me={...ctx.me};
+ if(change==='different-account')ctx.me={user_id:'other-employee'};
+ if(change==='session-reset')ctx.sessionLoadEpoch++;
+ if(change!=='newer-read'){
+  pending[0]({data:[{product_id:'P',serial_required:false}]});assert.equal(await old,false);
+ }
+ const current=ctx.loadSerialSettings();pending[1]({data:[{product_id:'P',serial_required:true}]});assert.equal(await current,true);
+ if(change==='newer-read'){pending[0]({data:[{product_id:'P',serial_required:false}]});assert.equal(await old,false);}
+ assert.equal(ctx.serialRequired('P'),true);
+ await ctx.saveInventoryTransferWithSerials('dispatch',{p_id:'T',p_expected_version:7},'REAL-1',false);
+ assert.equal(writes[0].name,'dispatch_serialized_inventory_transfer');assert.deepEqual([...writes[0].args.p_serials],['REAL-1']);assert.equal(writes[0].args.p_expected_version,7);
+});
+
+for(const invalidate of ['same-ID actor replacement','newer decoration'])test(`late serial decoration cannot replace ${invalidate} state`,async()=>{
+ let release,serialReads=0;
+ const note={id:'N',status:'packing'},card={dataset:{documentCard:'N'},querySelector:()=>null};
+ const ctx=vm.createContext({me:{user_id:'packer'},salesDeliveryNotes:[note],deliveryLines:()=>[],document:{querySelectorAll:selector=>selector==='[data-document-card]'?[card]:[],querySelector:()=>card},salesRowsFor:async()=>{serialReads++;return {data:[]}},client:{from:()=>({select:async()=>({data:[]})}),rpc:()=>new Promise(resolve=>{release=resolve})}});
+ vm.runInContext(fs.readFileSync(new URL('../serial-numbers.js',import.meta.url),'utf8'),ctx);
+ const old=ctx.decorateDeliverySerials();await new Promise(setImmediate);
+ if(invalidate==='same-ID actor replacement')ctx.me={user_id:'packer'};
+ else{ctx.client.rpc=async()=>({data:[]});await ctx.decorateDeliverySerials();}
+ vm.runInContext("plannedSerialLines=new Set(['current-line']);deliverySerials=[{id:'current-serial'}]",ctx);
+ const before=serialReads;release({data:[{delivery_line_id:'old-line'}]});await old;
+ assert.equal(serialReads,before);assert.deepEqual(Array.from(vm.runInContext('plannedSerialLines',ctx)),['current-line']);assert.equal(vm.runInContext('deliverySerials[0].id',ctx),'current-serial');
 });

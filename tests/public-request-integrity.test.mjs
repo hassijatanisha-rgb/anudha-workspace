@@ -57,9 +57,11 @@ test('provider exception details and credentials are not persisted in confirmati
 });
 
 function workspace(rpc){
- const dialogs=[],context=vm.createContext({me:{user_id:'actor'},client:{rpc},employeeDirectory:new Map([['ineligible',{user_id:'ineligible',display_name:'Wrong employee',active:true}]]),
+ const dialogs=[],target={isConnected:true},context=vm.createContext({$:()=>target,me:{user_id:'actor'},client:{rpc},employeeDirectory:new Map([['ineligible',{user_id:'ineligible',display_name:'Wrong employee',active:true}]]),
   employeeName:id=>id,esc:value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),actionForm:(title,fields,save)=>dialogs.push({title,fields,save}),view:'requests',message:()=>{}});
- vm.runInContext(readFileSync(new URL('../customer-requests.js',import.meta.url),'utf8'),context);return {context,dialogs};
+ vm.runInContext(readFileSync(new URL('../customer-requests.js',import.meta.url),'utf8'),context);
+ // Actions are available only after the complete request has been opened.
+ context.fixtureRequest=row;vm.runInContext('requestActor=me;requestSelected=fixtureRequest.id;requestRows=[fixtureRequest];',context);return {context,dialogs};
 }
 const row={id:'request-id',request_number:'REQ-1',name:'Fixture',kind:'quote',status:'received',version:1};
 test('assignment picker uses the eligible RPC instead of the unrestricted employee directory',async()=>{
@@ -81,5 +83,5 @@ test('leaving requests during lookup opens no dialog and changing login before s
  pendingWorkspace.context.view='dashboard';finish({data:[]});await pending;assert.equal(pendingWorkspace.dialogs.length,0);
  let calls=0;const h=workspace(async()=>{calls++;return {data:[{user_id:'eligible',display_name:'Eligible'}]};});
  await h.context.openRequestAction(row,'assign');h.context.me={user_id:'another-actor'};
- await assert.rejects(h.dialogs[0].save({assignee:'eligible'}),/Login changed/);assert.equal(calls,1);
+ await assert.rejects(h.dialogs[0].save({assignee:'eligible'}),/login or request changed/);assert.equal(calls,1);
 });

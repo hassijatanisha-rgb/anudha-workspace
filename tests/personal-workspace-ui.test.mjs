@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -7,7 +8,7 @@ test('Late private response cannot render after the login changes',async()=>{
  let release;const target={innerHTML:''};const calls=[];
  const query={};for(const method of ['select','eq','is','order','gte','lt'])query[method]=(...args)=>{calls.push([method,...args]);return query};
  query.range=(...args)=>{calls.push(['range',...args]);return new Promise(resolve=>release=resolve)};
- const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,$:()=>target,me:{user_id:'one'},view:'personal',client:{from:()=>query}});
+ const context=vm.createContext({workspacePageHeader,workspaceLoading(){},workspaceRefreshRetaining:()=>false,$:()=>target,me:{user_id:'one'},view:'personal',client:{from:()=>query}});
  vm.runInContext(source,context);
  const pending=vm.runInContext('personalWorkspace()',context);
  context.me={user_id:'two'};
@@ -16,7 +17,7 @@ test('Late private response cannot render after the login changes',async()=>{
  assert.deepEqual(calls.find(row=>row[0]==='range'),['range',0,99]);
 });
 test('Company and private event cards carry distinct labels and styles',()=>{
- const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'one',role:'staff'},esc:s=>String(s??'').replaceAll('<','&lt;')});
+ const context=vm.createContext({workspacePageHeader,workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'one',role:'staff'},esc:s=>String(s??'').replaceAll('<','&lt;')});
  vm.runInContext(source,context);
  const company=context.personalCard({id:'x',title:'Meeting',visibility:'company',owner_id:'other'});
  const personal=context.personalCard({id:'y',title:'<private>',visibility:'personal',owner_id:'one'});
@@ -27,7 +28,7 @@ test('Company and private event cards carry distinct labels and styles',()=>{
 });
 test('A save finishing after login changes does not refresh or notify the new user',async()=>{
  let submit,resolveSave;let refreshes=0,notifications=0;
- const context=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,
+ const context=vm.createContext({workspacePageHeader,workspaceLoading(){},workspaceRefreshRetaining:()=>false,
   me:{user_id:'one',role:'staff'},view:'personal',esc:s=>String(s??''),
   crypto:{randomUUID:()=> 'entry-one'},
   actionForm:(_title,_fields,callback)=>{submit=callback},
@@ -37,7 +38,7 @@ test('A save finishing after login changes does not refresh or notify the new us
  });
  vm.runInContext(source,context);
  context.personalWorkspace=async()=>{refreshes++};
- vm.runInContext("personalSection='task'; personalEditor(null,0,'one')",context);
+ vm.runInContext("personalSection='task'; personalEditor(null,0,me)",context);
  const saving=submit({title:'Call',reminder:'2026-10-02T10:00'});
  context.me={user_id:'two',role:'staff'};
  resolveSave({error:null});await saving;

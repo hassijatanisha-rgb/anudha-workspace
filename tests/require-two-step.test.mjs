@@ -1,14 +1,16 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {statusTone} from './helpers/status-ui.mjs';
 const source=readFileSync(new URL('../two-step.js',import.meta.url),'utf8');
 // Elements are created on demand, so each screen's buttons and forms can be pressed from the test.
 function load({rpc={},factors=[],verify={}}={}){
  const els=new Map(),calls=[],pending=[];
- const el=sel=>{if(!els.has(sel))els.set(sel,{innerHTML:'',onclick:null,onsubmit:null,focus(){},addEventListener(type,fn){this['on'+type]=fn},querySelector:()=>({focus(){}}),remove(){}});return els.get(sel);};
- const ctx=vm.createContext({calls,esc:s=>String(s),message:m=>calls.push(['message',m]),login:()=>calls.push('login'),settingsWorkspace:()=>calls.push('settings'),
-  run:fn=>{const p=Promise.resolve().then(fn);pending.push(p);return p;},confirm:()=>true,
+ const el=sel=>{if(!els.has(sel))els.set(sel,{innerHTML:'',onclick:null,onsubmit:null,focus(){},addEventListener(type,fn){this['on'+type]=fn},querySelector(selector){return selector.startsWith('#')?(this.innerHTML.includes('id="'+selector.slice(1)+'"')?el(selector):null):{focus(){}};},remove(){}});return els.get(sel);};
+ const ctx=vm.createContext({workspacePageHeader,statusTone,calls,me:{user_id:'employee',role:'staff'},view:'settings',esc:s=>String(s),message:m=>calls.push(['message',m]),login:()=>calls.push('login'),settingsWorkspace:()=>calls.push('settings'),
+  run:fn=>{const p=Promise.resolve().then(fn);pending.push(p);return p;},askConfirm:async()=>true,
   FormData:class{constructor(f){this.f=f}get(){return this.f.code}},$:el,
   document:{createElement:()=>el('#settingsBox')},
   client:{rpc:async name=>{calls.push(['rpc',name]);const r=rpc[name];if(r instanceof Error)throw r;return r??{data:false};},

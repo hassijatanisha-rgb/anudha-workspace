@@ -1,10 +1,12 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 function load(){
- const ctx=vm.createContext({me:{user_id:'a',role:'owner'},window:{ERP_CONFIG:{}},esc:s=>String(s??''),employeeName:id=>id,Number,String,JSON,Map,Date,Math});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,me:{user_id:'a',role:'owner'},window:{ERP_CONFIG:{}},esc:s=>String(s??''),employeeName:id=>id,Number,String,JSON,Map,Date,Math});
  vm.runInContext(read('stock-count.js'),ctx);
  vm.runInContext(`countCatalogue=[{code:'AN-00001',product:'Patient Monitor with Printer',company:'',specification:'BT-770',category:'Machine',search_text:'bt 770'},{code:'AN-00002',product:'Blood Bag',company:'Fixture Co',specification:'450 ml',category:'Consumable',search_text:''},{code:'AN-00003',product:'Blood Bag Triple',company:'Other',specification:'',category:'Consumable',search_text:''},{code:'AN-00004',product:'Monitor Cable',company:'',specification:'',category:'Spare',search_text:''}];`,ctx);
  return ctx;
@@ -37,6 +39,13 @@ test('owner sees accept and reject; counter can void only their own; nothing aft
  const ctx=load(),row=(role,user,entry)=>{ctx.me={user_id:user,role};return [...ctx.countEntryRow({id:'x',session_id:'s',code:'AN-00001',godown:'New Dakawa',quantity:1,unit:'PCS',condition:'good',counted_by:'c',counted_at:'2026-09-30T08:00:00Z',status:'recorded',...entry},{review:true}).matchAll(/data-count-action="([a-z]+)"/g)].map(m=>m[1]);};
  assert.deepEqual(row('owner','o'),['accept','reject','void']);assert.deepEqual(row('staff','c'),['void']);assert.deepEqual(row('staff','z'),[]);
  assert.deepEqual(row('owner','o',{status:'accepted'}),[]);
+});
+test('stock-count chips reflect review decisions rather than stock condition or quantity',()=>{
+ const ctx=load(),entry={id:'count',session_id:'session',code:'AN-00001',godown:'New Dakawa',quantity:0,unit:'PCS',condition:'expired',counted_by:'a',counted_at:'2026-10-29T08:00:00Z'};
+ for(const [status,tone,label] of [['recorded','warning','Waiting for review'],['accepted','success','Accepted'],['rejected','danger','Rejected'],['void','neutral','Voided']]){
+  const html=ctx.countEntryRow({...entry,status},{review:true});assert.ok(html.includes(`<span class="tag chip chip--${tone}">${label}</span>`));assert.match(html,/Expired/);assert.match(html,/<strong>0<\/strong>/);
+ }
+ assert.match(ctx.countEntryRow({...entry,status:'unknown'}),/class="tag chip chip--neutral"/);
 });
 test('temporary screen can be switched off in config and is wired into the app',()=>{
  const ctx=load();assert.equal(ctx.stockCountEnabled(),true);ctx.window.ERP_CONFIG.stockCountEnabled=false;assert.equal(ctx.stockCountEnabled(),false);

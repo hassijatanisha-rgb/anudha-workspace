@@ -7,7 +7,8 @@ const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||resol
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 try{
  const page=await browser.newPage();await page.setContent('<main></main>');
- await page.addScriptTag({content:`const me={user_id:'staff',role:'staff'},products=[{id:'p1',name:'Fixture bags'}],orgIndex=new Map([['org',{name:'Fixture hospital'}]]),salesProformas=[];const employeeName=()=> 'Fixture employee';const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');`});
+ await page.addScriptTag({content:`const me={user_id:'staff',role:'staff'},products=[{id:'p1',name:'Fixture bags'}],orgIndex=new Map([['org',{name:'Fixture hospital'}]]),salesProformas=[];const employeeName=()=> 'Fixture employee';const workResponsibleHtml=()=>'';const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');`});
+ await page.addScriptTag({content:readFileSync(new URL('../status-ui.js',import.meta.url),'utf8')});
  await page.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
  await page.evaluate(()=>{
   const lot={product_id:'p1',location_id:'main',pack_definition_id:'box',sealed_cartons:1,loose_units:0,reserved_units:0,stock_status:'available'};
@@ -22,7 +23,7 @@ try{
  await page.evaluate(()=>{
   document.querySelector('main').id='content';window.$=s=>document.querySelector(s);bindPendingStock=()=>{};
   pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);
-  pendingRows=[{id:'r',request_number:'PS-FIXTURE',product_id:'p1',quantity:20,status:'waiting',organization_id:'org',salesperson_user_id:'staff',expires_on:'2099-01-01',extension_count:0}];
+  pendingPageData={rows:[{id:'r',request_number:'PS-FIXTURE',product_id:'p1',quantity:20,available_units:50,status:'waiting',organization_id:'org',salesperson_user_id:'staff',expires_on:'2099-01-01',extension_count:0}],as_of:'2026-10-01',total:1,page:0,pages:1,counts:{},mine_arrived:1};
   renderPendingStock();
  });
  await page.getByRole('alert').filter({hasText:'previous day. Press Refresh'}).waitFor();

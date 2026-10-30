@@ -2,11 +2,13 @@
 // One Leads page: a new inquiry is recorded here and followed up here until won (linked Pro forma) or lost.
 // Writes go through save/advance RPCs only. leadSection is kept for older callers but no longer splits the page.
 let leadSection='leads',leadFilter='open',leadSearch='',leadPage=0,leadRows=[],leadLoaded=false,leadLoadError='',leadEpoch=0,leadEditing='';
-let leadFocusId='';
+let leadFocusId='',leadSelectedId='',leadPageData=null,leadRenderEpoch=0,leadActor=null;
+function leadLanding(){return !leadEditing&&!leadFocusId&&!leadSelectedId;}
 // Open one lead from elsewhere (e.g. a task): the section is chosen from its stage once the list has loaded.
-function focusLead(id){leadFocusId=id;leadEditing='';leadPage=0;view='leads';}
-function openLeadSection(section){leadSection='leads';leadPage=0;if(section==='new'){leadEditing='new';}else leadEditing='';}
-function clearLeads(){leadEpoch++;leadHandoverEpoch++;leadHandovers=new Map();leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
+function focusLead(id){leadFocusId=id;leadSelectedId='';leadEditing='';leadPage=0;view='leads';}
+function openLeadSection(section){leadSection='leads';leadPage=0;leadSelectedId='';leadFocusId='';if(section==='new'){leadEditing='new';}else leadEditing='';}
+function clearLeads(){leadEpoch++;leadRenderEpoch++;leadHandoverEpoch++;leadActor=null;leadPageData=null;leadSelectedId='';leadHandovers=new Map();leadFocusId='';leadRows=[];leadLoaded=false;leadEditing='';leadFilter='open';leadSearch='';leadPage=0;leadLoadError='';if(leadSearchTimer)clearTimeout(leadSearchTimer);if(typeof clearSalesPrefill==='function')clearSalesPrefill();}
+function syncLeadActor(){if(leadActor&&leadActor!==me)clearLeads();leadActor=me;}
 const leadStages={inquiry:'Needs a salesperson',lead:'Following up',opportunity:'Following up',won:'Won',lost:'Lost'};
 const leadSources={phone:'Phone call',email:'Email',walk_in:'Walk-in',whatsapp:'WhatsApp',referral:'Referral',website:'Website',other:'Other'};
 // The role of the person we spoke to changes how sales handles the lead (a buyer wants a price, a doctor a demo).
@@ -46,16 +48,17 @@ function leadHandoverHtml(events){
 }
 async function decorateLeadHandovers(){
  const boxes=[...document.querySelectorAll('[data-lead-handovers]')];if(!boxes.length)return;
- const epoch=++leadHandoverEpoch,actor=me?.user_id,missing=boxes.map(b=>b.dataset.leadHandovers).filter(id=>!leadHandovers.has(id));
+ const epoch=++leadHandoverEpoch,current=leadSaveCurrent(),missing=boxes.map(b=>b.dataset.leadHandovers).filter(id=>!leadHandovers.has(id));
  if(missing.length){
   const result=await client.from('sales_lead_events').select('lead_id,action,assigned_user_id,from_user_id,actor_user_id,note,created_at').eq('action','handover').in('lead_id',missing).order('created_at').limit(1000);
-  if(epoch!==leadHandoverEpoch||me?.user_id!==actor||result.error)return;
+  if(epoch!==leadHandoverEpoch||!current()||result.error)return;
   for(const id of missing)leadHandovers.set(id,[]);
   for(const e of result.data||[])leadHandovers.get(e.lead_id)?.push(e);
  }
  for(const box of boxes)if(box.isConnected)box.innerHTML=leadHandoverHtml(leadHandovers.get(box.dataset.leadHandovers));
 }
 function leadOverdue(row,today=leadToday()){return !['won','lost'].includes(row.stage)&&!!row.next_action_on&&row.next_action_on<today;}
+function leadStatusTone(stage){return statusTone({inquiry:'waiting',lead:'in_progress',opportunity:'in_progress',won:'success',lost:'archived'}[stage]);}
 function leadClientLabel(row){const org=orgIndex.get(row.organization_id);return org?`${org.name}${org.location?' · '+org.location:''}`:[row.caller_organization,row.caller_name].filter(Boolean).join(' · ')||'Unknown caller';}
 function leadMoney(minor,currency){return minor==null||minor===''?'':new Intl.NumberFormat('en-TZ',{style:'currency',currency:currency||'TZS'}).format(Number(minor)/100);}
 const leadFilters=[['open','Open'],['new','Needs a salesperson'],['mine','Mine'],['won','Won'],['lost','Lost'],['all','All']];
@@ -112,13 +115,13 @@ function leadActions(row){
 }
 function leadCard(row){
  const proforma=salesProformas.find(p=>p.id===row.proforma_id),overdue=leadOverdue(row);
- return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}${typeof orderLiveHtml==='function'?orderLiveHtml(proforma,'span'):''}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
+ return `<article class="card lead-card${overdue?' attention':''}" data-lead-card="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)} · ${esc(leadSources[row.source]||row.source)}</small><h2>${esc(row.subject)}</h2><p>${esc(leadClientLabel(row))}</p></div><span class="tag lead-tag-${esc(row.stage)} chip chip--${leadStatusTone(row.stage)}">${esc(leadStages[row.stage]||row.stage)}</span></div>${leadNextStepHtml(row)}${leadSpokeToHtml(row)}${row.details?`<p class="lead-details">${esc(row.details)}</p>`:''}<div class="details"><div><small>Salesperson</small>${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</div>${row.estimated_value_minor!=null&&row.estimated_value_minor!==''?`<div><small>Estimated value</small>${esc(leadMoney(row.estimated_value_minor,row.currency))}</div>`:''}${row.stage==='won'?`<div><small>Pro forma</small>${esc(proforma?.document_number||'Linked')}${typeof orderLiveHtml==='function'?orderLiveHtml(proforma,'span'):''}</div>`:''}${row.stage==='lost'?`<div><small>Lost because</small>${esc(row.lost_reason)}</div>`:''}</div><div data-lead-handovers="${esc(row.id)}">${leadHandoverHtml(leadHandovers.get(row.id))}</div><div class="actions">${leadActions(row)}</div><div data-lead-history-output="${esc(row.id)}"></div></article>`;
 }
 function leadEmployeeOptions(selected=''){return [...employeeDirectory.values()].filter(row=>row.active!==false).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(row=>inventoryOption(row.user_id,employeeName(row.user_id),row.user_id===selected)).join('');}
 function leadEditor(row){
  const existing=row?Boolean(row.organization_id):true;
  // Values no longer asked for (estimated value, currency) are carried through unchanged when editing.
- return `<section class="card document-editor lead-editor"><div class="heading"><div><small>${row?esc(row.lead_number):'NEW'}</small><h2>${row?'Edit lead':'New inquiry'}</h2></div><button type="button" id="closeLeadEditor">Close</button></div><form id="leadForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><input type="hidden" name="currency" value="${esc(row?.currency||'TZS')}"><input type="hidden" name="estimatedValue" value="${row?.estimated_value_minor==null||row?.estimated_value_minor===''?'':(Number(row.estimated_value_minor)/100).toFixed(2)}">
+ return `<section class="card document-editor lead-editor"><div class="heading"><div><small>${row?esc(row.lead_number):'NEW'}</small><h2>${row?'Edit lead':'New inquiry'}</h2></div><button type="button" id="closeLeadEditor">Close</button></div><form id="leadForm" data-id="${esc(row?.id||'')}" data-version="${row?.version||0}"><p role="alert" id="leadFormError" tabindex="-1"></p><input type="hidden" name="currency" value="${esc(row?.currency||'TZS')}"><input type="hidden" name="estimatedValue" value="${row?.estimated_value_minor==null||row?.estimated_value_minor===''?'':(Number(row.estimated_value_minor)/100).toFixed(2)}">
  <fieldset class="lead-step"><legend>1. Who is it?</legend><div class="lead-who" role="radiogroup" aria-label="Who is it"><label><input type="radio" name="who" value="client" ${existing?'checked':''}> A client we already have</label><label><input type="radio" name="who" value="new" ${existing?'':'checked'}> Someone new</label></div>
  <div class="grid" data-who="client"${existing?'':' hidden'}><label><span>Client</span><select name="organizationId" data-lookup-rows="organizations"><option value="">Choose the client</option>${salesOrganizationOptions(row?.organization_id||'')}</select></label><label><span>Person we spoke to · optional</span><select name="contactId"><option value="">Not a named contact</option>${salesContactOptions(row?.organization_id||'',row?.contact_id||'')}</select></label><label data-caller-extra${row?.contact_id?' hidden':''}><span>Their name · if not a named contact</span><input name="clientCallerName" maxlength="200" value="${esc(existing&&!row?.contact_id?row?.caller_name||'':'')}"></label><label data-caller-extra${row?.contact_id?' hidden':''}><span>Their phone number · optional</span><input name="clientCallerPhone" maxlength="60" inputmode="tel" placeholder="+255…" value="${esc(existing&&!row?.contact_id?row?.caller_phone||'':'')}"></label></div>
  <div class="grid" data-who="new"${existing?' hidden':''}><label><span>Their name</span><input name="callerName" maxlength="200" value="${esc(row?.caller_name||'')}"></label><label><span>Their phone number</span><input name="callerPhone" maxlength="60" inputmode="tel" placeholder="+255…" value="${esc(row?.caller_phone||'')}"></label><label class="wide"><span>Hospital, lab or company · optional</span><input name="callerOrganization" maxlength="300" value="${esc(row?.caller_organization||'')}"></label></div>
@@ -126,7 +129,7 @@ function leadEditor(row){
  <fieldset class="lead-step"><legend>2. What do they need?</legend><label><span>In a few words</span><input name="subject" required minlength="2" maxlength="300" placeholder="For example: price for 2 centrifuges" value="${esc(row?.subject||'')}"></label><label><span>More detail · optional</span><textarea name="details" maxlength="8000" placeholder="Products, quantities, machine model…">${esc(row?.details||'')}</textarea></label></fieldset>
  <fieldset class="lead-step"><legend>3. How did they contact us?</legend><div class="lead-sources">${Object.entries(leadSources).map(([key,label])=>`<label><input type="radio" name="source" value="${key}" ${(row?.source||'phone')===key?'checked':''}> ${label}</label>`).join('')}</div></fieldset>
  <fieldset class="lead-step"><legend>4. Who follows up, and when?</legend><div class="grid">${row?'':`<label><span>Salesperson · leave empty if you are not sure</span><select name="ownerUserId"><option value="">Not decided yet</option>${leadEmployeeOptions('')}</select></label>`}<label><span>Follow up on</span><input name="nextActionOn" type="date" value="${esc(row?.next_action_on||'')}"></label><label class="wide"><span>What to do next · optional</span><input name="nextAction" maxlength="500" placeholder="For example: call back with the price" value="${esc(row?.next_action||'')}"></label></div></fieldset>
- <p role="alert" id="leadFormError"></p><div class="actions"><button type="submit">${row?'Save changes':'Save inquiry'}</button></div></form></section>`;
+ <div class="actions"><button type="submit">${row?'Save changes':'Save inquiry'}</button></div></form></section>`;
 }
 function leadFormValues(form){
  const f=new FormData(form),who=f.get('who')||'client',organizationId=who==='client'?f.get('organizationId')||'':'',value=String(f.get('estimatedValue')||'').trim();
@@ -140,10 +143,23 @@ function leadFormValues(form){
  if(!fields.caller_role)throw Error('Choose the role of the person we spoke to.');
  return fields;
 }
+function leadFormErrors(form){
+ const errors=nativeFormErrors(form),f=new FormData(form),who=f.get('who')||'client',contact=who==='client'&&f.get('organizationId')&&f.get('contactId'),value=String(f.get('estimatedValue')||'').trim();
+ const ignored=who==='new'?['organizationId','contactId','clientCallerName','clientCallerPhone']:['callerName','callerPhone','callerOrganization',...(contact?['clientCallerName','clientCallerPhone']:[])];
+ for(const control of form.querySelectorAll('input,select,textarea'))if(ignored.includes(control.name))errors.delete(control);
+ const add=(name,problem)=>{const control=form.elements[name];if(control?.willValidate&&!errors.has(control))errors.set(control,problem);};
+ if(String(f.get('subject')||'').trim().length<2)add('subject','Describe what the customer needs.');
+ if(who==='client'&&!f.get('organizationId'))add('organizationId','Choose the client, or pick Someone new.');
+ if(who==='new'){if(String(f.get('callerName')||'').trim().length<2)add('callerName','Enter their name and phone number.');if(String(f.get('callerPhone')||'').trim().replace(/\D/g,'').length<6)add('callerPhone','Enter their name and phone number.');}
+ if(!f.get('callerRole'))add('callerRole','Choose the role of the person we spoke to.');
+ if(value&&(!Number.isFinite(Number(value))||Number(value)<0))errors.set(form.elements.estimatedValue,'Enter a valid estimated value.');
+ return errors;
+}
 function leadSavedMatches(saved,fields){return Object.keys(fields).every(key=>String(saved[key]??'')===String(fields[key]??''));}
 async function saveLeadForm(form){
  if(form.dataset.saving==='true')return;
- const actor=me,epoch=leadEpoch,current=()=>me===actor&&leadEpoch===epoch&&view==='leads'&&form.isConnected;
+ if(form.dataset.leadSaved==='true')throw Error('Lead saved. Use Retry saved lead to load current details.');
+ const actor=me,active=leadSaveCurrent(),current=()=>active()&&form.isConnected;
  if(!actor?.user_id||!current())throw Error('Reopen the inquiry before saving.');
  const fields=leadFormValues(form),version=Number(form.dataset.version||0);
  // The form owns its creation identity, including when fields change after an uncertain response.
@@ -175,9 +191,11 @@ async function saveLeadForm(form){
    }
    throw error||Error('The saved inquiry does not match these entries. Your changes are kept. Refresh and compare before retrying; use Hand over to change its salesperson.');
   }
-  form.dataset.id=requestId;form.dataset.version=String(saved.version);leadEditing='';await leadRefreshOne(saved.id);
-  if(me===actor&&view==='leads')message(`${saved.lead_number} saved.`);
- }finally{form.dataset.saving='false';controls.forEach((control,index)=>{control.disabled=disabled[index];});button.textContent=label;}
+  form.dataset.id=requestId;form.dataset.version=String(saved.version);
+  const shown=await leadRefreshOne(saved.id,saved,saved.version,active,`${saved.lead_number} saved.`);
+  if(shown===false&&current())form.dataset.leadSaved='true';
+  if(shown!==false&&active())message(`${saved.lead_number} saved.`);
+ }finally{form.dataset.saving='false';if(active()&&form.dataset.leadSaved!=='true'){controls.forEach((control,index)=>{control.disabled=disabled[index];});button.textContent=label;}}
 }
 // Every open lead is loaded; won and lost leads only from the last six months, so the page stays fast as years
 // of leads build up. Typing in Search also looks up older leads on the server.
@@ -193,63 +211,144 @@ async function leadSearchOlder(text){
  if(!extra.length)return;
  leadRows=leadRows.concat(extra);const box=$('#leadSearch');if(box)renderSearchPreservingPosition(box,renderLeads);else renderLeads();
 }
-// After a save or a step, only that lead is read again, so the page stays quick however many leads are listed.
-async function leadRefreshOne(id){
- if(!leadLoaded||!id)return leadsWorkspace(true);
- const epoch=leadEpoch,actor=me?.user_id;
- const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();
- if(result.error)throw Error(result.error.message);
- if(epoch!==leadEpoch||me?.user_id!==actor)return;
- leadRows=leadRows.filter(r=>r.id!==id);if(result.data)leadRows.push(result.data);leadHandovers.delete(id);
- if(view==='leads')renderLeads();
+function leadSaveCurrent(){
+ const actor=me,epoch=leadEpoch,request=leadRenderEpoch,session=typeof sessionLoadEpoch==='undefined'?null:sessionLoadEpoch;
+ return ()=>me===actor&&epoch===leadEpoch&&request===leadRenderEpoch&&view==='leads'&&(typeof sessionLoadEpoch==='undefined'||sessionLoadEpoch===session);
+}
+function leadConfirmedRow(row,id,version){
+ return row?.id===id&&Number.isSafeInteger(row.version)&&row.version>=Math.max(1,version)&&Object.hasOwn(leadStages,row.stage)&&leadColumns.split(',').every(key=>Object.hasOwn(row,key));
+}
+// Detail actions invalidate the hidden landing snapshot; Back obtains authoritative counts and membership.
+async function leadRefreshOne(id,receipt=null,version=0,active=leadSaveCurrent(),savedLabel='Lead saved.'){
+ const detail=$('#leadDetail'),status=$('#leadSaveStatus'),current=()=>active()&&(!detail||detail.isConnected&&$('#leadDetail')===detail);
+ if(!id||!current())return;
+ leadPageData=null;
+ const candidate=Array.isArray(receipt)?(receipt.length===1?receipt[0]:null):receipt;
+ let confirmed=leadConfirmedRow(candidate,id,version)?candidate:null,refreshing=false;
+ const refresh=async()=>{
+  if(!current()||refreshing)return;refreshing=true;
+  const focused=detail&&document.activeElement;
+  if(detail)detail.inert=true;
+  if(status){status.textContent='Lead saved. Loading current details…';status.setAttribute('role','status');}
+  try{
+   if(!confirmed){const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();if(!current())return;if(result.error)throw Error(result.error.message);if(!leadConfirmedRow(result.data,id,version))throw Error('Current lead details could not be verified.');confirmed=result.data;}
+   if(!current())return;
+   const previous=leadRows.find(row=>row.id===id),row=previous?.version>confirmed.version?previous:confirmed;
+   const after=detail?leadCard(row):'',oldCard=detail?.querySelector(`[data-lead-card="${CSS.escape(id)}"]`),same=oldCard?.leadRenderedRow&&leadCard(oldCard.leadRenderedRow)===after,x=detail?window.scrollX:0,y=detail?window.scrollY:0;
+   leadRows=leadRows.filter(item=>item.id!==id).concat(row);leadSelectedId=id;leadEditing='';leadLoadError='';
+   if(detail){
+    detail.querySelector('.lead-editor')?.remove();
+    if(!same){const template=document.createElement('template');template.innerHTML=after;const card=template.content.firstElementChild;if(oldCard)oldCard.replaceWith(card);else detail.append(card);}
+    detail.inert=false;if(status)status.textContent=savedLabel;
+    bindLeadDetailActions();
+    const origin=detail.querySelector('[data-lead-edit], [data-lead-history]');
+    if(typeof actionFeedbackActive!=='undefined'&&actionFeedbackActive)actionFeedbackActive.successOrigin=actionFeedbackReference(origin);
+    if(focused&&(document.activeElement===document.body||!focused.isConnected))(focused.isConnected?focused:origin)?.focus({preventScroll:true});window.scrollTo(x,y);
+   }
+   return true;
+  }catch(error){
+   if(!current())return;
+   if(detail)detail.inert=true;
+   if(status){
+    status.innerHTML=`${esc(savedLabel)} Current details could not load: ${esc(error.message)} <button type="button" data-lead-save-retry>Retry saved lead</button>`;
+    const retry=status.querySelector('[data-lead-save-retry]');retry.onclick=()=>run(async()=>{if(await refresh()&&current())message(savedLabel);});
+    if(typeof actionFeedbackActive!=='undefined'&&actionFeedbackActive)actionFeedbackActive.successOrigin=actionFeedbackReference(retry);
+    if(focused&&(detail?.contains(focused)||!focused.isConnected))retry.focus({preventScroll:true});
+   }
+   message(`${savedLabel} Current details could not load. Retry saved lead to continue.`,true);return false;
+  }finally{refreshing=false;}
+ };
+ leadHandovers.delete(id);leadHandoverEpoch++;
+ return refresh();
 }
 async function loadLeads(){
- const epoch=++leadEpoch,actor=me?.user_id;
+ const epoch=++leadEpoch,actor=me;
  const since=new Date(Date.now()-leadRecentDays*864e5).toISOString();
  const [rows,proformas]=await Promise.all([all('sales_leads',leadColumns,q=>q.or(`stage.not.in.(won,lost),updated_at.gte.${since}`)),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
- if(epoch!==leadEpoch||me?.user_id!==actor)return false;
+ if(epoch!==leadEpoch||me!==actor)return false;
  leadRows=rows;leadHandovers=new Map();if(proformas&&!salesLoaded)salesProformas=proformas;leadLoaded=true;leadLoadError='';return true;
 }
 async function leadsWorkspace(force=false){
- const actor=me?.user_id;syncWorkspaceNavigation();
- if(force||!leadLoaded){
-  workspaceLoading('Loading inquiries and leads…');
-  try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
- }
- if(view!=='leads'||me?.user_id!==actor)return;
- if(leadFocusId&&!leadRows.some(r=>r.id===leadFocusId)){const older=await client.from('sales_leads').select(leadColumns).eq('id',leadFocusId).maybeSingle();if(view!=='leads'||me?.user_id!==actor)return;if(older.data)leadRows=leadRows.concat(older.data);}
- if(leadFocusId){const row=leadRows.find(r=>r.id===leadFocusId);leadFocusId='';if(row){leadFilter='all';leadSearch=row.lead_number;}}
- renderLeads();
+ syncLeadActor();if(!me||view!=='leads')return;syncWorkspaceNavigation();
+ if(!leadLanding())return openLeadDetail(leadFocusId||leadSelectedId||(leadEditing==='new'?'':leadEditing),leadEditing);
+ const actor=me,request=++leadRenderEpoch,current=()=>me===actor&&request===leadRenderEpoch&&view==='leads'&&leadLanding(),input=$('#leadSearch');
+ if(!input)workspaceLoading('Loading inquiries and leads…');
+ try{
+  const params={p_query:leadSearch,p_filter:leadFilter,p_page:leadPage,p_now:new Date().toISOString()};
+  if(leadSearch.trim())params.p_owner_names=Object.fromEntries([...employeeDirectory.keys()].map(id=>[id,employeeName(id)]));
+  const result=await client.rpc('sales_lead_page',params);if(!current())return;if(result.error)throw Error(result.error.message);
+  const data=result.data;
+  if(!data||!Array.isArray(data.rows)||data.rows.length>25||!Number.isSafeInteger(data.total)||data.total<0||!Number.isSafeInteger(data.page)||data.page<0||!Number.isSafeInteger(data.pages)||data.pages!==Math.max(1,Math.ceil(data.total/25))||data.page>=data.pages||data.rows.length!==Math.min(25,Math.max(0,data.total-data.page*25))||new Set(data.rows.map(row=>row.id)).size!==data.rows.length||!data.counts||leadFilters.some(([key])=>!Number.isSafeInteger(data.counts[key])||data.counts[key]<0)||data.rows.some(row=>!row.id||!row.page_summary||typeof row.lead_number!=='string'||typeof row.subject!=='string'||typeof row.client_label!=='string'||!Object.hasOwn(leadStages,row.stage)))throw Error('The lead page could not be confirmed. Refresh to retry.');
+  leadPageData=data;leadPage=data.page;leadLoadError='';
+ }catch(error){if(!current())return;leadPageData=null;leadLoadError=error.message||'Leads could not load.';}
+ if(!current())return;
+ if(input&&document.activeElement===input)renderSearchPreservingPosition(input,renderLeads);else renderLeads();
+}
+async function openLeadDetail(id='',editing=''){
+ syncLeadActor();if(!me||view!=='leads')return;
+ const actor=me,request=++leadRenderEpoch,current=()=>me===actor&&request===leadRenderEpoch&&view==='leads';
+ workspaceLoading(id?'Loading the complete lead…':'Loading the inquiry form…');
+ try{
+  if(!listsLoaded){await (listsLoading||loadLists());if(!current())return;if(!listsLoaded)throw Error('Client and product records could not load. Reopen the lead.');}
+  if(!await loadLeads()||!current())return;
+  if(id&&!leadRows.some(row=>row.id===id)){
+   const result=await client.from('sales_leads').select(leadColumns).eq('id',id).maybeSingle();if(!current())return;if(result.error)throw Error(result.error.message);if(result.data)leadRows=leadRows.concat(result.data);
+  }
+  if(id&&!leadRows.some(row=>row.id===id))throw Error('This lead is unavailable.');
+  leadFocusId='';leadSelectedId=id;leadEditing=editing;leadLoadError='';renderLeads();
+  if(editing==='new')$('#leadForm [name="subject"]')?.focus();else $('#leadBack')?.focus({preventScroll:true});
+ }catch(error){if(!current())return;leadFocusId='';leadSelectedId='';leadEditing='';leadLoadError=error.message||'Lead details could not load.';renderLeads();}
+}
+function leadHeading(title='Leads',back=false){return workspacePageHeader({title,subtitle:'Follow up inquiries and sales opportunities.',back:back?'<button type="button" id="leadBack">Back to leads</button>':'',actions:'<button type="button" id="leadRefresh">Refresh</button><button type="button" id="newLead" class="primary-action">+ New inquiry</button>'});}
+function leadSummaryCard(row){return `<article class="card lead-card${leadOverdue(row)?' attention':''}" data-lead-summary="${esc(row.id)}"><div class="heading"><div><small>${esc(row.lead_number)}</small><h2>${esc(row.subject)}</h2><p>${esc(row.client_label)}</p></div><span class="tag lead-tag-${esc(row.stage)} chip chip--${leadStatusTone(row.stage)}">${esc(leadStages[row.stage])}</span></div><p>Salesperson · ${esc(row.owner_user_id?employeeName(row.owner_user_id):'Not assigned')}</p>${row.next_action_on&&!['won','lost'].includes(row.stage)?`<p${leadOverdue(row)?' class="overdue"':''}>Follow up · ${esc(leadDay(row.next_action_on))}</p>`:''}<div class="actions"><button type="button" data-lead-open="${esc(row.id)}">Open lead</button></div></article>`;}
+function renderLeadLanding(){
+ const data=leadPageData;
+ $('#content').innerHTML=`<section class="leads-workspace">${leadHeading()}${leadLoadError?`<p class="notice error" role="alert">Leads could not load: ${esc(leadLoadError)}. Nothing was changed.</p>`:''}<div class="tabs" role="group" aria-label="Show leads">${leadFilters.map(([key,label])=>`<button type="button" data-lead-filter="${key}" class="${leadFilter===key?'active':''}" aria-pressed="${leadFilter===key}">${label}${data?' · '+data.counts[key]:''}</button>`).join('')}</div>${['won','lost','all'].includes(leadFilter)?'<p class="muted">Closed leads from the last 6 months; search reaches older leads.</p>':''}<label class="search"><span>Search</span><input id="leadSearch" type="search" maxlength="2000" placeholder="Name, phone, client, product or LD number" value="${esc(leadSearch)}"></label>${data?`<p>${data.total} matching leads</p>${data.rows.map(leadSummaryCard).join('')||'<p class="muted">No leads match this filter.</p>'}<div class="actions"><button type="button" id="leadPrev" ${data.page===0?'disabled':''}>Previous</button><span>Page ${data.page+1} of ${data.pages}</span><button type="button" id="leadNext" ${data.page>=data.pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
+ bindLeads();
 }
 function renderLeads(){
- const rows=leadVisibleRows(leadRows,{filter:leadFilter,search:leadSearch,actor:me?.user_id});
- const pages=Math.max(1,Math.ceil(rows.length/20));leadPage=Math.min(Math.max(leadPage,0),pages-1);
+ if(leadLanding())return renderLeadLanding();
  const editing=leadEditing==='new'?null:leadRows.find(row=>row.id===leadEditing);
- const count=key=>leadCounts(leadRows,me?.user_id)[key];
- $('#content').innerHTML=`<section class="leads-workspace"><div class="heading"><div><small>ORDERS</small><h1>Leads</h1><p class="muted">Record every call, message or walk-in here, then follow it up until it becomes a Pro forma. Late follow-ups are at the top.</p></div><div class="actions"><button type="button" id="leadRefresh">Refresh</button><button type="button" id="newLead" class="primary-action">+ New inquiry</button></div></div>${leadLoadError?`<p class="notice error" role="alert">Leads could not load: ${esc(leadLoadError)}. Nothing was changed.</p>`:''}${leadEditing?leadEditor(editing):''}<div class="tabs" role="group" aria-label="Show leads">${leadFilters.map(([key,label])=>{const n=key==='all'?0:count(key);return `<button type="button" data-lead-filter="${key}" class="${leadFilter===key?'active':''}" aria-pressed="${leadFilter===key}">${label}${n?` · ${n}`:''}</button>`}).join('')}</div>${['won','lost','all'].includes(leadFilter)?'<p class="muted">Showing closed leads from the last 6 months. Search finds older ones.</p>':''}<label class="search"><span>Search</span><input id="leadSearch" type="search" placeholder="Name, phone, client, product or LD number" value="${esc(leadSearch)}"></label>${rows.slice(leadPage*20,leadPage*20+20).map(leadCard).join('')||`<p class="muted">${leadRows.length?'No leads here.':'No leads yet. Press + New inquiry to record one.'}</p>`}${pages>1?`<div class="actions"><button type="button" id="leadPrev" ${leadPage===0?'disabled':''}>Previous</button><span>Page ${leadPage+1} of ${pages}</span><button type="button" id="leadNext" ${leadPage>=pages-1?'disabled':''}>Next</button></div>`:''}</section>`;
- bindLeads();leadWarmSearch();
+ const selected=leadRows.find(row=>row.id===leadSelectedId);
+ $('#content').innerHTML=`<section class="leads-workspace">${leadHeading((selected||editing)?.lead_number||'Leads',true)}${leadLoadError?`<p class="notice error" role="alert">${esc(leadLoadError)}</p>`:''}<p id="leadSaveStatus" role="status"></p><div id="leadDetail">${leadEditing?leadEditor(editing):''}${selected?leadCard(selected):''}</div></section>`;
+ bindLeads();
 }
 function bindLeads(){
  $('#leadRefresh').onclick=()=>run(()=>leadsWorkspace(true));
- // A won lead shows where its order is now (packing queue, delivery).
- if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
- $('#newLead')?.addEventListener('click',()=>{leadEditing='new';renderLeads();$('#leadForm [name="subject"]')?.focus();});
- $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';renderLeads();});
+ $('#newLead')?.addEventListener('click',()=>run(()=>openLeadDetail('','new')));
+ if(leadLanding()){
+  const actor=me;
+  $('#leadSearch').oninput=event=>{leadSearch=event.target.value;leadPage=0;leadRenderEpoch++;clearTimeout(leadSearchTimer);const input=event.target;leadSearchTimer=setTimeout(()=>{if(me===actor&&view==='leads'&&leadLanding()&&input.isConnected)run(()=>leadsWorkspace());},200);};
+  document.querySelectorAll('[data-lead-filter]').forEach(button=>button.onclick=()=>run(()=>{leadFilter=button.dataset.leadFilter;leadPage=0;clearTimeout(leadSearchTimer);return leadsWorkspace();}));
+  if($('#leadPrev')){$('#leadPrev').onclick=()=>run(()=>{leadPage--;return leadsWorkspace();});$('#leadNext').onclick=()=>run(()=>{leadPage++;return leadsWorkspace();});}
+  document.querySelectorAll('[data-lead-open]').forEach(button=>button.onclick=()=>run(()=>openLeadDetail(button.dataset.leadOpen)));
+  return;
+ }
+ $('#leadBack').onclick=()=>run(()=>{leadSelectedId='';leadEditing='';return leadsWorkspace();});
+ $('#closeLeadEditor')?.addEventListener('click',()=>{leadEditing='';if(leadSelectedId)renderLeads();else run(()=>leadsWorkspace());});
  const form=$('#leadForm');
  if(form){
+  const active=leadSaveCurrent(),current=()=>active()&&form.isConnected&&$('#leadForm')===form,notice=form.querySelector('#leadFormError'),button=form.querySelector('[type="submit"]'),touched=new Set();
+  const summary=(errors,count=form.querySelectorAll('.field-error').length+(errors.has(form.elements.estimatedValue)?1:0))=>{notice.textContent=[fieldErrorSummary(count),errors.get(form.elements.estimatedValue)].filter(Boolean).join('. ');};
+  const refreshValidation=()=>{const errors=leadFormErrors(form);for(const control of form.querySelectorAll('input,select,textarea'))if(fieldValidationSource(control)===control&&(touched.has(control)||form.dataset.validationSubmitted==='true'))showFieldError(control,errors.get(control)||'');if(form.dataset.validationSubmitted==='true')summary(errors);};
+  form.noValidate=true;form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.leadSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=leadFormErrors(form);showFieldError(control,errors.get(control)||'');if(form.dataset.validationSubmitted==='true')summary(errors);});
   const callerExtra=()=>form.querySelectorAll('[data-caller-extra]').forEach(label=>label.hidden=!!form.elements.contactId.value);
-  form.elements.organizationId.onchange=event=>{form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);callerExtra();};
-  form.elements.contactId.onchange=callerExtra;
-  form.querySelectorAll('[name="who"]').forEach(input=>input.onchange=()=>form.querySelectorAll('[data-who]').forEach(group=>group.hidden=group.dataset.who!==input.value));
-  form.onsubmit=event=>{event.preventDefault();if(form.dataset.saving==='true')return;form.querySelector('#leadFormError').textContent='';
-   run(async()=>{try{await saveLeadForm(form)}catch(error){if(form.isConnected)form.querySelector('#leadFormError').textContent=error.message;throw error;}});};
+  form.elements.organizationId.onchange=event=>{if(!current()||form.dataset.saving==='true')return;form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);callerExtra();refreshValidation();};
+  form.elements.contactId.onchange=()=>{if(!current()||form.dataset.saving==='true')return;callerExtra();refreshValidation();};
+  form.querySelectorAll('[name="who"]').forEach(input=>input.onchange=()=>{if(!current()||form.dataset.saving==='true')return;form.querySelectorAll('[data-who]').forEach(group=>group.hidden=group.dataset.who!==input.value);refreshValidation();});
+  form.onsubmit=event=>{event.preventDefault();if(!current()||form.dataset.saving==='true'||form.dataset.leadSaved==='true'||button.disabled)return;if(busy){actionFeedbackRefuse(button,notice);return;}
+   const errors=leadFormErrors(form);form.dataset.validationSubmitted='true';summary(errors,errors.size);showFieldErrors(form,errors);if(errors.size){if(errors.size===1&&errors.has(form.elements.estimatedValue)){notice.scrollIntoView({block:'center',behavior:'instant'});notice.focus({preventScroll:true});}return;}
+   return run(async()=>{try{await saveLeadForm(form)}catch(error){if(current())throw error;}},{origin:button,errorTarget:notice});};
  }
- $('#leadSearch').oninput=event=>{leadSearch=event.target.value;leadPage=0;renderSearchPreservingPosition(event.target,renderLeads,150);clearTimeout(leadSearchTimer);const text=leadSearch;leadSearchTimer=setTimeout(()=>leadSearchOlder(text).catch(()=>{}),400);};
- if($('#leadPrev')){$('#leadPrev').onclick=()=>{leadPage--;renderLeads();};$('#leadNext').onclick=()=>{leadPage++;renderLeads();};}
- document.querySelectorAll('[data-lead-filter]').forEach(button=>button.onclick=()=>{leadFilter=button.dataset.leadFilter;leadPage=0;renderLeads();});
+ bindLeadDetailActions();
+}
+function bindLeadDetailActions(){
+ document.querySelectorAll('[data-lead-card]').forEach(card=>{card.leadRenderedRow=leadRows.find(row=>row.id===card.dataset.leadCard);});
+ // A won lead shows where its order is now (packing queue, delivery).
+ if(typeof decorateOrderLiveStatus==='function')decorateOrderLiveStatus().catch(()=>{});
  document.querySelectorAll('[data-lead-edit]').forEach(button=>button.onclick=()=>{leadEditing=button.dataset.leadEdit;renderLeads();$('#leadForm')?.scrollIntoView({block:'start'});});
  document.querySelectorAll('[data-lead-action]').forEach(button=>button.onclick=()=>openLeadAction(leadRows.find(row=>row.id===button.dataset.id),button.dataset.leadAction));
- document.querySelectorAll('[data-lead-proforma]').forEach(button=>button.onclick=()=>startProformaFromLead(leadRows.find(row=>row.id===button.dataset.leadProforma)));
+ document.querySelectorAll('[data-lead-proforma]').forEach(button=>button.onclick=()=>run(()=>startProformaFromLead(leadRows.find(row=>row.id===button.dataset.leadProforma))));
  document.querySelectorAll('[data-lead-history]').forEach(button=>button.onclick=()=>run(()=>showLeadHistory(button.dataset.leadHistory)));
  document.querySelectorAll('[data-lead-handover]').forEach(button=>button.onclick=()=>openLeadHandover(leadRows.find(row=>row.id===button.dataset.leadHandover)));
  decorateLeadHandovers().catch(()=>{});
@@ -257,46 +356,55 @@ function bindLeads(){
 }
 function openLeadAction(row,action){
  if(!row)return;
+ const current=leadSaveCurrent();let committed=false;
  const titles={assign:'Assign salesperson',qualify:'Pass inquiry to sales',opportunity:'Mark as opportunity',won:'Mark lead as won',lost:'Mark lead as lost',reopen:'Reopen lead'};
  const needsAssignee=action==='assign'||(action==='qualify'&&!row.owner_user_id);
  const proformas=salesProformas.filter(p=>!p.deleted_at&&(!row.organization_id||p.organization_id===row.organization_id));
  const fields=`<p><strong>${esc(row.lead_number)}</strong> · ${esc(row.subject)} · ${esc(leadClientLabel(row))}</p>${needsAssignee?`<label><span>Salesperson</span><select name="assignee" required><option value="">Choose employee</option>${leadEmployeeOptions(row.owner_user_id||'')}</select></label>`:''}${action==='won'?(proformas.length?`<label><span>Pro forma for this lead</span><select name="proforma" required><option value="">Choose Pro forma</option>${proformas.map(p=>inventoryOption(p.id,`${p.document_number} · ${salesStatus?.(p.status)||p.status}`)).join('')}</select></label>`:'<p class="notice">No Pro forma exists for this client yet. Use Create Pro forma first.</p>'):''}<label><span>${action==='lost'?'Why was it lost?':'Note · optional'}</span><textarea name="note" maxlength="1000" ${action==='lost'?'required minlength="3"':''}></textarea></label>`;
  actionForm(titles[action],fields,async values=>{
-  const actor=me?.user_id,result=await client.rpc('advance_sales_lead',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||'',p_proforma_id:values.proforma||null});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the lead.');
+  if(!current())throw Error('Reopen the lead before saving this step.');
+  if(committed)throw Error('Lead saved. Use Retry saved lead to load current details.');
+  let result;try{result=await client.rpc('advance_sales_lead',{p_id:row.id,p_expected_version:row.version,p_action:action,p_assigned_user_id:values.assignee||null,p_note:values.note||'',p_proforma_id:values.proforma||null});}catch(error){if(!current())return;throw error;}
+  if(!current())return;
   if(result.error)throw Error(result.error.message);
-  await leadRefreshOne(row.id);message(`${row.lead_number}: ${titles[action].toLowerCase()} saved.`);
+  committed=true;const label=`${row.lead_number}: ${titles[action].toLowerCase()} saved.`;
+  if(await leadRefreshOne(row.id,result.data,row.version+1,current,label)&&current())message(label);
  });
 }
 // Hand a lead to another salesperson. The note (5 words or more) tells them what the customer wants and what to do;
 // the lead then appears on their "Work handed to me" list with the note and the next step.
 function openLeadHandover(row){
  if(!row)return;
+ const current=leadSaveCurrent();let committed=false;
  const options=[...employeeDirectory.values()].filter(e=>e.active!==false&&e.user_id!==row.owner_user_id).sort((a,b)=>employeeName(a.user_id).localeCompare(employeeName(b.user_id))).map(e=>inventoryOption(e.user_id,employeeName(e.user_id))).join('');
  const fields=`<p><strong>${esc(row.lead_number)}</strong> · ${esc(row.subject)} · ${esc(leadClientLabel(row))}<br><small>Now with ${esc(row.owner_user_id?employeeName(row.owner_user_id):'nobody')}</small></p><label><span>Hand over to</span><select name="assignee" required data-lookup><option value="">Type a name to search</option>${options}</select></label><label><span>Handover note · at least 5 words</span><textarea name="note" required minlength="10" maxlength="1000" placeholder="For example: Head of radiology at Aga Khan, wants a general ultrasound, compare quotes, call Mr Bob 0556…"></textarea></label><div class="grid"><label><span>Next step</span><input name="nextAction" maxlength="500" placeholder="For example: Call Mr Bob" value="${esc(row.next_action||'')}"></label><label><span>By</span><input name="nextActionOn" type="date" min="${leadToday()}" value="${esc(row.next_action_on&&row.next_action_on>=leadToday()?row.next_action_on:'')}"></label></div><p class="muted">They will see this lead, your note and the next step in their Work handed to me list. Your name and the time are kept on the lead.</p>`;
  actionForm('Hand over lead',fields,async values=>{
+  if(!current())throw Error('Reopen the lead before handing it over.');
+  if(committed)throw Error('Lead saved. Use Retry saved lead to load current details.');
   const note=String(values.note||'').trim().replace(/\s+/g,' ');
   if(!values.assignee)throw Error('Choose who takes over the lead.');
   if(leadWords(note)<5)throw Error('Write a handover note of at least 5 words, so they know what to do.');
-  const actor=me?.user_id,result=await client.rpc('hand_over_sales_lead',{p_id:row.id,p_expected_version:row.version,p_new_owner_user_id:values.assignee,p_note:note,p_next_action:String(values.nextAction||'').trim()||null,p_next_action_on:values.nextActionOn||null});
-  if(me?.user_id!==actor)throw Error('Login changed. Reopen the lead.');
+  let result;try{result=await client.rpc('hand_over_sales_lead',{p_id:row.id,p_expected_version:row.version,p_new_owner_user_id:values.assignee,p_note:note,p_next_action:String(values.nextAction||'').trim()||null,p_next_action_on:values.nextActionOn||null});}catch(error){if(!current())return;throw error;}
+  if(!current())return;
   if(result.error)throw Error(result.error.message);
-  await leadRefreshOne(row.id);message(`${row.lead_number} handed over to ${employeeName(values.assignee)}.`);
+  committed=true;const label=`${row.lead_number} handed over to ${employeeName(values.assignee)}.`;
+  if(await leadRefreshOne(row.id,result.data,row.version+1,current,label)&&current())message(label);
  });
 }
-function startProformaFromLead(row){
+async function startProformaFromLead(row){
  if(!row)return;
  if(!row.organization_id){message('Add this caller to the client list first, then choose the client on the lead (Edit), so the Pro forma has a real customer.',true);return;}
+ const actor=me;
  salesPrefill={organizationId:row.organization_id,contactId:row.contact_id||'',leadNumber:row.lead_number};
- view='sales';salesSection='proformas';salesEditing='new';render();
- message(`New Pro forma for ${row.lead_number}. After saving it, return to the lead and press Mark won.`);
+ view='sales';salesSection='proformas';salesEditing='new';await render();
+ if(me===actor&&view==='sales'&&salesEditing==='new')message(`New Pro forma for ${row.lead_number}. After saving it, return to the lead and press Mark won.`);
 }
 const leadEventLabels={create:'recorded',edit:'edited',qualify:'passed to sales',assign:'salesperson set',handover:'handed over',opportunity:'opportunity',won:'won',lost:'lost',reopen:'reopened'};
 async function showLeadHistory(id){
- const output=document.querySelector(`[data-lead-history-output="${CSS.escape(id)}"]`),actor=me?.user_id;if(!output)return;
+ const output=document.querySelector(`[data-lead-history-output="${CSS.escape(id)}"]`),current=leadSaveCurrent();if(!output)return;
  output.textContent='Loading history…';
  const result=await client.from('sales_lead_events').select('action,from_stage,to_stage,assigned_user_id,from_user_id,note,actor_user_id,created_at').eq('lead_id',id).order('created_at').limit(200);
- if(me?.user_id!==actor||!output.isConnected)return;
+ if(!current()||!output.isConnected)return;
  if(result.error){output.textContent=`History could not load: ${result.error.message}`;return;}
  output.innerHTML=`<ol class="lead-history">${(result.data||[]).map(event=>`<li>${esc(new Date(event.created_at).toLocaleString())} · <strong>${esc(employeeName(event.actor_user_id))}</strong> · ${esc(leadEventLabels[event.action]||event.action)}${event.action==='handover'?` from ${esc(employeeName(event.from_user_id))} to ${esc(employeeName(event.assigned_user_id))}`:''}${event.from_stage&&event.from_stage!==event.to_stage?` · ${esc(leadStages[event.from_stage])} → ${esc(leadStages[event.to_stage])}`:''}${event.assigned_user_id&&event.action!=='handover'?` · salesperson ${esc(employeeName(event.assigned_user_id))}`:''}${event.note?` · ${esc(event.note)}`:''}</li>`).join('')}</ol>`;
 }
