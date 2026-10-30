@@ -62,6 +62,9 @@ function pendingForm(){
 async function loadPendingStock(force=true){
  const epoch=++pendingEpoch,actor=me,actorId=me?.user_id;
  const current=()=>epoch===pendingEpoch&&me===actor&&me?.user_id===actorId;
+ // Stock availability is asked for at the same time as the requests (one round trip instead of two).
+ const stock=Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+ stock.catch(()=>{});
  if(force||!pendingLoaded){
   const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
   if(!current())return false;
@@ -69,7 +72,7 @@ async function loadPendingStock(force=true){
  }
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
-  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+  const [lots,packs,locations]=await stock;
   if(!current())return false;
   pendingAvailabilityDay=pendingToday();pendingAvailability=pendingAvailableByProduct(lots,packs,locations,pendingAvailabilityDay);pendingAvailabilityError='';
  }catch(error){if(!current())return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}

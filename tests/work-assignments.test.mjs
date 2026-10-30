@@ -62,7 +62,7 @@ test('Assign to me opens a prefilled current-step form, then records a retry-saf
   actionForm:(title,fields,submit)=>{form={title,fields,submit};},crypto:{randomUUID:()=>`request-${++request}`},render:async()=>{},message:()=>{},
   client:{rpc:async(name,payload)=>{calls.push({name,payload});return ++attempt===1?{error:{message:'Response lost'}}:{data:{id:payload.p_id}};}}});
  ctx.workRecordCards=()=>[{card,type:'delivery',id:'delivery-1',label:'DN-1'}];
- ctx.loadOpenWork=async()=>new Map([['delivery-1',current]]);ctx.loadWorkHistory=async()=>[];ctx.loadWorkDelays=async()=>[];
+ ctx.loadRecordWork=async()=>({open:new Map([['delivery-1',current]]),history:[current],delays:[]});
  await ctx.decorateWorkHandoffs();
  assert.match(box.innerHTML,/data-work-self>Assign this step to me/);
  handlers.get('[data-work-self]')();
@@ -97,7 +97,7 @@ test('finished delivery and service records retain history without offering new 
  assert.equal(ctx.workRecordClosed('proforma',{status:'accepted'}),false);
  assert.equal(ctx.workRecordClosed('delivery',{status:'packing'}),false);
  ctx.workRecordCards=()=>[{card,type:'delivery',id:'delivery-1',label:'DN-1',closed:true}];
- ctx.loadOpenWork=async()=>new Map();ctx.loadWorkHistory=async()=>[{id:'old',record_id:'delivery-1',assignee_user_id:'a',task:'Deliver the order',status:'done',created_at:'2026-10-18T09:00:00Z',closed_at:'2026-10-18T10:00:00Z'}];ctx.loadWorkDelays=async()=>[];
+ ctx.loadRecordWork=async()=>({open:new Map(),history:[{id:'old',record_id:'delivery-1',assignee_user_id:'a',task:'Deliver the order',status:'done',created_at:'2026-10-18T09:00:00Z',closed_at:'2026-10-18T10:00:00Z'}],delays:[]});
  await ctx.decorateWorkHandoffs();
  assert.doesNotMatch(box.innerHTML,/data-work-self|data-work-assign/);
  assert.match(box.innerHTML,/Deliver the order/);assert.match(box.innerHTML,/Handoff task: <strong>closed/);
@@ -114,4 +114,19 @@ test('task layout loads handoffs in their own column and related notices below, 
   assert.equal(targets.find(([name])=>name==='handoffs')[1],nodes.get('#orderSteps'));assert.equal(targets.find(([name])=>name==='notices')[1],nodes.get('#teamTaskRelated'));
   if(role==='owner')assert.equal(targets.find(([name])=>name==='unowned')[1],nodes.get('#teamTaskRelated'));else assert.equal(targets.some(([name])=>name==='unowned'),false);
  }
+});
+test('responsible-person details load in one request per 100 records, all sent together',async()=>{
+ const calls=[];let inFlight=0,most=0;
+ const query=chunk=>{const q={ids:[],select(cols){q.cols=cols;return q},eq(){return q},in(_c,ids){q.ids=ids;return q},order(){return q},range(){return q},
+  then(ok,bad){inFlight++;most=Math.max(most,inFlight);calls.push(q);return new Promise(r=>setTimeout(r,5)).then(()=>{inFlight--;return {data:q.ids.flatMap(id=>id==='r0'?[
+   {id:'w-old',record_id:'r0',status:'done',created_at:'2026-10-01T00:00:00Z',work_delays:[{id:'d-old',assignment_id:'w-old',recorded_at:'2026-10-01T01:00:00Z'}]},
+   {id:'w-now',record_id:'r0',status:'open',created_at:'2026-10-02T00:00:00Z',work_delays:[{id:'d-now',assignment_id:'w-now',recorded_at:'2026-10-02T01:00:00Z'}]}]:[])}}).then(ok,bad)}};return q};
+ const ctx=load({me:{user_id:'a'},client:{from:()=>query()}});
+ const ids=Array.from({length:250},(_,i)=>'r'+i);
+ const work=await ctx.loadRecordWork('delivery',ids);
+ assert.equal(calls.length,3,'250 records = 3 requests');assert.equal(most,3,'all three sent together');
+ assert.match(calls[0].cols,/work_delays\(/,'delays come back inside the same request');
+ assert.equal(work.open.get('r0').id,'w-now');assert.equal(work.history.length,2);
+ assert.ok(work.history.every(row=>!('work_delays' in row)));
+ assert.equal(JSON.stringify(work.delays.map(d=>d.id)),'["d-now"]','only the open step\'s delays');
 });

@@ -103,21 +103,31 @@ async function loadOpenWork(type,ids){
  }
  return out;
 }
+// Open step, step history and delays for these records in one request per 100 records (all sent together).
+// Before, open work, history and delays were three requests one after another.
+async function loadRecordWork(type,ids){
+ const actor=me,epoch=workEpoch,chunks=[];for(let i=0;i<ids.length;i+=100)chunks.push(ids.slice(i,i+100));
+ const parts=await Promise.all(chunks.map(chunk=>workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at,closed_at,close_note,work_delays(id,assignment_id,reason,expected_on,recorded_by,recorded_at)',query=>query.eq('record_type',type).in('record_id',chunk))));
+ const open=new Map(),history=[],delays=[];
+ if(me!==actor||workEpoch!==epoch)return {open,history,delays};
+ for(const rows of parts)for(const {work_delays:own,...row} of rows){history.push(row);if(row.status==='open'){open.set(row.record_id,row);delays.push(...(own||[]));}}
+ return {open,history,delays};
+}
 // Adds the responsible person and handoff buttons to whichever record cards are on screen.
 async function decorateWorkHandoffs(){
  const cards=workRecordCards();if(!cards.length||!me?.user_id)return;
  const epoch=++workEpoch,actor=me,byType=new Map();
  for(const item of cards){if(!byType.has(item.type))byType.set(item.type,[]);byType.get(item.type).push(item);}
  for(const item of cards){const box=document.createElement('div');box.className='work-handoff';box.dataset.workHandoff=item.id;box.innerHTML='<span>Responsible: loading…</span>';(item.card.querySelector('.actions')||item.card).before(box);}
- for(const [type,items] of byType){
+ // Every kind of record on the page loads at the same time.
+ const loads=[...byType].map(([type,items])=>loadRecordWork(type,items.map(item=>item.id)).then(work=>({work}),error=>({error})));
+ for(const [index,[type,items]] of [...byType].entries()){
   let open,history=new Map(),delays=new Map();
-  try{
-   open=await loadOpenWork(type,items.map(item=>item.id));
-   const all=await loadWorkHistory(type,items.map(item=>item.id));for(const row of all){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
-   delays=workLatestDelays(await loadWorkDelays([...open.values()].map(row=>row.id)));
-  }
-  catch(error){if(epoch!==workEpoch||me!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(error.message)}</span>`;});continue;}
+  const loaded=await loads[index];
+  if(loaded.error){if(epoch!==workEpoch||me!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(loaded.error.message)}</span>`;});continue;}
   if(epoch!==workEpoch||me!==actor)return;
+  open=loaded.work.open;for(const row of loaded.work.history){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
+  delays=workLatestDelays(loaded.work.delays);
   for(const item of items){
    const box=item.card.querySelector('[data-work-handoff]');if(!box?.isConnected)continue;
    const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');

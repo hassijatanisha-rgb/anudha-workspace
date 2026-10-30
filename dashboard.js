@@ -7,7 +7,7 @@
 // device. Which table and filter feed each card: docs/DASHBOARD-CARDS.md.
 const dashboardDefaultPeriod={preset:'today',from:'',to:''};
 let dashboardPeriod={...dashboardDefaultPeriod},dashboardPeriodFor=null;
-let dashboardData=null,dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null;
+let dashboardData=null,dashboardDataFor='',dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null;
 const dashboardZone='Africa/Dar_es_Salaam';
 const dashboardPresets=[['today','Today'],['week','This week'],['month','This month'],['quarter','This quarter'],['year','This year'],['custom','Custom']];
 // [key, label, colour, where a click goes]. No target: no existing list shows exactly these records.
@@ -31,7 +31,7 @@ const dashboardCards={
   ['webqueries_closed','Closed website inquiries','web',{view:'requests',section:'inquiries',filter:'done'}]]
 };
 const dashboardParts=[['leads','Lead follow-ups'],['tasks','Tasks'],['steps','Order steps'],['service','Service visits']];
-function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
+function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardDataFor='';dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
 
 // Dates are 'YYYY-MM-DD' strings for the Dar es Salaam calendar day.
 function dashboardDay(now=Date.now()){return new Intl.DateTimeFormat('en-CA',{timeZone:dashboardZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));}
@@ -181,13 +181,16 @@ async function dashboardWorkspace(){
  const epoch=++dashboardEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(dashboardPeriodFor!==actor){dashboardPeriod=dashboardLoadPeriod(actor);dashboardPeriodFor=actor;}
  const range=dashboardRange(dashboardPeriod,dashboardDay()),team=dashboardTeamVisible(),person=team?dashboardPerson:null;
- if(!dashboardData)$('#content').innerHTML='<p role="status">Loading the dashboard…</p>';
+ // Coming back to the Dashboard shows the last numbers for the same person and dates at once, then updates them;
+ // otherwise the previous page stayed on screen until the new numbers arrived.
+ const key=`${actor}|${range.from}|${range.to}`;
+ if(dashboardData&&dashboardDataFor===key)renderDashboard(range);else $('#content').innerHTML='<p role="status">Loading the dashboard…</p>';
  const [r,t,p]=await Promise.all([
   client.rpc('dashboard_counts',{p_periodic_from:range.from,p_periodic_to:range.to,p_result_from:range.from,p_result_to:range.to}),
   team?client.rpc('team_task_counts',{p_from:range.from,p_to:range.to}):null,
   person?client.rpc('team_member_tasks',{p_user_id:person.user_id,p_from:range.from,p_to:range.to}):null]);
  if(epoch!==dashboardEpoch||me?.user_id!==actor||view!=='dashboard')return;
- if(r.error)dashboardError=r.error.message||'Unknown error';else{dashboardData=r.data;dashboardError='';}
+ if(r.error){dashboardError=r.error.message||'Unknown error';if(dashboardDataFor!==key)dashboardData=null;}else{dashboardData=r.data;dashboardDataFor=key;dashboardError='';}
  if(t){dashboardTeamError=t.error?(t.error.message||'Unknown error'):'';dashboardTeam=t.error?null:(t.data||[]);}
  if(p&&dashboardPerson?.user_id===person.user_id)dashboardPerson={user_id:person.user_id,rows:p.error?null:(p.data||[]),error:p.error?(p.error.message||'Unknown error'):''};
  renderDashboard(range);

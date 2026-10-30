@@ -218,3 +218,22 @@ test('migration 070: team counts check who is asking, heads see their own depart
  assert.ok((sql.match(/Africa\/Dar_es_Salaam/g)||[]).length>=2);
  assert.ok(readdirSync(new URL('./sql/',import.meta.url)).includes('team-task-counts.sql'),'database test for head visibility');
 });
+test('returning to the Dashboard draws the last numbers at once, only for the same person and dates',async()=>{
+ const html={},answers=[];let period={preset:'quarter'};
+ const ctx=load({me:{user_id:'s',role:'staff'},view:'dashboard',employeeName:()=>'X',syncWorkspaceNavigation:()=>{},run:fn=>fn(),
+  $:()=>({set innerHTML(v){html.content=v},get innerHTML(){return html.content},value:''}),document:{querySelectorAll:()=>[]},
+  client:{rpc:()=>new Promise(resolve=>answers.push(resolve))},localStorage:{getItem:()=>JSON.stringify(period),setItem:()=>{}}});
+ ctx.dashboardDay=()=>'2026-10-06';
+ const counts=n=>({data:{open:{tasks:n},periodic:{},result:{}},error:null});
+ let visit=ctx.dashboardWorkspace();assert.match(html.content,/Loading the dashboard/);answers.shift()(counts(7));await visit;
+ assert.match(html.content,/dashboard-columns/);
+ html.content='<h1>Product prices</h1>';
+ visit=ctx.dashboardWorkspace();
+ assert.match(html.content,/dashboard-columns/,'saved numbers drawn before the server answers');assert.doesNotMatch(html.content,/Product prices/);
+ answers.shift()(counts(8));await visit;
+ vm.runInContext("dashboardPeriod={preset:'today',from:'',to:''}",ctx);
+ visit=ctx.dashboardWorkspace();
+ assert.match(html.content,/Loading the dashboard/,'other dates never show the old numbers');
+ answers.shift()({data:null,error:{message:'offline'}});await visit;
+ assert.doesNotMatch(html.content,/dashboard-columns/,'a failed load for other dates does not fall back to the old numbers');
+});
