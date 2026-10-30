@@ -104,7 +104,7 @@ function bindServiceIntake(form){
   }finally{if(current())button.disabled=false;}});
  });
 }
-async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;$('#content').innerHTML='<p role="status">Loading service and installation jobs…</p>';const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
+async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;pageLoading('Loading service and installation jobs…');const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
 
 async function focusServiceCase(id){
  const actor=me,epoch=serviceEpoch,origin=view;

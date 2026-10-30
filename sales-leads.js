@@ -213,7 +213,7 @@ async function loadLeads(){
 async function leadsWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!leadLoaded){
-  $('#content').innerHTML='<p role="status">Loading inquiries and leads…</p>';
+  pageLoading('Loading inquiries and leads…');
   try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
  }
  if(view!=='leads'||me?.user_id!==actor)return;

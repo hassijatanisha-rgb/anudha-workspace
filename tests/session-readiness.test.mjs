@@ -9,7 +9,7 @@ function fixture(files,all=async()=>[]){
  const content={innerHTML:'Current page'};
  const q={select(){return this},order(){return this},limit(){return this},then(ok){return Promise.resolve({data:[]}).then(ok)}};
  const c=vm.createContext({me:{user_id:'a'},view:'service',all,client:{from:()=>q},esc:String,$:()=>content,document:{addEventListener(){},querySelectorAll:()=>[]},window:{addEventListener(){}},location:{hash:''},syncWorkspaceNavigation(){}});
- for(const file of ['business-date.js',...files])vm.runInContext(read(file),c);
+ for(const file of ['page-refresh.js','business-date.js',...files])vm.runInContext(read(file),c);
  return {c,content,get:code=>vm.runInContext(code,c)};
 }
 test('Tanzania civil dates remain correct across midnight, year and leap-day boundaries',()=>{

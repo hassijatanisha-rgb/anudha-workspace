@@ -52,7 +52,7 @@ function travelCard(row){
 async function travelWorkspace(force=false){
  const epoch=++travelEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!travelLoaded){
-  $('#content').innerHTML='<p role="status">Loading travel requests…</p>';
+  pageLoading('Loading travel requests…');
   const result=await client.from('travel_requests').select('*').order('depart_at',{ascending:false}).limit(500);
   if(epoch!==travelEpoch||me?.user_id!==actor||view!=='travel')return;
   if(result.error){$('#content').innerHTML=`<h1>Travel requests</h1><p role="alert">Travel requests could not load: ${esc(result.error.message)}</p>`;return;}

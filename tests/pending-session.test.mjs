@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const source=readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8');
+const source=readFileSync(new URL('../page-refresh.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8');
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 function fixture(all=async()=>[]){
  const content={innerHTML:'Clients'};
