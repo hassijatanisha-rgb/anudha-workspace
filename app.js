@@ -27,7 +27,7 @@ async function fetchLists(userId){
  try{
   if(cached){
    // Changed rows only, archived ones included so they can leave the list.
-   const changed=(table,cols)=>all(table,cols,q=>q.gte('updated_at',listCacheFrom(cached.since[table])));
+   const changed=(table,cols)=>all(table,cols,q=>listCacheChanged(q,cached.since[table]));
    const [od,cd,pd]=await Promise.all([changed('organizations',C.organizations+',deleted_at,updated_at'),changed('contacts',C.contacts+',deleted_at,updated_at'),changed('products',C.products+',updated_at')]);
    const o=listCacheMerge(cached.organizations,od,false),c=listCacheMerge(cached.contacts,cd,false),p=listCacheMerge(cached.products,pd,true);
    return {o,c,p,record:{userId,savedAt:cached.savedAt,since:{organizations:listCacheLatest(od,cached.since.organizations),contacts:listCacheLatest(cd,cached.since.contacts),products:listCacheLatest(pd,cached.since.products)},organizations:o,contacts:c,products:p}};
