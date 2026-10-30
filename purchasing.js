@@ -125,7 +125,7 @@ async function loadPurchasing(){
 async function purchasingWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
-  $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
+  pageLoading('Loading purchasing…');
   try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
  if(view!=='purchasing'||me?.user_id!==actor)return;

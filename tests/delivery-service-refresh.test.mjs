@@ -12,7 +12,7 @@ function fixture(){
   actionForm(title,fields,callback){submit=callback;},
   all:async table=>{reads.push(table);return table==='service_cases'?Array.from({length:4},(_,i)=>({id:'case-'+i,case_type:'installation'})):[];},
   client:{rpc:()=>response,from:()=>({select(){return this;},order:async()=>({data:[]})})}});
- for(const file of ['sales-delivery.js','service-workflow.js'])vm.runInContext(read(file),c);
+ for(const file of ['page-refresh.js','sales-delivery.js','service-workflow.js'])vm.runInContext(read(file),c);
  const get=code=>vm.runInContext(code,c);
  get("serviceLoaded=true;serviceCases=[{id:'old-1'},{id:'old-2'}];salesDeliveryWorkspace=async()=>{};bindServiceWorkflow=()=>{};installationScreen=()=>serviceCases.length+' installation jobs';");
  c.openDeliveryAction({id:'delivery-2',version:4},'deliver');

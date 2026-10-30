@@ -82,7 +82,7 @@ async function booksWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
  const current=()=>me?.user_id===actor&&view==='books'&&epoch===booksEpoch;
  if(!current())return;
- $('#content').innerHTML='<p role="status">Loading the books…</p>';
+ pageLoading('Loading the books…');
  const data=await loadBooksData();
  if(!current())return;
  booksData=data;

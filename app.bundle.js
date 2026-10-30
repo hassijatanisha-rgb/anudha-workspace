@@ -121,6 +121,79 @@ function renderSearchPreservingPosition(input,render,wait=0){
  for(const [parent,left,top] of parents){parent.scrollLeft=left;parent.scrollTop=top;}
  window.scrollTo(x,y);
 }
+;// page-refresh.js
+'use strict';
+// A page refreshed while it is on screen (after a save, or Refresh) stays visible, dimmed and marked busy, until the
+// new version is drawn, and the redraw keeps the person's place. Only arriving at a page shows its loading line.
+// Before, every refresh after a save blanked the page to "Loading…" and jumped back to the top.
+// The page is known by its address (view and section); a different page always shows the loading line.
+let pageShown=null,pageRefreshing=null,pageScrollWanted=null,pagePlaceWatch=null;
+function pageKey(){return `${(()=>{try{return typeof view}catch{return 'undefined'}})()==='undefined'?'':view}|${typeof location==='undefined'?'':location.hash}`}
+const pageIdValue=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The person's place: what sits a third of the way down the window (a short piece of text) inside the record it
+// belongs to (the nearest card or row with a record id), and how far from the top it is. After the redraw the same
+// text in the same record is put back at the same height, even when panels are added above it. If that text is
+// gone, the record itself is used; without a record, the scroll position.
+function pagePlace(content){
+ const at=typeof document.elementFromPoint==='function'?document.elementFromPoint(Math.round(window.innerWidth/2),Math.round(window.innerHeight/3)):null;
+ let mark=null,record=null;
+ for(let el=at;el&&el!==content;el=el.parentElement){
+  if(!mark){const text=(el.innerText||'').trim();if(text&&text.length<=200)mark={tag:el.tagName,text,top:el.getBoundingClientRect().top};}
+  if(!record)for(const attr of el.attributes)if(attr.name.startsWith('data-')&&pageIdValue.test(attr.value)){record={selector:`${el.tagName.toLowerCase()}[${attr.name}="${attr.value}"]`,top:el.getBoundingClientRect().top};break;}
+  if(record)break;
+ }
+ if(!at||!content.contains(at))return null;
+ return record?{...record,mark}:null;
+}
+function pageRestorePlace(content,want){
+ const record=want.place&&content.querySelector(want.place.selector);
+ if(!record)return window.scrollTo(want.x,want.y);
+ const mark=want.place.mark,same=mark&&[...record.querySelectorAll(mark.tag)].find(el=>(el.innerText||'').trim()===mark.text);
+ if(same)window.scrollBy(0,same.getBoundingClientRect().top-mark.top);
+ else window.scrollBy(0,record.getBoundingClientRect().top-want.place.top);
+}
+// While the place is held, the browser's own scroll anchoring is off: both correcting the same late panel moved the
+// page twice as far (measured on Delivery). It is back on as soon as the hold ends.
+function pageForgetPlace(){pageScrollWanted=null;if(pagePlaceWatch){pagePlaceWatch.disconnect();pagePlaceWatch=null;document.documentElement.style.overflowAnchor='';}}
+// Whatever draws #content, remember which page it was; the first redraw after a refresh ends that refresh, and the
+// place is held for 3 seconds while late panels arrive, until the person scrolls, clicks or types.
+function pageObserve(content){
+ new MutationObserver(()=>{
+  const key=pageKey(),r=pageRefreshing;
+  if(r){
+   pageRefreshing=null;content.removeAttribute('aria-busy');
+   if(r.key===key){
+    pageForgetPlace();pageScrollWanted={key,...r.refresh,until:Date.now()+3000};
+    pagePlaceWatch=new MutationObserver(()=>{const want=pageScrollWanted;if(!want||pageKey()!==want.key||Date.now()>want.until)return pageForgetPlace();pageRestorePlace(content,want);});
+    pagePlaceWatch.observe(content,{childList:true,subtree:true});document.documentElement.style.overflowAnchor='none';
+    setTimeout(()=>{if(pageScrollWanted&&pageScrollWanted.until<=Date.now())pageForgetPlace();},3100);
+   }
+  }
+  const want=pageScrollWanted;
+  if(want&&(want.key!==key||Date.now()>want.until))pageForgetPlace();
+  else if(want)pageRestorePlace(content,want);
+  pageShown={key,node:content.firstElementChild};
+ }).observe(content,{childList:true});
+ for(const type of ['wheel','touchstart','keydown','mousedown'])addEventListener(type,pageForgetPlace,{passive:true,capture:true});
+}
+function pageLoading(text){
+ const content=$('#content');if(!content)return;
+ const key=pageKey(),same=pageShown?.key===key&&!!pageShown.node&&pageShown.node.parentElement===content;
+ pageSettle();
+ if(!same){content.innerHTML=`<p role="status">${String(text).replace(/[&<>"]/g,c=>`&#${c.charCodeAt(0)};`)}</p>`;return;}
+ const old=[...content.children];
+ const place=pagePlace(content);
+ for(const node of old)node.classList.add('is-refreshing');
+ content.setAttribute('aria-busy','true');
+ pageRefreshing={key,content,refresh:{old,place,x:window.scrollX,y:window.scrollY}};
+}
+// A refresh that ends without a redraw (it failed, or the person moved on) must not leave the page dimmed.
+function pageSettle(){
+ const r=pageRefreshing;if(!r)return;
+ pageRefreshing=null;r.content.removeAttribute?.('aria-busy');
+ for(const node of r.refresh.old)node.classList.remove('is-refreshing');
+}
+if(typeof document!=='undefined'&&document.getElementById?.('content'))pageObserve(document.getElementById('content'));
 ;// data-quality.js
 'use strict';
 // One colour rule for products and contacts: nothing wrong = no colour, one thing wrong = yellow, two or more = red.
@@ -1096,7 +1169,7 @@ function inventoryLocationsScreen(){return `${inventoryHeader()}${me.role==='own
 async function inventoryWorkspace(force=false){
  syncWorkspaceNavigation();
  const actor=me,section=inventorySection;if(!actor||view!=='inventory')return;
- $('#content').innerHTML='<p role="status">Loading godowns, stock and transfers…</p>';
+ pageLoading('Loading godowns, stock and transfers…');
  const loading=!inventoryLoaded||force?loadInventoryOperations():null,epoch=inventoryEpoch;
  if(loading)await loading;
  if(me!==actor||epoch!==inventoryEpoch||view!=='inventory'||inventorySection!==section)return;
@@ -1954,7 +2027,7 @@ async function salesDeliveryWorkspace(force=false){
  if(!salesConfirmLeave())return;
  const actor=me,epoch=salesEpoch,request=++salesWorkspaceRequest,current=()=>me===actor&&salesEpoch===epoch&&request===salesWorkspaceRequest&&view==='sales';
  syncWorkspaceNavigation();
- $('#content').innerHTML='<p role="status">Loading Pro forma invoices and deliveries…</p>';
+ pageLoading('Loading Pro forma invoices and deliveries…');
  if(salesSection==='documents'){$('#content').innerHTML=officialDocumentsScreen();bindSalesDelivery();return;}
  if(force||!salesLoaded)await loadSalesDelivery();
  if(!current())return;
@@ -2755,7 +2828,7 @@ async function loadLeads(){
 async function leadsWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!leadLoaded){
-  $('#content').innerHTML='<p role="status">Loading inquiries and leads…</p>';
+  pageLoading('Loading inquiries and leads…');
   try{if(!(await loadLeads()))return;}catch(error){if(me?.user_id!==actor)return;leadLoadError=error.message;leadLoaded=false;}
  }
  if(view!=='leads'||me?.user_id!==actor)return;
@@ -2929,7 +3002,7 @@ async function pendingStockWorkspace(force=false){
  if(!current())return;
  syncWorkspaceNavigation();
  // Stock may change in another workspace during the same day; check it on every entry.
- $('#content').innerHTML='<p role="status">Loading pending stock orders…</p>';
+ pageLoading('Loading pending stock orders…');
  try{if(!(await loadPendingStock(force||pendingAvailabilityDay!==pendingToday())))return;}catch(error){if(!current())return;pendingLoadError=error.message;pendingLoaded=false;}
  if(!current())return;
  renderPendingStock();
@@ -3371,7 +3444,7 @@ async function loadPurchasing(){
 async function purchasingWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!purchaseLoaded){
-  $('#content').innerHTML='<p role="status">Loading purchasing…</p>';
+  pageLoading('Loading purchasing…');
   try{if(!(await loadPurchasing()))return;}catch(error){if(me?.user_id!==actor)return;purchaseLoadError=error.message;purchaseLoaded=false;}
  }
  if(view!=='purchasing'||me?.user_id!==actor)return;
@@ -3527,7 +3600,7 @@ async function stockCountWorkspace(force=false){
  if(!stockCountEnabled()){$('#content').innerHTML='<section class="card"><h1>Stock count is switched off</h1><p class="muted">The physical count is finished. Stock is managed in Inventory.</p></section>';return;}
  if(!countGodown)countGodown=countRememberedGodown();
  if(force||!countLoaded){
-  $('#content').innerHTML='<p role="status">Loading the product list and counts…</p>';
+  pageLoading('Loading the product list and counts…');
   const epoch=countEpoch+1;try{if(!(await loadStockCount(force)))return;}catch(error){if(me!==actor||countEpoch!==epoch)return;countLoadError=error.message;countLoaded=false;}
  }
  if(view!=='stockcount'||me!==actor)return;
@@ -3717,7 +3790,7 @@ async function loadTallyInvoices(){
 async function tallyInvoicesWorkspace(force=false){
  const actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!tallyInvoiceLoaded){
-  $('#content').innerHTML='<p role="status">Loading Tally invoices…</p>';
+  pageLoading('Loading Tally invoices…');
   try{if(!(await loadTallyInvoices()))return;}catch(error){if(me?.user_id!==actor)return;tallyInvoiceError=error.message;tallyInvoiceLoaded=false;}
  }
  if(view!=='tallyinvoices'||me?.user_id!==actor)return;
@@ -4272,7 +4345,7 @@ function bindServiceIntake(form){
   }finally{if(current())button.disabled=false;}});
  });
 }
-async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;$('#content').innerHTML='<p role="status">Loading service and installation jobs…</p>';const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
+async function serviceWorkspace(force=false){syncWorkspaceNavigation();const actor=me,section=serviceSection;if(!actor||view!=='service')return;pageLoading('Loading service and installation jobs…');const loading=force||!serviceLoaded?loadServiceWorkflow():null,epoch=serviceEpoch;if(loading)await loading;if(me!==actor||epoch!==serviceEpoch||view!=='service'||serviceSection!==section)return;if(!serviceLoaded){$('#content').innerHTML=serviceUnavailable();bindServiceWorkflow();return;}$('#content').innerHTML=section==='schedule'?serviceScheduleScreen():section==='forms'?serviceFormsScreen():installationScreen();bindServiceWorkflow()}
 
 async function focusServiceCase(id){
  const actor=me,epoch=serviceEpoch,origin=view;
@@ -4455,7 +4528,7 @@ function travelCard(row){
 async function travelWorkspace(force=false){
  const epoch=++travelEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(force||!travelLoaded){
-  $('#content').innerHTML='<p role="status">Loading travel requests…</p>';
+  pageLoading('Loading travel requests…');
   const result=await client.from('travel_requests').select('*').order('depart_at',{ascending:false}).limit(500);
   if(epoch!==travelEpoch||me?.user_id!==actor||view!=='travel')return;
   if(result.error){$('#content').innerHTML=`<h1>Travel requests</h1><p role="alert">Travel requests could not load: ${esc(result.error.message)}</p>`;return;}
@@ -4598,7 +4671,7 @@ function requestCard(row){
 async function customerRequestsWorkspace(force=false){
  const epoch=++requestEpoch,actor=me;if(!actor||view!=='requests')return;syncWorkspaceNavigation();
  if(force||!requestLoaded){
-  $('#content').innerHTML='<p role="status">Loading requests…</p>';
+  pageLoading('Loading requests…');
   const since=new Date(Date.now()-requestRecentDays*864e5).toISOString();
   let rows;try{rows=await all('customer_requests','*',q=>q.or(`status.in.(received,in_progress),updated_at.gte.${since}`));}
   catch(error){if(epoch!==requestEpoch||me!==actor||view!=='requests')return;$('#content').innerHTML=`<h1>${esc(requestSections[requestSection].title)}</h1><p role="alert">Requests could not load: ${esc(error.message)}</p><button type="button" id="requestRetry">Try again</button>`;$('#requestRetry').onclick=()=>run(()=>customerRequestsWorkspace(true));return;}
@@ -5734,7 +5807,7 @@ function accountingSearchLinks(records,query,selectedId,kind){
 async function accountingWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me);
  if(me?.user_id!==actor||view!=='accounting')return;
- $('#content').innerHTML='<p role="status">Loading accounting drafts…</p>';
+ pageLoading('Loading accounting drafts…');
  const r=await client.from('accounting_drafts').select('id,kind,version,organization_id,contact_id,body,updated_at').order('updated_at',{ascending:false}).range(accountingPage*25,accountingPage*25+24);
  if(me?.user_id!==actor||view!=='accounting')return;
  if(r.error)throw Error(`Accounting drafts could not load: ${r.error.message}`);
@@ -5880,7 +5953,7 @@ async function booksWorkspace(){
  const actor=await requireAccountingAccess(client,()=>me),epoch=++booksEpoch;
  const current=()=>me?.user_id===actor&&view==='books'&&epoch===booksEpoch;
  if(!current())return;
- $('#content').innerHTML='<p role="status">Loading the books…</p>';
+ pageLoading('Loading the books…');
  const data=await loadBooksData();
  if(!current())return;
  booksData=data;
@@ -7979,7 +8052,7 @@ function friendlyError(e){
  if(e?.name==='TimeoutError'||e?.name==='AbortError'||/Connection problem|signal timed out|aborted|Failed to fetch|NetworkError|Load failed/i.test(text))return 'The connection is slow or offline. We could not confirm the result. Reconnect and check the record before submitting again.';
  return text||'Something went wrong. Please retry.';
 }
-async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;replayQueuedNavigation()}}
+async function run(fn){if(busy)return;busy=true;try{await fn()}catch(e){message(friendlyError(e),true)}finally{busy=false;if(typeof pageSettle==='function')pageSettle();replayQueuedNavigation()}}
 // The menu item pressed while the last action was still running (workspace-navigation.js), pressed again now.
 function replayQueuedNavigation(){const button=typeof navWhileBusy!=='undefined'?navWhileBusy:null;if(button){navWhileBusy=null;if(button.isConnected&&!button.hidden){button.click();return;}}if(typeof navResumePending==='function')navResumePending();}
 $('#editForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;try{showFieldErrors(e.target,{});const values=Object.fromEntries(new FormData(e.target));await save({...editing,...values});$('#editor').close()}catch(err){$('#formError').textContent=err.message;showFieldErrors(e.target,err.fields||{})}finally{busy=false}};

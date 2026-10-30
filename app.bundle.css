@@ -1090,3 +1090,6 @@ main .staff-account-details .actions{display:flex;flex-direction:column;align-it
 @container(max-width:26rem){.staff-directory-table tbody tr{grid-template-columns:minmax(0,1fr);gap:1rem}.staff-directory-table .staff-identity{grid-column:auto}}
 @media(prefers-contrast:more){.staff-login-state,.staff-login-state.is-off{border-color:currentColor}.staff-directory-help,.staff-phone-value,.staff-account-status,.staff-field-status{color:inherit}}
 @media(forced-colors:active){.staff-login-state,.staff-login-state.is-off{background:Canvas;color:CanvasText;border-color:CanvasText}.staff-field-status.error{color:CanvasText}.staff-area-details>summary:focus-visible,.staff-account-details>summary:focus-visible{outline-color:Highlight}}
+/* A page refreshing in place (page-refresh.js): still readable, clearly busy, not clickable until redrawn. */
+#content>.is-refreshing{opacity:.55;pointer-events:none;transition:opacity .15s ease-out}
+#content[aria-busy="true"]{cursor:progress}

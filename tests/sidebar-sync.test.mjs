@@ -10,7 +10,7 @@ for(const [file,entry,bindings] of [
 ])test(`${file} synchronizes sidebar when its page opens directly`,async()=>{
  let calls=0;
  const context=vm.createContext({me:{user_id:'fixture'},view:file==='sales-delivery.js'?'sales':file==='service-workflow.js'?'service':'inventory',document:{querySelector:()=>null,addEventListener(){}},$:()=>({innerHTML:''}),syncWorkspaceNavigation:()=>calls++});
- vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),context);
+ vm.runInContext(readFileSync(new URL('../page-refresh.js',import.meta.url),'utf8'),context);vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),context);
  vm.runInContext(bindings,context);
  await vm.runInContext(entry,context);
  assert.equal(calls,1);
