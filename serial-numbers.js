@@ -38,16 +38,18 @@ async function decorateDeliverySerials(){
  const notes=[...document.querySelectorAll('[data-document-card]')].map(card=>salesDeliveryNotes.find(row=>row.id===card.dataset.documentCard)).filter(Boolean);
  if(!notes.length)return;
  const actor=me?.user_id;
- if(!(await loadSerialSettings())||me?.user_id!==actor)return;
+ // Settings, planned serial lines and entered serials only need the notes on screen: ask for them together
+ // (one round trip instead of three in a row), then check them in the same order as before.
+ const chunks=[];for(let start=0;start<notes.length;start+=100)chunks.push(notes.slice(start,start+100).map(note=>note.id));
+ const [settingsLoaded,plannedResults,result]=await Promise.all([loadSerialSettings(),
+  Promise.all(chunks.map(ids=>client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:ids}))),
+  salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number')]);
+ if(!settingsLoaded||me?.user_id!==actor)return;
  const planned=[];
- for(let start=0;start<notes.length;start+=100){
-  const result=await client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:notes.slice(start,start+100).map(note=>note.id)});
-  if(me?.user_id!==actor)return;
-  if(result.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
-  planned.push(...(result.data||[]));
+ for(const planResult of plannedResults){
+  if(planResult.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+planResult.error.message,true);return;}
+  planned.push(...(planResult.data||[]));
  }
- const result=await salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number');
- if(me?.user_id!==actor)return;
  if(result.error){message('Serial numbers could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
  plannedSerialLines=new Set(planned.map(line=>line.delivery_line_id));deliverySerials=result.data||[];
  const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>deliveryLineSerialRequired(line)));

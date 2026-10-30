@@ -2392,16 +2392,18 @@ async function decorateDeliverySerials(){
  const notes=[...document.querySelectorAll('[data-document-card]')].map(card=>salesDeliveryNotes.find(row=>row.id===card.dataset.documentCard)).filter(Boolean);
  if(!notes.length)return;
  const actor=me?.user_id;
- if(!(await loadSerialSettings())||me?.user_id!==actor)return;
+ // Settings, planned serial lines and entered serials only need the notes on screen: ask for them together
+ // (one round trip instead of three in a row), then check them in the same order as before.
+ const chunks=[];for(let start=0;start<notes.length;start+=100)chunks.push(notes.slice(start,start+100).map(note=>note.id));
+ const [settingsLoaded,plannedResults,result]=await Promise.all([loadSerialSettings(),
+  Promise.all(chunks.map(ids=>client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:ids}))),
+  salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number')]);
+ if(!settingsLoaded||me?.user_id!==actor)return;
  const planned=[];
- for(let start=0;start<notes.length;start+=100){
-  const result=await client.rpc('planned_delivery_serial_lines',{p_delivery_note_ids:notes.slice(start,start+100).map(note=>note.id)});
-  if(me?.user_id!==actor)return;
-  if(result.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
-  planned.push(...(result.data||[]));
+ for(const planResult of plannedResults){
+  if(planResult.error){message('Serial requirements could not load. Refresh the delivery list before packing. '+planResult.error.message,true);return;}
+  planned.push(...(planResult.data||[]));
  }
- const result=await salesRowsFor('delivery_line_serials','delivery_note_id',notes.map(note=>note.id),'serial_number');
- if(me?.user_id!==actor)return;
  if(result.error){message('Serial numbers could not load. Refresh the delivery list before packing. '+result.error.message,true);return;}
  plannedSerialLines=new Set(planned.map(line=>line.delivery_line_id));deliverySerials=result.data||[];
  const relevant=notes.filter(note=>deliveryLines(note.id).some(line=>deliveryLineSerialRequired(line)));
@@ -2905,6 +2907,9 @@ function pendingForm(){
 async function loadPendingStock(force=true){
  const epoch=++pendingEpoch,actor=me,actorId=me?.user_id;
  const current=()=>epoch===pendingEpoch&&me===actor&&me?.user_id===actorId;
+ // Stock availability is asked for at the same time as the requests (one round trip instead of two).
+ const stock=Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+ stock.catch(()=>{});
  if(force||!pendingLoaded){
   const [rows,proformas]=await Promise.all([all('pending_stock_requests','*'),salesLoaded?Promise.resolve(null):all('sales_proformas','id,document_number,organization_id,status,deleted_at')]);
   if(!current())return false;
@@ -2912,7 +2917,7 @@ async function loadPendingStock(force=true){
  }
  // Availability is advisory: a failure shows "Stock check unavailable" instead of hiding requests.
  try{
-  const [lots,packs,locations]=await Promise.all([all('inventory_lots','id,product_id,location_id,pack_definition_id,sealed_cartons,loose_units,reserved_units,stock_status,expiry_date'),all('product_pack_definitions','id,units_per_carton'),all('inventory_locations','id,active')]);
+  const [lots,packs,locations]=await stock;
   if(!current())return false;
   pendingAvailabilityDay=pendingToday();pendingAvailability=pendingAvailableByProduct(lots,packs,locations,pendingAvailabilityDay);pendingAvailabilityError='';
  }catch(error){if(!current())return false;pendingAvailability=new Map();pendingAvailabilityError=error.message;}
@@ -3099,21 +3104,31 @@ async function loadOpenWork(type,ids){
  }
  return out;
 }
+// Open step, step history and delays for these records in one request per 100 records (all sent together).
+// Before, open work, history and delays were three requests one after another.
+async function loadRecordWork(type,ids){
+ const actor=me,epoch=workEpoch,chunks=[];for(let i=0;i<ids.length;i+=100)chunks.push(ids.slice(i,i+100));
+ const parts=await Promise.all(chunks.map(chunk=>workPageRows('work_assignments','id,record_type,record_id,record_label,task,note,assignee_user_id,assigned_by,due_on,status,version,created_at,closed_at,close_note,work_delays(id,assignment_id,reason,expected_on,recorded_by,recorded_at)',query=>query.eq('record_type',type).in('record_id',chunk))));
+ const open=new Map(),history=[],delays=[];
+ if(me!==actor||workEpoch!==epoch)return {open,history,delays};
+ for(const rows of parts)for(const {work_delays:own,...row} of rows){history.push(row);if(row.status==='open'){open.set(row.record_id,row);delays.push(...(own||[]));}}
+ return {open,history,delays};
+}
 // Adds the responsible person and handoff buttons to whichever record cards are on screen.
 async function decorateWorkHandoffs(){
  const cards=workRecordCards();if(!cards.length||!me?.user_id)return;
  const epoch=++workEpoch,actor=me,byType=new Map();
  for(const item of cards){if(!byType.has(item.type))byType.set(item.type,[]);byType.get(item.type).push(item);}
  for(const item of cards){const box=document.createElement('div');box.className='work-handoff';box.dataset.workHandoff=item.id;box.innerHTML='<span>Responsible: loading…</span>';(item.card.querySelector('.actions')||item.card).before(box);}
- for(const [type,items] of byType){
+ // Every kind of record on the page loads at the same time.
+ const loads=[...byType].map(([type,items])=>loadRecordWork(type,items.map(item=>item.id)).then(work=>({work}),error=>({error})));
+ for(const [index,[type,items]] of [...byType].entries()){
   let open,history=new Map(),delays=new Map();
-  try{
-   open=await loadOpenWork(type,items.map(item=>item.id));
-   const all=await loadWorkHistory(type,items.map(item=>item.id));for(const row of all){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
-   delays=workLatestDelays(await loadWorkDelays([...open.values()].map(row=>row.id)));
-  }
-  catch(error){if(epoch!==workEpoch||me!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(error.message)}</span>`;});continue;}
+  const loaded=await loads[index];
+  if(loaded.error){if(epoch!==workEpoch||me!==actor)return;items.forEach(item=>{const box=item.card.querySelector('[data-work-handoff]');if(box)box.innerHTML=`<span role="alert">Responsible person could not load: ${esc(loaded.error.message)}</span>`;});continue;}
   if(epoch!==workEpoch||me!==actor)return;
+  open=loaded.work.open;for(const row of loaded.work.history){if(!history.has(row.record_id))history.set(row.record_id,[]);history.get(row.record_id).push(row);}
+  delays=workLatestDelays(loaded.work.delays);
   for(const item of items){
    const box=item.card.querySelector('[data-work-handoff]');if(!box?.isConnected)continue;
    const current=open.get(item.id)||null,canAssign=workCanAssign(type)&&!item.closed,canClose=workCanAssign(type)&&current&&(current.assignee_user_id===actor.user_id||me.role==='owner'),canDelay=current&&(current.assignee_user_id===actor.user_id||current.assigned_by===actor.user_id||me.role==='owner');
@@ -4899,7 +4914,7 @@ function openDeadlineDecision(request,decision){
 // device. Which table and filter feed each card: docs/DASHBOARD-CARDS.md.
 const dashboardDefaultPeriod={preset:'today',from:'',to:''};
 let dashboardPeriod={...dashboardDefaultPeriod},dashboardPeriodFor=null;
-let dashboardData=null,dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null;
+let dashboardData=null,dashboardDataFor='',dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null;
 const dashboardZone='Africa/Dar_es_Salaam';
 const dashboardPresets=[['today','Today'],['week','This week'],['month','This month'],['quarter','This quarter'],['year','This year'],['custom','Custom']];
 // [key, label, colour, where a click goes]. No target: no existing list shows exactly these records.
@@ -4923,7 +4938,7 @@ const dashboardCards={
   ['webqueries_closed','Closed website inquiries','web',{view:'requests',section:'inquiries',filter:'done'}]]
 };
 const dashboardParts=[['leads','Lead follow-ups'],['tasks','Tasks'],['steps','Order steps'],['service','Service visits']];
-function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
+function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardDataFor='';dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
 
 // Dates are 'YYYY-MM-DD' strings for the Dar es Salaam calendar day.
 function dashboardDay(now=Date.now()){return new Intl.DateTimeFormat('en-CA',{timeZone:dashboardZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));}
@@ -5073,13 +5088,16 @@ async function dashboardWorkspace(){
  const epoch=++dashboardEpoch,actor=me?.user_id;syncWorkspaceNavigation();
  if(dashboardPeriodFor!==actor){dashboardPeriod=dashboardLoadPeriod(actor);dashboardPeriodFor=actor;}
  const range=dashboardRange(dashboardPeriod,dashboardDay()),team=dashboardTeamVisible(),person=team?dashboardPerson:null;
- if(!dashboardData)$('#content').innerHTML='<p role="status">Loading the dashboard…</p>';
+ // Coming back to the Dashboard shows the last numbers for the same person and dates at once, then updates them;
+ // otherwise the previous page stayed on screen until the new numbers arrived.
+ const key=`${actor}|${range.from}|${range.to}`;
+ if(dashboardData&&dashboardDataFor===key)renderDashboard(range);else $('#content').innerHTML='<p role="status">Loading the dashboard…</p>';
  const [r,t,p]=await Promise.all([
   client.rpc('dashboard_counts',{p_periodic_from:range.from,p_periodic_to:range.to,p_result_from:range.from,p_result_to:range.to}),
   team?client.rpc('team_task_counts',{p_from:range.from,p_to:range.to}):null,
   person?client.rpc('team_member_tasks',{p_user_id:person.user_id,p_from:range.from,p_to:range.to}):null]);
  if(epoch!==dashboardEpoch||me?.user_id!==actor||view!=='dashboard')return;
- if(r.error)dashboardError=r.error.message||'Unknown error';else{dashboardData=r.data;dashboardError='';}
+ if(r.error){dashboardError=r.error.message||'Unknown error';if(dashboardDataFor!==key)dashboardData=null;}else{dashboardData=r.data;dashboardDataFor=key;dashboardError='';}
  if(t){dashboardTeamError=t.error?(t.error.message||'Unknown error'):'';dashboardTeam=t.error?null:(t.data||[]);}
  if(p&&dashboardPerson?.user_id===person.user_id)dashboardPerson={user_id:person.user_id,rows:p.error?null:(p.data||[]),error:p.error?(p.error.message||'Unknown error'):''};
  renderDashboard(range);
