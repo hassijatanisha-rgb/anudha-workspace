@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 const enabled=process.env.ACCOUNTING_BROWSER_QA==='1';
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const feedback=readFileSync(new URL('../action-feedback.js',import.meta.url),'utf8')+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+app.slice(app.indexOf('function friendlyError('),app.indexOf('let editSaving=false;'));
-const sources=[feedback,...['ui-page-header.js','company-forms.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'))];
+const sources=[feedback,...['client-rules.js','ui-page-header.js','company-forms.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'))];
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -73,7 +73,7 @@ acceptance('Unknown saved contact requires explicit correction before save',asyn
  const p=await fixture(t,{contact_id:'missing-contact'});
  await p.locator('#accountingSave').click();
  assert.equal(await p.evaluate(()=>calls.length),0);
- assert.match(await p.locator('#accountingSaveStatus').textContent(),/contact|unavailable|select/i);
+ assert.match(await p.locator('#accountingContact').locator('..').textContent(),/contact|unavailable|select/i);
 });
 acceptance('Search cannot silently change saved customer or contact selection',async t=>{
  const p=await fixture(t);
@@ -89,7 +89,7 @@ acceptance('A saved contact from another branch is blocked before RPC',async t=>
  const p=await fixture(t,{contact_id:'cb'});
  await p.locator('#accountingSave').click();
  assert.equal(await p.evaluate(()=>calls.length),0);
- assert.match(await p.locator('#accountingSaveStatus').textContent(),/contact belonging/i);
+ assert.match(await p.locator('#accountingContact').locator('..').textContent(),/contact belonging/i);
 });
 acceptance('Server rejection preserves entered form and does not advance expected version',async t=>{
  const p=await fixture(t);

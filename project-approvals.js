@@ -25,7 +25,7 @@ async function projectApprovals(){
   for(const [id,step] of [['approvalPrevious',-1],['approvalNext',1]])$('#'+id).onclick=()=>run(()=>{if(!current())return;approvalPage+=step;return projectApprovals();});
   return;
  }
- target.innerHTML=`<section>${workspacePageHeader({title:'Questions for the owner',back:'<button type="button" id="approvalBack">← All questions</button>'})}${questions.data.map(q=>{const history=answers.data.filter(a=>a.question_id===q.id);return `<article class="card"><h2>${esc(q.title)}</h2><span class="tag chip chip--${statusTone(history.length?'success':'waiting')}">${history.length?'Answered · recorded':'Awaiting your answer'}</span><p>${esc(q.question)}</p><form data-approval="${esc(q.id)}"><label>Your decision<textarea name="answer" required maxlength="4000" rows="4"></textarea></label><button type="submit">Record answer</button><p role="status" class="approvalStatus"></p></form><details><summary>Answer history (${answers.count??history.length})</summary>${history.map(a=>`<p>${esc(a.answer)}</p><small>${esc(a.created_at)} · ${esc(a.answered_by)}</small>`).join('')}</details></article>`;}).join('')||'<p>This question is no longer available.</p>'}<div class="actions"><button type="button" id="approvalHistoryPrevious" ${approvalHistoryPage===0?'disabled':''}>Previous answers</button><span>Answers ${answers.data.length?approvalHistoryPage*25+1:0}–${approvalHistoryPage*25+answers.data.length} of ${answers.count??answers.data.length}</span><button type="button" id="approvalHistoryNext" ${(approvalHistoryPage+1)*25>=(answers.count??answers.data.length)?'disabled':''}>Next answers</button></div></section>`;
+ target.innerHTML=`<section>${workspacePageHeader({title:'Questions for the owner',back:'<button type="button" id="approvalBack">← All questions</button>'})}${questions.data.map(q=>{const history=answers.data.filter(a=>a.question_id===q.id);return `<article class="card"><h2>${esc(q.title)}</h2><span class="tag chip chip--${statusTone(history.length?'success':'waiting')}">${history.length?'Answered · recorded':'Awaiting your answer'}</span><p>${esc(q.question)}</p><form data-approval="${esc(q.id)}"><p role="alert"></p><label>Your decision<textarea name="answer" required maxlength="4000" rows="4"></textarea></label><button type="submit">Record answer</button><p role="status" class="approvalStatus"></p></form><details><summary>Answer history (${answers.count??history.length})</summary>${history.map(a=>`<p>${esc(a.answer)}</p><small>${esc(a.created_at)} · ${esc(a.answered_by)}</small>`).join('')}</details></article>`;}).join('')||'<p>This question is no longer available.</p>'}<div class="actions"><button type="button" id="approvalHistoryPrevious" ${approvalHistoryPage===0?'disabled':''}>Previous answers</button><span>Answers ${answers.data.length?approvalHistoryPage*25+1:0}–${approvalHistoryPage*25+answers.data.length} of ${answers.count??answers.data.length}</span><button type="button" id="approvalHistoryNext" ${(approvalHistoryPage+1)*25>=(answers.count??answers.data.length)?'disabled':''}>Next answers</button></div></section>`;
  $('#approvalBack').onclick=()=>run(()=>{if(!current())return;approvalFocus='';return projectApprovals();});
  for(const [id,step] of [['approvalHistoryPrevious',-1],['approvalHistoryNext',1]])$('#'+id).onclick=()=>run(()=>{if(!current())return;approvalHistoryPage+=step;return projectApprovals();});
  target.querySelectorAll('[data-approval]').forEach(form=>{
@@ -33,10 +33,23 @@ async function projectApprovals(){
   if(q.version>1)Object.assign(form.parentElement.querySelector('.tag'),{className:'tag chip chip--'+statusTone('success'),textContent:'Answered · recorded'});
   let attempt=approvalAttempts.get(key)||null;
   if(attempt){form.elements.answer.value=attempt.p_answer;form.elements.answer.readOnly=true;form.querySelector('button').textContent='Retry same answer';}
+  const summary=form.querySelector('[role="alert"]'),fieldErrors=new Map();form.noValidate=true;
+  function errors(){
+   const result=nativeFormErrors(form),input=form.elements.answer;
+   if(!input.value.trim()&&!result.has(input))result.set(input,'Enter your decision.');
+   return result;
+  }
+  form.addEventListener('focusout',event=>{
+   if(!current()||me?.role!=='owner'||!form.isConnected||busy||saving||attempt||fieldBlurToAction(event))return;
+   const control=fieldValidationSource(event.target);if(!control.matches('textarea')||!form.contains(control)||control.readOnly)return;
+   const problem=errors().get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);
+   showFieldError(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);
+  });
   form.onsubmit=async event=>{event.preventDefault();if(saving)return;
    const status=form.querySelector('.approvalStatus'),button=form.querySelector('button'),input=form.elements.answer;
    if(!current()||me?.role!=='owner'){status.textContent='Your page or session changed. Reopen Questions for the owner before answering.';button.disabled=true;return;}
    if(busy){actionFeedbackRefuse(button,status);return;}
+   if(!attempt){fieldErrors.clear();for(const [control,problem]of errors())fieldErrors.set(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);showFieldErrors(form,fieldErrors);if(fieldErrors.size)return;}
    if(!attempt)attempt={p_id:crypto.randomUUID(),p_question_id:q.id,p_version:q.version,p_answer:input.value.trim()};
    if(!attempt.p_answer){attempt=null;status.textContent='Enter your decision.';return;}
    actionFeedbackShow(actionFeedbackReference(button),'');

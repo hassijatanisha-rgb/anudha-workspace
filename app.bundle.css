@@ -722,8 +722,8 @@ main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr)
 .check-row{display:flex;align-items:center;gap:var(--space-2)}
 .check-row input{width:auto}
 
-/* Stock pages: watermark over the page, no text selection, nothing printed. */
-#stockWatermark{position:fixed;inset:0;z-index:30;pointer-events:none;background-repeat:repeat}
+/* Stock pages: viewer trace in the page margin, no text selection, nothing printed. */
+#stockWatermark{margin:var(--space-4) var(--space-5);color:var(--ink);font:var(--w-caption) var(--t-caption)/var(--lh-caption) var(--font-ui);opacity:.03;overflow-wrap:anywhere;pointer-events:none}
 body.stock-protected #content{-webkit-user-select:none;user-select:none}
 body.stock-protected #content input,body.stock-protected #content textarea{-webkit-user-select:text;user-select:text}
 @media print{body.stock-protected main,body.stock-protected #nav,body.stock-protected>header{display:none!important}body.stock-protected::after{content:"Stock pages cannot be printed. Send customers a Pro forma instead.";display:block;padding:var(--space-7);font:var(--w-body) var(--t-body)/var(--lh-body) var(--font-ui)}#stockWatermark{display:none}}

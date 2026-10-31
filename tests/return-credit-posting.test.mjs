@@ -22,7 +22,7 @@ async function fixture(){
   window.companyDate=()=> '2026-10-19';window.clearBooks=()=>{};window.message=(text)=>messages.push(text);window.requireAccountingAccess=async()=> 'accounts';
   window.client={from(table){const q={select(){return q;},eq(){return q;},async maybeSingle(){readCalls.push(table);return {data:table==='accounting_draft_history'?saved:posted};}};return q;},async rpc(name,args){rpcCalls.push({name,args:structuredClone(args)});if(mode==='lost')throw Error('Offline');if(mode==='recover'){posted=credit;throw Error('Lost response');}if(mode==='deferred')return new Promise(resolve=>window.resolvePost=resolve);if(mode==='denied')return {error:{code:'P0001',message:'Books locked'}};posted=credit;return {data:credit};}};
  });
- await page.addStyleTag({content:':root{--m-base:200ms;--m-slow:300ms;--m-fade:150ms;--ease-in:ease-out;--ease-out:ease-out}'});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:feedback});await page.addScriptTag({content:source});return page;
+ await page.addStyleTag({content:':root{--m-base:200ms;--m-slow:300ms;--m-fade:150ms;--ease-in:ease-out;--ease-out:ease-out}'});await page.addScriptTag({content:readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:feedback});await page.addScriptTag({content:source});return page;
 }
 acceptance('review shows exact immutable amounts, escapes source text and does not post',async()=>{
  const page=await fixture();try{

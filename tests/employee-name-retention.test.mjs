@@ -1,3 +1,4 @@
+import {installNativeFormControls,dispatchFocusout} from './helpers/native-form-controls.mjs';
 import {workspacePageHeader} from './helpers/page-header.mjs';
 import {installWorkspaceDialogFixture} from './helpers/workspace-dialog-fixture.mjs';
 import test from 'node:test';
@@ -11,7 +12,7 @@ const runSource=app.slice(app.indexOf('function friendlyError('),app.indexOf('le
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 const saved={user_id:'person',display_name:'Fatima',name_version:5};
 function fixture(){
- const document=dom(),prototype=Object.getPrototypeOf(document.body),matches=prototype.matches;
+ const document=dom();installNativeFormControls(document);const prototype=Object.getPrototypeOf(document.body),matches=prototype.matches;
  // Extend the identity fixture only for the real shared feedback lifecycle; no layout claim.
  prototype.matches=function(selector){return selector.split(',').some(part=>matches.call(this,part.trim()));};
  prototype.removeAttribute=function(key){delete this.attrs[key]};prototype.prepend=function(node){this.insertBefore(node,this.children[0]||null)};
@@ -21,7 +22,7 @@ function fixture(){
  const timers=new Map();let timerId=0;
  const root=document.createElement('section');root.setAttribute('id','content');document.body.append(root);root.innerHTML='<h1>Staff</h1><input id="search"><div data-staff-directory><details open><summary>Sales</summary><article>Employee</article></details></div>';const directory=root.querySelector('[data-staff-directory]');directory.staffEpoch=1;
  let patches=0;directory.staffRefresh=()=>patches++;const calls=[];
- const c=vm.createContext({workspacePageHeader,document,busy:false,me:{user_id:'owner',role:'owner'},view:'staff',$:selector=>document.querySelector(selector),getComputedStyle:()=>({visibility:'visible'}),setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId},clearTimeout:id=>timers.delete(id),FormData:class{constructor(form){this.form=form;}get(name){return this.form.querySelector(`[name="${name}"]`).value;}},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='lookup_staff_display_name'?{user_id:'person',name_version:4}:saved};}},staff:()=>assert.fail('No Staff reload')});const dialogs=installWorkspaceDialogFixture(c);vm.runInContext(feedback+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+runSource+'\n'+code,c);c.openEmployeeNameEditor();const dialog=document.querySelector('dialog'),form=dialog.querySelector('form');form.querySelector('[name="email"]').value='person@example.invalid';form.querySelector('[name="displayName"]').value='Fatima';
+ const c=vm.createContext({workspacePageHeader,document,window:{addEventListener(){}},busy:false,me:{user_id:'owner',role:'owner'},view:'staff',$:selector=>document.querySelector(selector),getComputedStyle:()=>({visibility:'visible'}),setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId},clearTimeout:id=>timers.delete(id),FormData:class{constructor(form){this.form=form;}get(name){return this.form.querySelector(`[name="${name}"]`).value;}},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='lookup_staff_display_name'?{user_id:'person',name_version:4}:saved};}},staff:()=>assert.fail('No Staff reload')});const dialogs=installWorkspaceDialogFixture(c);vm.runInContext(readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../employee-login.js',import.meta.url),'utf8')+'\n'+feedback+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+runSource+'\n'+code,c);c.openEmployeeNameEditor();const dialog=document.querySelector('dialog'),form=dialog.querySelector('form');form.querySelector('[name="email"]').value='person@example.invalid';form.querySelector('[name="displayName"]').value='Fatima';
  return {c,dialogs,document,root,directory,dialog,form,calls,timers,patches:()=>patches,save:()=>form.onsubmit({preventDefault(){},target:form})};
 }
 test('name saves update only the name cache and retained directory, without refetching names or Staff',async()=>{
@@ -82,4 +83,24 @@ test('employee-name dirty dismissal retains input, blocks working saves, and per
 test('employee-name refusal stays dirty and read-only receipt recovery stays protected while working',async()=>{
  const f=fixture(),binding=f.dialogs.bindings.get(f.dialog),close=f.dialog.querySelector('[type="button"]');f.c.client.rpc=async name=>name==='lookup_staff_display_name'?{data:{user_id:'person',name_version:4}}:{error:{message:'Refused'}};await f.save();assert.equal(binding.isDirty(),true);assert.equal(await close.onclick(),false);
  f.c.client.rpc=async name=>({data:name==='lookup_staff_display_name'?{user_id:'person',name_version:4}:null});await f.save();assert.equal(binding.isDirty(),false);const retry=f.dialog.querySelectorAll('button').find(button=>button.textContent==='Retry refresh'),wait=deferred();f.c.client.rpc=()=>wait.promise;const pending=retry.onclick();assert.equal(binding.isBusy(),true);assert.equal(await close.onclick(),false);wait.resolve({data:saved});await pending;assert.equal(binding.isBusy(),false);assert.equal(binding.isDirty(),false);
+});
+
+test('employee name validates departed fields and focuses the first invalid field before any lookup',async()=>{
+ const f=fixture(),email=f.form.elements.email,name=f.form.elements.displayName,summary=f.form.querySelector('[role="alert"]');
+ email.value='';name.value='  ';dispatchFocusout(email);assert.equal(email.getAttribute('aria-invalid'),'true');assert.equal(summary.textContent,'1 field needs attention');
+ await f.save();assert.equal(summary.textContent,'2 fields need attention');assert.equal(f.document.activeElement,email);assert.equal(f.calls.length,0);assert.equal(name.value,'  ');
+ email.value='bad';email._nativeError='Enter a valid email address.';dispatchFocusout(email);assert.match(f.form.textContent,/Enter a valid email/);assert.equal(f.calls.length,0);
+});
+test('employee name corrections preserve the first Save click and exact name writer',async()=>{
+ const f=fixture(),email=f.form.elements.email,name=f.form.elements.displayName,button=f.form.querySelector('[type="submit"]'),summary=f.form.querySelector('[role="alert"]');
+ email.value='';name.value='';await f.save();email.value='person@example.invalid';name.value='Fatima';const before=summary.textContent;
+ dispatchFocusout(name,button);assert.equal(summary.textContent,before);assert.equal(name.getAttribute('aria-invalid'),'true');
+ await f.save();assert.deepEqual(f.calls.map(call=>call.name),['lookup_staff_display_name','set_staff_display_name']);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[1].args)),{p_user_id:'person',p_expected_version:4,p_display_name:'Fatima'});assert.equal(name.getAttribute('aria-invalid'),null);assert.equal(button.disabled,true);
+});
+test('employee name blur does not overwrite confirmation while saving or after actor replacement',async()=>{
+ for(const stale of [false,true]){
+ const f=fixture(),name=f.form.elements.displayName,summary=f.form.querySelector('[role="alert"]');
+ if(stale){f.c.me={...f.c.me};name.value='';dispatchFocusout(name);assert.equal(summary.textContent,'');assert.equal(name.getAttribute('aria-invalid'),null);await f.save();assert.equal(f.calls.length,0);}
+ else{const wait=deferred(),rpc=f.c.client.rpc;f.c.client.rpc=async(...args)=>{await wait.promise;return rpc(...args);};const pending=f.save();name.value='';dispatchFocusout(name);assert.equal(name.getAttribute('aria-invalid'),null);name.value='Fatima';wait.resolve();await pending;name.value='';dispatchFocusout(name);assert.equal(summary.textContent,'Employee name saved.');}
+ }
 });

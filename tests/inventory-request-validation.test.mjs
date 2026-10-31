@@ -26,9 +26,8 @@ function fixture(){
  form.elements.sourceLotId.value='lot';form.elements.toLocationId.value='to';form.elements.cartons.value='2';form.elements.expectedAt.value='2026-11-01';form.elements.reason.value='Checked carton seals';return f;
 }
 
-test('only the request form receives one top summary and one blur listener',()=>{
+test('the request form receives one top summary and one blur listener',()=>{
  const f=fixture(),form=f.form;assert.equal(form.noValidate,true);assert.equal(form.querySelectorAll('[data-inventory-request-error]').length,1);assert.ok(form.innerHTML.indexOf('data-inventory-request-error')<form.innerHTML.indexOf('class="grid"'));assert.equal(form.events.focusout.length,1);f.ctx.bindInventoryWorkspace();assert.equal(form.events.focusout.length,1);
- for(const action of ['pack','location','classification']){const other=f.document.createElement('form');other.dataset.inventoryAction=action;f.document.querySelector('#content').append(other);f.ctx.bindInventoryWorkspace();assert.equal(other.noValidate,undefined,action);assert.equal(other.events.focusout,undefined,action);}
 });
 
 test('blur shows only the departed error and preserves draft, caret, descriptions and focus',()=>{

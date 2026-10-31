@@ -163,21 +163,45 @@ async function decorateSerialTools(){
  const content=$('#content');if(!content||content.querySelector('[data-serial-tools]')||!$('#inventoryRefresh'))return;
  const actor=me?.user_id;if(!(await loadSerialSettings())||me?.user_id!==actor)return;
  content.insertAdjacentHTML('beforeend',`<section class="card serial-tools" data-serial-tools><h2>Serial numbers</h2>
-  <form id="serialSearch" class="actions"><input name="serial" placeholder="Serial number" minlength="2" maxlength="120" required><button type="submit">Find</button></form><div id="serialResults"></div>
+  <form id="serialSearch" class="actions"><label><span>Serial number</span><input name="serial" placeholder="Serial number" minlength="2" maxlength="120" required></label><button type="submit">Find</button></form><div id="serialResults"></div>
   ${canFlagSerials(me)?`<p>Every machine needs its real serial number before it can be marked Packed or sent out.</p><h3>Products that need serial numbers</h3><label><span>Search serial-tracked products</span><input id="serialFlaggedSearch" type="search" value="${esc(serialToolsSearch)}" placeholder="Product name or stock code"></label><div id="serialFlaggedList">${serialFlaggedHtml()}</div>
-  <form id="serialFlag" class="actions"><input name="product" list="serialProductChoices" placeholder="Product name or code" required><datalist id="serialProductChoices" data-lookup-values="products">${inventoryProductChoices()}</datalist><button type="submit">Needs serial numbers</button></form>`:''}</section>`);
+  <form id="serialFlag"><p role="alert"></p><div class="actions"><label><span>Product</span><input name="product" list="serialProductChoices" placeholder="Product name or code" required></label><datalist id="serialProductChoices" data-lookup-values="products">${inventoryProductChoices()}</datalist><button type="submit">Needs serial numbers</button></div></form>`:''}</section>`);
  $('#serialSearch').onsubmit=event=>{event.preventDefault();run(async()=>{
   const actor=me?.user_id,value=new FormData(event.target).get('serial'),result=await client.rpc('find_serial',{p_serial:value});
   if(result.error)throw result.error;
   const receiptHtml=typeof receivingSerialSearchHtml==='function'?await receivingSerialSearchHtml(value):'';if(me?.user_id!==actor)return;
   $('#serialResults').innerHTML=receiptHtml+((result.data||[]).length?`<ul>${result.data.map(r=>`<li><code>${esc(r.serial_number)}</code> · ${esc(inventoryProduct(r.product_id).name)} · ${esc(r.organization_name||'Customer unavailable')} · ${esc(r.delivery_number)} (${esc(typeof salesStatus==='function'?salesStatus(r.delivery_status):r.delivery_status)})${r.returned_at?' · came back '+esc(String(r.returned_at).slice(0,10)):''}</li>`).join('')}</ul>`:'<p>No delivery has this serial number.</p>');
  });};
- $('#serialFlag')?.addEventListener('submit',event=>{event.preventDefault();run(async()=>{
-  const text=String(new FormData(event.target).get('product')||'').trim(),product=inventoryProductFromChoice(text);
-  if(!product)throw Error('Choose a product from the list.');
-  const result=await client.rpc('set_product_serial_required',{p_product_id:product.id,p_required:true});if(result.error)throw result.error;
-  content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();message(`${product.name} now needs serial numbers when received and packed.`);
- });});
+ const flag=$('#serialFlag');
+ if(flag){
+  const session=me,epoch=inventoryEpoch,current=()=>me===session&&inventoryEpoch===epoch&&view==='inventory'&&content.isConnected&&$('#content')===content;
+  const summary=flag.querySelector('[role="alert"]'),button=flag.querySelector('[type="submit"]'),fieldErrors=new Map();let saving=false;flag.noValidate=true;
+  function errors(){
+   const result=nativeFormErrors(flag),input=flag.elements.product,text=String(new FormData(flag).get('product')||'').trim();
+   if(!inventoryProductFromChoice(text)&&!result.has(input))result.set(input,'Choose a product from the list.');
+   return result;
+  }
+  flag.addEventListener('focusout',event=>{
+   if(!current()||!flag.isConnected||!canFlagSerials(me)||saving||busy||fieldBlurToAction(event))return;
+   const control=fieldValidationSource(event.target);if(!control.matches('input,select,textarea')||!flag.contains(control))return;
+   const problem=errors().get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);
+   showFieldError(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);
+  });
+  flag.onsubmit=async event=>{
+   event.preventDefault();if(!current()||!flag.isConnected||!canFlagSerials(me)||saving||button.disabled)return;
+   if(busy){actionFeedbackRefuse(button,summary);return;}
+   fieldErrors.clear();for(const [control,problem]of errors())fieldErrors.set(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);showFieldErrors(flag,fieldErrors);if(fieldErrors.size)return;
+   saving=true;button.disabled=true;
+   try{await run(async()=>{
+    const text=String(new FormData(event.target).get('product')||'').trim(),product=inventoryProductFromChoice(text);
+    if(!product)throw Error('Choose a product from the list.');
+    let result;try{result=await client.rpc('set_product_serial_required',{p_product_id:product.id,p_required:true});}catch(error){if(current()&&canFlagSerials(me))throw error;return;}
+    if(!current()||!canFlagSerials(me))return;if(result.error)throw result.error;
+    content.querySelector('[data-serial-tools]')?.remove();await decorateSerialTools();
+    if(current()&&canFlagSerials(me))message(`${product.name} now needs serial numbers when received and packed.`);
+   },{origin:button,errorTarget:summary,busyLabel:'Saving…'});}finally{saving=false;button.disabled=false;}
+  };
+ }
  const filter=$('#serialFlaggedSearch');if(filter)filter.oninput=()=>{serialToolsSearch=filter.value;serialToolsPage=0;$('#serialFlaggedList').innerHTML=serialFlaggedHtml();bindSerialFlaggedList();};
  bindSerialFlaggedList();
  if(typeof bindReceivingSerialForms==='function')bindReceivingSerialForms();
