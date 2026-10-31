@@ -27,7 +27,7 @@ function fixture({tracked=false}={}){
 }
 
 test('opening and correction expose one top summary and bind native blur only once',()=>{
- const f=fixture();for(const action of ['opening','correct']){const form=f.form(action);assert.equal(form.noValidate,true);assert.equal(form.querySelectorAll('[data-inventory-count-error]').length,1);assert.ok(form.innerHTML.indexOf('data-inventory-count-error')<form.innerHTML.indexOf('class="grid"'));assert.equal(form.events.focusout.length,1);}f.ctx.bindInventoryWorkspace();for(const action of ['opening','correct'])assert.equal(f.form(action).events.focusout.length,1);assert.equal(f.form('pack').noValidate,undefined);assert.equal(f.form('issue').noValidate,true);
+ const f=fixture();for(const action of ['opening','correct']){const form=f.form(action);assert.equal(form.noValidate,true);assert.equal(form.querySelectorAll('[data-inventory-count-error]').length,1);assert.ok(form.innerHTML.indexOf('data-inventory-count-error')<form.innerHTML.indexOf('class="grid"'));assert.equal(form.events.focusout.length,1);}f.ctx.bindInventoryWorkspace();for(const action of ['opening','correct'])assert.equal(f.form(action).events.focusout.length,1);assert.equal(f.form('pack').noValidate,true);assert.equal(f.form('issue').noValidate,true);
 });
 
 test('blur preserves field values, caret and other focus while showing only the departed count error',()=>{

@@ -41,7 +41,7 @@ function employeeNameReceipt(data,expected){
 function openEmployeeNameEditor(){
  if(me?.role!=='owner')return;
  const actor=me,openingView=view,trigger=document.activeElement,directory=document.querySelector('[data-staff-directory]'),epoch=directory?.staffEpoch,dialog=document.createElement('dialog');
- dialog.innerHTML='<form><h2>Set employee name</h2><p>Use the employee’s existing sign-in email to identify the account. This changes the displayed name only—not their login or permissions.</p><label>Existing staff email<input name="email" type="email" required></label><label>Employee name<input name="displayName" maxlength="120" required></label><p role="alert"></p><button type="submit">Save name</button><button type="button">Cancel</button></form>';
+ dialog.innerHTML='<form><h2>Set employee name</h2><p>Email and employee name are required. This changes the displayed name.</p><p role="alert"></p><label>Existing staff email<input name="email" type="email" required></label><label>Employee name<input name="displayName" maxlength="120" required></label><div class="actions"><button type="button">Cancel</button><button type="submit" class="primary-action">Save name</button></div></form>';
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  const form=dialog.querySelector('form');let working=false,committed=false;const initial=workspaceFormSnapshot(form),requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>working,isDirty:()=>!committed&&workspaceFormSnapshot(form)!==initial});
  dialog.querySelector('[type="button"]').onclick=requestClose;showWorkspaceDialog(dialog,{size:'medium',trigger});
@@ -53,8 +53,10 @@ function openEmployeeNameEditor(){
   dialog.querySelector('[type="button"]').textContent='Done';dialog.querySelector('[type="button"]').focus({preventScroll:true});
   message('Employee name saved.');
  };
+ const validate=employeeFormValidation(form,form.querySelector('[role="alert"]'),()=>current()&&!working&&!committed,()=>nativeFormErrors(form));
  dialog.querySelector('form').onsubmit=async event=>{
   event.preventDefault();const button=dialog.querySelector('[type="submit"]'),notice=dialog.querySelector('[role="alert"]');if(button.disabled||!current())return;
+  if(!validate())return;
   if(busy){actionFeedbackRefuse(button,notice);return;}actionFeedbackShow(actionFeedbackReference(button),'');button.disabled=true;working=true;
   return run(async()=>{
   const f=new FormData(event.target),email=f.get('email');

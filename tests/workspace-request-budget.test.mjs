@@ -61,6 +61,7 @@ test('a dependent route waits for its list request rather than rendering partial
 
 test('owner Staff routing has eight modeled requests before optional sign-in and notification checks',async()=>{
  const f=fixture('staff'),data=[f.actor];
+ vm.runInContext(readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../employee-login.js',import.meta.url),'utf8'),f.ctx);
  // Each injected server-backed helper records exactly one request. This is a
  // Staff-only routing count, excluding optional sign-in checks and the shared
  // notification bell. It does not certify the full live request budget.
@@ -74,6 +75,7 @@ test('owner Staff routing has eight modeled requests before optional sign-in and
  f.$('#staffList').closest=()=>f.$('#staffSection');
  vm.runInContext(line('async function staff(){'),f.ctx);
  await f.ctx.load();await flush();
+ assert.equal(f.$('#staffForm').noValidate,true,'the actual employee helper binds without additional requests');
  assert.deepEqual(f.requests,['auth.getUser','staff.self','employee_directory','accounting_access','staff.list','employee_directory.refresh','staff_two_step_status','staff_accounting_access']);
  assert.equal(f.requests.includes('shared-client-lists'),false);
 });

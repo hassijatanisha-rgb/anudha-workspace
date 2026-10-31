@@ -318,7 +318,7 @@ async function refreshSavedInventoryOperation(form,section,saved,current,unlock,
    const newTransfer=target.querySelector('#inventoryTransferNew');if(newTransfer)newTransfer.disabled=false;
    notice.textContent='Inventory transaction saved.';
    if(detail&&saved?.id&&data.rows.some(row=>row.id===saved.id)){const button=document.createElement('button');button.type='button';button.textContent='Open current transfer';button.onclick=()=>inventoryNavigate(()=>openInventoryTransfer(saved.id));detail.append(button);}
-   if(section==='locations'&&form.isConnected){form.reset();delete form.dataset.inventorySaved;unlock();}
+   if(section==='locations'&&form.isConnected){form.reset();delete form.dataset.inventorySaved;unlock();bindInventorySetupForm(form);}
    const focus=section==='locations'?form.querySelector('[name="name"]'):detail?.querySelector('button')||notice;
    if(typeof actionFeedbackActive!=='undefined'&&actionFeedbackActive)actionFeedbackActive.successOrigin=actionFeedbackReference(focus);
    if(focusPending&&(document.activeElement===document.body||form.contains(document.activeElement)))focus.focus({preventScroll:true});
@@ -369,6 +369,24 @@ async function inventoryWorkspace(force=false){
  $('#content').innerHTML=inventoryStock();bindInventoryWorkspace();
 }
 function renderInventoryStock(){return inventoryStockPageData?inventoryStockWorkspace():paintInventoryStock();}
+function inventorySetupFormErrors(form){
+ const errors=nativeFormErrors(form),product=form.elements.productChoice;
+ if(form.dataset.inventoryAction==='pack'&&product.willValidate&&!errors.has(product)&&!inventoryProductFromChoice(product.value))errors.set(product,'Choose a product from the search suggestions.');
+ return errors;
+}
+const inventorySetupBlurHandlers=new WeakMap();
+function bindInventorySetupForm(form){
+ const actor=me,epoch=inventoryEpoch,section=inventorySection,kind=form.dataset.inventoryAction,operationsRequest=inventoryOperationsRequest,operationsAction=inventoryOperationsActionRequest,stockRequest=inventoryStockPageRequest,stockAction=inventoryStockActionRequest,target=$('#content'),catalogContext=kind==='classification'&&typeof catalogIsActive==='function'&&catalogIsActive()?catalogSaveContext():null;
+ const current=()=>me===actor&&view==='inventory'&&inventorySection===section&&inventoryEpoch===epoch&&target?.isConnected&&$('#content')===target&&form.isConnected&&target.contains(form)&&(kind==='location'?inventoryOperationsRequest===operationsRequest&&inventoryOperationsActionRequest===operationsAction:kind==='pack'?inventoryStockPageRequest===stockRequest&&inventoryStockActionRequest===stockAction:!catalogContext||catalogContext.current());
+ let notice=form.querySelector('[data-inventory-setup-error]');if(!notice){notice=document.createElement('p');notice.dataset.inventorySetupError='';notice.setAttribute('role','alert');form.insertBefore(notice,form.children[0]||null);}
+ const button=form.querySelector('[type="submit"]'),locked=()=>form.inert||form.dataset.saving==='true'||form.dataset.inventorySaved==='true'||button.disabled,summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
+ const blur=event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||locked()||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,inventorySetupFormErrors(form).get(control)||'');summary();};
+ const previous=inventorySetupBlurHandlers.get(form);if(previous)form.removeEventListener('focusout',previous);inventorySetupBlurHandlers.set(form,blur);form.addEventListener('focusout',blur);form.noValidate=true;
+ form.onsubmit=event=>{event.preventDefault();if(!current()||locked())return;if(busy){actionFeedbackRefuse(button,notice);return;}
+  const errors=inventorySetupFormErrors(form);summary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
+  return run(()=>submitInventoryForm(form),{origin:button,errorTarget:notice});
+ };
+}
 function inventoryCountFormErrors(form){
  const errors=nativeFormErrors(form),sealed=form.elements.sealedCartons,loose=form.elements.looseUnits,serials=form.elements.receivingSerials,packControl=form.elements.packId,lot=form.dataset.inventoryAction==='correct'?inventoryLots.find(row=>row.id===form.dataset.lot):null,pack=inventoryPacks.find(row=>row.id===(lot?.pack_definition_id||packControl?.value));
  if(packControl?.willValidate&&!pack&&!errors.has(packControl))errors.set(packControl,'Choose a saved product / carton size.');
@@ -526,6 +544,7 @@ function bindInventoryWorkspace(){
   });};
  document.querySelectorAll('[data-inventory-reserved]').forEach(button=>button.onclick=()=>run(()=>showInventoryReservations(button)));
  document.querySelectorAll('form[data-inventory-action]').forEach(form=>form.onsubmit=event=>{event.preventDefault();run(()=>submitInventoryForm(form))});
+ document.querySelectorAll('form[data-inventory-action="classification"],form[data-inventory-action="pack"],form[data-inventory-action="location"]').forEach(bindInventorySetupForm);
  document.querySelectorAll('form[data-inventory-action="opening"],form[data-inventory-action="correct"]').forEach(bindInventoryCountForm);
  document.querySelectorAll('form[data-inventory-action="request"]').forEach(bindInventoryRequestForm);
  if(inventorySection==='locations'||inventorySection==='transfers'){if(inventoryTransferReady&&typeof bindReceivingSerialForms==='function')bindReceivingSerialForms();}
@@ -576,7 +595,9 @@ async function submitInventoryForm(form){
  const catalogContext=action==='classification'&&typeof catalogIsActive==='function'&&catalogIsActive()?catalogSaveContext():null;
  if(catalogContext&&!catalogContext.current())return;
  if(action!=='location'&&!currentCatalogClassification&&typeof productReviewLoadError!=='undefined'&&productReviewLoadError)throw Error('Refresh product corrections before changing inventory. '+productReviewLoadError);
- const target=retained?$('#content'):null,wasFocused=retained&&form.contains(document.activeElement),inert=retained&&form.inert,button=retained?form.querySelector('[type="submit"]'):null,disabled=button?.disabled;
+ const target=retained?$('#content'):null,wasFocused=retained&&form.contains(document.activeElement),inert=retained&&form.inert,button=retained?form.querySelector('[type="submit"]'):null;
+ // run may already own this button's temporary disabled state; a later read-only retry must restore its original state.
+ const feedbackState=typeof actionFeedbackActive!=='undefined'?actionFeedbackActive?.state:null,disabled=feedbackState?.node===button?feedbackState.disabled:button?.disabled;
  const unlock=()=>{form.dataset.saving='false';form.inert=inert;if(button)button.disabled=disabled;};
  if(retained){if(!form.isConnected)throw Error('Reopen this inventory form before saving.');form.dataset.saving='true';form.inert=true;if(button)button.disabled=true;}
  try{

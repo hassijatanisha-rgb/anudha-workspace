@@ -33,7 +33,7 @@ function companyFormLineEditor(def,line={}){
 }
 function companyFormEditor(kind,record={}){
  const def=companyFormDefinition(kind);
- return `<form class="company-form-editor" data-company-form="${kind}"><h2>${def.title}</h2><p>Draft preparation. This does not post accounting entries, issue a tax invoice or change stock.</p><div class="company-form-fields">${def.fields.map(([key,label,type='text'])=>`<label><span>${label}</span><input name="${key}" type="${type}" value="${companyFormEscape(record[key])}" maxlength="2000"></label>`).join('')}</div><div class="company-form-table"><table><thead><tr>${def.columns.map(key=>`<th>${companyFormLabel(key)}</th>`).join('')}<th>Actions</th></tr></thead><tbody>${(record.lines?.length?record.lines:[{}]).map(line=>companyFormLineEditor(def,line)).join('')}</tbody></table></div><button type="button" data-add-company-line>Add row</button><label>Notes<textarea name="notes" maxlength="4000">${companyFormEscape(record.notes)}</textarea></label><button type="submit">Preview draft</button></form>`;
+ return `<form class="company-form-editor" data-company-form="${kind}"><h2>${def.title}</h2><p data-company-form-error role="alert"></p><p>Draft preparation. This does not post accounting entries, issue a tax invoice or change stock.</p><div class="company-form-fields">${def.fields.map(([key,label,type='text'])=>`<label><span>${label}</span><input name="${key}" type="${type}" value="${companyFormEscape(record[key])}" maxlength="2000"></label>`).join('')}</div><div class="company-form-table"><table><thead><tr>${def.columns.map(key=>`<th>${companyFormLabel(key)}</th>`).join('')}<th>Actions</th></tr></thead><tbody>${(record.lines?.length?record.lines:[{}]).map(line=>companyFormLineEditor(def,line)).join('')}</tbody></table></div><button type="button" data-add-company-line>Add row</button><label>Notes<textarea name="notes" maxlength="4000">${companyFormEscape(record.notes)}</textarea></label><button type="submit">Preview draft</button></form>`;
 }
 function companyFormDocument(kind,record={}){
  const def=companyFormDefinition(kind),escape=companyFormEscape;
@@ -49,13 +49,16 @@ function companyFormRead(kind,form){
 function mountCompanyForm(target,kind,record={}){
  const def=companyFormDefinition(kind);
  target.innerHTML='<p role="status">Unsaved draft. Closing this page discards entered values. PDF output does not save or post this document.</p>'+companyFormEditor(kind,record)+'<section data-company-preview></section>';
- const form=target.querySelector('form'),preview=target.querySelector('[data-company-preview]');
+ const form=target.querySelector('form'),preview=target.querySelector('[data-company-preview]'),notice=form.querySelector('[data-company-form-error]'),actor=me,current=()=>me===actor&&view==='accounting'&&target.isConnected&&target.querySelector('form')===form;
+ const summary=()=>{notice.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);};
+ form.noValidate=true;form.addEventListener('focusout',event=>{if(fieldBlurToAction(event)||!current()||busy)return;const control=fieldValidationSource(event.target);if(!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFormErrors(form).get(control)||'');summary();});
  form.querySelector('[data-add-company-line]').onclick=()=>form.querySelector('tbody').insertAdjacentHTML('beforeend',companyFormLineEditor(def));
- form.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-company-line]');if(remove&&form.querySelectorAll('[data-company-form-line]').length>1)remove.closest('tr').remove()});
+ form.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-company-line]');if(remove&&form.querySelectorAll('[data-company-form-line]').length>1){remove.closest('tr').remove();summary();}});
  form.addEventListener('input',()=>{preview.replaceChildren()});
  form.addEventListener('click',event=>{if(event.target.closest('[data-add-company-line],[data-remove-company-line]'))preview.replaceChildren()});
  form.onsubmit=event=>{
-  event.preventDefault();
+  event.preventDefault();if(!current()||busy)return;
+  const errors=nativeFormErrors(form);notice.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
   preview.innerHTML='<button type="button" data-company-print>Print / Save as PDF (draft)</button>'+companyFormDocument(kind,companyFormRead(kind,form));
   preview.querySelector('[data-company-print]').onclick=()=>{
    const sheet=preview.querySelector('.company-form-document');

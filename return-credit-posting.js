@@ -59,14 +59,24 @@ async function openReturnCreditPosting(row){
  try{
   if(posted.data){document.body.append(dialog);confirmed(posted.data);showWorkspaceDialog(dialog,{size:'medium',trigger});return;}
   const snapshot=returnCreditPostingSnapshot(history.data);
-  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
+  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><p role="alert"></p><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
   document.body.append(dialog);form=dialog.querySelector('form');initial=workspaceFormSnapshot(form);
   const fields=form.querySelector('fieldset'),status=form.querySelector('[role="status"]'),button=form.querySelector('[type="submit"]'),cancel=form.querySelector('[data-credit-close]');cancel.onclick=close;
+  const summary=form.querySelector('[role="alert"]'),fieldErrors=new Map();form.noValidate=true;
+  form.addEventListener('focusout',event=>{
+   if(!current()||!form.isConnected||busy||state.busy||state.uncertain||state.attempt||fieldBlurToAction(event))return;
+   const control=fieldValidationSource(event.target);if(!control.matches('input,select,textarea')||!form.contains(control))return;
+   const problem=nativeFieldError(control);if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);
+   showFieldError(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);
+  });
   showWorkspaceDialog(dialog,{size:'medium',trigger});
   form.onsubmit=async event=>{
    event.preventDefault();if(!current()||state.busy)return;
    if(busy)return run(async()=>{},{origin:event.submitter||button,errorTarget:status});
-   if(!state.attempt){if(!form.reportValidity())return;state.attempt={p_id:crypto.randomUUID(),p_draft_id:row.id,p_expected_version:row.version,p_credit_date:form.elements.date.value};}
+   if(!state.attempt){
+    fieldErrors.clear();for(const [control,problem]of nativeFormErrors(form))fieldErrors.set(control,problem);summary.textContent=fieldErrorSummary(fieldErrors.size);showFieldErrors(form,fieldErrors);if(fieldErrors.size)return;
+    state.attempt={p_id:crypto.randomUUID(),p_draft_id:row.id,p_expected_version:row.version,p_credit_date:form.elements.date.value};
+   }
    state.busy=true;fields.disabled=true;button.disabled=true;cancel.disabled=true;status.textContent='Posting the return credit…';
    await run(async()=>{try{
     const result=await client.rpc('post_return_credit_note',state.attempt);if(!current())return;
