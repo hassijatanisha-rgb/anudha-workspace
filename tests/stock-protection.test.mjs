@@ -34,11 +34,9 @@ test('stock copy/cut/context/drag restrictions preserve editable controls and ot
   stock.messages.length=0;stock.windowListeners.beforeprint();assert.equal(stock.messages.length,viewName==='sales'?0:1);
  }
 });
-test('the trace occupies a wrapping flow margin at three percent opacity',()=>{
+test('the faint stock trace is removed from the visual interface',()=>{
  const css=readFileSync(new URL('../ui-polish.css',import.meta.url),'utf8'),rule=css.match(/#stockWatermark\{([^}]+)\}/)[1];
- assert.match(rule,/(?:^|;)margin:var\(--space-4\) var\(--space-5\)/);assert.match(rule,/(?:^|;)opacity:\.03(?:;|$)/);
- assert.match(rule,/overflow-wrap:anywhere/);assert.match(rule,/pointer-events:none/);assert.match(rule,/color:var\(--ink\)/);
- assert.doesNotMatch(rule,/(?:^|;)(?:position|inset|z-index|background(?:-[\w-]+)?|transform|white-space):/);
+ assert.match(rule,/(?:^|;)display:none(?:;|$)/);
 });
 test('printing stock pages and selecting stock data remain blocked',()=>{
  const css=readFileSync(new URL('../ui-polish.css',import.meta.url),'utf8');
