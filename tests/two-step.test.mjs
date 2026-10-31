@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -5,7 +6,7 @@ import vm from 'node:vm';
 const source=readFileSync(new URL('../two-step.js',import.meta.url),'utf8');
 function load(level,factors,verify={}){
  const ctxRef={},calls=[],content={innerHTML:''},form={onsubmit:null,querySelector:()=>({focus(){}})};
- const ctx=vm.createContext({calls,content,esc:s=>String(s),message:()=>{},login:()=>calls.push('login'),run:fn=>{ctxRef.last=fn();return ctxRef.last;},FormData:class{constructor(f){this.f=f}get(){return this.f.code}},
+ const ctx=vm.createContext({workspacePageHeader,calls,content,esc:s=>String(s),message:()=>{},login:()=>calls.push('login'),run:fn=>{ctxRef.last=fn();return ctxRef.last;},FormData:class{constructor(f){this.f=f}get(){return this.f.code}},
   $:sel=>sel==='#content'?content:sel==='#twoStepLogin'?form:{focus(){},onclick:null},
   client:{auth:{signOut:async()=>{},mfa:{getAuthenticatorAssuranceLevel:async()=>({data:level}),listFactors:async()=>({data:{totp:factors}}),challengeAndVerify:async args=>{calls.push(args);return verify;}}}}});
  vm.runInContext(source,ctx);return {ctx,calls,content,form,settled:()=>ctxRef.last};
@@ -36,14 +37,14 @@ test('sign-in asks for the code before loading any data, and only the owner serv
  assert.match(fn,/mfa\.deleteFactor/);
 });
 test('a failing two-step check never stops sign-in',async()=>{
- const ctx=vm.createContext({client:{auth:{mfa:{getAuthenticatorAssuranceLevel:async()=>{throw Error('Invalid JWT structure')}}}}});
+ const ctx=vm.createContext({workspacePageHeader,client:{auth:{mfa:{getAuthenticatorAssuranceLevel:async()=>{throw Error('Invalid JWT structure')}}}}});
  vm.runInContext(source,ctx);assert.equal(await ctx.twoStepNeeded(),false);
 });
 test('every request has a time limit and a timeout reads plainly',()=>{
  const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
  assert.match(app,/global:\{fetch:timedFetch\}/);
  const fns=app.split('\n').filter(l=>/^function (requestTimeLimit|friendlyError)/.test(l)||l.startsWith(' if(e?.name')||l.startsWith(' const text')||l.startsWith(' return text'));
- const ctx=vm.createContext({});vm.runInContext(app.slice(app.indexOf('function requestTimeLimit'),app.indexOf('async function run(')),ctx);
+ const ctx=vm.createContext({workspacePageHeader,});vm.runInContext(app.slice(app.indexOf('function requestTimeLimit'),app.indexOf('async function run(')),ctx);
  assert.equal(ctx.requestTimeLimit('https://x.supabase.co/rest/v1/staff'),45000);assert.equal(ctx.requestTimeLimit('https://x.supabase.co/storage/v1/object/a'),180000);
  assert.match(ctx.friendlyError({name:'TimeoutError',message:'signal timed out'}),/slow or offline/);
  assert.match(ctx.friendlyError({message:'TypeError: Failed to fetch'}),/slow or offline/);

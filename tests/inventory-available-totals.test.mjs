@@ -1,8 +1,9 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-const c=vm.createContext({});vm.runInContext(readFileSync(new URL('../inventory-domain.js',import.meta.url),'utf8'),c);
+const c=vm.createContext({workspacePageHeader,});vm.runInContext(readFileSync(new URL('../inventory-domain.js',import.meta.url),'utf8'),c);
 const today='2026-10-27',hub={id:'hub',active:true,is_dispatch_hub:true};
 const lot=(values={})=>({id:'lot',location_id:'hub',product_id:'product',pack_definition_id:'pack',stock_status:'available',sealed_cartons:2,loose_units:1500,reserved_units:200,expiry_date:null,...values});
 test('on-hand, reserved and free quantities remain separate from invoice eligibility',()=>{
@@ -22,10 +23,10 @@ test('invalid reservations and unsafe totals cannot become plausible counts',()=
  assert.throws(()=>c.inventoryStockTotals([lot({loose_units:Number.MAX_SAFE_INTEGER,reserved_units:0}),lot()],[hub],today),/supported range/);
 });
 function ui(){
- const calls=[],links=[];
- const ctx=vm.createContext({document:{addEventListener(){}},esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),companyDate:()=>today,me:{user_id:'actor',role:'staff',access:['stock','deliveries']},organizations:[],run:fn=>fn(),salesDeliveryWorkspace:async()=>{calls.push('open delivery');}});
- for(const file of ['staff-access.js','inventory-domain.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
- vm.runInContext("inventoryProduct=()=>({name:'Reagent'});inventoryLocations=[{id:'hub',name:'Haadi',code:'HAA',active:true,is_dispatch_hub:true}];inventoryPacks=[{id:'pack',units_per_carton:100,base_unit:'bottle'}];let salesFocusedDelivery='',salesFocusedProforma='',salesSection='',salesEditing='',view='inventory';",ctx);
+ const calls=[],links=[],content={isConnected:true};
+ const ctx=vm.createContext({workspacePageHeader,$:selector=>selector==='#content'?content:null,document:{addEventListener(){},querySelectorAll:()=>[]},esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),companyDate:()=>today,me:{user_id:'actor',role:'staff',access:['stock','deliveries']},organizations:[],run:fn=>fn(),salesDeliveryWorkspace:async()=>{calls.push('open delivery');}});
+ for(const file of ['staff-access.js','status-ui.js','inventory-domain.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
+ vm.runInContext("inventoryActor=me;inventoryProduct=()=>({name:'Reagent'});inventoryLocations=[{id:'hub',name:'Haadi',code:'HAA',active:true,is_dispatch_hub:true}];inventoryPacks=[{id:'pack',units_per_carton:100,base_unit:'bottle'}];let salesFocusedDelivery='',salesFocusedProforma='',salesSection='',salesEditing='',view='inventory';",ctx);
  const target={innerHTML:'',insertAdjacentHTML(position,text){this.innerHTML+=text},querySelectorAll(){return links}};
  const button={dataset:{inventoryReserved:'lot'},parentElement:target,isConnected:true,disabled:false};
  return {ctx,calls,links,target,button,setLot:value=>vm.runInContext('inventoryLots='+JSON.stringify([value]),ctx),read:code=>vm.runInContext(code,ctx)};
@@ -40,6 +41,29 @@ test('zero, reserved, expired and non-dispatch cards do not expose issue control
   const html=ctx.inventoryLotCard(lot(change));assert.doesNotMatch(html,/data-inventory-action="issue"/);assert.doesNotMatch(html,/<span class="tag">available<\/span>/);
  }
  assert.match(ctx.inventoryLotCard(lot({sealed_cartons:0,loose_units:0,reserved_units:0})),/Out of stock/);
+});
+test('summary and selected lot chips use the same eligibility reason and semantic tone without inventing low stock',()=>{
+ const {ctx}=ui();
+ for(const [changes,place,reason,tone]of [
+  [{},hub,'Eligible for invoice reservation','success'],
+  [{sealed_cartons:0,loose_units:1,reserved_units:0},hub,'Eligible for invoice reservation','success'],
+  [{sealed_cartons:0,loose_units:200},hub,'Fully reserved','info'],
+  [{sealed_cartons:0,loose_units:0,reserved_units:0},hub,'Out of stock','danger'],
+  [{expiry_date:'2026-10-26'},hub,'Expired','danger'],
+  [{stock_status:'quarantine'},hub,'Quarantined','warning'],
+  [{}, {...hub,active:false},'Location inactive or unavailable','warning'],
+  [{}, {...hub,is_dispatch_hub:false},'Transfer to dispatch hub','warning'],
+  [{loose_units:0,reserved_units:0},hub,'Open cartons before invoicing','warning']
+ ]){
+  ctx.place={name:'Haadi',code:'HAA',...place};vm.runInContext('inventoryLocations=[place]',ctx);
+  const value=lot(changes),before=JSON.stringify(value),stock=ctx.inventoryLotAvailability(value,ctx.place,today);
+  assert.equal(stock.reason,reason);const chip=`<span class="tag chip chip--${tone}">${reason}</span>`;
+  for(const html of [ctx.inventoryStockRow(value),ctx.inventoryLotCard(value)])assert.ok(html.includes(chip),reason+' remains the visible label in both renderers');
+  assert.equal(JSON.stringify(value),before);assert.equal(stock.invoiceableLoose,reason==='Eligible for invoice reservation'?stock.freeLoose:0);
+ }
+});
+test('unrecognized availability text remains escaped and uses the neutral not-counted tone',()=>{
+ const {ctx}=ui();assert.equal(ctx.inventoryAvailabilityChip({reason:'<Unknown condition>'}),'<span class="tag chip chip--neutral">&lt;Unknown condition></span>');
 });
 test('reservation details read only this lot, exclude inactive deliveries and navigate by exact delivery ID',async()=>{
  const f=ui();f.setLot(lot());f.links.push({dataset:{inventoryDelivery:'delivery'}});

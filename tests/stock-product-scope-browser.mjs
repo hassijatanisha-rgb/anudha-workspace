@@ -20,7 +20,7 @@ try{
   productDetailReviews.set('maker-a',{name:'Reviewed Albumin',company:'Corrected Maker A',specification:'200 ml'});
   inventoryLocation=()=>({name:'Godown A',code:'G-A'});
   inventoryHeader=()=>'';inventorySetupProgress=()=>'';
-  inventoryLotCard=lot=>`<article data-lot="${lot.id}">${esc(inventoryProduct(lot.product_id).source.company)} ${lot.loose_units}</article>`;
+  inventoryStockRow=lot=>`<tr data-lot="${lot.id}"><td>${esc(inventoryProduct(lot.product_id).source.company)} ${lot.loose_units}</td></tr>`;
   inventoryMovementCard=row=>`<p>${row.id}</p>`;inventoryIssueCard=row=>`<p>${row.id}</p>`;
   inventoryLots=[{id:'lot-a',product_id:'maker-a',stock_status:'available',sealed_cartons:0,reserved_units:0,loose_units:10},{id:'lot-b',product_id:'maker-b',stock_status:'available',sealed_cartons:0,reserved_units:0,loose_units:25}];
   inventoryWorkspace=()=>{$('#content').innerHTML=inventoryStock();bindInventoryWorkspace()};

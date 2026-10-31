@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -7,7 +8,7 @@ const fetchSrc=app.slice(app.indexOf('const listColumns='),app.indexOf('function
 // Runs list-cache.js and fetchLists with a fake server: tables hold rows; each call records its filter.
 function load(tables,{cached=null,missingColumn=false,otherError=false}={}){
  const calls=[];
- const ctx=vm.createContext({Date,Map,Set,Number,String,Array,Object,Promise,Error,JSON,setTimeout});
+ const ctx=vm.createContext({workspacePageHeader,Date,Map,Set,Number,String,Array,Object,Promise,Error,JSON,setTimeout});
  vm.runInContext(readFileSync(new URL('../list-cache.js',import.meta.url),'utf8'),ctx);
  ctx.listCacheRead=async()=>cached;
  ctx.all=async(table,cols,filter)=>{
@@ -62,7 +63,7 @@ test('other failures are reported, not hidden',async()=>{
  await assert.rejects(ctx.fetchLists('u1'),/network down/);
 });
 test('change-time helpers',()=>{
- const ctx=vm.createContext({Date,Map,Number});
+ const ctx=vm.createContext({workspacePageHeader,Date,Map,Number});
  vm.runInContext(readFileSync(new URL('../list-cache.js',import.meta.url),'utf8'),ctx);
  assert.equal(vm.runInContext(`listCacheLatest([{updated_at:'${T('07:00:00')}'},{updated_at:'${T('09:30:00')}'}],'${T('08:00:00')}')`,ctx),T('09:30:00'));
  assert.equal(vm.runInContext(`listCacheLatest([],'')`,ctx),'');

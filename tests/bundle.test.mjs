@@ -1,3 +1,4 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -22,6 +23,7 @@ test('bundles hold every source file once, in page order',()=>{
  const page=read('index.src.html'),js=read('app.bundle.js'),css=read('app.bundle.css');
  const scripts=[...page.matchAll(/<script src="([^"?]+)/g)].map(m=>m[1]),styles=[...page.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)].map(m=>m[1]);
  assert.ok(scripts.length>50&&scripts.includes('vendor/supabase.js')&&scripts.at(-1)==='action-forms.js');
+ assert.equal(scripts[scripts.indexOf('app.js')-1],'workspace-refresh.js','first-load helpers exist before bootstrap starts');
  assert.ok(js.startsWith("'use strict';"),'every page script runs in strict mode');
  let at=0;for(const f of scripts){const i=js.indexOf(`\n;// ${f}\n`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}
  at=0;for(const f of styles){const i=css.indexOf(`/* ${f} */`,at);assert.ok(i>=at,`${f} missing or out of order`);at=i;}
@@ -34,11 +36,11 @@ test('joined scripts answer typeof of a later file like separate scripts did',()
   {name:'early.js',text:"'use strict';\nvar seen=[typeof later,typeof later2,typeof laterFn];\nfunction check(){return typeof later}\nvar size=()=>typeof later.size,named=()=>typeof laterName;"},
   {name:'late.js',text:"'use strict';\nlet later=new Map(),later2=[1,2];\nconst laterName='x';\nfunction laterFn(){}\nvar after=check();"},
  ];
- const js=joinScripts(files),ctx=vm.createContext({});vm.runInContext(js,ctx);
+ const js=joinScripts(files),ctx=vm.createContext({workspacePageHeader,});vm.runInContext(js,ctx);
  assert.deepEqual([...vm.runInContext('seen',ctx)],['undefined','undefined','function'],'a function is hoisted, as in any one script');
  assert.equal(vm.runInContext('after',ctx),'object');
  assert.equal(vm.runInContext('named()',ctx),'string');
  assert.equal(vm.runInContext('size()',ctx),'number');
  assert.match(js,/typeof later\.size/,'typeof of a property is left as written');
- assert.throws(()=>vm.runInContext(files.map(f=>f.text.replace("'use strict';",'')).join('\n;'),vm.createContext({})),/initialization/,'plain joining would throw');
+ assert.throws(()=>vm.runInContext(files.map(f=>f.text.replace("'use strict';",'')).join('\n;'),vm.createContext({workspacePageHeader,})),/initialization/,'plain joining would throw');
 });

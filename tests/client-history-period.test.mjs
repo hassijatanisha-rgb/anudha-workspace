@@ -1,10 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../client-profile-pages.js',import.meta.url),'utf8');
 function load(){
- const handlers={};const ctx=vm.createContext({window:{addEventListener(){}},document:{addEventListener:(event,fn)=>{(handlers[event] ||= []).push(fn);}},companyDate:()=> '2026-10-20',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProduct:id=>({id,name:`Product ${id}`,category:id}),catalogCategoryOf:product=>product.category,catalogLabel:category=>category});
+ const handlers={};const ctx=vm.createContext({workspacePageHeader,window:{addEventListener(){}},document:{addEventListener:(event,fn)=>{(handlers[event] ||= []).push(fn);}},companyDate:()=> '2026-10-20',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProduct:id=>({id,name:`Product ${id}`,category:id}),catalogCategoryOf:product=>product.category,catalogLabel:category=>category});
  vm.runInContext(source+`;Object.assign(globalThis,{branchHistoryWindow,branchHistoryFilteredRows,branchConsumerHistory,clearBranchHistory,branchActivityTypes,setFilter:(month,period)=>{branchHistoryMonth=month;branchHistoryPeriod=period;},getFilter:()=>({month:branchHistoryMonth,period:branchHistoryPeriod}),setRows:(id,rows)=>branchHistoryCache.set(id,rows)});`,ctx);
  let renders=0;ctx.profileView=()=>{renders++;};return {ctx,change:target=>handlers.change.forEach(fn=>fn({target})),renders:()=>renders};
 }

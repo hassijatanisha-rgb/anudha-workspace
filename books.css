@@ -1,31 +1,37 @@
-.nav-accounts{--group-color:#1d5f6b}
-.books-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:0 0 4px}
-.books-metrics>div{padding:18px 20px;border:1px solid #d7e5de;border-radius:16px;background:#fff}
+.nav-accounts{--group-color:var(--info)}
+/* Metric and journal-field minimum widths are table/layout geometry. */
+.books-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--space-3);margin:0 0 var(--space-1)}
+.books-metrics>div{padding:var(--space-4) var(--space-5);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
 .books-metrics small,.books-metrics strong{display:block}
-.books-metrics strong{margin-top:4px;font-size:clamp(17px,2vw,22px);color:#174c3d;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.books-metrics strong{margin-top:var(--space-1);font-size:var(--t-title);line-height:var(--lh-title);font-weight:var(--w-title);letter-spacing:var(--ls-title);color:var(--brand);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .books td{white-space:nowrap}.books td:nth-child(3),.books td small{white-space:normal}
 .books td,.books th{font-variant-numeric:tabular-nums}
-.books .tag.books-paid{background:#def3e7;color:#176344}
-.books .tag.books-overdue{background:#fde8e8;color:#8a2222}
-.books .tag.books-part{background:#f6e8a6}
-.books .tag.books-void{background:#e5e7e6;color:#555}
-.books tr.books-total td{font-weight:700;background:#f4f8f6}
+.books .tag.books-paid{background:var(--success-bg);color:var(--success)}
+.books .tag.books-overdue{background:var(--danger-bg);color:var(--danger)}
+.books .tag.books-part{background:var(--warning-bg)}
+.books .tag.books-void{background:var(--neutral-bg);color:var(--ink-2)}
+.books tr.books-total td{font-weight:var(--w-display);background:var(--surface-2)}
 .books #booksJournalLines select{min-width:220px}
 .books #booksJournalLines input{min-width:110px}
-.books-print{background:#fff;border:1px solid var(--line);border-radius:12px;padding:25px;margin-top:20px}
-.books-print header{display:flex;justify-content:space-between;align-items:center;gap:20px;min-height:auto;padding:0 0 12px;border-bottom:2px solid #176149;background:#fff}
+.books-print{background:var(--print-paper);color:var(--print-ink);border:1px solid var(--print-line);border-radius:var(--r-md);padding:var(--space-5);margin-top:var(--space-5)}
+.books-print header{display:flex;justify-content:space-between;align-items:center;gap:var(--space-5);min-height:auto;padding:0 0 var(--space-3);border-bottom:2px solid var(--print-brand);background:var(--print-paper)}
 .books-print header strong,.books-print header small,.books-print header b,.books-print p small,.books-print p strong{display:block}
-.books-print header b{color:#8a2222}
-.books-print dl{display:grid;grid-template-columns:auto auto;justify-content:end;gap:4px 24px;margin:16px 0}
+.books-print header b{color:var(--danger)}
+.books-print dl{display:grid;grid-template-columns:auto auto;justify-content:end;gap:var(--space-1) var(--space-5);margin:var(--space-4) 0}
 .books-print dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:520px){.books-metrics{grid-template-columns:1fr}}
 @media print{
  body.books-printing *{visibility:hidden!important}
  body.books-printing .books-print-active,body.books-printing .books-print-active *{visibility:visible!important}
- body.books-printing>*:not(main),body.books-printing #nav,body.books-printing main>#notice,body.books-printing .books>*:not(#booksBody),body.books-printing #booksBody>*:not(.books-print-active),body.books-printing .no-print{display:none!important}
- body.books-printing .books-print-active{position:absolute;inset:0;width:100%;max-width:none;border:0;padding:0;margin:0;box-shadow:none}
+ body.books-printing>*:not(main):not(.books-print-host),body.books-printing #nav,body.books-printing main>#notice,body.books-printing .books>*:not(#booksBody),body.books-printing #booksBody>*:not(.books-print-active),body.books-printing .no-print{display:none!important}
+ body.books-printing .books-print-active{position:absolute;inset:0;width:100%;max-width:none;border:0;padding:0;margin:0;box-shadow:var(--e-0)}
+ /* The active invoice sheet is a print host; screen dimensions and motion must not clip paper. */
+ body.books-printing dialog.books-print-host{display:block!important;position:static!important;inset:auto!important;width:auto!important;max-width:none!important;height:auto!important;max-height:none!important;overflow:visible!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;box-shadow:var(--e-0)!important;transform:none!important;opacity:1!important}
+ body.books-printing-sheet>main{display:none!important}
+ body.books-printing .books-print-host .books-print-active{position:static}
+ body.books-printing .books-print-host>.dialog-drag-handle,body.books-printing .books-print-host::backdrop{display:none!important}
 }
-.two-step-trust{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:600}.two-step-trust input{width:auto}.two-step-trust small{flex-basis:100%;font-weight:400}
-.books-print-title{display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px}.books-print-title h2{margin:0}.books-print-title b{color:#8a2222}
-.books-print-parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 14px}.books-print-parties span,.books-print-parties strong,.books-print-parties small{display:block}
-.books-print-fiscal{margin-top:10px}
+.two-step-trust{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);font-weight:var(--w-headline)}.two-step-trust input{width:auto}.two-step-trust small{flex-basis:100%;font-weight:var(--w-body)}
+.books-print-title{display:flex;justify-content:space-between;align-items:center;margin:var(--space-4) 0 var(--space-2)}.books-print-title h2{margin:0}.books-print-title b{color:var(--danger)}
+.books-print-parties{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin:var(--space-2) 0 var(--space-4)}.books-print-parties span,.books-print-parties strong,.books-print-parties small{display:block}
+.books-print-fiscal{margin-top:var(--space-3)}

@@ -7,7 +7,9 @@ import {pathToFileURL} from 'node:url';
 // Opt in to local-browser acceptance tests; default Node runs report explicit skips.
 // No server, production credentials, network requests or persistent browser profile.
 const enabled=process.env.ACCOUNTING_BROWSER_QA==='1';
-const sources=['company-forms.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+const feedback=readFileSync(new URL('../action-feedback.js',import.meta.url),'utf8')+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+app.slice(app.indexOf('function friendlyError('),app.indexOf('let editSaving=false;'));
+const sources=[feedback,...['ui-page-header.js','company-forms.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'))];
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -19,11 +21,11 @@ test.after(async()=>{await browser?.close()});
 async function fixture(t,overrides={}){
  const page=await browser.newPage();t.after(()=>page.close());
  await page.route('**/*',route=>route.abort());
- await page.setContent('<section id="content"></section>');
+ await page.setContent('<div id="notice"></div><section id="content"></section>');
  await page.evaluate(overrides=>{
-  window.me={user_id:'actor'};window.view='accounting';window.$=s=>document.querySelector(s);
+  window.me={user_id:'actor'};window.view='accounting';window.listsLoaded=true;window.listsLoading=null;window.$=s=>document.querySelector(s);
   window.esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  window.run=fn=>fn();window.calls=[];window.saved=null;
+  window.busy=false;window.calls=[];window.saved=null;
   window.organizations=[{id:'a',name:'Alpha',location:'Branch A'},{id:'b',name:'Beta',location:'Branch B'}];
   window.contacts=[{id:'ca',organization_id:'a',first_name:'Alice',last_name:'A'},{id:'cb',organization_id:'b',first_name:'Bob',last_name:'B'},{id:'gone',organization_id:'a',first_name:'Deleted',deleted_at:'2026-01-01'}];
   window.requireAccountingAccess=async()=>me.user_id;
@@ -32,7 +34,7 @@ async function fixture(t,overrides={}){
    if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
    window.saved={id:args.p_id,kind:args.p_kind,version:args.p_expected_version+1,organization_id:args.p_organization_id,contact_id:args.p_contact_id,body:args.p_body};
    return {data:structuredClone(saved)};
-  },from:()=>({select:()=>({order:()=>({range:async()=>({data:window.saved?[window.saved]:[]})})})})};
+  },from:()=>{const query={select(){return query;},order(){return query;},range:async()=>({data:window.saved?[window.saved]:[]})};return query;}};
   window.row={id:'draft',kind:'tax_invoice',version:2,organization_id:'a',contact_id:'ca',body:{number:'DRAFT-1',contact:'Printed contact',buyer:'Printed buyer',lines:[{description:'Device',quantity:'2',rate:'100',per:'unit',amount:'200'}]},...overrides};
  },overrides);
  for(const source of sources)await page.addScriptTag({content:source});

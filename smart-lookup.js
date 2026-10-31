@@ -54,14 +54,14 @@ function lookupOptionsOf(source){
  if(values)return values();
  return list?[...list.options].map(o=>{const label=lookupTidy(o.label&&o.label!==o.value?`${o.value} · ${o.label}`:o.value);return {value:o.value,label,search:lookupNormalCached(label)}}):[];
 }
-function lookupClose(box){clearTimeout(box._lookupTimer);box._lookupTimer=0;box.querySelector('.lookup-list').hidden=true;const input=box.querySelector('input.lookup-input');input.setAttribute('aria-expanded','false');input.setAttribute('aria-activedescendant','');}
+function lookupClose(box){clearTimeout(box._lookupTimer);box._lookupTimer=0;setWorkspacePopover(box.querySelector('.lookup-list'),false);const input=box.querySelector('input.lookup-input');input.setAttribute('aria-expanded','false');input.setAttribute('aria-activedescendant','');}
 function lookupRender(box,showAll=false){
  const input=box.querySelector('input.lookup-input'),list=box.querySelector('.lookup-list'),source=box._lookupSource;
  if(!box._lookupItems)box._lookupItems=lookupOptionsOf(source);
  const query=showAll?'':input.value,{rows,total}=lookupRank(box._lookupItems,query);
  box._lookupRows=rows;box._lookupActive=rows.length?0:-1;
  list.innerHTML=rows.length?rows.map((row,i)=>`<li role="option" id="${box.id}-o${i}" data-i="${i}" class="${i===0?'active':''}">${lookupMark(row.label,query)}</li>`).join('')+(total>rows.length?`<li class="lookup-more" aria-disabled="true">${total-rows.length} more · keep typing to narrow down</li>`:''):`<li class="lookup-more" aria-disabled="true">Nothing matches “${lookupEsc(input.value)}”</li>`;
- list.hidden=false;input.setAttribute('aria-expanded','true');
+ setWorkspacePopover(list,true,{anchor:input});input.setAttribute('aria-expanded','true');
  input.setAttribute('aria-activedescendant',rows.length?`${box.id}-o0`:'');
 }
 function lookupEsc(text){return String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -102,6 +102,11 @@ function lookupSync(box){
  input.placeholder=empty?`${empty} · type to search`:'Type to search';
 }
 let lookupCount=0;
+function lookupLabelText(label,source){
+ const descriptions=new Set((source.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));
+ const text=node=>node.nodeType===3?node.textContent:node.nodeType!==1||node.matches('input,select,textarea,button,datalist,small,.field-error,[role="alert"],[role="status"],[hidden],[aria-hidden="true"]')||descriptions.has(node.id)?'':[...node.childNodes].map(text).join('');
+ return text(label).replace(/\s+/g,' ').trim();
+}
 function lookupAttach(source){
  if(source._lookupBox||source.closest('.lookup'))return;
  const isSelect=source.tagName==='SELECT';
@@ -116,9 +121,12 @@ function lookupAttach(source){
   // The original stays the required field (forms check it by name); when the browser flags it, the message is
   // shown on the search box instead of the hidden list.
   source.addEventListener('invalid',e=>{e.preventDefault();input.setCustomValidity(source.validity.customError?source.validationMessage:'Choose one from the list');input.reportValidity();});
-  const labelledBy=source.getAttribute('aria-labelledby');
+  const labelledBy=source.getAttribute('aria-labelledby'),ariaLabel=source.getAttribute('aria-label');
   if(labelledBy)input.setAttribute('aria-labelledby',labelledBy);
-  else input.setAttribute('aria-label',source.getAttribute('aria-label')||[...(source.labels||[])].map(label=>label.textContent.trim()).join(' ')||source.closest('label')?.querySelector('span')?.textContent||source.name||'Search');
+  if(ariaLabel)input.setAttribute('aria-label',ariaLabel);
+  else if(!labelledBy)input.setAttribute('aria-label',[...(source.labels||[])].map(label=>lookupLabelText(label,source)).filter(Boolean).join(' ')||source.name||'Search');
+  const describedBy=(source.getAttribute('aria-describedby')||'').split(/\s+/).filter(id=>id&&!document.getElementById(id)?.matches('.field-error')).join(' ');
+  if(describedBy)input.setAttribute('aria-describedby',describedBy);
   source.classList.add('lookup-source');source.tabIndex=-1;source.setAttribute('aria-hidden','true');
   if(isProduct){
    source.hidden=true;
@@ -138,13 +146,13 @@ function lookupAttach(source){
  input.addEventListener('input',e=>{if(e.isTrusted===false&&!isBound)return;clearTimeout(box._lookupTimer);box._lookupTimer=setTimeout(()=>{box._lookupTimer=0;lookupRender(box);},60);
   if(isBound){source.setCustomValidity('');input.setCustomValidity('');if(source.value!==''){source.value='';if(isProduct)source.dispatchEvent(new Event('input',{bubbles:true}));source.dispatchEvent(new Event('change',{bubbles:true}));}}});
  input.addEventListener('focus',()=>{box._lookupItems=null;const chosen=isBound&&source.value!=='';if(chosen)input.select();lookupRender(box,chosen);});
- input.addEventListener('click',()=>{if(list.hidden){box._lookupItems=null;lookupRender(box,isBound&&source.value!=='');}});
+ input.addEventListener('click',()=>{if(input.getAttribute('aria-expanded')!=='true'){box._lookupItems=null;lookupRender(box,isBound&&source.value!=='');}});
  input.addEventListener('keydown',e=>{
   if(box._lookupTimer&&['ArrowDown','ArrowUp','Enter'].includes(e.key)){clearTimeout(box._lookupTimer);box._lookupTimer=0;lookupRender(box);}
-  if(e.key==='ArrowDown'){e.preventDefault();list.hidden?lookupRender(box):lookupMove(box,1);}
+  if(e.key==='ArrowDown'){e.preventDefault();input.getAttribute('aria-expanded')!=='true'?lookupRender(box):lookupMove(box,1);}
   else if(e.key==='ArrowUp'){e.preventDefault();lookupMove(box,-1);}
-  else if(e.key==='Enter'&&!list.hidden&&box._lookupRows?.length){e.preventDefault();lookupPick(box,box._lookupRows[box._lookupActive]);}
-  else if(e.key==='Escape'&&!list.hidden){e.preventDefault();lookupClose(box);}
+  else if(e.key==='Enter'&&input.getAttribute('aria-expanded')==='true'&&box._lookupRows?.length){e.preventDefault();lookupPick(box,box._lookupRows[box._lookupActive]);}
+  else if(e.key==='Escape'&&input.getAttribute('aria-expanded')==='true'){e.preventDefault();lookupClose(box);}
  });
  // Leaving the box never picks for the person; typed text that is not a choice is flagged instead. While a finger
  // or mouse is on the list (scrolling on a phone blurs the box), the list stays open.

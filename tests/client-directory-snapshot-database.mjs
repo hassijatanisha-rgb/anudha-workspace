@@ -1,0 +1,54 @@
+// Disposable caller-RLS fixture. Original CRM policies are not checked in; restrictive fixture policies
+// test invoker behavior, while actual checked-in active-staff and current MFA functions are installed.
+import assert from 'node:assert/strict';
+import {directoryRows,directoryFixture,plain,source} from './helpers/client-directory-fixture.mjs';
+const {PGlite}=await import(process.env.PGLITE_MODULE),db=new PGlite();
+const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,owner=id(1),staff=id(2),inactive=id(3);
+const orgColumns='id,name,location,type,parent_id,approval_status',contactColumns='id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status';
+const migration=name=>source('supabase/migrations/'+name);
+let checks=0;const pass=text=>{checks++;console.log('PASS '+text);};
+const loadFunction=async(file,name)=>{const definition=migration(file).match(new RegExp(String.raw`create(?: or replace)? function public\.${name}\([\s\S]*?\bas\s+(\$[a-z_]*\$)[\s\S]*?\1;`,'i'));assert.ok(definition,name);await db.exec(definition[0]);};
+const as=actor=>db.query("select set_config('test.actor',$1,false)",[actor]);
+const snapshot=async()=>(await db.query('select client_directory_snapshot() result')).rows[0].result;
+const baseline=async()=>({organizations:(await db.query(`select ${orgColumns} from organizations where deleted_at is null order by id`)).rows,contacts:(await db.query(`select ${contactColumns} from contacts where deleted_at is null order by id`)).rows});
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('aal',coalesce(nullif(current_setting('test.aal',true),''),'aal2'),'amr',jsonb_build_array(jsonb_build_object('method','totp','timestamp',extract(epoch from now())::bigint)))$$;
+ create table auth.mfa_factors(user_id uuid,status text);
+ create table staff(user_id uuid primary key,active boolean,role text,department text);
+ create table accounting_memberships(user_id uuid,active boolean);
+ create table organizations(id uuid primary key,name text,location text,type text,parent_id uuid,approval_status text,deleted_at timestamptz,source jsonb);
+ create table contacts(id uuid primary key,organization_id uuid,title text,first_name text,last_name text,position text,phone_country text,country_code text,phone text,email text,status text,revision integer,reason text,source jsonb,deleted_at timestamptz);
+ create table products(id uuid,name text,source jsonb);
+ insert into staff values('${owner}',true,'owner','management'),('${staff}',true,'staff','sales'),('${inactive}',false,'staff','sales');
+ grant usage on schema auth to authenticated;`);
+ await loadFunction('202610140080_require_two_step.sql','two_step_required');await loadFunction('202610160088_two_step_monthly.sql','mfa_satisfied');await loadFunction('202610010058_two_step_sign_in.sql','inventory_active_staff');
+ await db.exec(`alter table organizations enable row level security;alter table contacts enable row level security;
+ create policy org_read on organizations for select to authenticated using(inventory_active_staff());create policy contact_read on contacts for select to authenticated using(inventory_active_staff());
+ grant select on organizations,contacts to authenticated;`);
+ const rows=directoryRows(),ids=new Map(rows.organizations.map((row,index)=>[row.id,id(1000+index)]));
+ const organizations=rows.organizations.map(row=>({...row,id:ids.get(row.id),parent_id:ids.get(row.parent_id)||null,source:{private:'Organization provenance'}}));
+ const contacts=rows.contacts.map((row,index)=>({...row,id:id(10000+index),organization_id:ids.get(row.organization_id),source:{private:'Contact source must stay lazy'}}));
+ await db.query(`insert into organizations select * from jsonb_populate_recordset(null::organizations,$1)`,[JSON.stringify(organizations)]);
+ await db.query(`insert into contacts select * from jsonb_populate_recordset(null::contacts,$1)`,[JSON.stringify(contacts)]);
+ const deletedRoot=organizations.at(-2).id,deletedBranch=organizations.at(-1).id,hiddenRoot=organizations[0].id,hiddenContact=contacts[0].id;
+ await db.query('update organizations set deleted_at=now() where id=$1',[deletedRoot]);await db.query('update contacts set deleted_at=now() where id=$1',[contacts.at(-1).id]);
+ await db.exec(migration('202610290152_client_directory_snapshot.sql'));await db.exec('set role authenticated');await as(staff);
+ const before=await baseline(),result=await snapshot();assert.deepEqual(result,before);assert.equal(result.organizations.length,2145);assert.equal(result.contacts.length,1179);assert.ok(result.organizations.some(row=>row.id===deletedBranch&&row.parent_id===deletedRoot));
+ assert.deepEqual(Object.keys(result.organizations[0]).sort(),orgColumns.split(',').sort());assert.deepEqual(Object.keys(result.contacts[0]).sort(),contactColumns.split(',').sort());
+ assert.equal((await db.query("select has_table_privilege('authenticated','products','select') allowed")).rows[0].allowed,false);pass('complete >1000-row CRM parity with explicit columns, no products/provenance/revision fields, and independently visible descendants of deleted parents');
+ const f=directoryFixture({rows:result});await f.ctx.render();const state=f.run('clientDirectoryData');f.ctx.old=plain(before);f.run('organizations=old.organizations;contacts=old.contacts;organizations.sort((a,b)=>a.name.localeCompare(b.name));scan()');
+ assert.deepEqual(plain([...state.accountReviewCounts]),plain(f.run('[...accountReviewCounts]')));assert.deepEqual(plain([...state.duplicates]),plain(f.run('[...duplicates]')));f.ctx.snapshot=state;
+ assert.deepEqual(plain(f.run('contactReviewQueue(snapshot.contacts,snapshot.organizations,snapshot.duplicates)')),plain(f.run('contactReviewQueue(contacts,organizations,duplicates)')));pass('SQL snapshot preserves exact JavaScript phone/Unicode validation, duplicate groups and revision queue');
+ await db.exec('reset role');await db.exec(`create policy hidden_org on organizations as restrictive for select to authenticated using(id<>'${hiddenRoot}');create policy hidden_contact on contacts as restrictive for select to authenticated using(id<>'${hiddenContact}');set role authenticated`);
+ const restricted=await snapshot();assert.deepEqual(restricted,await baseline());assert.equal(restricted.organizations.some(row=>row.id===hiddenRoot),false);assert.equal(restricted.contacts.some(row=>row.id===hiddenContact),false);assert.ok(restricted.organizations.some(row=>row.parent_id===hiddenRoot));
+ const hiddenFixture=directoryFixture({rows:restricted});await hiddenFixture.ctx.render();assert.equal(hiddenFixture.run(`clientDirectoryData.orgIndex.has('${hiddenRoot}')`),false);assert.doesNotMatch(hiddenFixture.content.innerHTML,/École/);pass('restrictive caller RLS hides parents and contacts without resurrecting missing parents or leaking their labels');
+ await db.exec('reset role');await db.exec(`create policy no_contacts on contacts as restrictive for select to authenticated using(false);set role authenticated`);assert.deepEqual((await snapshot()).contacts,[]);assert.ok((await snapshot()).organizations.length>0);await db.exec('reset role;drop policy no_contacts on contacts;set role authenticated');pass('empty caller-visible contacts remain empty without fallback to shared or privileged records');
+ await as(owner);assert.ok((await snapshot()).organizations.length);await db.query("select set_config('test.aal','aal1',false)");await assert.rejects(snapshot(),/Active staff access/);await as(staff);assert.ok((await snapshot()).organizations.length,'optional MFA stays optional');
+ await db.exec('reset role');await db.query('insert into auth.mfa_factors values($1,\'verified\')',[staff]);await db.exec('set role authenticated');await assert.rejects(snapshot(),/Active staff access/);await db.query("select set_config('test.aal','aal2',false)");assert.ok((await snapshot()).organizations.length);await as(inactive);await assert.rejects(snapshot(),/Active staff access/);await as('');await assert.rejects(snapshot(),/Active staff access/);pass('actual current MFA guard, optional staff enrollment, owner requirement, inactive staff and missing actor');
+ await db.exec('reset role;set role anon');await assert.rejects(snapshot(),/permission denied/);await db.exec('reset role');const proc=(await db.query("select prosecdef,proconfig from pg_proc where proname='client_directory_snapshot'")).rows[0];assert.equal(proc.prosecdef,false);assert.ok(proc.proconfig.includes('search_path=public, pg_temp'));
+ assert.equal((await db.query("select has_table_privilege('authenticated','organizations','update') or has_table_privilege('authenticated','contacts','update') allowed")).rows[0].allowed,false);assert.equal((await db.query('select count(*)::int n from organizations')).rows[0].n,organizations.length);assert.equal((await db.query('select count(*)::int n from contacts')).rows[0].n,contacts.length);pass('invoker, fixed search path, anonymous denial and no added writes or grants');
+ console.log(`Fixture payload: ${Buffer.byteLength(JSON.stringify(result))} bytes for ${result.organizations.length} organizations and ${result.contacts.length} contacts; request bounded, payload not bounded.`);
+ console.log(`${checks} client-directory database checks passed`);
+}finally{await db.close();}

@@ -1,9 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
-function load(){const ctx=vm.createContext({esc:s=>String(s??''),Intl,Number,String,Math});vm.runInContext(read('tally-invoices.js'),ctx);return ctx;}
+function load(){const ctx=vm.createContext({workspacePageHeader,statusTone,esc:s=>String(s??''),Intl,Number,String,Math});vm.runInContext(read('sales-domain.js'),ctx);vm.runInContext(read('tally-invoices.js'),ctx);return ctx;}
 test('Tally amounts, quantities and dates are read the way Tally writes them',()=>{
  const c=load();
  assert.equal(c.tallyAmountMinor('-13570.00'),1357000);assert.equal(c.tallyAmountMinor('1,000.00'),100000);
@@ -23,6 +25,17 @@ test('register lists newest first and searches invoice, customer, Pro forma and 
  const ids=(f,s='')=>[...c.tallyInvoiceVisible(rows,{filter:f,search:s})].map(r=>r.id);
  assert.deepEqual(ids('all'),['c','b','a'],'date then invoice number, newest first');assert.deepEqual(ids('unmatched'),['b']);
  assert.deepEqual(ids('all','pf-2026-000012'),['a']);assert.deepEqual(ids('all','blood'),['a']);assert.deepEqual(ids('all','cash'),['c','b']);
+});
+test('Tally matching chips describe linking only, with cancellation and unknown states kept distinct',()=>{
+ const c=load();vm.runInContext('tallyInvoiceCanManage=true',c);
+ const row={id:'invoice',voucher_number:'INV-1',voucher_date:'2026-10-29',voucher_type:'Sales',party_name:'Clinic',order_reference:'PF-1',currency:'TZS',total_minor:100,lines:[]};
+ for(const [match_status,tone,label] of [['matched','success','Linked to Pro forma'],['unmatched','warning','Needs linking'],['ignored','neutral','Not from a Pro forma']]){
+  const html=c.tallyInvoiceRow({...row,match_status});assert.ok(html.includes(`<span class="tag chip chip--${tone}">${label}</span>`));assert.doesNotMatch(html,/>Paid<|>Delivered</);
+  const cancelled=c.tallyInvoiceRow({...row,match_status,cancelled:true});assert.match(cancelled,/Cancelled in Tally/);assert.ok(cancelled.includes(`chip--${tone}`));
+ }
+ assert.match(c.tallyInvoiceRow({...row,match_status:'matched'}),/data-tally-invoice-action="unmatch"/);
+ assert.match(c.tallyInvoiceRow({...row,match_status:'unmatched'}),/data-tally-invoice-action="ignore"/);
+ assert.match(c.tallyInvoiceRow({...row,match_status:'unknown'}),/class="tag chip chip--neutral"/);
 });
 test('Tally invoices left the menu and guides (tax invoices are made in the ERP); nothing writes stock',()=>{
  const html=read('index.src.html'),src=read('tally-invoices.js');

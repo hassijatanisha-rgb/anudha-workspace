@@ -1,9 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
- const ctx=vm.createContext({orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Intl,Number,String});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Intl,Number,String});
  vm.runInContext(readFileSync(new URL('../business-date.js',import.meta.url),'utf8'),ctx);
  vm.runInContext(readFileSync(new URL('../sales-leads.js',import.meta.url),'utf8'),ctx);return ctx;
 }
@@ -41,7 +43,7 @@ test('actions follow the stage rules',()=>{
 test('menu, router, sign-out and Pro forma prefill are wired',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
  assert.match(read('workspace-navigation.js'),/\['Leads','leads','leads'\]/);assert.doesNotMatch(read('workspace-navigation.js'),/Inquiries|Lead \/ Opportunity/);
- assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{clearEmployeeNames\(\);if\(typeof clearLeads==='function'\)clearLeads\(\);/);
+ assert.match(read('app.js'),/view==='leads'\)return leadsWorkspace\(\)/);assert.match(read('app.js'),/function clear\(\)\{[^\n]*\bclearEmployeeNames\(\)/);assert.match(read('app.js'),/function clear\(\)\{[^\n]*if\(typeof clearLeads==='function'\)clearLeads\(\);/);
  assert.match(read('sales-delivery.js'),/prefill=record\?null:salesPrefill/);assert.match(read('sales-delivery.js'),/salesPrefill=null;\nfunction clearSalesPrefill/);assert.match(read('sales-delivery.js'),/\$\('#newProforma'\)\?\.addEventListener\('click',\(\)=>salesNavigate\(\(\)=>\{salesPrefill=null;/);
  const html=read('index.src.html');assert.ok(html.indexOf('sales-leads.js')>html.indexOf('sales-delivery.js')&&html.indexOf('sales-leads.js')<html.indexOf('app.js'));
 });
@@ -60,8 +62,9 @@ test('loads every open lead but only six months of won and lost ones; search rea
 });
 test('after a save or step only that lead is read again',async()=>{
  const ctx=load();let asked=0;
- Object.assign(ctx,{me:{user_id:'a'}});
- ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:row('2','won',{proforma_id:'p'})})};return q;}};
+ Object.assign(ctx,{me:{user_id:'a'},$:()=>null});
+ const saved={...Object.fromEntries(vm.runInContext('leadColumns',ctx).split(',').map(key=>[key,null])),...row('2','won',{proforma_id:'p',version:3})};
+ ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:saved})};return q;}};
  vm.runInContext(`leadLoaded=true;view='leads';leadRows=[row1,row2];renderLeads=()=>{};`.replace('row1',JSON.stringify(row('1','lead'))).replace('row2',JSON.stringify(row('2','lead'))),ctx);
  await ctx.leadRefreshOne('2');
  assert.equal(asked,1);

@@ -1,9 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(role='staff',user='a'){
- const ctx=vm.createContext({me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,me:{user_id:user,role},products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>id,Intl,Number,String,Date,clearTimeout});
  for(const file of ['business-date.js','row-index.js','purchasing.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  vm.runInContext(`suppliers=[{id:'s1',name:'Fixture Medical',active:true}];purchaseLines=[{purchase_order_id:'o1',line_number:1,product_id:'p1',quantity:10,unit_price_minor:500},{purchase_order_id:'o1',line_number:2,product_id:'p2',quantity:2,unit_price_minor:1000},{purchase_order_id:'o2',line_number:1,product_id:'p2',quantity:5,unit_price_minor:null}];`,ctx);
  return ctx;
@@ -58,12 +60,9 @@ test('loads every open order but only six months of finished ones, items nested 
  assert.equal(vmJson(ctx,'purchaseOrderLines("o9").length'),1);
 });
 function vmJson(ctx,expr){return JSON.parse(vm.runInContext(`JSON.stringify(${expr})`,ctx));}
-test('after a step only that order is read again; the rest of the list is kept',async()=>{
- const ctx=load('owner');let asked=0,full=0;
- ctx.client={from:()=>{asked++;const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]}})};return q;}};
- vm.runInContext(`purchaseLoaded=true;view='purchasing';purchaseOrders=[{id:'o1',status:'requested'},{id:'o2',status:'requested'}];renderPurchasing=()=>{};purchasingWorkspace=async()=>{globalThis.fullReload=(globalThis.fullReload||0)+1};`,ctx);
- await ctx.purchaseRefreshOne('o1');
- assert.equal(asked,1);assert.equal(vmJson(ctx,'globalThis.fullReload||0'),0,'no full reload');
- assert.deepEqual(vmJson(ctx,'purchaseOrders.map(o=>o.id+":"+o.status).sort()'),['o1:approved','o2:requested']);
- assert.deepEqual(vmJson(ctx,'purchaseOrderLines("o1").map(l=>l.product_id)'),['p2'],'old items replaced by the saved ones');
+test('the scoped order reader returns joined lines without mutating complete caches or rendering',async()=>{
+ const ctx=load('owner');let asked=0;const data={id:'o1',status:'approved',purchase_order_lines:[{purchase_order_id:'o1',line_number:1,product_id:'p2',quantity:4}]};
+ ctx.client={from:table=>{assert.equal(table,'purchase_orders');asked++;const q={select:()=>q,eq:(key,id)=>{assert.equal(key,'id');assert.equal(id,'o1');return q},maybeSingle:async()=>({data})};return q;}};
+ const before=vmJson(ctx,'purchaseLines');assert.equal(await ctx.purchaseRefreshOne('o1'),data);assert.equal(asked,1);assert.deepEqual(vmJson(ctx,'purchaseLines'),before);
 });
+// Save, retry and session-guard coverage uses actual retained DOM in purchasing-record-update.test.mjs.

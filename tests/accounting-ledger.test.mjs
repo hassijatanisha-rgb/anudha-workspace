@@ -1,9 +1,10 @@
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
- const ctx=vm.createContext({Intl,Date,Math,Number,String,Map,Set,Array,Object,Error,crypto:globalThis.crypto});
+ const ctx=vm.createContext({statusTone,Intl,Date,Math,Number,String,Map,Set,Array,Object,Error,crypto:globalThis.crypto});
  vm.runInContext(readFileSync(new URL('../sales-domain.js',import.meta.url),'utf8'),ctx);
  vm.runInContext(readFileSync(new URL('../accounting-ledger.js',import.meta.url),'utf8'),ctx);
  return ctx;
@@ -46,10 +47,10 @@ test('Books pages every choice and uses database balances, independent of receip
   select(){return this;},order(){return this;},range(a,b){start=a;end=Math.min(b,a+210);return this;},
   then(resolve){requests.push([table,start]);resolve({data:datasets[table].slice(start,end+1)});}
  };}};
- const data=await run(ctx,'loadBooksData()');
- assert.equal(data.invoices.length,1005);assert.equal(data.receipts.length,1006);assert.equal(data.allocations.length,1007);assert.equal(data.toInvoice.length,501);
+ const data=await run(ctx,"loadBooksData('receipts')"),invoiceData=await run(ctx,"loadBooksData('invoices')");
+ assert.equal(data.invoices.length,1005);assert.equal(data.receipts.length,1006);assert.equal(data.allocations.length,1007);assert.equal(invoiceData.toInvoice.length,501);
  assert.equal(data.invoices[0].paid,730);assert.equal(data.invoices[0].outstanding,270);assert.equal(data.invoices[0].state.label,'Part paid');
- assert.equal(data.proformaNumbers.get('p1004'),'PF-1004');assert.equal(data.toInvoice.at(-1).id,'waiting500');
+ assert.equal(data.proformaNumbers.get('p1004'),'PF-1004');assert.equal(invoiceData.toInvoice.at(-1).id,'waiting500');
  assert.ok(requests.some(([table,start])=>table==='acc_invoice_balances'&&start===1005),'fetches through the terminal empty page');
 });
 
@@ -89,12 +90,12 @@ test('CSV neutralizes spreadsheet formulas, controls and whitespace prefixes',()
 test('waiting Pro forma money retains its source currency without conversion',()=>{
  const ctx=load();
  assert.equal(run(ctx,"booksMoney(12345,'USD')"),new Intl.NumberFormat('en-TZ',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(123.45));
- assert.match(run(ctx,"booksMoney(12345)"),/TSh/);
+ assert.match(run(ctx,"booksMoney(12345)"),/TZS/);
 });
 
 test('only the selected Books print root is active and print exceptions clean up',()=>{
  const ctx=load(),classes=()=>{const values=new Set();return {add:v=>values.add(v),remove:v=>values.delete(v),contains:v=>values.has(v)};};
- const previous={classList:classes()},chosen={classList:classes()},body={classList:classes()};previous.classList.add('books-print-active');
+ const previous={classList:classes()},chosen={classList:classes(),closest:()=>null},body={classList:classes()};previous.classList.add('books-print-active');
  ctx.area=chosen;ctx.document={body,querySelectorAll(){return [previous,chosen].filter(area=>area.classList.contains('books-print-active'));}};
  ctx.window={print(){assert.equal(previous.classList.contains('books-print-active'),false);assert.equal(chosen.classList.contains('books-print-active'),true);assert.equal(body.classList.contains('books-printing'),true);throw Error('Print failed');}};
  assert.throws(()=>run(ctx,'booksPrint(area)'),/Print failed/);
@@ -127,4 +128,16 @@ test('invoice quantity selection omits zeroes and enforces remaining, shared ava
  ctx.lines=[{proforma_line_id:'a',product_id:'p',remaining_quantity:4,available_quantity:2},{proforma_line_id:'b',product_id:'p',remaining_quantity:4,available_quantity:2}];
  ctx.values=['2','1'];assert.throws(()=>run(ctx,'booksInvoiceQuantitySelection(lines,values)'),/available Haadi stock/);
  ctx.values=['1','1'];assert.equal(run(ctx,'booksInvoiceQuantitySelection(lines,values)').length,2);
+});
+
+
+test('invoice chips retain server labels and distinguish overdue, unpaid and missing TRA receipt',()=>{
+ const ctx=load();ctx.esc=value=>String(value??'').replaceAll('<','&lt;').replaceAll('"','&quot;');
+ ctx.organizations=[{id:'customer',name:'Customer'}];const data={proformaNumbers:new Map()};
+ for(const [key,tone,label] of [['void','neutral','Void'],['paid','success','Credited'],['overdue','danger','Part settled · overdue'],['part','warning','Part settled'],['open','warning','Unpaid']]){
+  const html=ctx.booksInvoiceTable([{id:'invoice',invoice_number:'INV-1',organization_id:'customer',invoice_date:'2026-10-29',due_date:'2026-11-29',total_minor:10000,paid:0,outstanding:10000,state:{key,label}}],data);
+  assert.match(html,new RegExp('chip chip--'+tone+'">'+label+'<'));
+  assert.match(html,/books-missing chip chip--warning">Not recorded</);
+ }
+ assert.equal(ctx.booksInvoiceTone('unknown'),'neutral');
 });

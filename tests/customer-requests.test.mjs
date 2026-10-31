@@ -1,9 +1,10 @@
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(user='a'){
- const ctx=vm.createContext({me:{user_id:user,role:'staff'},esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha'}[id]||'Employee name not set'),encodeURIComponent,Date,Number,String});
+ const ctx=vm.createContext({statusTone,me:{user_id:user,role:'staff'},esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha'}[id]||'Employee name not set'),encodeURIComponent,Date,Number,String});
  vm.runInContext(readFileSync(new URL('../customer-requests.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 const req=(id,kind,status,extra={})=>({id,kind,status,request_number:'REQ-2026-00000'+id,name:'Fixture '+id,phone:'0712345678',message:'Need help',contact_channel:'whatsapp',created_at:'2026-10-0'+id+'T08:00:00Z',version:1,confirmation_status:'not_set_up',...extra});

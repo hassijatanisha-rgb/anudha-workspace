@@ -5,12 +5,12 @@
 //  results — tasks I gave someone else that were done or cancelled in the last 7 days, not seen yet
 //  notices — unread order updates, acknowledged with the same server receipt as My tasks
 // "Seen" is a time per kind, kept per person on this device (localStorage). Opening My tasks marks all three seen;
-// pressing an item marks its kind seen. The badge uses count-only reads (head: true); the list loads only when opened.
+// pressing an item marks its kind seen. The badge uses one summary RPC; the list loads only when opened.
 // Refreshes when the person moves between pages and every 2 minutes.
-let bellCounts=null,bellEpoch=0,bellLastRefresh=0,bellOpen=false,bellItems=null,bellError='';
+let bellActor=null,bellCounts=null,bellEpoch=0,bellListRequest=0,bellLastRefresh=0,bellOpen=false,bellItems=null,bellError='';
 const bellKinds=[['tasks','New tasks for you'],['work','Work handed to you'],['results','Results of tasks you gave'],['notices','Order updates']];
 const bellResultDays=7,bellListSize=5;
-function clearNotificationBell(){bellEpoch++;bellCounts=null;bellLastRefresh=0;bellOpen=false;bellItems=null;bellError='';}
+function clearNotificationBell(){bellActor=null;bellEpoch++;bellListRequest++;bellCounts=null;bellLastRefresh=0;bellOpen=false;bellItems=null;bellError='';const panel=document.querySelector('#bell .bell-panel');if(panel){setWorkspacePopover(panel,false,{immediate:true});panel.textContent='';}}
 function bellStorage(){try{return globalThis.localStorage||null}catch{return null}}
 function bellKey(userId){return `anudha.bell.seen.${userId}`;}
 function bellSeen(userId,storage=bellStorage()){
@@ -43,27 +43,28 @@ function bellQuery(kind,userId,since,count){
 function bellTotal(counts){return counts?bellKinds.reduce((sum,[kind])=>sum+(Number(counts[kind])||0),0):0;}
 function bellBadge(total){return total>9?'9+':String(total);}
 async function refreshNotificationBell(force=false){
- const actor=me?.user_id;if(!actor||!bellInstall())return;
+ const actor=me;if(!actor?.user_id)return;
+ if(bellActor!==actor){clearNotificationBell();bellActor=actor;}
+ if(!bellInstall())return;
  if(!force&&Date.now()-bellLastRefresh<10000)return;
  bellLastRefresh=Date.now();
- const epoch=++bellEpoch,seen=bellSeen(actor);
- // Packing orders taken over 30 minutes ago become tasks for the stores head and the owner (migration 078). Their bell
- // asks for that first, so the alert arrives even when no packing screen is open. Missing on older databases: ignored.
- if(me?.role!=='staff'&&typeof client?.rpc==='function'){try{await client.rpc('packing_raise_overdue_alerts');}catch{}}
- // Overdue tasks become one task for the department head (migration 083). Missing on older databases: ignored.
- if(typeof client?.rpc==='function'){try{await client.rpc('raise_team_task_overdue_alerts');}catch{}}
- const results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor,bellSince(kind,seen),true)));
- if(epoch!==bellEpoch||me?.user_id!==actor)return;
- // A kind that could not be read is left out of the count rather than blocking the others.
- bellCounts=Object.fromEntries(bellKinds.map(([kind],i)=>[kind,results[i].error?null:results[i].count||0]));
+ const epoch=++bellEpoch,seen=bellSeen(actor.user_id);
+ let result;
+ try{result=await client.rpc('notification_summary',{p_tasks_since:bellSince('tasks',seen)||null,p_work_since:bellSince('work',seen)||null,p_results_since:bellSince('results',seen)});}
+ catch{result={error:true};}
+ if(epoch!==bellEpoch||me!==actor)return;
+ // Failed or incomplete counts remain unknown, so the badge invites a retry.
+ bellCounts=Object.fromEntries(bellKinds.map(([kind])=>{const count=result?.data?.[kind];return [kind,!result?.error&&Number.isSafeInteger(count)&&count>=0?count:null];}));
  bellRender();
  if(bellOpen)await bellLoadList();
 }
 async function bellLoadList(){
- const actor=me?.user_id;if(!actor)return;
- const epoch=bellEpoch,seen=bellSeen(actor);
- const results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor,bellSince(kind,seen),false)));
- if(epoch!==bellEpoch||me?.user_id!==actor)return;
+ const actor=me;if(!actor?.user_id)return;
+ const epoch=bellEpoch,request=++bellListRequest,seen=bellSeen(actor.user_id),current=()=>epoch===bellEpoch&&request===bellListRequest&&me===actor;
+ let results;
+ try{results=await Promise.all(bellKinds.map(([kind])=>bellQuery(kind,actor.user_id,bellSince(kind,seen),false)));}
+ catch(error){if(!current())return;bellError=error.message||'Connection unavailable';bellItems={};bellRender();return;}
+ if(!current())return;
  bellError=results.find(r=>r.error)?.error?.message||'';
  bellItems=Object.fromEntries(bellKinds.map(([kind],i)=>[kind,results[i].data||[]]));
  bellRender();
@@ -76,7 +77,7 @@ function bellItemText(kind,row){
  return `${employeeName(row.assignee_user_id)} ${row.status==='done'?'finished':'cancelled'}: ${row.title}${row.close_note?` — ${row.close_note}`:''}`;
 }
 function bellPanel(){
- if(!bellItems)return `<p role="status">Loading…</p>`;
+ if(!bellItems)return workspaceSkeleton('rows','Loading updates…');
  const taskTotal=bellTotal({...bellCounts,notices:0});
  const groups=bellKinds.map(([kind,label])=>{
   const rows=bellItems[kind]||[],more=(Number(bellCounts?.[kind])||0)-rows.length;
@@ -90,20 +91,20 @@ function bellRender(){
  badge.textContent=total?bellBadge(total):incomplete?'!':'';badge.hidden=!total&&!incomplete;
  button.setAttribute('aria-label',incomplete?'Updates: some checks failed; open to retry':total?`Updates: ${total} new`:bellCounts?'Updates: nothing new':'Updates: checking');
  button.setAttribute('aria-expanded',String(bellOpen));
- panel.hidden=!bellOpen;
+ setWorkspacePopover(panel,bellOpen,{anchor:button});
  if(bellOpen)panel.innerHTML=`<h2>Updates</h2><p class="muted">In-app updates · checks every two minutes while open.</p><button type="button" data-bell-refresh>Refresh updates</button>${bellPanel()}`;
 }
-function bellGoToTasks(){
- if(typeof salesConfirmLeave==='function'&&!salesConfirmLeave())return;
+async function bellGoToTasks(){
+ const context=workspaceNavigationContext();if(!await confirmWorkspaceLeave(context.current)||!context.current())return;
  if(typeof message==='function')message('');
  view='personal';personalSection='task';personalPage=0;
  return run(async()=>render());
 }
-function bellSetOpen(open){bellOpen=open;bellRender();if(open){bellItems=null;bellRender();bellLoadList().catch(error=>{bellError=error.message;bellItems={};bellRender();});}}
+function bellSetOpen(open){bellListRequest++;bellOpen=open;bellRender();if(open){bellItems=null;bellRender();return bellLoadList();}}
 function bellChoose(kind,row){
  bellMarkSeen(me?.user_id,[kind]);bellSetOpen(false);
  if((kind==='work'||kind==='notices')&&row&&typeof workOpenRecord==='function'){run(()=>workOpenRecord(row));refreshNotificationBell(true).catch(()=>{});return;}
- bellGoToTasks();
+ return bellGoToTasks();
 }
 async function bellDismissNotice(id){
  const actor=me?.user_id,epoch=bellEpoch;
@@ -120,7 +121,7 @@ function bellInstall(){
  box=document.createElement('div');box.id='bell';box.className='bell';
  box.innerHTML='<button type="button" class="bell-button" aria-haspopup="true" aria-expanded="false" aria-label="Updates"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1Z"/></svg><span class="bell-count" hidden></span></button><div class="bell-panel" hidden></div>';
  identity.prepend(box);
- box.querySelector('.bell-button').onclick=()=>bellSetOpen(!bellOpen);
+ const trigger=box.querySelector('.bell-button');trigger.onclick=()=>run(()=>bellSetOpen(!bellOpen),{origin:trigger,busyLabel:'Checking updates…'});
  box.querySelector('.bell-panel').addEventListener('click',event=>{
   if(event.target.closest('[data-bell-refresh]'))return run(()=>refreshNotificationBell(true));
   const item=event.target.closest('[data-bell-item]'),more=event.target.closest('[data-bell-more]');

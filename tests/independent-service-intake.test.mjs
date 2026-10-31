@@ -5,24 +5,25 @@ import vm from 'node:vm';
 const source=fs.readFileSync('service-domain.js','utf8')+'\n'+fs.readFileSync('service-workflow.js','utf8');
 function fixture(){
  const fields=Object.fromEntries(['assetId','organizationId','siteOrganizationId','contactId','source','productId','model','serial','serialUnknown','location','projectName','problem'].map(name=>[name,{name,value:'',disabled:false,checked:false,required:false,innerHTML:''}]));
- const button={disabled:false},handlers={},form={dataset:{caseType:'service'},elements:{namedItem:name=>fields[name]},querySelector:()=>button,addEventListener:(type,handler)=>{handlers[type]=handler;}};
- const calls=[],messages=[],errors=[];let refreshes=0,pending;
+ const button={disabled:false},summary={textContent:''},handlers={},form={isConnected:true,dataset:{caseType:'service'},elements:{namedItem:name=>fields[name]},querySelector:selector=>selector==='[data-service-intake-errors]'?summary:button,addEventListener:(type,handler)=>{handlers[type]=handler;}};
+ const calls=[],messages=[],errors=[];let reconciles=0,pending,fieldErrors=new Map();
  class FormDataFixture{constructor(){this.rows=Object.values(fields).filter(f=>!f.disabled&&(f.name!=='serialUnknown'||f.checked)).map(f=>[f.name,f.name==='serialUnknown'?'on':f.value]);}[Symbol.iterator](){return this.rows[Symbol.iterator]();}}
- const ctx=vm.createContext({me:{user_id:'engineer'},view:'service',crypto:{randomUUID:()=> 'stable-request-id'},FormData:FormDataFixture,console,
+ // Native-control behavior is covered by service-intake-validation.test.mjs.
+ const ctx=vm.createContext({me:{user_id:'engineer'},view:'service',busy:false,nativeFormErrors:()=>new Map(),fieldErrorSummary:count=>count?`${count} fields need attention`:'',showFieldErrors:(_form,errors)=>{fieldErrors=errors;},crypto:{randomUUID:()=> 'stable-request-id'},FormData:FormDataFixture,console,
   organizations:[{id:'customer',name:'Distributor',location:'Warehouse'},{id:'site',name:'Hospital',location:'Ward'}],orgIndex:new Map([['customer',{name:'Distributor',location:'Warehouse'}],['site',{name:'Hospital',location:'Ward'}]]),
   contacts:[{id:'customer-contact',organization_id:'customer',status:'valid'},{id:'site-contact',organization_id:'site',status:'valid'}],products:[{id:'machine',name:'Analyzer'}],
   inventoryOption:(value,label,selected)=>`<option value="${value}"${selected?' selected':''}>${label}</option>`,inventoryProduct:()=>({name:'Analyzer'}),salesContactName:id=>id,
   esc:x=>String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),companyDate:()=> '2026-10-20',employeeName:()=> 'Engineer Name',
   message:text=>messages.push(text),run:fn=>{pending=Promise.resolve().then(fn).catch(error=>errors.push(error));},
-  client:{rpc:async(name,args)=>{calls.push({name,args});return {data:{id:'created'},error:null};}}});
- vm.runInContext(source,ctx);ctx.refresh=()=>{refreshes++;};vm.runInContext("serviceWorkspace=async()=>refresh();serviceSection='schedule'",ctx);ctx.bindServiceIntake(form);
+  client:{rpc:async(name,args)=>{calls.push({name,args});return {data:{id:args.p_id,case_number:'SRV-1',case_type:args.p_case_type,status:'new',version:1,asset_id:'asset',product_id:args.p_product_id,organization_id:args.p_organization_id,updated_at:'2026-10-29T12:00:00Z'},error:null};}}});
+ vm.runInContext(source,ctx);ctx.reconcile=()=>{reconciles++;};vm.runInContext("serviceAfterSavedCase=async()=>reconcile();serviceSection='schedule'",ctx);ctx.bindServiceIntake(form);
  Object.assign(fields.organizationId,{value:'customer'});Object.assign(fields.source,{value:'third_party'});Object.assign(fields.productId,{value:'machine'});Object.assign(fields.model,{value:'Known model'});Object.assign(fields.serial,{value:'EXT-01'});Object.assign(fields.location,{value:'Ward'});Object.assign(fields.problem,{value:'Repair power fault'});
  const submit=()=>{handlers.submit({preventDefault(){}});return pending;};
- return {ctx,fields,button,calls,messages,errors,submit,form,get refreshes(){return refreshes;}};
+ return {ctx,fields,button,calls,messages,errors,submit,form,get fieldErrors(){return fieldErrors;},get reconciles(){return reconciles;}};
 }
 test('unknown serial is an explicit empty value and intake retains request details',async()=>{
  const f=fixture();f.fields.serialUnknown.checked=true;f.fields.serialUnknown.onchange();assert.equal(f.fields.serial.disabled,true);assert.equal(f.fields.serial.required,false);
- await f.submit();const {name,args}=f.calls[0];assert.equal(name,'create_service_intake');assert.equal(args.p_serial_number,null);assert.equal(args.p_serial_unknown,true);assert.equal(args.p_source,'third_party');assert.equal(args.p_model,'Known model');assert.equal(args.p_problem_summary,'Repair power fault');assert.equal(f.refreshes,1);
+ await f.submit();const {name,args}=f.calls[0];assert.equal(name,'create_service_intake');assert.equal(args.p_serial_number,null);assert.equal(args.p_serial_unknown,true);assert.equal(args.p_source,'third_party');assert.equal(args.p_model,'Known model');assert.equal(args.p_problem_summary,'Repair power fault');assert.equal(f.reconciles,1);
 });
 test('pending machines are selectable and existing identity is preserved while site details carry forward',async()=>{
  const f=fixture();vm.runInContext(`serviceAssets=[{id:'asset',organization_id:'customer',product_id:'machine',model:'Saved model',serial_number:null,serial_unknown:true,status:'pending_installation',updated_at:'2026-10-20T10:00:00Z'}];serviceCases=[{asset_id:'asset',site_organization_id:'site',site_location:'Known ward',contact_id:'site-contact',project_name:'Hospital project',intake_source:'distributor',created_at:'2026-10-20'}]`,f.ctx);
@@ -31,7 +32,7 @@ test('pending machines are selectable and existing identity is preserved while s
  await f.submit();assert.equal(f.calls[0].args.p_organization_id,'customer');assert.equal(f.calls[0].args.p_site_organization_id,'site');assert.equal(f.calls[0].args.p_model,'Saved model');assert.equal(f.calls[0].args.p_serial_number,null);assert.equal(f.calls[0].args.p_expected_asset_updated_at,'2026-10-20T10:00:00Z');
 });
 test('destination changes refresh contact choices and reject a stale customer contact',async()=>{
- const f=fixture();f.fields.siteOrganizationId.value='site';f.fields.siteOrganizationId.onchange();assert.match(f.fields.contactId.innerHTML,/site-contact/);assert.doesNotMatch(f.fields.contactId.innerHTML,/customer-contact/);assert.equal(f.fields.location.value,'Ward');f.fields.contactId.value='customer-contact';await f.submit();assert.equal(f.calls.length,0);assert.match(f.errors[0].message,/destination site/);assert.equal(f.button.disabled,false);
+ const f=fixture();f.fields.siteOrganizationId.value='site';f.fields.siteOrganizationId.onchange();assert.match(f.fields.contactId.innerHTML,/site-contact/);assert.doesNotMatch(f.fields.contactId.innerHTML,/customer-contact/);assert.equal(f.fields.location.value,'Ward');f.fields.contactId.value='customer-contact';await f.submit();assert.equal(f.calls.length,0);assert.match(f.fieldErrors.get(f.fields.contactId),/destination site/);assert.equal(f.button.disabled,false);
 });
 test('uncertain save retries retain the same request identifier and prevent double submission',async()=>{
  const f=fixture();let finish;f.ctx.client.rpc=async(name,args)=>{f.calls.push({name,args});return await new Promise(resolve=>{finish=resolve;});};
@@ -40,7 +41,7 @@ test('uncertain save retries retain the same request identifier and prevent doub
 });
 test('actor and workspace changes suppress stale form saves and stale response messages',async()=>{
  const f=fixture();f.ctx.me={user_id:'different'};await f.submit();assert.equal(f.calls.length,0);
- const g=fixture();let finish;g.ctx.client.rpc=async()=>await new Promise(resolve=>{finish=resolve;});const pending=g.submit();await Promise.resolve();g.ctx.me={user_id:'different'};finish({error:null});await pending;assert.equal(g.refreshes,0);assert.equal(g.messages.length,0);
+ const g=fixture();let finish;g.ctx.client.rpc=async()=>await new Promise(resolve=>{finish=resolve;});const pending=g.submit();await Promise.resolve();g.ctx.me={user_id:'different'};finish({error:null});await pending;assert.equal(g.reconciles,0);assert.equal(g.messages.length,0);
 });
 test('installation and report forms expose independent intake and preserve known site/project/serial',()=>{
  const f=fixture();const form=f.ctx.serviceIntakeForm('installation');assert.match(form,/data-case-type="installation"/);assert.match(form,/No previous sale is required/);assert.match(form,/name="serialUnknown"/);

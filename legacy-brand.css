@@ -1,31 +1,31 @@
 /* Visual identity from the original Anudha ERP; no business data or workflow changes. */
-:root{--green:#315c32;--brand-lime:#72ad3d;--green-dark:#315c32;--ink:#243128;--muted:#6b776d;--line:#dfe7df;--canvas:#f4f7f3;color:var(--ink);background:var(--canvas)}
+
 body{background:var(--canvas);color:var(--ink)}
-body>header{border-top:5px solid var(--brand-lime);gap:22px;box-shadow:0 2px 12px #24312808}
-.brand{letter-spacing:0;gap:14px;flex-shrink:0}
+body>header{border-top:5px solid var(--brand);gap:var(--space-5);box-shadow:var(--e-2)}
+.brand{letter-spacing:0;gap:var(--space-4);flex-shrink:0}
 .brand-logo{display:block;width:153px;height:auto;max-width:45vw}
-.brand>span{font-size:12px;font-weight:600;color:var(--muted);border-left:1px solid var(--line);padding-left:14px;letter-spacing:.06em}
-#nav{flex-wrap:wrap;gap:6px;min-width:0}
-#nav button{font-size:14px}
+.brand>span{font-size:var(--t-caption);font-weight:var(--w-headline);color:var(--ink-2);border-left:1px solid var(--line);padding-left:var(--space-4);line-height:var(--lh-caption);letter-spacing:var(--ls-caption)}
+#nav{flex-wrap:wrap;gap:var(--space-2);min-width:0}
+#nav button{font-size:var(--t-callout);line-height:var(--lh-callout);letter-spacing:0}
 #systemNav{position:relative}
-#systemNav summary{cursor:pointer;padding:10px 14px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff}
-#systemNav summary:focus-visible{outline:3px solid var(--brand-lime);outline-offset:3px}
-#systemNav:has(button.active)>summary{background:var(--green-dark);color:#fff}
-.system-links{position:absolute;right:0;top:100%;z-index:20;min-width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #24312820;display:flex;flex-direction:column;gap:6px}
+#systemNav summary{cursor:pointer;padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--r-sm);font-size:var(--t-callout);background:var(--surface);line-height:var(--lh-callout);letter-spacing:0}
+#systemNav summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+#systemNav:has(button.active)>summary{background:var(--brand-strong);color:var(--on-brand)}
+.system-links{position:absolute;right:0;top:100%;z-index:20;min-width:190px;padding:var(--space-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--e-2);display:flex;flex-direction:column;gap:var(--space-2)}
 .system-links button{text-align:left}
-@media(max-width:800px){.system-links{position:static;box-shadow:none;margin-top:6px}}
-#nav button.active,button[type=submit],.primary-action{background:var(--green-dark);color:#fff;border-color:var(--green-dark)}
-button:hover,.button:hover{background:#edf5e8}
-#nav button.active:hover,button[type=submit]:hover,.primary-action:hover{background:#243f25;color:#fff}
+@media(max-width:800px){.system-links{position:static;box-shadow:var(--e-0);margin-top:var(--space-2)}}
+#nav button.active,button[type=submit],.primary-action{background:var(--brand-strong);color:var(--on-brand);border-color:var(--brand-strong)}
+button:hover,.button:hover{background:var(--surface-2)}
+#nav button.active:hover,button[type=submit]:hover,.primary-action:hover{background:var(--brand-strong);color:var(--on-brand)}
 button:disabled{cursor:not-allowed}
-.account-head{background:#edf5e8}
+.account-head{background:var(--surface-2)}
 .card,.profile-tile{border-color:var(--line)}
-.card,.profile-tile,.contact{border-radius:12px;background:#fff;box-shadow:none}
-input,select,textarea{border-color:#cfd9d0;border-radius:8px;padding:9px 11px}
-label{color:#4d5d50}
-input:focus,select:focus,textarea:focus{border-color:var(--brand-lime);box-shadow:0 0 0 3px rgba(114,173,61,.13)}
-.document-brand{border-bottom:2px solid var(--brand-lime);padding-bottom:16px}
+.card,.profile-tile,.contact{border-radius:var(--r-md);background:var(--surface);box-shadow:var(--e-0)}
+input,select,textarea{border-color:var(--line);border-radius:var(--r-sm);padding:var(--space-2) var(--space-3)}
+label{color:var(--ink-2)}
+input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 var(--focus-width) var(--brand)}
+.document-brand{border-bottom:2px solid var(--brand);padding-bottom:var(--space-4)}
 .document-brand img{object-fit:contain}
-input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--brand-lime);outline-offset:3px}
-@media(max-width:800px){body>header{gap:14px;padding:14px}#nav{width:100%}#identity{margin-left:0;overflow-wrap:anywhere}.brand-logo{width:140px}}
-@media print{body{background:#fff}.document-brand{border-color:#315c32}}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--brand);outline-offset:3px}
+@media(max-width:800px){body>header{gap:var(--space-4);padding:var(--space-4)}#nav{width:100%}#identity{margin-left:0;overflow-wrap:anywhere}.brand-logo{width:140px}}
+@media print{body{background:var(--surface)}.document-brand{border-color:var(--brand)}}

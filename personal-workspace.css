@@ -1,12 +1,13 @@
-.personal-entry.company-event{background:#e4f2dc;border:2px solid #315c32}
-.personal-entry.personal-event{background:#fff;border:1px solid #a7b2aa}
-.personal-entry{margin-block:16px}
+.personal-entry.company-event{background:var(--success-bg);border:2px solid var(--success)}
+.personal-entry.personal-event{background:var(--surface);border:1px solid var(--line)}
+.personal-entry{margin-block:var(--space-4)}
 .personal-entry p{white-space:pre-wrap;overflow-wrap:anywhere}
-.personal-entry h2{font-size:19px;overflow-wrap:anywhere}
-.personal-entry .tag{margin-right:12px}
-.personal-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-block:16px;min-width:560px}
-.calendar-day{min-height:95px;border:1px solid #dfe7df;border-radius:4px;padding:8px;background:#fff}
-.calendar-day h3{font-size:14px}.calendar-day p{font-size:12px;overflow-wrap:anywhere;padding:4px}
-.calendar-day .company-event{background:#e4f2dc;border-left:3px solid #315c32}
-.calendar-day .personal-event{background:white;border:1px solid #a7b2aa}
+.personal-entry h2{font-size:var(--t-title);line-height:var(--lh-title);font-weight:var(--w-title);letter-spacing:var(--ls-title);overflow-wrap:anywhere}
+.personal-entry .tag{margin-right:var(--space-3)}
+/* Seven-day grid minimum and day height preserve the horizontally scrolling calendar. */
+.personal-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--space-1);margin-block:var(--space-4);min-width:560px}
+.calendar-day{min-height:95px;border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--space-2);background:var(--surface)}
+.calendar-day h2{font-size:var(--t-headline);line-height:var(--lh-headline);font-weight:var(--w-headline)}.calendar-day p{font-size:var(--t-caption);line-height:var(--lh-caption);font-weight:var(--w-caption);letter-spacing:var(--ls-caption);overflow-wrap:anywhere;padding:var(--space-1)}
+.calendar-day .company-event{background:var(--success-bg);border-left:3px solid var(--success)}
+.calendar-day .personal-event{background:var(--surface);border:1px solid var(--line)}
 #content:has(.personal-calendar){overflow-x:auto}

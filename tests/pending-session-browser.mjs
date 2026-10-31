@@ -13,13 +13,15 @@ try{
    let me={user_id:'first',role:'staff'},view='pending',salesLoaded=true,salesProformas=[],queries=[];
    const $=s=>document.querySelector(s),orgIndex=new Map([['org',{name:'Fictional Hospital'}]]),products=[{id:'product',name:'Fictional Blood Bag'}];
    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-   function employeeName(){return 'Fixture Employee'}function syncWorkspaceNavigation(){}function run(fn){return fn()}
-   function all(table){return table==='pending_stock_requests'?new Promise((resolve,reject)=>queries.push({resolve,reject})):Promise.resolve([])}
+   function employeeName(){return 'Fixture Employee'}function syncWorkspaceNavigation(){}function run(fn){return fn()}function workResponsibleHtml(){return ''}function workspaceLoading(text){$('#content').textContent=text}
+   const client={rpc:()=>new Promise((resolve,reject)=>queries.push({resolve,reject}))};function all(){throw Error('Complete context must stay lazy')}
    $('#leave').onclick=()=>{view='clients';$('#content').textContent='Clients fixture'};
    $('#logout').onclick=()=>{clearPendingStock();me={user_id:'second',role:'staff'};view='clients';$('#content').textContent='Second account fixture'};
-   const fixture=[{id:'request',request_number:'PS-fixture',product_id:'product',organization_id:'org',salesperson_user_id:'first',quantity:2,status:'waiting',expires_on:'2099-01-01',extension_count:0}];
+   const fixture=[{id:'request',request_number:'PS-fixture',product_id:'product',organization_id:'org',salesperson_user_id:'first',quantity:2,available_units:0,status:'waiting',expires_on:'2099-01-01',extension_count:0}];
+   function snapshot(){return {data:{rows:fixture,total:1,page:0,pages:1,counts:{all:1,waiting:1,arrived:0,mine:1,due:0,closed:0},as_of:pendingToday(),mine_arrived:0,availability_error:false}}}
   `});
-  await page.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
+  await page.addScriptTag({content:readFileSync(new URL('../status-ui.js',import.meta.url),'utf8')});
+ await page.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
   await page.evaluate(()=>{window.oldLoad=pendingStockWorkspace(true)});
   await page.waitForFunction(()=>queries.length===1);
   if(scenario==='navigation')await page.getByRole('button',{name:'Clients',exact:true}).click();
@@ -27,8 +29,8 @@ try{
   if(scenario==='refresh-error'){
    await page.evaluate(()=>{window.newLoad=pendingStockWorkspace(true)});
    await page.waitForFunction(()=>queries.length===2);
-   await page.evaluate(async()=>{queries[1].resolve(fixture);await window.newLoad;queries[0].reject(Error('Old failure'));await window.oldLoad});
-  }else await page.evaluate(async()=>{queries[0].resolve(fixture);await window.oldLoad});
+   await page.evaluate(async()=>{queries[1].resolve(snapshot());await window.newLoad;queries[0].reject(Error('Old failure'));await window.oldLoad});
+  }else await page.evaluate(async()=>{queries[0].resolve(snapshot());await window.oldLoad});
   if(scenario==='navigation')assert.equal(await page.locator('#content').innerText(),'Clients fixture');
   else if(scenario==='session'){
    assert.equal(await page.locator('#content').innerText(),'Second account fixture');

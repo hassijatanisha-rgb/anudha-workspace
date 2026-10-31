@@ -1,8 +1,10 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const load=()=>{const ctx=vm.createContext({orgIndex:new Map([['o',{name:'Aga Khan',location:'Dar'}]]),Date,Math});vm.runInContext(readFileSync(new URL('../travel.js',import.meta.url),'utf8'),ctx);return ctx;};
+const load=()=>{const ctx=vm.createContext({workspacePageHeader,statusTone,orgIndex:new Map([['o',{name:'Aga Khan',location:'Dar'}]]),Date,Math});vm.runInContext(readFileSync(new URL('../travel.js',import.meta.url),'utf8'),ctx);return ctx;};
 const h=n=>new Date(Date.UTC(2026,9,10,n)).toISOString();
 test('trip length, place and state read plainly',()=>{
  const ctx=load();
@@ -23,17 +25,20 @@ test('menu and router include Travel requests',()=>{
  assert.match(readFileSync(new URL('../app.js',import.meta.url),'utf8'),/view==='travel'\)return travelWorkspace\(\)/);
 });
 test('travel report counts approved and finished trips per traveller',()=>{
- const ctx=vm.createContext({products:[],employeeName:id=>id,Date,Math,Number,String,Object,Map,Set});
+ const ctx=vm.createContext({workspacePageHeader,products:[],employeeName:id=>id,Date,Math,Number,String,Object,Map,Set});
  vm.runInContext(readFileSync(new URL('../reports.js',import.meta.url),'utf8'),ctx);
  const rows=ctx.reportTravel([{status:'approved',travellers:['a','b'],organization_id:'o',depart_at:h(0),return_at:h(36)},{status:'done',travellers:['a'],destination:'Dodoma',depart_at:h(0),return_at:h(12)},{status:'declined',travellers:['a'],depart_at:h(0),return_at:h(99)}]);
  assert.deepEqual({...rows[0]},{actor:'a',trips:2,days:2,places:2});assert.deepEqual({...rows[1]},{actor:'b',trips:1,days:1.5,places:1});
 });
 
+const completeTravelRow=patch=>({id:'trip',request_number:'TR-1',version:1,status:'requested',created_by:'me',travellers:['me'],depart_at:'2026-11-01T08:00:00Z',return_at:'2026-11-03T17:00:00Z',itinerary:[],purposes:['meeting'],currency:'TZS',per_diem_days:0,per_diem_rate_minor:0,intercity_transport_minor:0,local_transport_minor:0,...patch});
 const travelContext=()=>{
  const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
- let sequence=0;const ctx=vm.createContext({orgIndex:new Map([['o',{name:'Aga Khan',location:'Dar'}]]),Date,Math,Intl,Number,String,Object,Map,Set,esc,me:{user_id:'me',role:'staff'},crypto:{randomUUID:()=>`operation-${++sequence}`},employeeName:id=>id,salesOrganizationOptions:()=>'',employeeDirectory:new Map([['me',{user_id:'me',active:true}]])});
+ let sequence=0;const ctx=vm.createContext({workspacePageHeader,statusTone,orgIndex:new Map([['o',{name:'Aga Khan',location:'Dar'}]]),Date,Math,Intl,Number,String,Object,Map,Set,esc,me:{user_id:'me',role:'staff'},view:'travel',window:{scrollX:12,scrollY:340,scrollTo(){}},crypto:{randomUUID:()=>`operation-${++sequence}`},employeeName:id=>id,salesOrganizationOptions:()=>'',employeeDirectory:new Map([['me',{user_id:'me',active:true}]])});
  vm.runInContext(readFileSync(new URL('../sales-domain.js',import.meta.url),'utf8'),ctx);
- vm.runInContext(readFileSync(new URL('../travel.js',import.meta.url),'utf8'),ctx);return ctx;
+ vm.runInContext(readFileSync(new URL('../travel.js',import.meta.url),'utf8'),ctx);
+ // Form/domain tests isolate DOM patching and register reconciliation; the page suite exercises both actual boundaries.
+ ctx.renderTravelDetail=()=>{ctx.renderTravel();ctx.window.scrollTo(ctx.window.scrollX,ctx.window.scrollY);};ctx.travelRefreshAfterSave=async text=>ctx.message(text);return ctx;
 };
 const fixtureStop={id:'stop-1',organization_id:'o',destination:'',contact_name:'Dr Mushi',appointment_purpose:'Install and train',appointment_at:'2026-11-01T10:00:00.000Z',preparation:'Review service history',resources:'Tools'};
 const stopGroup=stop=>({dataset:{travelStop:stop.id},querySelectorAll:()=>Object.entries(stop).filter(([key])=>key!=='id').map(([key,value])=>({dataset:{stopField:key},value:value||''}))});
@@ -54,29 +59,66 @@ test('travel itinerary serializes distinct stops and preserves their order and n
 });
 test('travel cards escape itinerary and report content, retain metadata and show each visit outcome',()=>{
  const ctx=travelContext(),row={id:'trip',request_number:'TR-000001',version:4,status:'done',travellers:['me'],created_by:'me',depart_at:'2026-11-01T08:00:00Z',return_at:'2026-11-03T17:00:00Z',purposes:['installation','training'],itinerary:[{...fixtureStop,contact_name:'<img src=x onerror=alert(1)>'}],post_visit_report:'<script>bad()</script>',visit_outcomes:[{stop_id:fixtureStop.id,outcome:'Installed',follow_up:'Send quote',follow_up_on:'2026-11-04'}],per_diem_days:1.5,per_diem_rate_minor:100000,intercity_transport_minor:30000,local_transport_minor:10000};
- const html=ctx.travelCard(row);assert.match(html,/Standard ERP form/);assert.match(html,/ERP-TRAVEL-01/);assert.match(html,/revision 4/);assert.match(html,/Installation, Training/);assert.match(html,/Send quote/);assert.match(html,/1900\.00|1,900\.00/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<script>|<img/);
+ const html=ctx.travelCard(row);assert.match(html,/Standard ERP form/);assert.match(html,/ERP-TRAVEL-01/);assert.match(html,/revision 4/);assert.match(html,/Installation, Training/);assert.match(html,/Send quote/);assert.match(html,/TZS\s*1,900/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<script>|<img/);
 });
 test('travel editor sends a structured plan and stable operation ID; changed login blocks submission',async()=>{
  const ctx=travelContext(),values={depart:'2026-11-01T08:00',return:'2026-11-03T17:00',perDiemDays:'1.5',perDiemRate:'1000.00',intercity:'300.00',local:'100.00',currency:'TZS',transport:'Car',notes:'Trip notes'};
  const elements=Object.fromEntries(Object.entries(values).map(([key,value])=>[key,{value}])),nodes={'#travelLength':{},'#travelCostTotal':{},'#travelAddStop':{},'#travelStops':{children:[{}]}};
  const groups=[stopGroup(fixtureStop),stopGroup({...fixtureStop,id:'stop-2',organization_id:null,destination:'Ministry of Health'})];
  const form={elements,querySelector:selector=>nodes[selector],querySelectorAll:selector=>selector==='[name="traveller"]:checked'?[{value:'me'}]:selector==='[name="purpose"]:checked'?[{value:'installation'},{value:'training'}]:selector==='[data-travel-stop]'?groups:[]};
- let submit,fields;const requests=[];ctx.actionForm=(title,html,callback)=>{fields=html;submit=callback;return form;};ctx.client={rpc:async(name,payload)=>{requests.push({name,payload});return {data:{request_number:'TR-1'}};}};ctx.travelWorkspace=async()=>{};ctx.message=()=>{};
+ let submit,fields;const requests=[];ctx.actionForm=(title,html,callback)=>{fields=html;submit=callback;return form;};ctx.client={rpc:async(name,payload)=>{requests.push({name,payload});return {data:completeTravelRow({id:payload.p_id,version:payload.p_expected_version+1,request_number:'TR-1',itinerary:payload.p_itinerary})};}};ctx.travelWorkspace=async()=>{throw Error('Unexpected full reload');};ctx.renderTravel=()=>{};ctx.message=()=>{};
  ctx.openTravelEditor(null);assert.match(fields,/type="checkbox" name="purpose"/);assert.match(fields,/all travellers combined/);assert.match(fields,/Standard ERP form/);
  await submit(values);await submit(values);
  assert.equal(requests[0].name,'save_travel_visit_plan');assert.equal(requests[0].payload.p_itinerary.length,2);assert.equal(requests[0].payload.p_intercity_transport_minor,30000);assert.equal(requests[0].payload.p_notes,'Trip notes');assert.equal(requests[0].payload.p_purposes.join(','),'installation,training');assert.equal(requests[0].payload.p_operation_id,requests[1].payload.p_operation_id);
+ assert.equal(vm.runInContext('travelRows.length',ctx),1);assert.equal(vm.runInContext('travelRows[0].itinerary.length',ctx),2);
  ctx.me={user_id:'other'};await assert.rejects(submit(values),/Login changed/);assert.equal(requests.length,2);
 });
 test('post-visit form submits report with separate per-stop outcomes and follow-up dates',async()=>{
  const ctx=travelContext(),groups=[{dataset:{travelOutcome:'stop-1'},querySelectorAll:()=>['outcome','follow_up','follow_up_on'].map((field,i)=>({dataset:{outcomeField:field},value:['Installed and trained','Send quote','2026-11-05'][i]}))}];
- let submit,fields,request;ctx.actionForm=(title,html,callback)=>{fields=html;submit=callback;return {querySelectorAll:()=>groups};};ctx.client={rpc:async(name,payload)=>{request={name,payload};return {data:{}};}};ctx.travelWorkspace=async()=>{};ctx.message=()=>{};
+ let submit,fields,request;ctx.actionForm=(title,html,callback)=>{fields=html;submit=callback;return {querySelectorAll:()=>groups};};ctx.client={rpc:async(name,payload)=>{request={name,payload};return {data:completeTravelRow({id:payload.p_id,version:payload.p_expected_version+1,status:'done',post_visit_report:payload.p_note,visit_outcomes:payload.p_outcomes})};}};ctx.travelWorkspace=async()=>{throw Error('Unexpected full reload');};ctx.renderTravel=()=>{};ctx.message=()=>{};
  ctx.openTravelAction({id:'trip',version:3,request_number:'TR-1',itinerary:[fixtureStop],depart_at:'2026-11-01T08:00:00Z',return_at:'2026-11-03T17:00:00Z'},'done');
  assert.match(fields,/Follow-up date/);await submit({note:'All planned visits completed.'});assert.equal(request.name,'advance_travel_visit');assert.equal(request.payload.p_expected_version,3);assert.equal(request.payload.p_note,'All planned visits completed.');assert.equal(request.payload.p_outcomes[0].follow_up_on,'2026-11-05');assert.equal(request.payload.p_outcomes[0].stop_id,'stop-1');
+ assert.equal(vm.runInContext('travelRows[0].status',ctx),'done');assert.equal(vm.runInContext('travelRows[0].visit_outcomes[0].follow_up_on',ctx),'2026-11-05');
+});
+
+function travelActionContext(){
+ const ctx=travelContext(),calls=[],scroll=[],row=completeTravelRow({id:'trip',version:3,request_number:'TR-1',status:'requested',travellers:['me'],created_by:'me',itinerary:[fixtureStop],depart_at:'2026-11-01T08:00:00Z',return_at:'2026-11-03T17:00:00Z'});
+ ctx.rows=[row,{...row,id:'other',request_number:'TR-2'}];vm.runInContext(`travelRows=rows;travelLoaded=true;travelFilter='waiting';`,ctx);
+ ctx.actionForm=(title,html,submit)=>{ctx.submit=submit;return {querySelectorAll:()=>[]};};
+ ctx.renderTravel=()=>calls.push(['render']);ctx.message=text=>calls.push(['message',text]);ctx.window.scrollTo=(...position)=>scroll.push(position);
+ ctx.travelWorkspace=async()=>{throw Error('Unexpected full reload');};ctx.client={from:()=>{throw Error('Unexpected readback');}};
+ ctx.openTravelAction(row,'approve');return {ctx,calls,scroll,row};
+}
+test('travel status receipt updates one cached trip and derived filters without a readback or scroll reset',async()=>{
+ const {ctx,calls,scroll,row}=travelActionContext();ctx.client.rpc=async()=>({data:[{...row,status:'approved',version:4,decision_note:'Approved'}]});
+ await ctx.submit({note:'Approved'});
+ assert.equal(vm.runInContext('travelRows.length',ctx),2);assert.equal(vm.runInContext('travelRows.find(row=>row.id==="trip").version',ctx),4);
+ assert.equal(vm.runInContext('travelVisible(travelRows,travelFilter,me.user_id).map(row=>row.id).join(",")',ctx),'other');
+ assert.equal(vm.runInContext('travelFilter',ctx),'waiting');assert.deepEqual(scroll,[[12,340]]);assert.deepEqual(calls,[['render'],['message','TR-1: approve trip saved.']]);
+});
+test('travel rejects an unconfirmed receipt and never downgrades a newer cached revision on retry',async()=>{
+ const {ctx,calls,row}=travelActionContext();ctx.client.rpc=async()=>({data:{...row,id:'wrong',version:4}});
+ await assert.rejects(ctx.submit({note:''}),/did not confirm/);assert.equal(vm.runInContext('travelRows[0].version',ctx),3);assert.deepEqual(calls,[]);
+ vm.runInContext(`travelRows[0]={...travelRows[0],version:5,status:'done'};`,ctx);ctx.client.rpc=async()=>({data:{...row,version:4,status:'approved'}});
+ await ctx.submit({note:''});assert.equal(vm.runInContext('travelRows.find(row=>row.id==="trip").version',ctx),5);
+});
+test('delayed travel responses cannot overwrite a newer load, repaint another view, or cross sign-out',async()=>{
+ for(const change of ['view','epoch','logout']){
+  const {ctx,calls,row}=travelActionContext();let finish;ctx.client.rpc=()=>new Promise(resolve=>{finish=resolve;});const saving=ctx.submit({note:''});
+  if(change==='view')ctx.view='dashboard';
+  if(change==='epoch')vm.runInContext(`travelEpoch++;travelRows[0]={...travelRows[0],version:5,status:'done'};`,ctx);
+  if(change==='logout'){ctx.clearTravel();ctx.me=null;}
+  finish({data:{...row,status:'approved',version:4}});
+  if(change==='logout')await assert.rejects(saving,/Login changed/);else await saving;
+  assert.deepEqual(calls,[]);
+  if(change==='view')assert.equal(vm.runInContext('travelRows[0].status',ctx),'approved');
+  if(change==='epoch')assert.equal(vm.runInContext('travelRows[0].version',ctx),5);
+  if(change==='logout')assert.equal(vm.runInContext('travelRows.length',ctx),0);
+ }
 });
 
 test('travel summary counts all distinct itinerary sites once per traveller',()=>{
- const ctx=vm.createContext({products:[],employeeName:id=>id,Date,Math,Number,String,Object,Map,Set});vm.runInContext(readFileSync(new URL('../reports.js',import.meta.url),'utf8'),ctx);
+ const ctx=vm.createContext({workspacePageHeader,products:[],employeeName:id=>id,Date,Math,Number,String,Object,Map,Set});vm.runInContext(readFileSync(new URL('../reports.js',import.meta.url),'utf8'),ctx);
  const rows=ctx.reportTravel([{status:'approved',travellers:['a'],organization_id:'o',depart_at:h(0),return_at:h(24),itinerary:[{organization_id:'o'},{destination:'Dodoma'},{organization_id:'o'}]},{status:'done',travellers:['a'],destination:'Mwanza',depart_at:h(0),return_at:h(12)}]);
  assert.deepEqual({...rows[0]},{actor:'a',trips:2,days:1.5,places:3});
- assert.match(readFileSync(new URL('../reports.js',import.meta.url),'utf8'),/depart_at,return_at,itinerary/);
 });

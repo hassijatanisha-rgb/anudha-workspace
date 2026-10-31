@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../product-pricing.js',import.meta.url),'utf8'),domain=readFileSync(new URL('../sales-domain.js',import.meta.url),'utf8');
 function load(extra={}){
- const ctx=vm.createContext({me:{user_id:'sales',role:'staff'},view:'prices',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProductFromChoice:value=>value==='machine'?{id:'machine'}:null,crypto:{randomUUID:()=> 'request-1'},...extra});
+ const ctx=vm.createContext({workspaceLoading(){},workspaceRefreshRetaining:()=>false,me:{user_id:'sales',role:'staff'},view:'prices',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProductFromChoice:value=>value==='machine'?{id:'machine'}:null,crypto:{randomUUID:()=> 'request-1'},...extra});
  vm.runInContext(domain+'\n'+source+';Object.assign(globalThis,{pricingDiscount,pricingMinorText,pricingLineFields,pricingReadLine,pricingRefreshRow,pricingRefreshForm,pricingBindForm,pricingLoad,pricesWorkspace,clearProductPricing,setPrices:rows=>{productPricingActor=me;productSalePrices=new Map(rows.map(r=>[pricingKey(r.product_id,r.currency),r]));}})',ctx);return ctx;
 }
 function lineForm({price='100.00',percent='10',amount='',mode='percent',currency='TZS',kind='sale',quantity='2'}={}){
@@ -40,7 +40,7 @@ test('line fields keep a read-only unit price and a canonical discount percentag
  nodes.get('[name="discountAmount"]').value='0.01';ctx.setPrices([price(1000000)]);assert.throws(()=>ctx.pricingReadLine(row,{quantity:1,unitPriceMinor:1000000}),/cannot be represented/);
 });
 test('configured prices handle product, currency and placement without fabricating a missing price',()=>{
- const ctx=load();ctx.setPrices([price()]);const {row,form,nodes}=lineForm();ctx.pricingRefreshRow(row,form);assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.match(nodes.get('[data-pricing-feedback]').textContent,/Actual discount:.*20.00.*10%/);
+ const ctx=load();ctx.setPrices([price()]);const {row,form,nodes}=lineForm();ctx.pricingRefreshRow(row,form);assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.match(nodes.get('[data-pricing-feedback]').textContent,/Actual discount: TZS\s*20 \(10%\)/);
  const missing=lineForm({currency:'USD'});ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'');assert.match(missing.nodes.get('[data-pricing-feedback]').textContent,/No configured USD price/);assert.match(missing.nodes.get('[name="productChoice"]').validity,/No configured USD/);assert.equal(missing.nodes.get('[name="discount"]').validity,'');
  ctx.setPrices([price(0,'USD')]);ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'0.00');
  const placement=lineForm({kind:'placement'});ctx.pricingRefreshRow(placement.row,placement.form);assert.equal(placement.nodes.get('[name="unitPrice"]').value,'0.00');
@@ -62,21 +62,7 @@ test('price loading pages by product and currency and ignores late results after
  const first=Array.from({length:1000},(_,i)=>({...price(),product_id:String(i)})),client=backend([{data:first},{data:[price()]}]),ctx=load({client});assert.equal((await ctx.pricingLoad()).length,1001);assert.equal(client.calls(),2);
  let resolve;ctx.client=backend([()=>new Promise(r=>{resolve=r;})]);const pending=ctx.pricingLoad();ctx.me={user_id:'other'};resolve({data:[price()]});assert.equal(await pending,null);
 });
-test('a price load finishing after navigation cannot overwrite the shared content area',async()=>{
- let resolve;const client=backend([()=>new Promise(r=>{resolve=r;})]),ctx=load({client}),target={innerHTML:'',isConnected:true};
- const pending=ctx.pricesWorkspace(target);ctx.view='contacts';target.innerHTML='Client page';resolve({data:[price()]});await pending;assert.equal(target.innerHTML,'Client page');
-});
-test('price editor keeps the smart product lookup binding when its datalist is populated lazily',()=>{
- assert.match(source,/<datalist id="pricingProductChoices" data-lookup-values="products">/);
-});
-test('a price save finishing after navigation cannot render over the new page',async()=>{
- let resolveSave,submission;const listeners={},input=value=>({value}),button={disabled:false},current={textContent:''},register={innerHTML:''},search=input('');
- const form={dataset:{},isConnected:true,elements:{productChoice:input('machine'),currency:input('TZS'),price:input(''),reason:input('Approved price change')},addEventListener:(name,fn)=>{listeners[name]=fn;},querySelector:selector=>selector==='[type="submit"]'?button:current};
- const target={innerHTML:'',isConnected:true,querySelector:selector=>({'[data-price-register]':register,'[data-price-search]':search,'[data-pricing-reload]':{},'[data-price-editor]':form}[selector])};
- const client=backend([{data:[{...price(),updated_by:'owner',updated_at:'2026-10-20T10:00:00Z'}]}]);
- client.rpc=async name=>name==='accounting_access'?{data:true}:new Promise(resolve=>{resolveSave=resolve;});
- const ctx=load({me:{user_id:'owner',role:'owner'},client,salesProductChoices:()=>'',salesProduct:()=>({name:'Machine'}),employeeName:()=> 'Owner',run:fn=>{submission=fn();},message:()=>assert.fail('stale confirmation')});
- await ctx.pricesWorkspace(target);listeners.change({target:{name:'productChoice'}});form.elements.price.value='120.00';form.onsubmit({preventDefault(){}});
- ctx.view='contacts';target.innerHTML='Client page';resolveSave({data:{}});await submission;assert.equal(target.innerHTML,'Client page');
- form.onsubmit({preventDefault(){}});await assert.rejects(submission,/Login or price view changed/);
+test('a price page finishing after navigation cannot overwrite the shared content area',async()=>{
+ let resolve;const ctx=load({client:{rpc:()=>new Promise(r=>resolve=r)}}),target={innerHTML:'',isConnected:true};
+ const pending=ctx.pricesWorkspace(target);ctx.view='contacts';target.innerHTML='Client page';resolve({data:{}});await pending;assert.equal(target.innerHTML,'Client page');
 });

@@ -5,7 +5,7 @@ The owner selected [Emil Kowalski's Apple Design guide](https://www.ui-skills.co
 ## ERP decisions
 
 - Keep Anudha's logo and green action colour. Use a pale navigation surface, a quiet canvas, and white work surfaces. Status and danger colours retain their meanings.
-- Put shared interface rules in `ui-polish.css`, the existing final stylesheet. Keep feature layouts in their current files. Rebuild with `node scripts/build-bundle.mjs`; do not hand-edit generated bundles.
+- Put shared visual values in `tokens.css`, loaded first, and shared interface rules in `ui-polish.css`, loaded last. The 29 October brief supplies the seven type and spacing roles, three corner radii, palette, elevations and motion values. Keep feature layouts in their current files. Rebuild with `node scripts/build-bundle.mjs`; do not hand-edit generated bundles.
 - Use the existing quarter-rem spacing scale, relative control text, unitless line heights, and a 2.75rem minimum for shared buttons. Large amounts and quantities use tabular numerals. Tables may scroll within their containers.
 - Keep the selected navigation item visibly marked. Preserve group disclosure, hidden permission-restricted items, and the measured header offset. Product pickers must remain within their available width.
 - Keep financial documents independent of screen-only surface styling. Do not change prices, stock quantities, permissions, posting logic, or workflow states to improve a visual demonstration.

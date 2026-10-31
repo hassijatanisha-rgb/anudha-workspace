@@ -1,3 +1,4 @@
+import {leaveScopeSource} from './helpers/leave-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -6,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 
 // Synthetic local browser only: every network request is blocked and RPCs use an in-memory fixture.
 const enabled=process.env.FINANCIAL_IMPORT_BROWSER_QA==='1';
-const sources=['vendor/xlsx.full.min.js','sales-domain.js','accounting-access.js','accounting-ledger.js','financial-import.js','workspace-navigation.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['ui-motion.js','ui-page-header.js','vendor/xlsx.full.min.js','sales-domain.js','accounting-access.js','accounting-ledger.js','financial-import.js','ui-dialogs.js','client-profile-pages.js','workspace-navigation.js','record-navigation.js','nav-history.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -20,7 +21,10 @@ async function fixture(t){
  const errors=[];page.on('pageerror',error=>errors.push(error.message));t.after(()=>assert.deepEqual(errors,[]));
  await page.route('**/*',route=>route.abort());
  await page.setContent('<header>Fixture ERP</header><nav id="nav"></nav><main><p id="notice"></p><section id="content"><div id="booksBody"></div></section></main>');
+ await page.addStyleTag({content:readFileSync(new URL('../tokens.css',import.meta.url),'utf8')});
  await page.evaluate(()=>{
+  window.sessionLoadEpoch=0;window.returnCreditPostingConfirmLeave=()=>true;window.salesConfirmLeave=async()=>true;window.openingReceivablesConfirmLeave=async()=>true;
+  window.render=async()=>{$('#content').innerHTML='<h1>Replacement '+view+' page</h1>';};
   window.$=selector=>document.querySelector(selector);window.me={user_id:'fixture-accountant',role:'owner'};window.view='books';window.busy=false;
   window.salesSection='proformas';window.serviceSection='installations';window.inventorySection='stock';window.personalSection='task';
   window.esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -40,9 +44,9 @@ async function fixture(t){
    throw Error('Unexpected RPC '+name);
   }};
  });
+ await page.addScriptTag({content:leaveScopeSource});
  for(const source of sources)await page.addScriptTag({content:source});
  await page.evaluate(async()=>{
-  document.addEventListener('click',event=>{const button=event.target.closest('#nav [data-view]');if(button){view=button.dataset.view;$('#content').innerHTML='<h1>Replacement '+view+' page</h1>';}});
   booksSection='import';await booksWorkspace();
  });
  return page;
@@ -89,13 +93,13 @@ acceptance('lost response preserves identity, blocks navigation and retries with
 
 acceptance('sidebar navigation preserves a cancelled preview and clears an explicitly discarded preview',async t=>{
  const page=await fixture(t);await upload(page);
- page.once('dialog',dialog=>dialog.dismiss());await page.locator('#nav [data-view="contacts"]').click();assert.equal(await page.evaluate(()=>view),'books');assert.equal(await page.locator('#financialImportCommit').isDisabled(),false);
- page.once('dialog',dialog=>dialog.accept());await page.locator('#nav [data-view="contacts"]').click();assert.equal(await page.evaluate(()=>view),'contacts');assert.equal(await page.evaluate(()=>financialImportState),null);assert.equal(await page.evaluate(()=>posted),0);
+ await page.locator('#nav [data-view="contacts"]').click();await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('dialog[open]'));assert.equal(await page.evaluate(()=>view),'books');assert.equal(await page.locator('#financialImportCommit').isDisabled(),false);
+ await page.locator('#nav [data-view="contacts"]').click();await page.getByRole('dialog').getByRole('button',{name:'Discard preview',exact:true}).click();await page.waitForFunction(()=>view==='contacts');assert.equal(await page.evaluate(()=>view),'contacts');assert.equal(await page.evaluate(()=>financialImportState),null);assert.equal(await page.evaluate(()=>posted),0);
 });
 
 acceptance('Books section tabs retain a cancelled preview and block an unresolved import',async t=>{
  const page=await fixture(t);await upload(page);
- page.once('dialog',dialog=>dialog.dismiss());await page.locator('[data-books-section="overview"]').click();
+ await page.locator('[data-books-section="overview"]').click();await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('dialog[open]'));
  assert.equal(await page.evaluate(()=>booksSection),'import');assert.equal(await page.locator('#financialImportCommit').isDisabled(),false);
  await page.evaluate(()=>{window.loseReply=true;window.unresolved=true;});await page.locator('#financialImportCommit').click();
  await page.waitForFunction(()=>document.querySelector('#financialImportCommit').textContent==='Retry and reconcile this import');

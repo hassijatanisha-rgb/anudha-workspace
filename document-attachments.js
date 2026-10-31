@@ -34,11 +34,11 @@ async function documentAttachmentBlob(row,checkCurrent){
 
 async function openDocumentAttachments(recordType,recordId,recordLabel){
  if(!['proforma','delivery','service','accounting','contract','product'].includes(recordType)||!/^\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b$/i.test(recordId))throw Error('Choose a saved document record.');
- const actor=me?.user_id,openingView=view;
- if(!actor)throw Error('Sign in to open document attachments.');
- let dialog=null,page=0,busy=false,pending=null;
+ const actor=me,openingView=view,trigger=document.activeElement;
+ if(!actor?.user_id)throw Error('Sign in to open document attachments.');
+ let dialog=null,page=0,working=false,pending=null;
  const current=()=>{
-  const valid=me?.user_id===actor&&view===openingView&&(!dialog||dialog.isConnected);
+  const valid=me===actor&&view===openingView&&(!dialog||dialog.isConnected);
   if(!valid&&dialog?.isConnected){dialog.close();dialog.remove();}
   return valid;
  };
@@ -52,25 +52,26 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
  }
  await requireAccess();
  dialog=document.createElement('dialog');dialog.className='document-attachments';dialog.setAttribute('aria-label',`Attachments for ${recordLabel}`);
+ actionFeedbackRememberDialog(dialog);
  dialog.innerHTML=`<form><h2>${recordType==='product'?'Product brochures':'Document attachments'}</h2><p>${esc(recordLabel)}</p><p>${recordType==='product'?'Upload only customer-facing product brochures or specifications. These files are available for selection on quotations containing this product. ':''}Attach a PDF, JPEG or PNG up to 10 MB to this saved record. Attachments do not issue an invoice, approve an order or change stock.</p><label>File<input type="file" data-attachment-file accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></label><button type="submit">Upload attachment</button></form><p data-attachment-status role="status" aria-live="polite"></p><section data-attachment-list aria-label="Saved attachments"></section><div class="actions"><button type="button" data-attachment-previous>Previous</button><span data-attachment-page>Page 1</span><button type="button" data-attachment-next>Next</button></div><p>Download a saved attachment, then open it in your PDF or image viewer to print. Files remain private to authorized staff. Keep this dialog open to retry an unconfirmed upload.</p><button type="button" data-attachment-close>Close</button>`;
  document.body.append(dialog);
  const form=dialog.querySelector('form'),input=dialog.querySelector('[data-attachment-file]'),submit=dialog.querySelector('[type="submit"]'),status=dialog.querySelector('[data-attachment-status]'),list=dialog.querySelector('[data-attachment-list]'),previous=dialog.querySelector('[data-attachment-previous]'),next=dialog.querySelector('[data-attachment-next]');
- dialog.querySelector('[data-attachment-close]').onclick=()=>{if(!busy)dialog.close()};
- dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault()});
+ const requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>working,isDirty:()=>!!pending||!!input.files?.length});
+ dialog.querySelector('[data-attachment-close]').onclick=requestClose;
  dialog.addEventListener('close',()=>{pending=null;dialog.remove()});
- dialog.showModal();
+ showWorkspaceDialog(dialog,{size:'large',trigger});
  async function download(row){
-  if(busy||!current())return;
-  busy=true;
+  if(working||!current())return;
+  working=true;
   try{
    await requireAccess();
    status.textContent='Downloading private attachment…';
    const safeFile=await documentAttachmentBlob(row,checkCurrent);
    const url=URL.createObjectURL(safeFile),link=document.createElement('a');
-   try{link.href=url;link.download=row.original_filename;link.rel='noopener';document.body.append(link);link.click();status.textContent='Download requested. Open the downloaded file in your PDF or image viewer to print.';}
+   try{link.href=url;link.download=row.original_filename;link.rel='noopener';document.body.append(link);link.click();status.textContent='Download requested. Open the downloaded file in your PDF or image viewer to print.';message(status.textContent);}
    finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-  }catch(error){if(current())status.textContent=`Download failed: ${error.message||'Please retry.'}`;}
-  finally{busy=false;}
+  }catch(error){if(current()){status.textContent=`Download failed: ${error.message||'Please retry.'}`;message(status.textContent,true);}}
+  finally{working=false;}
  }
  async function loadList(){
   checkCurrent();
@@ -79,21 +80,24 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
   // One extra row tells whether a next page exists without offering an empty page.
   const fetched=response.data||[],rows=fetched.slice(0,25);
   list.innerHTML=rows.map(row=>`<article><strong>${esc(row.original_filename)}</strong><p>${esc(row.mime_type)} · ${esc(row.byte_size)} bytes · ${esc(row.uploaded_at)}</p><button type="button" data-attachment-open="${esc(row.id)}">Download / open to print</button></article>`).join('')||'<p>No saved attachments on this page.</p>';
-  list.querySelectorAll?.('[data-attachment-open]').forEach(button=>button.onclick=()=>download(rows.find(row=>row.id===button.dataset.attachmentOpen)));
+  list.querySelectorAll?.('[data-attachment-open]').forEach(button=>button.onclick=()=>run(()=>download(rows.find(row=>row.id===button.dataset.attachmentOpen)),{origin:button,successOrigin:actionFeedbackReference(button),errorTarget:status,busyLabel:'Downloading…'}));
   previous.disabled=page===0;next.disabled=fetched.length<=25;dialog.querySelector('[data-attachment-page]').textContent=`Page ${page+1}`;
  }
- async function changePage(direction){
-  if(busy||!current()||(direction<0&&page===0)||(direction>0&&next.disabled))return;
-  busy=true;const before=page;
-  try{await requireAccess();page+=direction;await loadList();status.textContent='';}
-  catch(error){page=before;if(current())status.textContent=`Attachments could not load: ${error.message}`;}
-  finally{busy=false;}
+ async function changePage(direction,button){
+  if(working||!current()||(direction<0&&page===0)||(direction>0&&next.disabled))return;
+  if(busy)return run(async()=>{},{origin:button,errorTarget:status});
+  working=true;const before=page,disabled=button.disabled;button.disabled=true;
+  await run(async()=>{try{await requireAccess();page+=direction;await loadList();status.textContent='';}
+  catch(error){page=before;button.disabled=disabled;if(current()){status.textContent=`Attachments could not load: ${error.message}`;message(status.textContent,true);}}
+  finally{working=false;}
+  },{origin:button,errorTarget:status,busyLabel:'Loading attachments…'});
  }
- previous.onclick=()=>changePage(-1);next.onclick=()=>changePage(1);
+ previous.onclick=()=>changePage(-1,previous);next.onclick=()=>changePage(1,next);
  form.onsubmit=async event=>{
-  event.preventDefault();if(busy||!current())return;
-  busy=true;submit.disabled=true;input.disabled=true;
-  try{
+  event.preventDefault();if(working||!current())return;
+  if(busy)return run(async()=>{},{origin:submit,errorTarget:status});
+  working=true;submit.disabled=true;input.disabled=true;
+  await run(async()=>{try{
    await requireAccess();
    if(!pending){
     const file=input.files?.[0],details=await validateDocumentAttachment(file);checkCurrent();
@@ -122,12 +126,13 @@ async function openDocumentAttachments(recordType,recordId,recordLabel){
    const saved=Array.isArray(finalized.data)?finalized.data[0]:finalized.data;
    if(saved?.id!==pending.requestId)throw Error('The server did not confirm the attachment. Retry to check the same request.');
    pending=null;input.value='';page=0;
-   try{await loadList();if(current())status.textContent='Attachment saved to this record.';}
-   catch(error){if(current())status.textContent=`Attachment saved. The list could not refresh: ${error.message}`;}
-  }catch(error){if(current())status.textContent=`Attachment not confirmed: ${error.message||'Please retry.'}${pending?' The same file and request are retained for Retry.':''}`;}
-  finally{busy=false;submit.disabled=false;input.disabled=!!pending;submit.textContent=pending?'Retry attachment':'Upload attachment';}
+   try{await loadList();if(current()){status.textContent='Attachment saved to this record.';message(status.textContent);}}
+   catch(error){if(current()){status.textContent=`Attachment saved. The list could not refresh: ${error.message}`;message(status.textContent,true);}}
+  }catch(error){if(current()){status.textContent=`Attachment not confirmed: ${error.message||'Please retry.'}${pending?' The same file and request are retained for Retry.':''}`;message(status.textContent,true);}}
+  finally{working=false;submit.disabled=false;input.disabled=!!pending;submit.textContent=pending?'Retry attachment':'Upload attachment';}
+  },{origin:submit,successOrigin:actionFeedbackReference(submit),errorTarget:status,busyLabel:'Uploading attachment…'});
  };
- busy=true;
+ working=true;
  try{await loadList();}catch(error){if(current())status.textContent=`Attachments could not load: ${error.message}`;}
- finally{busy=false;}
+ finally{working=false;}
 }

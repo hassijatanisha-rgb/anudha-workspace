@@ -1,0 +1,55 @@
+// Disposable PGlite fixture only; no live database or data.
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const {PGlite}=await import(process.env.PGLITE_MODULE),db=new PGlite();
+const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
+try{
+ await db.exec(`create role anon;create role authenticated;
+ create function accounting_access() returns boolean language sql stable as $$select current_setting('test.accounting',true)='yes' and current_setting('test.active',true)='yes' and current_setting('test.mfa',true)='yes'$$;
+ create table acc_settings(id boolean primary key,version integer,locked_through date);
+ create table organizations(id uuid primary key,name text);
+ create table acc_customer_tax_ids(organization_id uuid primary key,tin text,vrn text);
+ create table sales_proformas(id uuid primary key,organization_id uuid,document_number text,accepted_at timestamptz,currency text,total_minor bigint,status text,deleted_at timestamptz);
+ create table sales_proforma_lines(id uuid primary key,proforma_id uuid,quantity integer);
+ create table acc_invoices(id uuid primary key,invoice_number text,proforma_id uuid,proforma_revision integer,organization_id uuid,invoice_date date,due_date date,tax_invoice_reference text,currency text,subtotal_minor bigint,discount_minor bigint,tax_minor bigint,total_minor bigint,lines jsonb,journal_entry_id uuid,created_by uuid,created_at timestamptz,voided_at timestamptz,voided_by uuid,void_reason text,void_entry_id uuid,buyer_tin text,buyer_vrn text,tra_receipt_number text,tra_verification_code text,fiscal_recorded_by uuid,fiscal_recorded_at timestamptz,opening_import_id uuid,opening_cutover_date date,opening_reference text);
+ create table acc_receipts(id uuid primary key,voided_at timestamptz);
+ create table acc_receipt_allocations(receipt_id uuid,invoice_id uuid,amount_minor bigint);
+ create table acc_credit_notes(invoice_id uuid,total_minor bigint);
+ do $$declare t text;begin foreach t in array array['acc_settings','organizations','acc_customer_tax_ids','sales_proformas','sales_proforma_lines','acc_invoices','acc_receipts','acc_receipt_allocations','acc_credit_notes'] loop execute format('alter table %I enable row level security',t);execute format('create policy visible on %I for select to authenticated using ((select accounting_access()))',t);execute format('grant select on %I to authenticated',t);end loop;end$$;
+ set test.accounting='yes';set test.active='yes';set test.mfa='yes';
+ insert into acc_settings values(true,7,'2026-09-30');
+ insert into organizations values('00000000-0000-0000-0000-000000000001','Fictional current customer');
+ insert into acc_customer_tax_ids values('00000000-0000-0000-0000-000000000001','DEMO-TIN','DEMO-VRN');
+ insert into sales_proformas select ('30000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'00000000-0000-0000-0000-000000000001','PF-'||lpad(n::text,4,'0'),'2026-10-20',case when n=10 then 'USD' else 'TZS' end,40000,case when n=5 then 'draft' else 'accepted' end,case when n=4 then now() end from generate_series(1,65)n;
+ insert into sales_proforma_lines select ('40000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,id,4 from sales_proformas cross join lateral(select right(id::text,12)::integer n)x;
+ insert into acc_invoices(id,invoice_number,organization_id,invoice_date,due_date,currency,total_minor,subtotal_minor,discount_minor,tax_minor,lines,tra_receipt_number,buyer_tin,buyer_vrn)
+ select ('20000000-0000-0000-0000-'||lpad(n::text,12,'0'))::uuid,'INV-'||lpad(n::text,5,'0'),'00000000-0000-0000-0000-000000000001','2026-10-20','1900-01-01','TZS',10000,10000,0,0,jsonb_build_array(jsonb_build_object('description',repeat('LINE-PAYLOAD-ONLY',40))),case when n%2=0 then 'TRA-'||n else '' end,'TIN','VRN' from generate_series(1,1007)n;
+ update acc_invoices set proforma_id=('30000000-0000-0000-0000-'||right(id::text,12))::uuid,lines=case when right(id::text,12)::integer=3 then '[]'::jsonb else jsonb_build_array(jsonb_build_object('proforma_line_id','40000000-0000-0000-0000-'||right(id::text,12),'quantity',case when right(id::text,12)::integer=1 then 2 else 4 end)) end where right(id::text,12)::integer in(1,2,3,6);
+ update acc_invoices set voided_at=now() where right(id::text,12)::integer=6;
+ update acc_invoices set opening_import_id='90000000-0000-0000-0000-000000000001',opening_cutover_date='2026-09-30',opening_reference='DEMO-OPENING' where right(id::text,12)::integer=1007;
+ insert into acc_receipts values('50000000-0000-0000-0000-000000000001',null),('50000000-0000-0000-0000-000000000002',now());
+ insert into acc_receipt_allocations select '50000000-0000-0000-0000-000000000001',id,case when right(id::text,12)::integer=8 then 11000 else 1000 end from acc_invoices where right(id::text,12)::integer in(7,8,9);
+ insert into acc_receipt_allocations values('50000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000009',9000);
+ insert into acc_credit_notes values('20000000-0000-0000-0000-000000000007',3000);`);
+ const credits=read('supabase/migrations/202610190111_post_return_credits.sql'),balanceStart=credits.indexOf('create or replace view public.acc_invoice_balances'),balanceEnd=credits.indexOf('\n\ncreate or replace function',balanceStart);
+ await db.exec(credits.slice(balanceStart,balanceEnd));
+ // This is the same additive opening-origin projection used by migration 112.
+ await db.exec(`do $$declare v text;begin v:=rtrim(pg_get_viewdef('public.acc_invoice_balances'::regclass,true),E';\n ');execute 'create or replace view public.acc_invoice_balances with(security_invoker=true) as select prior.*,origin.opening_import_id,origin.opening_cutover_date,origin.opening_reference from ('||v||') prior join public.acc_invoices origin on origin.id=prior.id';end$$;`);
+ const partial=read('supabase/migrations/202610180107_partial_order_invoices.sql'),waitingStart=partial.indexOf('create or replace view public.acc_waiting_proformas'),waitingEnd=partial.indexOf('\n\n--',waitingStart);await db.exec(partial.slice(waitingStart,waitingEnd));
+ await db.exec('grant select on acc_invoice_balances,acc_waiting_proformas to authenticated');
+ await db.exec(read('supabase/migrations/202610290134_books_invoice_register.sql'));await db.exec('set role authenticated');
+ const page=async(i=0,w=0)=>(await db.query('select acc_invoice_register($1,$2) data',[i,w])).rows[0].data;
+ let first=await page();assert.equal(first.invoice_count,1007);assert.equal(first.invoices.length,50);assert.equal(first.to_invoice.length,20);assert.equal(first.waiting_count,61);assert.equal(first.settings.version,7);assert.equal(first.tax_ids[0].tin,'DEMO-TIN');assert.equal(first.invoices[0].customer_name,'Fictional current customer');assert.ok(first.invoices.every(row=>!Object.hasOwn(row,'lines')));assert.ok(!JSON.stringify(first).includes('LINE-PAYLOAD-ONLY'));assert.equal(first.invoices[0].opening_reference,'DEMO-OPENING');
+ const expected=(await db.query(`select jsonb_build_object('total_minor',sum(total_minor)filter(where voided_at is null),'paid_minor',sum(paid_minor)filter(where voided_at is null),'credited_minor',sum(credited_minor)filter(where voided_at is null),'outstanding_minor',sum(outstanding_minor)filter(where voided_at is null),'customer_credit_minor',sum(customer_credit_minor)filter(where voided_at is null)) data from acc_invoice_balances`)).rows[0].data;assert.deepEqual(first.summary,expected);
+ const all=[];for(let i=0;i<Math.ceil(first.invoice_count/50);i++)all.push(...(await page(i)).invoices);assert.equal(all.length,1007);assert.equal(new Set(all.map(row=>row.id)).size,1007);assert.equal(all.find(row=>row.invoice_number==='INV-00007').outstanding_minor,6000);assert.equal(all.find(row=>row.invoice_number==='INV-00008').customer_credit_minor,1000);assert.equal(all.find(row=>row.invoice_number==='INV-00009').paid_minor,1000);assert.equal(all.find(row=>row.invoice_number==='INV-00006').outstanding_minor,0);
+ const waiting=[];for(let i=0;i<4;i++)waiting.push(...(await page(0,i)).to_invoice);assert.equal(new Set(waiting.map(row=>row.id)).size,61);assert.ok(waiting.some(row=>row.document_number==='PF-0001'));assert.ok(waiting.some(row=>row.document_number==='PF-0006'));for(const number of ['PF-0002','PF-0003','PF-0004','PF-0005'])assert.ok(!waiting.some(row=>row.document_number===number));assert.equal(waiting.find(row=>row.document_number==='PF-0010').currency,'USD');
+ const last=await page(1000000,1000000);assert.equal(last.invoice_page,20);assert.equal(last.invoices.length,7);assert.equal(last.waiting_page,3);assert.equal(last.to_invoice.length,1);
+ for(const args of [[-1,0],[0,-1],[null,0],[0,null],[1000001,0],[0,1000001]])await assert.rejects(page(...args),/valid invoice register page/);
+ for(const gate of ['accounting','active','mfa']){await db.exec(`set test.${gate}='no'`);await assert.rejects(page(),/Accounting access/);await db.exec(`set test.${gate}='yes'`);}
+ await db.exec('reset role;set role anon');await assert.rejects(page(),/permission denied/);
+ await db.exec(`reset role;create policy selected_invoices on acc_invoices as restrictive for select to authenticated using(invoice_number<'INV-00011');create policy hide_customers on organizations as restrictive for select to authenticated using(false);create policy hide_tax on acc_customer_tax_ids as restrictive for select to authenticated using(false);set role authenticated`);
+ const scoped=await page();assert.equal(scoped.invoice_count,10);assert.equal(scoped.invoices.length,10);assert.ok(scoped.invoices.every(row=>row.customer_name===null));assert.equal(scoped.tax_ids.length,0);assert.deepEqual(scoped.summary,(await db.query(`select jsonb_build_object('total_minor',sum(total_minor)filter(where voided_at is null),'paid_minor',sum(paid_minor)filter(where voided_at is null),'credited_minor',sum(credited_minor)filter(where voided_at is null),'outstanding_minor',sum(outstanding_minor)filter(where voided_at is null),'customer_credit_minor',sum(customer_credit_minor)filter(where voided_at is null)) data from acc_invoice_balances`)).rows[0].data);
+ await db.exec(`reset role;create policy hide_invoices on acc_invoices as restrictive for select to authenticated using(false);create policy hide_orders on sales_proformas as restrictive for select to authenticated using(false);set role authenticated`);const empty=await page();assert.equal(empty.invoice_count,0);assert.equal(empty.waiting_count,0);assert.deepEqual(empty.invoices,[]);assert.deepEqual(empty.to_invoice,[]);assert.ok(Object.values(empty.summary).every(value=>value===0));
+ await db.exec('reset role');assert.equal((await db.query("select prosecdef from pg_proc where proname='acc_invoice_register'")).rows[0].prosecdef,false);assert.equal((await db.query('select count(*)::integer n from acc_invoices')).rows[0].n,1007);
+ console.log('PASS: register 50/20 limits, full traversal, exact existing-view balances/credits/voids, partial and legacy waiting semantics, opening origin, foreign quote currency, no line JSON, bounds, access/active/MFA, anonymous denial and caller invoice/customer/tax RLS.');
+}finally{await db.close();}

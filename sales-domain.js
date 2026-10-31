@@ -9,7 +9,8 @@ function moneyMinor(value){
 }
 function moneyDisplay(minor,currency='TZS'){
  if(!Number.isSafeInteger(Number(minor)))return 'Invalid amount';
- return new Intl.NumberFormat('en-TZ',{style:'currency',currency,minimumFractionDigits:2}).format(Number(minor)/100);
+ const digits=currency==='TZS'?0:2;
+ return new Intl.NumberFormat('en-TZ',{style:'currency',currency,currencyDisplay:currency==='TZS'?'code':'symbol',minimumFractionDigits:digits,maximumFractionDigits:digits}).format(Number(minor)/100);
 }
 function proformaLineTotal(line){
  const gross=line.quantity*line.unitPriceMinor,discount=Math.round(gross*line.discountBasisPoints/10000),tax=Math.round((gross-discount)*line.taxBasisPoints/10000);

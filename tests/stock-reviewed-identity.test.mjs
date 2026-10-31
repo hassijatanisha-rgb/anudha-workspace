@@ -1,13 +1,14 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 function fixture(){
- const ctx=vm.createContext({document:{addEventListener(){}},esc:String,me:{role:'staff'},products:[{id:'product-1',name:'Old name',sku:'SKU',source:{}},{id:'deleted-1',name:'Removed',deleted_at:'2026-09-28'}]});
+ const ctx=vm.createContext({workspacePageHeader,document:{addEventListener(){}},esc:String,me:{role:'staff'},products:[{id:'product-1',name:'Old name',sku:'SKU',source:{}},{id:'deleted-1',name:'Removed',deleted_at:'2026-09-28'}]});
  vm.runInContext(readFileSync(new URL('../staff-access.js',import.meta.url),'utf8'),ctx);
- for(const file of ['row-index.js','business-date.js','inventory-domain.js','product-review-ui.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
+ for(const file of ['row-index.js','business-date.js','status-ui.js','inventory-domain.js','product-review-ui.js','inventory-operations.js'])vm.runInContext(readFileSync(new URL('../'+file,import.meta.url),'utf8'),ctx);
  ctx.realInventoryLotCard=ctx.inventoryLotCard;
- vm.runInContext(`productDetailReviews.set('product-1',{name:'Corrected reagent',company:'Maker A',specification:'200 ml'});inventoryLots=[{id:'lot-1',product_id:'product-1',stock_status:'available',sealed_cartons:0,loose_units:3,reserved_units:0}];inventoryHeader=()=>'';inventorySetupProgress=()=>'';inventoryLotCard=lot=>'<b>'+lot.id+'</b>';`,ctx);
+ vm.runInContext(`productDetailReviews.set('product-1',{name:'Corrected reagent',company:'Maker A',specification:'200 ml'});inventoryLots=[{id:'lot-1',product_id:'product-1',stock_status:'available',sealed_cartons:0,loose_units:3,reserved_units:0}];inventoryHeader=()=>'';inventorySetupProgress=()=>'';inventoryStockRow=lot=>'<b>'+lot.id+'</b>';`,ctx);
  return ctx;
 }
 test('stock uses reviewed identity without changing source product or UUID',()=>{

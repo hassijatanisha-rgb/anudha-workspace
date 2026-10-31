@@ -1,0 +1,102 @@
+import {installDisclosureMotion} from './helpers/disclosure-motion.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const source=readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8');
+const defer=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
+function fixture(){
+ let doc;
+ class Element{
+  constructor(tag='div'){this.tagName=tag;this.parent=null;this.children=[];this.dataset={};this.attributes={};this.className='';this.html='';this.open=false;this.rootConnected=false;this.scrollTop=0;this.classList={toggle:(name,on)=>{const classes=new Set(this.className.split(' '));on?classes.add(name):classes.delete(name);this.className=[...classes].join(' ');},add:name=>this.className+=' '+name};}
+  get isConnected(){return this.parent?this.parent.isConnected:this.rootConnected;}
+  matches(selector){if(selector.includes(':not(:disabled)')&&this.disabled)return false;const [,,key,value]=selector.match(/^(\[data-([\w-]+)(?:="([^"]*)")?\])/)||[];if(key){const k=key.replace(/-([a-z])/g,(_,c)=>c.toUpperCase());return Object.hasOwn(this.dataset,k)&&(value===undefined||this.dataset[k]===value);}if(selector[0]==='.')return this.className.split(' ').includes(selector.slice(1));if(selector[0]==='#')return this.attributes.id===selector.slice(1);return this.tagName===selector;}
+  querySelectorAll(selector){return this.children.flatMap(child=>[...(child.matches(selector)?[child]:[]),...child.querySelectorAll(selector)]);}
+  querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
+  setAttribute(key,value){this.attributes[key]=value;}
+  addEventListener(event,fn){(this.events??={})[event]=fn;}
+  focus(){doc.activeElement=this;}
+  closest(selector){return this.matches(selector)?this:this.parent?.closest(selector);}
+  append(child){child.remove();child.parent=this;this.children.push(child);}
+  prepend(child){child.remove();child.parent=this;this.children.unshift(child);}
+  before(child){child.remove();const at=this.parent.children.indexOf(this);child.parent=this.parent;this.parent.children.splice(at,0,child);}
+  after(child){child.remove();const at=this.parent.children.indexOf(this);child.parent=this.parent;this.parent.children.splice(at+1,0,child);}
+  contains(child){return this===child||this.children.some(node=>node.contains(child));}
+  remove(){if(this.parent){if(this.contains(doc?.activeElement))doc.activeElement=doc.body;this.parent.children=this.parent.children.filter(node=>node!==this);this.parent=null;}}
+  set innerHTML(html){for(const child of [...this.children])child.remove();this.html=html;const stack=[this];for(const match of html.matchAll(/<\/?([\w-]+)([^>]*)>/g)){const [full,tag,attrs]=match;if(full[1]==='/'){if(stack.length>1)stack.pop();continue;}const node=new Element(tag);node.className=attrs.match(/class="([^"]*)"/)?.[1]||'';for(const [,key,value] of attrs.matchAll(/data-([\w-]+)(?:="([^"]*)")?/g))node.dataset[key.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=value||'';node.disabled=/\bdisabled\b/.test(attrs);stack.at(-1).append(node);if(!['br','input','hr'].includes(tag))stack.push(node);}}
+  get innerHTML(){return this.html;}
+ }
+ const body=new Element('body');body.rootConnected=true;doc={body,activeElement:body,createElement:tag=>new Element(tag),querySelector:selector=>body.querySelector(selector),querySelectorAll:selector=>body.querySelectorAll(selector)};
+ const other=new Element('input');other.value='Unsaved customer note';body.append(other);other.focus();body.scrollTop=517;
+ const base=i=>({id:'assignment-'+i,record_type:'delivery',record_id:'delivery-'+i,record_label:'DN-'+i,task:'Pack '+i,note:'unchanged',assignee_user_id:'actor',assigned_by:'sender',due_on:null,status:'open',version:7,created_at:'2026-10-28T08:09:10.123456Z'});
+ const state={rows:[base(1),base(2)],delays:[],unowned:[],readFailure:null,writeFailure:null,writeWait:null};
+ const calls=[],messages=[],seen=[],bell=[],forms=[],cards=[];let uuid=0,lastRun=null;
+ const card=id=>{const el=new Element('article');el.dataset.documentCard=id;el.scrollTop=74;const action=new Element();action.className='actions';el.append(action);body.append(el);cards.push(el);return el;};
+ const first=card('delivery-1'),second=card('delivery-2');
+ const steps=new Element('section');steps.attributes.id='orderSteps';body.append(steps);
+ const related=new Element('section');related.attributes.id='teamTaskRelated';body.append(related);
+ const manual=new Element('section');manual.innerHTML='<p>Manual task draft stays here</p>';body.append(manual);
+ const deadline=new Element('details');deadline.className='deadline-requests';deadline.open=true;related.append(deadline);
+ const notices=new Element('details');notices.className='work-notices';related.append(notices);
+ const response=page=>{const rows=state.rows.filter(row=>row.status==='open'&&row.assignee_user_id==='actor'),pages=Math.max(1,Math.ceil(rows.length/20)),current=Math.min(page,pages-1);return {total:rows.length,page:current,pages,rows:rows.slice(current*20,current*20+20).map(row=>({...row,expected_on:state.delays.find(d=>d.assignment_id===row.id)?.expected_on||null,age_level:'',overdue:false}))};};
+ const client={from(table){const call={name:table,filters:[]};calls.push(call);const query={select(columns){call.columns=columns;return query;},eq(key,value){call.filters.push([key,value]);return query;},in(key,value){call.filters.push([key,value]);return query;},order(){return query;},async range(){if(state.readFailure)throw Error(state.readFailure);const data=(table==='work_delays'?state.delays:state.rows).filter(row=>call.filters.every(([key,value])=>Array.isArray(value)?value.includes(row[key]):value===row[key]));return {data:call.columns.includes('work_delays(')?data.map(row=>({...row,work_delays:state.delays.filter(delay=>delay.assignment_id===row.id)})):data};}};return query;},async rpc(name,args){calls.push({name,args});if(name==='my_handoff_page'){if(state.readFailure)return {error:{message:state.readFailure}};return {data:response(args.p_page)};}if(name==='unowned_work'){if(state.readFailure)throw Error(state.readFailure);return {data:state.unowned};}if(state.writeWait)return state.writeWait.promise;if(state.writeFailure)return {error:{message:state.writeFailure}};
+   if(name==='hand_off_work'){for(const row of state.rows)if(row.id===args.p_expected_open_id){row.status='handed_on';row.version++;row.closed_at='2026-10-29T12:00:00.123456Z';}const row={...base(1),id:args.p_id,record_id:args.p_record_id,task:args.p_task,assignee_user_id:args.p_assignee_user_id,assigned_by:'actor',version:1};state.rows.push(row);state.unowned=state.unowned.filter(item=>item.record_id!==args.p_record_id);return {data:row};}
+   if(name==='close_work_assignment'){const row=state.rows.find(row=>row.id===args.p_id);row.status=args.p_action==='done'?'done':'cancelled';row.version++;row.closed_at='2026-10-29T12:00:00.123456Z';return {data:row};}
+   if(name==='record_work_delay'){const row={id:args.p_id,assignment_id:args.p_assignment_id,expected_on:args.p_expected_on,reason:args.p_reason,recorded_by:'actor',recorded_at:'2026-10-29T12:00:00.123456Z'};state.delays.unshift(row);return {data:row};}
+   throw Error('Unexpected RPC '+name);
+  }};
+ const ctx=vm.createContext({statusTone,document:doc,view:'sales',personalSection:'task',me:{user_id:'actor',active:true,role:'owner'},client,employeeDirectory:new Map([['actor',{user_id:'actor'}],['other',{user_id:'other'}]]),employeeName:id=>'Name '+id,esc:value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),salesProforma:()=>null,salesDeliveryNotes:[{id:'delivery-1',delivery_number:'DN-1',status:'packing'},{id:'delivery-2',delivery_number:'DN-2',status:'packing'}],crypto:{randomUUID:()=>`request-${++uuid}`},actionForm:(title,fields,submit)=>forms.push({title,fields,submit}),message:text=>messages.push(text),run:fn=>(lastRun=Promise.resolve().then(fn)),render:()=>{throw Error('Full render is forbidden');},refreshNotificationBell:async()=>bell.push('refresh'),bellMarkSeen:(actor,kinds)=>seen.push([actor,...kinds])});
+ installDisclosureMotion(ctx);vm.runInContext(source,ctx);
+ return {ctx,state,calls,messages,seen,bell,forms,doc,first,second,steps,related,manual,deadline,notices,other,base,response,get box(){return first.querySelector('[data-work-handoff]');},async click(root,selector){const button=root.querySelector(selector);assert.ok(button,selector);(button.onclick||button.events?.click)();await lastRun;},async mount(){await ctx.decorateWorkHandoffs();calls.length=0;},async submit(values){return forms.at(-1).submit(values);}};
+}
+const writes=f=>f.calls.filter(call=>['hand_off_work','close_work_assignment','record_work_delay'].includes(call.name));
+test('reassignment refreshes only its coordination panel and preserves exact write arguments, other nodes and expanded history',async()=>{
+ const f=fixture();await f.mount();const old=f.box,other=f.second.querySelector('[data-work-handoff]');old.querySelector('.work-timeline').open=true;
+ await f.click(old,'[data-work-assign]');await f.submit({assignee:'other',task:'  Check stock  ',due:'2026-11-01',note:'Customer note'});
+ assert.deepEqual(JSON.parse(JSON.stringify(writes(f)[0])),{name:'hand_off_work',args:{p_id:'request-1',p_record_type:'delivery',p_record_id:'delivery-1',p_record_label:'DN-1',p_task:'Check stock',p_assignee_user_id:'other',p_due_on:'2026-11-01',p_note:'Customer note',p_expected_open_id:'assignment-1'}});
+ assert.notEqual(f.box,old);assert.equal(f.second.querySelector('[data-work-handoff]'),other);assert.match(f.box.innerHTML,/Saved\..*Name other/);assert.equal(f.box.querySelector('.work-timeline').open,true);assert.equal(f.doc.activeElement,f.other);assert.equal(f.other.value,'Unsaved customer note');assert.equal(f.doc.body.scrollTop,517);assert.equal(f.first.scrollTop,74);assert.equal(f.bell.length,1);
+ const reads=f.calls.filter(call=>call.filters);assert.equal(reads.length,1);for(const call of reads.filter(call=>call.name==='work_assignments'))assert.deepEqual(Array.from(call.filters.find(([key])=>key==='record_id')[1]),['delivery-1']);
+});
+test('closing and cancelling retain expected version and affect only the saved handoff panel',async()=>{
+ for(const action of ['done','cancel']){const f=fixture();await f.mount();const other=f.second.querySelector('[data-work-handoff]');if(action==='done')await f.click(f.box,'[data-work-done]');else f.ctx.openWorkClose(f.state.rows[0],action,{origin:f.box,refresh:saved=>f.ctx.refreshWorkHandoff(f.first,saved)});await f.submit({note:'The customer changed the plan'});assert.deepEqual(JSON.parse(JSON.stringify(writes(f)[0].args)),{p_id:'assignment-1',p_expected_version:7,p_action:action,p_note:'The customer changed the plan'});assert.match(f.box.innerHTML,/Saved\./);assert.doesNotMatch(f.box.innerHTML,/data-work-done|data-work-delay=/);assert.equal(f.second.querySelector('[data-work-handoff]'),other);assert.equal(f.calls.filter(call=>call.filters).length,1);}
+});
+test('a delay retains its immutable write arguments and updates the expected date without changing the assignment version',async()=>{
+ const f=fixture();await f.mount();await f.click(f.box,'[data-work-delay]');await f.submit({reason:'  Waiting <parts>  ',expected:'2026-11-02'});assert.deepEqual(JSON.parse(JSON.stringify(writes(f)[0].args)),{p_id:'request-1',p_assignment_id:'assignment-1',p_reason:'Waiting <parts>',p_expected_on:'2026-11-02'});assert.equal(f.state.rows[0].version,7);assert.match(f.box.innerHTML,/staff task expected|Staff task expected/);assert.match(f.box.innerHTML,/2026-11-02/);assert.doesNotMatch(f.box.innerHTML,/<parts>/);assert.equal(f.calls.filter(call=>call.filters).length,1);
+});
+test('every confirmed write survives a follow-up read failure with Saved plus safe Retry and no repeated write',async()=>{
+ for(const selector of ['[data-work-assign]','[data-work-delay]','[data-work-done]']){const f=fixture();await f.mount();await f.click(f.box,selector);f.state.readFailure='Offline <now>';await f.submit({assignee:'other',task:'Check stock',note:'Done',reason:'Waiting for stock',expected:'2026-11-02'});assert.equal(writes(f).length,1);assert.match(f.box.innerHTML,/Saved\./);assert.match(f.box.innerHTML,/Offline &#60;now&#62;/);assert.doesNotMatch(f.box.innerHTML,/data-work-assign|data-work-done|data-work-delay=/);assert.equal(f.messages.length,1);f.state.readFailure=null;await f.click(f.box,'[data-work-retry]');assert.equal(writes(f).length,1);assert.match(f.box.innerHTML,/Saved\./);assert.doesNotMatch(f.box.innerHTML,/could not load/);}
+});
+test('write failures do not repaint successful state or reread the workspace',async()=>{
+ const f=fixture();await f.mount();const old=f.box;await f.click(old,'[data-work-done]');f.state.writeFailure='Handoff changed';await assert.rejects(f.submit({note:''}),/Handoff changed/);assert.equal(f.box,old);assert.equal(f.calls.length,1);assert.equal(f.messages.length,0);assert.equal(f.bell.length,0);
+});
+test('forms bind the actor object and epoch at open time; stale sources cannot dispatch a write',async()=>{
+ for(const selector of ['[data-work-assign]','[data-work-delay]','[data-work-done]'])for(const change of [f=>{f.ctx.me={...f.ctx.me};},f=>f.ctx.clearWorkAssignments(),f=>f.box.remove()]){const f=fixture();await f.mount();await f.click(f.box,selector);change(f);await assert.rejects(f.submit({assignee:'other',task:'Check stock',reason:'Waiting',expected:'2026-11-02'}),/Login changed|handoff changed/);assert.equal(writes(f).length,0);}
+});
+test('late write receipts cannot refresh or notify a replacement actor, cleared session or detached origin',async()=>{
+ for(const change of [f=>{f.ctx.me={...f.ctx.me};},f=>f.ctx.clearWorkAssignments(),f=>f.box.remove()]){const f=fixture();await f.mount();await f.click(f.box,'[data-work-done]');f.state.writeWait=defer();const saving=f.submit({note:''});change(f);f.state.writeWait.resolve({data:{...f.base(1),status:'done',version:8}});await saving.catch(error=>assert.match(error.message,/Login changed/));assert.equal(f.calls.length,1);assert.equal(f.messages.length,0);assert.equal(f.bell.length,0);}
+});
+test('overlapping scoped reads never let the older response replace the newer panel or cancel unrelated work',async()=>{
+ const f=fixture();await f.mount();const wait=defer(),original=f.ctx.loadRecordWork;let count=0;f.ctx.loadRecordWork=async(...args)=>++count===1?wait.promise.then(open=>({open,history:[],delays:[]})):original(...args);
+ const epoch=vm.runInContext('workEpoch',f.ctx),oldRead=f.ctx.refreshWorkHandoff(f.first,'First saved');await f.ctx.refreshWorkHandoff(f.first,'Latest saved');const fresh=f.box;wait.resolve(new Map());await oldRead;assert.equal(f.box,fresh);assert.match(f.box.innerHTML,/Latest saved/);assert.doesNotMatch(f.box.innerHTML,/First saved/);assert.equal(vm.runInContext('workEpoch',f.ctx),epoch);
+});
+test('personal close refreshes its bounded page and exact count while retaining manual tasks, deadline requests, notices and focus',async()=>{
+ const f=fixture();f.ctx.view='personal';await f.ctx.renderMyHandoffs(f.steps);f.calls.length=0;const manual=f.manual,deadline=f.deadline,notices=f.notices;await f.click(f.steps,'[data-work-finish]');await f.submit({note:'Packed'});assert.deepEqual(f.calls.map(call=>call.name),['close_work_assignment','my_handoff_page']);assert.match(f.steps.querySelector('.my-handoffs').innerHTML,/Work handed to me · 1/);assert.equal(f.manual,manual);assert.equal(f.deadline,deadline);assert.equal(deadline.open,true);assert.equal(f.notices,notices);assert.equal(notices.open,false);assert.equal(f.doc.activeElement,f.other);assert.equal(f.doc.body.scrollTop,517);assert.deepEqual(f.seen,[['actor','work']]);assert.equal(f.bell.length,1);
+});
+test('personal save followed by a failed page has Saved and Retry, never stale action buttons or a false seen mark',async()=>{
+ const f=fixture();f.ctx.view='personal';await f.ctx.renderMyHandoffs(f.steps);f.calls.length=0;await f.click(f.steps,'[data-work-delay-row]');f.state.readFailure='Cannot read';await f.submit({reason:'Waiting for parts',expected:'2026-11-04'});let box=f.steps.querySelector('.my-handoffs');assert.match(box.innerHTML,/Saved\./);assert.doesNotMatch(box.innerHTML,/data-work-finish|data-work-delay-row/);assert.deepEqual(f.seen,[]);assert.equal(f.bell.length,1);f.state.readFailure=null;await f.click(box,'[data-work-retry]');assert.equal(writes(f).length,1);box=f.steps.querySelector('.my-handoffs');assert.match(box.innerHTML,/2026-11-04/);assert.match(box.innerHTML,/Saved\./);assert.deepEqual(f.seen,[['actor','work']]);assert.equal(f.bell.length,2);
+});
+test('unowned assignment refreshes only unowned and personal handoff panes and retains the other related disclosures',async()=>{
+ const f=fixture();f.ctx.view='personal';f.state.unowned=[{record_type:'delivery',record_id:'delivery-3',record_label:'DN-3',status:'packing',waiting_since:'2026-10-28T12:00:00Z'}];await f.ctx.renderMyHandoffs(f.steps);await f.ctx.renderUnownedWork(f.related);const unowned=f.related.querySelector('.unowned-work');unowned.open=true;unowned.ontoggle();f.calls.length=0;await f.click(unowned,'[data-unowned-assign]');await f.submit({assignee:'actor',task:'Pack this order'});assert.deepEqual(f.calls.map(call=>call.name),['hand_off_work','unowned_work','my_handoff_page']);assert.equal(f.related.querySelector('.unowned-work'),null);assert.match(f.steps.querySelector('.my-handoffs').innerHTML,/Work handed to me · 3/);assert.ok(f.deadline.isConnected);assert.ok(f.notices.isConnected);assert.equal(f.deadline.open,true);assert.equal(f.bell.length,1);
+});
+
+test('a replaced personal page or unowned row invalidates its already-open form even under the same actor',async()=>{
+ for(const pane of ['personal','unowned']){const f=fixture();f.ctx.view='personal';if(pane==='personal'){await f.ctx.renderMyHandoffs(f.steps);await f.click(f.steps,'[data-work-finish]');await f.ctx.renderMyHandoffs(f.steps);}else{f.state.unowned=[{record_type:'delivery',record_id:'delivery-3',record_label:'DN-3',status:'packing'}];await f.ctx.renderUnownedWork(f.related);const box=f.related.querySelector('.unowned-work');box.open=true;box.ontoggle();await f.click(box,'[data-unowned-assign]');await f.ctx.renderUnownedWork(f.related);}f.calls.length=0;await assert.rejects(f.submit({assignee:'actor',task:'Pack this order',note:''}),/handoff changed/);assert.equal(writes(f).length,0);}
+});
+test('unowned save with failed follow-up reads retains both Saved retry states and never repeats the assignment',async()=>{
+ const f=fixture();f.ctx.view='personal';f.state.unowned=[{record_type:'delivery',record_id:'delivery-3',record_label:'DN-3',status:'packing'}];await f.ctx.renderMyHandoffs(f.steps);await f.ctx.renderUnownedWork(f.related);const old=f.related.querySelector('.unowned-work');old.open=true;old.ontoggle();await f.click(old,'[data-unowned-assign]');f.state.readFailure='Offline <request>';await f.submit({assignee:'actor',task:'Pack this order'});const box=f.related.querySelector('.unowned-work');assert.match(box.innerHTML,/Saved\./);assert.doesNotMatch(box.innerHTML,/data-unowned-assign/);assert.match(f.steps.querySelector('.my-handoffs').innerHTML,/Saved\./);assert.deepEqual(f.seen,[]);f.state.readFailure=null;await f.click(box,'[data-unowned-retry]');assert.equal(f.related.querySelector('.unowned-work'),null);assert.equal(writes(f).length,1);assert.ok(f.deadline.isConnected);assert.ok(f.notices.isConnected);
+});
+
+test('a retained handoff panel resolves the current record card after its business card is replaced',async()=>{
+ const f=fixture();await f.mount();const old=f.first,box=f.box,replacement=f.doc.createElement('article');replacement.dataset.documentCard='delivery-1';const actions=f.doc.createElement('div');actions.className='actions';replacement.append(box);replacement.append(actions);f.doc.body.append(replacement);old.remove();await f.click(box,'[data-work-delay]');await f.submit({reason:'Parts are on their way',expected:'2026-11-03'});assert.equal(writes(f).length,1);assert.notEqual(replacement.querySelector('[data-work-handoff]'),box);assert.match(replacement.querySelector('[data-work-handoff]').innerHTML,/Saved\./);assert.match(replacement.querySelector('[data-work-handoff]').innerHTML,/2026-11-03/);
+});

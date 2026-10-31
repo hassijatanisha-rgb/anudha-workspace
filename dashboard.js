@@ -1,13 +1,14 @@
 'use strict';
 // Dashboard: counts of open work, of what was created in a chosen period and of what was finished in a chosen period.
-// One read (dashboard_counts, migration 067) under the signed-in person's own read rules: a count from an area they
+// One counts read under the signed-in person's own rules (dashboard_counts, or dashboard_open_counts while period totals are cached): a count from an area they
 // cannot open comes back empty and its card is left out. Counts only, never amounts. Days are Dar es Salaam days.
 // The owner and department heads also see Team tasks: open, completed and late per person (migration 068).
 // One period, chosen with a button, applies to Periodic, Result and Team tasks; it is remembered per person on this
 // device. Which table and filter feed each card: docs/DASHBOARD-CARDS.md.
 const dashboardDefaultPeriod={preset:'today',from:'',to:''};
 let dashboardPeriod={...dashboardDefaultPeriod},dashboardPeriodFor=null;
-let dashboardData=null,dashboardDataFor='',dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null;
+let dashboardDataActor=null,dashboardData=null,dashboardError='',dashboardEpoch=0,dashboardTeam=null,dashboardTeamError='',dashboardPerson=null,dashboardShownRange='',dashboardCountsLoading=false,dashboardTeamLoading=false;
+const dashboardPeriodCache=new Map();
 const dashboardZone='Africa/Dar_es_Salaam';
 const dashboardPresets=[['today','Today'],['week','This week'],['month','This month'],['quarter','This quarter'],['year','This year'],['custom','Custom']];
 // [key, label, colour, where a click goes]. No target: no existing list shows exactly these records.
@@ -31,7 +32,7 @@ const dashboardCards={
   ['webqueries_closed','Closed website inquiries','web',{view:'requests',section:'inquiries',filter:'done'}]]
 };
 const dashboardParts=[['leads','Lead follow-ups'],['tasks','Tasks'],['steps','Order steps'],['service','Service visits']];
-function clearDashboard(){dashboardEpoch++;dashboardData=null;dashboardDataFor='';dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;}
+function clearDashboard(){dashboardEpoch++;dashboardDataActor=null;dashboardData=null;dashboardError='';dashboardTeam=null;dashboardTeamError='';dashboardPerson=null;dashboardPeriod={...dashboardDefaultPeriod};dashboardPeriodFor=null;dashboardShownRange='';dashboardCountsLoading=false;dashboardTeamLoading=false;dashboardPeriodCache.clear();}
 
 // Dates are 'YYYY-MM-DD' strings for the Dar es Salaam calendar day.
 function dashboardDay(now=Date.now()){return new Intl.DateTimeFormat('en-CA',{timeZone:dashboardZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));}
@@ -89,13 +90,13 @@ function dashboardOpen(target){
 
 function dashboardNumber(n){return Number(n).toLocaleString('en-GB');}
 function dashboardTile(column,tile){
- const body=`<span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?`<small>${esc(tile.breakdown)}</small>`:''}`;
- return tile.target?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}" aria-label="${esc(tile.label)}: ${esc(tile.value)}. Open the list">${body}</button>`
-  :`<div class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}">${body}</div>`;
+ const body=`<span>${esc(tile.label)}</span> <strong>${esc(dashboardNumber(tile.value))}</strong>${tile.breakdown?` <small>${esc(tile.breakdown)}</small>`:''}`;
+ return tile.target&&Number(tile.value)>0?`<button type="button" class="dashboard-tile dashboard-${tile.tone}" data-dashboard-count="${Number(tile.value)}" data-dashboard-open="${column}:${tile.key}">${body}</button>`
+  :`<div class="dashboard-tile ${Number(tile.value)===0?'dashboard-zero':'dashboard-'+tile.tone}" data-dashboard-count="${Number(tile.value)}">${body}</div>`;
 }
 function dashboardGroup(column,tile){
  if(!tile.items)return dashboardTile(column,tile);
- return `<div class="dashboard-tile dashboard-group dashboard-${tile.tone}"><h3><span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
+ return `<div class="dashboard-tile dashboard-group ${Number(tile.value)===0?'dashboard-zero':'dashboard-'+tile.tone}" data-dashboard-count="${Number(tile.value)}"><h3><span>${esc(tile.label)}</span><strong>${esc(dashboardNumber(tile.value))}</strong></h3><div class="dashboard-group-parts">${tile.items.map(item=>dashboardTile(column,item)).join('')}</div></div>`;
 }
 // The chosen period, remembered per person on this device. Storage can be missing or blocked (private window): the
 // page then simply starts on Today.
@@ -115,9 +116,10 @@ function dashboardPicker(range){
  const choice=dashboardPeriod;
  return `<div class="dashboard-period" role="group" aria-label="Reporting period"><div class="dashboard-period-heading"><span>Reporting period</span><p class="dashboard-range">${esc(dashboardRangeLabel(choice,range))}</p></div><div class="dashboard-presets">${dashboardPresets.map(([key,label])=>`<button type="button" data-dashboard-preset="${key}" aria-pressed="${choice.preset===key}"${choice.preset===key?' class="active"':''}>${label}</button>`).join('')}</div>${choice.preset==='custom'?`<div class="dashboard-custom"><label><span>From</span><input type="date" id="dashboardFrom" value="${esc(choice.from)}"></label><label><span>To</span><input type="date" id="dashboardTo" value="${esc(choice.to)}"></label><button type="button" id="dashboardApply">Show</button></div>`:''}<p class="dashboard-period-help">Applies to activity, outcomes${dashboardTeamVisible()?' and team tasks':''}. Current work shows all open items.</p></div>`;
 }
+function dashboardSkeleton(label){return `<div class="dashboard-skeleton" role="status" aria-label="${esc(label)}"><span class="muted">${esc(label)}</span><div aria-hidden="true">${'<span class="dashboard-skeleton-line"></span>'.repeat(4)}</div></div>`;}
 function dashboardColumn(column,title,description){
  const tiles=dashboardTiles(column,dashboardData);
- return `<section class="dashboard-column dashboard-${column}" aria-labelledby="dashboard-${column}-title"><div class="dashboard-column-heading"><h2 id="dashboard-${column}-title">${esc(title)}</h2><p>${esc(description)}</p></div><div class="dashboard-tiles">${tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
+ return `<section class="dashboard-column dashboard-${column}" aria-labelledby="dashboard-${column}-title"><div class="dashboard-column-heading"><h2 id="dashboard-${column}-title">${esc(title)}</h2><p>${esc(description)}</p></div><div class="dashboard-tiles">${!dashboardData?.[column]?(dashboardCountsLoading?dashboardSkeleton('Loading '+title.toLowerCase()+'…'):'<p class="muted">Counts unavailable.</p>'):tiles.map(tile=>dashboardGroup(column,tile)).join('')||'<p class="muted">Nothing to show for your areas.</p>'}</div></section>`;
 }
 
 // Team tasks: the owner sees everyone, a department head their own department. The database decides who is listed.
@@ -139,28 +141,32 @@ function dashboardPersonPanel(person){
  return `<div class="dashboard-person-tasks">${person.rows.length?`<ol>${person.rows.map(task=>dashboardPersonTask(task)).join('')}</ol>`:'<p class="muted">No tasks in this period.</p>'}</div>`;
 }
 function dashboardTeamList(rows){
- return `<ul class="dashboard-team-list">${rows.map(row=>{const shown=dashboardPerson?.user_id===row.user_id;return `<li><button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" aria-label="${esc(dashboardTeamLine(row))}. ${shown?'Hide':'Show'} their tasks"><span class="dashboard-person-identity"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?`<small>${esc(row.department)}</small>`:''}</span><span class="dashboard-person-counts">${esc(dashboardTeamCounts(row))}</span></button>${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;}).join('')}</ul>`;
+ return `<ul class="dashboard-team-list">${rows.map(row=>{
+  const active=Number(row.open_count)>0||Number(row.completed_count)>0||Number(row.late_count)>0,shown=active&&dashboardPerson?.user_id===row.user_id;
+  const body=`<span class="dashboard-person-identity"><strong>${esc(employeeName(row.user_id))}</strong>${me?.role==='owner'&&row.department?` <small>${esc(row.department)}</small>`:''}</span> <span class="dashboard-person-counts">${esc(dashboardTeamCounts(row))}</span>`;
+  return `<li>${active?`<button type="button" class="dashboard-person${Number(row.late_count)>0?' has-late':''}" data-dashboard-person="${esc(row.user_id)}" aria-expanded="${shown}" title="${shown?'Hide':'Show'} tasks">${body}</button>`:`<div class="dashboard-person dashboard-person-inactive">${body}</div>`}${shown?dashboardPersonPanel(dashboardPerson):''}</li>`;
+ }).join('')}</ul>`;
 }
 function dashboardTeamSection(inactiveOpen=false){
  if(!dashboardTeamVisible())return '';
  const rows=dashboardTeam?dashboardTeamOrder(dashboardTeam):[];
  const active=[],inactive=[];
  for(const row of rows)(Number(row.open_count)>0||Number(row.completed_count)>0||Number(row.late_count)>0?active:inactive).push(row);
- const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?'':rows.length?`${active.length?dashboardTeamList(active):'<p class="dashboard-team-empty">No task activity for this period.</p>'}${inactive.length?`<details id="dashboardTeamInactive" class="dashboard-team-inactive"${inactiveOpen||inactive.some(row=>dashboardPerson?.user_id===row.user_id)?' open':''}><summary>People with no task activity <span>(${dashboardNumber(inactive.length)})</span></summary>${dashboardTeamList(inactive)}</details>`:''}`:'<p class="muted">Nobody in your department yet.</p>';
- return `<section class="dashboard-team" aria-labelledby="dashboard-team-title"><div class="dashboard-team-heading"><div><h2 id="dashboard-team-title">Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Select a person to view tasks and results.</p></div><details class="dashboard-team-key"><summary>How counts work</summary><p>Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it.</p></details></div>${body}</section>`;
+ const body=dashboardTeamError?`<p role="alert">Team tasks could not load: ${esc(dashboardTeamError)}</p>`:!dashboardTeam?(dashboardTeamLoading?dashboardSkeleton('Loading team tasks…'):''):rows.length?`${active.length?dashboardTeamList(active):'<p class="dashboard-team-empty">No task activity for this period.</p>'}${inactive.length?`<details id="dashboardTeamInactive" class="dashboard-team-inactive"${inactiveOpen?' open':''}><summary>People with no task activity <span>(${dashboardNumber(inactive.length)})</span></summary>${dashboardTeamList(inactive)}</details>`:''}`:'<p class="muted">Nobody in your department yet.</p>';
+ return `<section class="dashboard-team" aria-labelledby="dashboard-team-title"><div class="dashboard-team-heading"><div><h2 id="dashboard-team-title">Team tasks</h2><p class="muted">${me?.role==='owner'?'Everyone':'People in your department'}. Select a person to view tasks and results.</p></div><details id="dashboardTeamKey" class="dashboard-team-key"><summary>How counts work</summary><p>Open: not done yet and due by the end of the period. Completed: marked done in the period. Late: still open after the due time, or done after it.</p></details></div>${body}</section>`;
 }
 async function dashboardOpenPerson(userId,range){
- if(dashboardPerson?.user_id===userId){dashboardPerson=null;return renderDashboard(range,userId);}
+ if(dashboardPerson?.user_id===userId){dashboardPerson=null;return renderDashboardTeam(range,userId);}
  const epoch=dashboardEpoch,actor=me?.user_id;
- dashboardPerson={user_id:userId,rows:null,error:''};renderDashboard(range,userId);
+ dashboardPerson={user_id:userId,rows:null,error:''};renderDashboardTeam(range,userId);
  const r=await client.rpc('team_member_tasks',{p_user_id:userId,p_from:range.from,p_to:range.to});
  if(epoch!==dashboardEpoch||me?.user_id!==actor||view!=='dashboard'||dashboardPerson?.user_id!==userId)return;
  dashboardPerson={user_id:userId,rows:r.error?null:(r.data||[]),error:r.error?(r.error.message||'Unknown error'):''};
- renderDashboard(range,userId);
+ renderDashboardTeam(range);
 }
 function renderDashboard(range,focusPerson=''){
  const inactiveOpen=$('#dashboardTeamInactive')?.open;
- $('#content').innerHTML=`<section class="dashboard"><div class="heading"><div><h1>Dashboard</h1><p class="muted">Your work, activity and team at a glance.</p></div><button type="button" id="dashboardRefresh">Refresh</button></div>${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}${dashboardPicker(range)}${dashboardData?`<div class="dashboard-columns">${dashboardColumn('open','Current work','Open items and customer records')}${dashboardColumn('periodic','Activity','Created or scheduled in the period')}${dashboardColumn('result','Outcomes','Completed or closed in the period')}</div>`:''}${dashboardTeamSection(inactiveOpen)}</section>`;
+ $('#content').innerHTML=`<section class="dashboard">${workspacePageHeader({title:'Dashboard',subtitle:'Your work, activity and team at a glance.',actions:'<button type="button" id="dashboardRefresh">Refresh</button>'})}<div id="dashboardStatus">${dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:''}</div>${dashboardPicker(range)}<div id="dashboardCounts" class="dashboard-columns" aria-busy="${dashboardCountsLoading}">${dashboardColumn('open','Current work','Open items and customer records')}${dashboardColumn('periodic','Activity','Created or scheduled in the period')}${dashboardColumn('result','Outcomes','Completed or closed in the period')}</div><div id="dashboardTeamPanel" aria-busy="${dashboardTeamLoading}">${dashboardTeamSection(inactiveOpen)}</div></section>`;
  $('#dashboardRefresh').onclick=()=>run(dashboardWorkspace);
  document.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
  document.querySelectorAll('[data-dashboard-preset]').forEach(button=>button.onclick=()=>{
@@ -177,21 +183,56 @@ function renderDashboard(range,focusPerson=''){
  document.querySelectorAll('[data-dashboard-person]').forEach(button=>button.onclick=()=>run(()=>dashboardOpenPerson(button.dataset.dashboardPerson,range)));
  if(focusPerson)[...document.querySelectorAll('[data-dashboard-person]')].find(button=>button.dataset.dashboardPerson===focusPerson)?.focus();
 }
+function renderDashboardCounts(){
+ const target=$('#dashboardCounts');if(!target)return;
+ target.innerHTML=dashboardColumn('open','Current work','Open items and customer records')+dashboardColumn('periodic','Activity','Created or scheduled in the period')+dashboardColumn('result','Outcomes','Completed or closed in the period');
+ $('#dashboardStatus').innerHTML=dashboardError?`<p class="notice error" role="alert">The dashboard could not load: ${esc(dashboardError)}. Press Refresh to try again.</p>`:'';
+ target.setAttribute('aria-busy',String(dashboardCountsLoading));
+ target.querySelectorAll('[data-dashboard-open]').forEach(button=>button.onclick=()=>{const [column,key]=button.dataset.dashboardOpen.split(':');dashboardOpen(dashboardTarget(column,key));});
+}
+function renderDashboardTeam(range,focusPerson=''){
+ const target=$('#dashboardTeamPanel');if(!target)return;
+ const inactiveOpen=$('#dashboardTeamInactive')?.open,keyOpen=$('#dashboardTeamKey')?.open,active=document.activeElement;
+ const focusedPerson=focusPerson||active?.dataset?.dashboardPerson,focusedSummary=active?.tagName==='SUMMARY'?active.parentElement?.id:'';
+ target.innerHTML=dashboardTeamSection(inactiveOpen);target.setAttribute('aria-busy',String(dashboardTeamLoading));
+ if(keyOpen&&$('#dashboardTeamKey'))$('#dashboardTeamKey').open=true;
+ target.querySelectorAll('[data-dashboard-person]').forEach(button=>{button.onclick=()=>run(()=>dashboardOpenPerson(button.dataset.dashboardPerson,range));if(button.dataset.dashboardPerson===focusedPerson)button.focus({preventScroll:true});});
+ if(focusedSummary&&['dashboardTeamInactive','dashboardTeamKey'].includes(focusedSummary))$('#'+focusedSummary)?.querySelector('summary')?.focus({preventScroll:true});
+}
 async function dashboardWorkspace(){
- const epoch=++dashboardEpoch,actor=me?.user_id;syncWorkspaceNavigation();
- if(dashboardPeriodFor!==actor){dashboardPeriod=dashboardLoadPeriod(actor);dashboardPeriodFor=actor;}
- const range=dashboardRange(dashboardPeriod,dashboardDay()),team=dashboardTeamVisible(),person=team?dashboardPerson:null;
- // Coming back to the Dashboard shows the last numbers for the same person and dates at once, then updates them;
- // otherwise the previous page stayed on screen until the new numbers arrived.
- const key=`${actor}|${range.from}|${range.to}`;
- if(dashboardData&&dashboardDataFor===key)renderDashboard(range);else $('#content').innerHTML='<p role="status">Loading the dashboard…</p>';
- const [r,t,p]=await Promise.all([
-  client.rpc('dashboard_counts',{p_periodic_from:range.from,p_periodic_to:range.to,p_result_from:range.from,p_result_to:range.to}),
-  team?client.rpc('team_task_counts',{p_from:range.from,p_to:range.to}):null,
-  person?client.rpc('team_member_tasks',{p_user_id:person.user_id,p_from:range.from,p_to:range.to}):null]);
- if(epoch!==dashboardEpoch||me?.user_id!==actor||view!=='dashboard')return;
- if(r.error){dashboardError=r.error.message||'Unknown error';if(dashboardDataFor!==key)dashboardData=null;}else{dashboardData=r.data;dashboardDataFor=key;dashboardError='';}
- if(t){dashboardTeamError=t.error?(t.error.message||'Unknown error'):'';dashboardTeam=t.error?null:(t.data||[]);}
- if(p&&dashboardPerson?.user_id===person.user_id)dashboardPerson={user_id:person.user_id,rows:p.error?null:(p.data||[]),error:p.error?(p.error.message||'Unknown error'):''};
- renderDashboard(range);
+ const epoch=++dashboardEpoch,actor=me;syncWorkspaceNavigation();
+ if(dashboardPeriodFor!==actor?.user_id){dashboardPeriod=dashboardLoadPeriod(actor?.user_id);dashboardPeriodFor=actor?.user_id;}
+ if(dashboardDataActor!==actor){dashboardDataActor=actor;dashboardData=null;dashboardTeam=null;dashboardPerson=null;dashboardShownRange='';}
+ const range=dashboardRange(dashboardPeriod,dashboardDay()),key=JSON.stringify([actor?.user_id,range.from,range.to]),team=dashboardTeamVisible(),person=team?dashboardPerson:null;
+ const current=()=>epoch===dashboardEpoch&&me===actor&&view==='dashboard';
+ for(const [cachedKey,item] of dashboardPeriodCache)if(Date.now()-item.at>=60000||item.actor!==actor)dashboardPeriodCache.delete(cachedKey);
+ const cached=dashboardPeriodCache.get(key),changedRange=dashboardShownRange!==key;
+ if(changedRange){dashboardData=dashboardData?.open?{open:dashboardData.open}:null;dashboardTeam=null;dashboardTeamError='';}
+ if(cached)dashboardData={...dashboardData,periodic:cached.periodic,result:cached.result};
+ dashboardShownRange=key;dashboardCountsLoading=true;dashboardTeamLoading=team;dashboardError='';
+ if(changedRange||!$('#dashboardCounts'))renderDashboard(range);
+ else{$('#dashboardCounts').setAttribute('aria-busy','true');if(team)$('#dashboardTeamPanel').setAttribute('aria-busy','true');}
+ const counts=(async()=>{
+  let r;try{r=await client.rpc(cached?'dashboard_open_counts':'dashboard_counts',cached?{}:{p_periodic_from:range.from,p_periodic_to:range.to,p_result_from:range.from,p_result_to:range.to});}catch(error){r={error};}
+  if(!current())return;
+  dashboardCountsLoading=false;
+  if(r.error)dashboardError=r.error.message||'Unknown error';
+  else{
+   dashboardData=cached?{...r.data,periodic:cached.periodic,result:cached.result}:r.data;dashboardError='';
+   if(!cached)dashboardPeriodCache.set(key,{actor,at:Date.now(),periodic:r.data?.periodic,result:r.data?.result});
+  }
+  renderDashboardCounts();
+ })();
+ const teamCounts=team?(async()=>{
+  let result;try{result=await client.rpc('team_task_counts',{p_from:range.from,p_to:range.to});}catch(error){result={error};}
+  if(!current())return;
+  dashboardTeamLoading=false;dashboardTeamError=result.error?(result.error.message||'Unknown error'):'';dashboardTeam=result.error?null:(result.data||[]);renderDashboardTeam(range);
+ })():null;
+ const personTasks=person?(async()=>{
+  let result;try{result=await client.rpc('team_member_tasks',{p_user_id:person.user_id,p_from:range.from,p_to:range.to});}catch(error){result={error};}
+  if(!current()||dashboardPerson?.user_id!==person.user_id)return;
+  dashboardPerson={user_id:person.user_id,rows:result.error?null:(result.data||[]),error:result.error?(result.error.message||'Unknown error'):''};renderDashboardTeam(range);
+ })():null;
+ // Each request paints its own region before this wait releases the Refresh action.
+ await Promise.all([counts,teamCounts,personTasks]);
 }

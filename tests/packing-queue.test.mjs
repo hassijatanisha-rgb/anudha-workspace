@@ -1,3 +1,5 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -7,7 +9,7 @@ const migrationName=readdirSync(new URL('../supabase/migrations/',import.meta.ur
 const sql=read('supabase/migrations/'+migrationName);
 
 function load(extra={}){
- const ctx=vm.createContext({document:{addEventListener(){},querySelector:()=>null,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},setInterval(){},clearInterval(){},esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),Date,...extra});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,document:{addEventListener(){},querySelector:()=>null,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},setInterval(){},clearInterval(){},esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),Date,...extra});
  vm.runInContext(read('packing-queue.js'),ctx);return ctx;
 }
 const at=(base,minutes)=>new Date(base-minutes*60000).toISOString();
@@ -101,7 +103,7 @@ test('the TV screen hides the menu and shows big numbers, client, items and the 
 
 test('My orders today: Pro formas I prepared that moved today',()=>{
  const src=read('sales-delivery.js'),fn=src.split('\n').findIndex(line=>line.startsWith('function proformaMineToday('));
- const ctx=vm.createContext({});vm.runInContext(read('business-date.js'),ctx);vm.runInContext(src.split('\n').slice(fn,fn+5).join('\n'),ctx);
+ const ctx=vm.createContext({workspacePageHeader,});vm.runInContext(read('business-date.js'),ctx);vm.runInContext(src.split('\n').slice(fn,fn+5).join('\n'),ctx);
  const now=new Date('2026-10-09T12:00:00'),today=new Date('2026-10-09T09:00:00').toISOString(),old=new Date('2026-10-01T09:00:00').toISOString();
  assert.equal(ctx.proformaMineToday({prepared_by:'u1',created_at:old,accepted_at:today},'u1',now),true);
  assert.equal(ctx.proformaMineToday({prepared_by:'u2',created_at:today},'u1',now),false);

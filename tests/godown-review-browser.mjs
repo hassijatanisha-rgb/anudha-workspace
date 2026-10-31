@@ -6,32 +6,31 @@ const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||resol
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 try{
  const page=await browser.newPage();await page.setContent('<main id="content"></main>');
- await page.addScriptTag({content:`const me={user_id:'fixture',role:'staff'};const $=s=>document.querySelector(s);const products=[];
- function esc(v){const e=document.createElement('span');e.textContent=String(v);return e.innerHTML.replace(/"/g,'&quot;');}
- function inventoryHeader(){return '';}function bindInventoryWorkspace(){}
+ await page.addScriptTag({content:`const me={user_id:'fixture',role:'staff'};const $=s=>document.querySelector(s);const products=[];const view='inventory';let inventorySection='review';let fixtureRows=[],fixtureCalls=0;
+ function esc(v){const e=document.createElement('span');e.textContent=String(v??'');return e.innerHTML.replace(/"/g,'&quot;');}
+ function inventoryHeader(){return '';}function bindInventoryWorkspace(){}function companyDate(){return '2026-10-29';}function workspaceLoading(){document.getElementById('content').textContent='Loading';}function run(fn){return fn();}
  function productStockReview(){return {issues:['Needs review']};}
- function renderSearchPreservingPosition(input,render){const id=input.id,start=input.selectionStart;render();document.getElementById(id).focus();document.getElementById(id).setSelectionRange(start,start);}`});
+ const client={rpc:async(name,args)=>{if(name!=='tally_stock_review_page')throw Error('Unexpected write');fixtureCalls++;
+ const scope=tallyGodownReview(fixtureRows,new Map(),args.p_godown,args.p_query),readiness=tallyGodownReadiness(fixtureRows,tallyRowReview),pages=Math.max(1,Math.ceil(scope.rows.length/50)),index=Math.min(args.p_page,pages-1),readinessPages=Math.max(1,Math.ceil(readiness.length/20)),ready=Math.min(args.p_readiness_page,readinessPages-1);
+ return {data:{total:scope.rows.length,page:index,pages,scope:{total:scope.total,reviewed:scope.reviewed,negative:scope.negative,missingQuantity:scope.missingQuantity},rows:scope.rows.slice(index*50,index*50+50).map(r=>({...r,pieces:null,reviewed:false,checks_passed:false})),readiness:{total:readiness.length,page:ready,pages:readinessPages,rows:readiness.slice(ready*20,ready*20+20)}}};}};`});
+ await page.addScriptTag({content:readFileSync(new URL('../search-state.js',import.meta.url),'utf8')});
  await page.addScriptTag({content:readFileSync(new URL('../tally-stock-review.js',import.meta.url),'utf8')});
- await page.evaluate(()=>{window.checklistRuns=0;const calculate=tallyGodownReadiness;tallyGodownReadiness=(...args)=>{window.checklistRuns++;return calculate(...args);};});
- await page.evaluate(()=>{tallyRows=Array.from({length:55},(_,i)=>({id:'c'+i,godown:'City Printer',product_name:'Blood bag '+i,quantity:i===0?-2:1,unit:'PCS'}));tallyRows.push({id:'other',godown:'City Printer 2',product_name:'Other-only item',quantity:22,unit:'PCS'});renderTallyStock();});
- await page.locator('#tallyGodown').selectOption({label:'City Printer'});
+ await page.evaluate(async()=>{fixtureRows=Array.from({length:55},(_,i)=>({id:'c'+i,godown:'City Printer',product_name:'Blood bag '+i,quantity:i===0?-2:1,unit:'PCS',balance_date:'2026-09-01'}));fixtureRows.push({id:'other',godown:'City Printer 2',product_name:'Other-only item',quantity:22,unit:'PCS',balance_date:'2026-09-01'});await tallyStockScreen();});
+ assert.equal(await page.evaluate(()=>fixtureCalls),1);
+ await page.locator('#tallyGodown').fill('City Printer');await page.waitForFunction(()=>tallyPageData?.total===55&&!tallyLoading);
  assert.equal(await page.locator('.cleanup-table tbody tr').count(),50);
- await page.locator('#tallyNext').click();assert.equal(await page.locator('.cleanup-table tbody tr').count(),5);
- await page.locator('#tallyGodown').selectOption({label:'City Printer 2'});
+ await page.locator('#tallyNext').click();await page.waitForFunction(()=>tallyPageData?.page===1&&!tallyLoading);assert.equal(await page.locator('.cleanup-table tbody tr').count(),5);
+ await page.locator('#tallyGodown').fill('City Printer 2');await page.waitForFunction(()=>tallyPageData?.total===1&&!tallyLoading);
  assert.equal(await page.locator('.cleanup-table tbody tr').count(),1);assert.equal(await page.locator('#tallyPrev').isDisabled(),true);
- await page.locator('#tallySearch').fill('Blood');assert.equal(await page.locator('.cleanup-table tbody tr').count(),0);
+ await page.locator('#tallySearch').fill('Blood');await page.waitForFunction(()=>tallyPageData?.total===0&&!tallyLoading);assert.equal(await page.locator('.cleanup-table tbody tr').count(),0);
  assert.equal(await page.locator('#tallySearch').evaluate(e=>e===document.activeElement),true);
- await page.locator('#tallyGodown').selectOption('City Printer');assert.equal(await page.locator('.cleanup-table tbody tr').count(),50);
+ await page.locator('#tallyGodown').fill('City Printer');await page.waitForFunction(()=>tallyPageData?.total===55&&!tallyLoading);assert.equal(await page.locator('.cleanup-table tbody tr').count(),50);
  assert.ok((await page.locator('#tallyScope').textContent()).includes('55 matching rows'));
  assert.ok((await page.locator('.cleanup-table tbody').textContent()).includes('Negative'));
- await page.locator('#tallySearch').fill('bag 54');await page.locator('[data-tally-review="c54"]').count().then(n=>assert.equal(n,1));
- assert.equal(await page.locator('#tallyFile').count(),0);
- assert.equal(await page.locator('#godownReadiness tbody tr').count(),2);
+ await page.locator('#tallySearch').fill('bag 54');await page.waitForFunction(()=>tallyPageData?.total===1&&!tallyLoading);assert.equal(await page.locator('[data-tally-review="c54"]').count(),1);
+ assert.equal(await page.locator('#tallyFile').count(),0);assert.equal(await page.locator('#godownReadiness tbody tr').count(),2);
  assert.ok((await page.locator('#godownReadiness').textContent()).includes('not that stock has been imported'));
- assert.equal(await page.evaluate(()=>window.checklistRuns),1,'search, filters and pagination must reuse the unchanged checklist');
- await page.addScriptTag({content:`let inventorySection='review';async function all(table){return table==='tally_stock_sources'?[{id:'new',godown:'Reloaded godown',product_name:'New source',quantity:1,unit:'PCS'}]:[];}`});
- await page.evaluate(()=>tallyStockScreen());
- assert.equal(await page.evaluate(()=>window.checklistRuns),2,'reloading data after a correction must recalculate');
+ await page.evaluate(async()=>{fixtureRows=[{id:'new',godown:'Reloaded godown',product_name:'New source',quantity:1,unit:'PCS',balance_date:'2026-09-01'}];tallyGodown='';tallySearch='';await tallyStockScreen();});
  assert.match(await page.locator('#godownReadiness').innerText(),/Reloaded godown/);
- console.log('PASS: isolated browser exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row, staff import hidden. No RPC writes.');
+ console.log('PASS: isolated bounded RPC fixture, exact godown selection, pagination reset, scoped search/focus, negative flag, correct review row and staff import hidden. No transport or writes.');
 }finally{await browser.close();}

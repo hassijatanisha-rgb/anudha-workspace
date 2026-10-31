@@ -2,39 +2,87 @@
 
 // Navigation only: these links reuse the existing permission-checked workflows.
 const workspaceGroups=[
- {name:'Main',tone:'main',items:[
-  ['Dashboard','dashboard'],['My tasks','personal','task'],['Client accounts','contacts'],['Product search','inventory','catalog'],['Reports','reports'],
+ {name:'Workspace',tone:'workspace',items:[
+  ['Dashboard','dashboard'],['My tasks','personal','task'],['Reports','reports'],
   ['My notes & reminders','personal','note'],['My calendar','personal','event'],['Travel requests','travel']
  ]},
- {name:'Orders',tone:'orders',items:[
-  ['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],['Contracts','contracts'],['Product prices','prices'],
-  ['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],['Accounting forms','accounting']
+ {name:'Sales',tone:'sales',items:[
+  ['Client accounts','contacts'],['Leads','leads','leads'],['Website inquiries','requests','inquiries'],['Complaints','requests','complaints'],['Pro formas','sales','proformas'],['Contracts','contracts'],['Product prices','prices']
  ]},
- {name:'Accounts',tone:'accounts',items:[
-  ['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
+ {name:'Stores',tone:'stores',items:[
+  ['Product search','inventory','catalog'],['Delivery progress','sales','delivery'],['Packing queue','packing','queue'],['Packing TV screen','packing','screen'],['Pending stock orders','pending'],['Purchasing','purchasing','orders'],['Suppliers','purchasing','suppliers'],
+  ['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations'],['Stock count','stockcount','count'],['Review stock counts','stockcount','review'],['Tally stock review','inventory','review']
  ]},
  {name:'Service',tone:'service',items:[
   ['Machines to install','service','installations'],['Service & maintenance schedule','service','schedule'],
   ['Service forms','service','forms']
  ]},
- {name:'Inventory',tone:'inventory',items:[
-  ['Stock & availability','inventory','stock'],['Move stock','inventory','transfers'],['Godowns & locations','inventory','locations'],['Stock count','stockcount','count'],['Review stock counts','stockcount','review'],['Tally stock review','inventory','review']
+ {name:'Accounts',tone:'accounts',items:[
+  ['Accounting forms','accounting'],['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
  ]},
- {name:'System',tone:'system',items:[
+ {name:'Admin',tone:'admin',items:[
   ['How to use','guide'],['Staff','staff'],['My settings','settings'],['Deleted items','recycle'],['Questions for the owner','approvals']
  ]}
 ];
 // Shown only once the signed-in person is known to be the owner (app.js load) or to have accounting access.
 // Keys are a view, or view:section for one page of a view.
 const ownerOnlyViews=new Set(['staff','approvals','recycle','stockcount:review','inventory:review']);
+let accountingNavigationRequest=0;
 async function showAccountingNavigation(){
- const items=[...document.querySelectorAll('#nav [data-accounting-only]')];if(!items.length)return;
+ const actor=me,epoch=sessionLoadEpoch,request=++accountingNavigationRequest,nav=document.querySelector('#nav'),items=[...document.querySelectorAll('#nav [data-accounting-only]')];if(!actor||!nav?.isConnected||!items.length)return;
+ const current=()=>me===actor&&sessionLoadEpoch===epoch&&accountingNavigationRequest===request&&document.querySelector('#nav')===nav&&nav.isConnected&&items.every(item=>item.isConnected&&nav.contains(item));
  items.forEach(item=>item.hidden=true);
  let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
+ if(!current())return;
  items.forEach(item=>item.hidden=!allowed);
  if(typeof navResumePending==='function')navResumePending();
 }
-let navWhileBusy=null;
+let navWhileBusy=null,workspaceLeaveSequence=0;
+function workspaceNavigationContext(){
+ clearWorkspaceStockTransition();
+ const actor=me,epoch=sessionLoadEpoch,sourceView=view,scope=workspaceRefreshScope(),hash=location.hash,request=++workspaceLeaveSequence;
+ return {current:()=>me===actor&&sessionLoadEpoch===epoch&&view===sourceView&&workspaceRefreshScope()===scope&&location.hash===hash&&request===workspaceLeaveSequence};
+}
+async function confirmWorkspaceLeave(current=workspaceNavigationContext().current){
+ for(const guard of [returnCreditPostingConfirmLeave,financialImportConfirmLeave,openingReceivablesConfirmLeave,salesConfirmLeave,inventoryConfirmLeave,confirmPurchasingLeave]){
+  if(!current()||!await guard(current))return false;
+ }
+ return current();
+}
+async function navigateWorkspace(button,{replay=false,context=null}={}){
+ if(!me||context&&!context.current())return;
+ context||=workspaceNavigationContext();
+ if(!await confirmWorkspaceLeave(context.current)||!button.isConnected||button.hidden)return;
+ if(busy){navWhileBusy={button,context,replay};actionFeedbackQueueNavigation(button);return;}
+ return run(async()=>{
+  if(!context.current()||!button.isConnected||button.hidden)return;
+  navRememberListPlace();
+  const target=button.dataset.view,section=button.dataset.workspaceSection,previousHash=location.hash,previousScope=workspaceRefreshScope();
+  if(button.closest('#nav')&&document.getElementById('workspaceMenuToggle'))navMobileSet(false,true);
+  if(target==='contacts')return goProfile('clients');
+  message('');
+  if(target==='personal'){personalSection=section||'event';personalPage=0;}
+  if(target==='leads')openLeadSection(section);
+  if(target==='purchasing')openPurchaseSection(section);
+  if(target==='stockcount')openStockCountSection(section);
+  if(target==='packing')openPackingSection(section);
+  if(target==='sales'){clearSalesPrefill();salesLoaded=false;salesFocusedProforma='';salesFocusedDelivery='';salesSection=section==='new'?'proformas':section||'proformas';salesEditing=section==='new'?'new':'';}
+  if(target==='contracts'){contractFocus='';contractPage=0;}
+  if(target==='service'){serviceLoaded=false;serviceSection=section||'installations';}
+  if(target==='books')openBooksSection(section);
+  if(target==='requests')openRequestSection(section);
+  if(target==='inventory')inventorySection=section||'stock';
+  if(!replay)navRecordMenuPage(button);
+  view=target;search='';page=0;
+  if(target==='inventory'&&inventorySection==='stock'&&(previousHash!==location.hash||previousScope!==workspaceRefreshScope()))beginWorkspaceStockTransition();
+  const rendered=navRenderListPlace(render);
+  // The renderer establishes its guarded request synchronously before its first await.
+  const actor=me,epoch=sessionLoadEpoch,hash=location.hash,scope=workspaceRefreshScope(),root=$('#content'),request=workspaceLeaveSequence;
+  const current=()=>me===actor&&sessionLoadEpoch===epoch&&location.hash===hash&&workspaceRefreshScope()===scope&&$('#content')===root&&request===workspaceLeaveSequence;
+  await rendered;
+  if(target==='sales'&&salesSection==='proformas'&&current())await restoreProformaDraft({current});
+ });
+}
 function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
@@ -47,34 +95,10 @@ function installWorkspaceNavigation(){
   document.documentElement.style.setProperty('--workspace-header-height',`${header.getBoundingClientRect().height}px`);
  }).observe(header);
  document.addEventListener('click',event=>{
-  const button=event.target.closest('#nav [data-view]');
-  // A menu press while a screen is still loading used to be dropped silently; it is kept and done when loading ends.
-  if(button&&typeof financialImportConfirmLeave==='function'&&!financialImportConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&typeof openingReceivablesConfirmLeave==='function'&&!openingReceivablesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&typeof returnCreditPostingConfirmLeave==='function'&&!returnCreditPostingConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&typeof salesConfirmLeave==='function'&&!salesConfirmLeave()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if(button&&busy){navWhileBusy=button;return;}
-  if(!button)return;
-  const section=button.dataset.workspaceSection;
- // A message from the previous screen ("LD-000001 saved.") must not follow the user to a different screen.
- if(typeof message==='function')message('');
-  if(button.dataset.view==='personal'){personalSection=section||'event';personalPage=0;}
-  if(button.dataset.view==='leads'&&typeof openLeadSection==='function')openLeadSection(section);
- if(button.dataset.view==='purchasing'&&typeof openPurchaseSection==='function')openPurchaseSection(section);
- if(button.dataset.view==='stockcount'&&typeof openStockCountSection==='function')openStockCountSection(section);
- if(button.dataset.view==='packing'&&typeof openPackingSection==='function')openPackingSection(section);
- if(button.dataset.view==='sales'){if(typeof clearSalesPrefill==='function')clearSalesPrefill();
-   salesLoaded=false;
-   if(typeof salesFocusedProforma!=='undefined')salesFocusedProforma='';
-   if(typeof salesFocusedDelivery!=='undefined')salesFocusedDelivery='';
-   salesSection=section==='new'?'proformas':section||'proformas';
-   salesEditing=section==='new'?'new':'';
-  }
-  if(button.dataset.view==='contracts'){contractFocus='';contractPage=0;}
-  if(button.dataset.view==='service'){serviceLoaded=false;serviceSection=section||'installations';}
-  if(button.dataset.view==='books'&&typeof openBooksSection==='function')openBooksSection(section);
-  if(button.dataset.view==='requests'&&typeof openRequestSection==='function')openRequestSection(section);
-  if(button.dataset.view==='inventory')inventorySection=section||'stock';
+  const button=event.target.closest('#nav [data-view]');if(!button)return;
+  // Consume the original event before awaiting: history and app listeners must not navigate yet.
+  event.preventDefault();event.stopImmediatePropagation();
+  return navigateWorkspace(button);
  },true);
 }
 function syncWorkspaceNavigation(){
@@ -83,8 +107,9 @@ function syncWorkspaceNavigation(){
  if(typeof syncPackingScreenMode==='function')syncPackingScreenMode();
  // The Dashboard is for the owner and department heads; staff start on My tasks.
  document.querySelectorAll('#nav [data-view="dashboard"]').forEach(button=>button.hidden=me?.role==='staff');
- // Moving between pages also checks the bell for new things (at most every 10 seconds).
- if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
+ // My tasks refreshes once after both panes settle and their seen cutoffs are saved.
+ if(view==='personal'&&personalSection==='task'){if(typeof bellInstall==='function')bellInstall();}
+ else if(typeof refreshNotificationBell==='function')refreshNotificationBell().catch(()=>{});
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
   const current=target==='sales'?salesSection:target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&typeof booksSection!=='undefined'?booksSection:null;

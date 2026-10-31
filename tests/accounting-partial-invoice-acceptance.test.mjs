@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 
 // Opt-in browser tests use only local scripts, synthetic data and an isolated browser.
 const enabled=process.env.ACCOUNTING_BROWSER_QA==='1';
-const sources=['sales-domain.js','accounting-ledger.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['ui-page-header.js','ui-dialogs.js','client-rules.js','action-feedback.js','sales-domain.js','accounting-ledger.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -20,11 +20,12 @@ async function fixture(t,{chosen='quote-a',lines}={}){
  const page=await browser.newPage();t.after(()=>page.close());
  await page.route('**/*',route=>route.abort());
  await page.setContent('<section id="content"><div id="booksBody"></div></section>');
+ await page.addStyleTag({content:readFileSync(new URL('../tokens.css',import.meta.url),'utf8')});
  await page.evaluate(()=>{
   window.me={user_id:'actor'};window.view='books';window.$=s=>document.querySelector(s);
   window.esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   window.organizations=[{id:'customer',name:'Test customer'}];
-  window.run=fn=>fn();window.calls=[];window.messages=[];window.message=s=>messages.push(s);window.refreshes=0;
+  window.busy=false;window.run=fn=>fn();window.calls=[];window.messages=[];window.message=s=>messages.push(s);window.refreshes=0;
   window.pendingLoaded=true;window.salesLoaded=true;window.inventoryLoaded=true;
   let nextId=0;Object.defineProperty(window,'crypto',{value:{randomUUID:()=>`request-${++nextId}`}});
   window.snapshots={};window.waiters={};window.delayQuantities=false;
@@ -36,7 +37,8 @@ async function fixture(t,{chosen='quote-a',lines}={}){
    }
    if(window.delayPost)await new Promise(resolve=>window.releasePost=resolve);
    if(window.postError){const error=postError;window.postError=null;if(error.transport)throw Error(error.message);return {error};}
-   return {data:{id:args.p_id,invoice_number:'INV-TEST',proforma_id:args.p_proforma_id}};
+   if(name==='void_invoice')return {data:{id:args.p_invoice_id,invoice_number:'INV-TEST',organization_id:'customer',voided_at:'2026-10-29T08:00:00Z',voided_by:'actor',void_reason:args.p_reason,void_entry_id:'void-entry'}};
+   return {data:{id:args.p_id,invoice_number:'INV-TEST',proforma_id:args.p_proforma_id,invoice_date:args.p_invoice_date,due_date:args.p_due_date,created_by:'actor',currency:'TZS',request_content:Object.fromEntries(Object.entries(args).filter(([key])=>key!=='p_id').map(([key,value])=>[key.slice(2),value]))}};
   }};
  });
  for(const source of sources)await page.addScriptTag({content:source});
@@ -62,7 +64,7 @@ acceptance('Accounts reviews four ordered, invoices two available and omits unav
  assert.match(await p.locator('[name="proforma"] option:checked').innerText(),/Quote total/);
  await p.locator('[name="accountsref"]').fill('APPROVAL-1');
  await post(p).click();
- await p.waitForFunction(()=>refreshes===1);
+ await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  const calls=await writes(p);assert.equal(calls.length,1);
  assert.deepEqual(calls[0].args.p_lines,[{proforma_line_id:'machine',quantity:2}]);
  assert.equal(calls[0].args.p_expected_version,7);assert.equal(calls[0].args.p_accounts_reference,'APPROVAL-1');
@@ -73,7 +75,7 @@ acceptance('Accounts reviews four ordered, invoices two available and omits unav
  await p.evaluate(()=>snapshots['quote-a'].lines[0].available_quantity=2);
  await p.locator('#booksInvoiceReload').click();await p.waitForFunction(()=>document.querySelector('[data-books-invoice-quantity]').value==='2');
  assert.match(await p.locator('#booksInvoiceReview').innerText(),/2 units selected.*0 units remain pending/);
- await p.locator('[name="accountsref"]').fill('APPROVAL-2');await post(p).click();await p.waitForFunction(()=>refreshes===2);
+ await p.locator('[name="accountsref"]').fill('APPROVAL-2');await post(p).click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  const later=await writes(p);assert.equal(later.length,2);assert.deepEqual(later[1].args.p_lines,[{proforma_line_id:'machine',quantity:2}]);assert.notEqual(later[0].args.p_id,later[1].args.p_id);
 });
 
@@ -87,7 +89,7 @@ acceptance('No selected quantity may exceed the balance, available stock or whol
  await quantities(p).first().fill('1');assert.equal(await post(p).isDisabled(),false);
  await p.locator('[name="deliverydate"]').fill('2020-01-01');
  await p.locator('#booksInvoiceForm').evaluate(form=>form.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true})));
- assert.match(await p.locator('#booksInvoiceStatus').innerText(),/today or later/);
+ assert.match(await p.locator('[name="deliverydate"]').locator('..').innerText(),/today or later/);
  assert.equal((await writes(p)).length,0);
 });
 
@@ -105,7 +107,7 @@ acceptance('An older quantity response cannot replace a different selected order
  await p.evaluate(()=>waiters['quote-b']());await p.waitForSelector('[data-books-invoice-quantity="other"]');
  await p.evaluate(()=>waiters['quote-a']());
  assert.equal(await quantities(p).count(),1);assert.equal(await quantities(p).first().getAttribute('data-books-invoice-quantity'),'other');
- await p.locator('[name="accountsref"]').fill('B-APPROVAL');await post(p).click();await p.waitForFunction(()=>refreshes===1);
+ await p.locator('[name="accountsref"]').fill('B-APPROVAL');await post(p).click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  assert.equal((await writes(p))[0].args.p_proforma_id,'quote-b');
 });
 
@@ -136,7 +138,7 @@ acceptance('Uncertain posting locks details and retries exactly the same request
  await p.waitForFunction(()=>document.querySelector('#booksInvoicePost').textContent==='Retry same invoice');
  assert.equal(await p.locator('[name="proforma"]').isDisabled(),true);
  assert.equal(await p.locator('[name="accountsref"]').isDisabled(),true);
- await post(p).click();await p.waitForFunction(()=>refreshes===1);
+ await post(p).click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  const calls=await writes(p);assert.equal(calls.length,2);assert.deepEqual(calls[1],calls[0]);
 });
 
@@ -148,7 +150,7 @@ acceptance('Confirmed SQL rejection permits correction; unchanged retry keeps it
  await p.evaluate(()=>window.postError={code:'P0001',message:'Stock changed again.'});
  await post(p).click();await p.waitForFunction(()=>document.querySelector('#booksInvoiceStatus').textContent.includes('again'));
  let calls=await writes(p);assert.equal(calls[0].args.p_id,calls[1].args.p_id);
- await quantities(p).first().fill('1');await post(p).click();await p.waitForFunction(()=>refreshes===1);
+ await quantities(p).first().fill('1');await post(p).click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  calls=await writes(p);assert.notEqual(calls[2].args.p_id,calls[1].args.p_id);assert.equal(calls[2].args.p_lines[0].quantity,1);
 });
 
@@ -166,7 +168,7 @@ acceptance('Unknown transaction completion keeps details locked even when the se
  await p.evaluate(()=>window.postError={code:'08007',message:'Transaction resolution unknown'});
  await post(p).click();await p.waitForFunction(()=>document.querySelector('#booksInvoicePost').textContent==='Retry same invoice');
  assert.equal(await p.locator('[name="accountsref"]').isDisabled(),true);
- await post(p).click();await p.waitForFunction(()=>refreshes===1);
+ await post(p).click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  const calls=await writes(p);assert.deepEqual(calls[1],calls[0]);
 });
 
@@ -177,20 +179,21 @@ acceptance('Voiding an invoice invalidates its pending balance so reopening Pend
  await p.evaluate(()=>{
   pendingLoaded=true;pendingAvailabilityDay=pendingToday();window.pendingReads=0;window.syncWorkspaceNavigation=()=>{};
   loadPendingStock=async()=>{pendingReads++;pendingLoaded=true;return true;};renderPendingStock=()=>{};
-  booksVoidPrompt('invoice',{id:'invoice',invoice_number:'INV-TEST'});
+  booksVoidPrompt('invoice',{id:'invoice',invoice_number:'INV-TEST',organization_id:'customer'});
  });
  await p.locator('#booksVoidForm [name="reason"]').fill('Cancelled delivery');
- await p.locator('#booksVoidForm [type="submit"]').click();await p.waitForFunction(()=>refreshes===1);
+ await p.locator('[form="booksVoidForm"][type="submit"]').click();await p.waitForFunction(()=>document.querySelector('[data-books-posted-open]'));assert.equal(await p.evaluate(()=>refreshes),0);
  assert.equal(await p.evaluate(()=>pendingLoaded),false);
+ await p.locator('#booksVoidCancel').click();await p.locator('dialog[data-books-editor]').waitFor({state:'detached'});
  await p.evaluate(()=>{view='pending';return pendingStockWorkspace();});
  assert.equal(await p.evaluate(()=>pendingReads),1);
 });
 
 acceptance('A void result from a previous session cannot clear the new session cache or announce success',async t=>{
  const p=await fixture(t);
- await p.evaluate(()=>{window.delayPost=true;booksVoidPrompt('invoice',{id:'invoice',invoice_number:'INV-TEST'});});
+ await p.evaluate(()=>{window.delayPost=true;booksVoidPrompt('invoice',{id:'invoice',invoice_number:'INV-TEST',organization_id:'customer'});});
  await p.locator('#booksVoidForm [name="reason"]').fill('Cancelled delivery');
- await p.locator('#booksVoidForm [type="submit"]').click();await p.waitForFunction(()=>typeof releasePost==='function');
+ await p.locator('[form="booksVoidForm"][type="submit"]').click();await p.waitForFunction(()=>typeof releasePost==='function');
  await p.evaluate(()=>{me={user_id:'actor'};pendingLoaded=true;releasePost();});
  assert.equal(await p.evaluate(()=>pendingLoaded),true);assert.equal(await p.evaluate(()=>refreshes),0);assert.equal(await p.evaluate(()=>messages.length),0);
 });

@@ -1,9 +1,10 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
- const ctx=vm.createContext({products:[{id:'p1',name:'Blood bag'}],employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String,Object,Map,Set});
+ const ctx=vm.createContext({workspacePageHeader,products:[{id:'p1',name:'Blood bag'}],employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String,Object,Map,Set});
  vm.runInContext(readFileSync(new URL('../business-date.js',import.meta.url),'utf8'),ctx);
  vm.runInContext(readFileSync(new URL('../reports.js',import.meta.url),'utf8'),ctx);return ctx;
 }

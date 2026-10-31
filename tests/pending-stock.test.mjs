@@ -1,11 +1,13 @@
+import {installPageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(){
- const ctx=vm.createContext({orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],me:{user_id:'a',role:'staff'},
-  esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String});
- vm.runInContext(readFileSync(new URL('../page-refresh.js',import.meta.url),'utf8'),ctx);vm.runInContext(readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8'),ctx);return ctx;
+ const ctx=vm.createContext({statusTone,workspaceLoading(){},workspaceRefreshRetaining:()=>false,orgIndex:new Map([['org',{name:'Fixture Hospital',location:'Dar'}]]),products:[{id:'p1',name:'Blood bag'},{id:'p2',name:'Cannula'}],me:{user_id:'a',role:'staff'},
+  esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),workResponsibleHtml:()=>'',employeeName:id=>({a:'Asha',b:'Baraka'}[id]||'Employee name not set'),Date,Math,Number,String});
+ installPageHeader(ctx);vm.runInContext(readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8'),ctx);return ctx;
 }
 test('available pieces count cartons, loose and reservations only at active available locations',()=>{
  const ctx=load();
@@ -42,37 +44,31 @@ test('availability loader requests expiry dates from the database',async()=>{
 });
 test('rendering after midnight stops using yesterday availability',()=>{
  const ctx=load(),content={innerHTML:''};ctx.$=()=>content;ctx.bindPendingStock=()=>{};ctx.salesProformas=[];
- vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);pendingRows=[{id:'r',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:20,expires_on:'2099-01-01'}];`,ctx);
+ vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingAvailability=new Map([['p1',50]]);pendingPageData={rows:[{id:'r',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:20,expires_on:'2099-01-01',available_units:50}],as_of:'2026-10-01',total:1,page:0,pages:1,counts:{},mine_arrived:1};`,ctx);
  ctx.renderPendingStock();
  assert.doesNotMatch(content.innerHTML,/Stock has arrived for|Stock arrived: 50/);
  assert.match(content.innerHTML,/previous day.*Refresh/);
  assert.match(content.innerHTML,/Stock check unavailable/);
 });
 test('reopening pending orders after midnight forces a fresh load',async()=>{
- const ctx=load();let loads=0;ctx.$=()=>({innerHTML:''});ctx.syncWorkspaceNavigation=()=>{};ctx.renderPendingStock=()=>{};ctx.view='pending';
- ctx.loadPendingStock=async()=>{loads++;return true;};
+ const ctx=load();let loads=0;ctx.$=selector=>selector==='#pendingSearch'?null:({innerHTML:''});ctx.syncWorkspaceNavigation=()=>{};ctx.renderPendingStock=()=>{};ctx.view='pending';
+ ctx.loadPendingPage=async()=>{loads++;return true;};
  vm.runInContext(`pendingToday=()=> '2026-10-02';pendingAvailabilityDay='2026-10-01';pendingLoaded=true;`,ctx);
  await ctx.pendingStockWorkspace();assert.equal(loads,1);
 });
 test('returning to pending orders rechecks same-day stock arrivals and depletion',async()=>{
  const ctx=load(),content={innerHTML:''},reads=[];let quantity=0;
- ctx.$=()=>content;ctx.bindPendingStock=()=>{};ctx.syncWorkspaceNavigation=()=>{};ctx.salesLoaded=true;ctx.salesProformas=[];ctx.view='pending';
+ ctx.$=selector=>selector==='#pendingSearch'?null:content;ctx.bindPendingStock=()=>{};ctx.syncWorkspaceNavigation=()=>{};ctx.salesLoaded=true;ctx.salesProformas=[];ctx.view='pending';
  vm.runInContext(`pendingToday=()=> '2026-10-02';`,ctx);
- ctx.all=async table=>{
-  reads.push(table);
-  return {
-   pending_stock_requests:[{id:'r',request_number:'PS-1',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:2,expires_on:'2027-01-01',extension_count:0}],
-   inventory_lots:[{product_id:'p1',location_id:'main',pack_definition_id:'box10',sealed_cartons:0,loose_units:quantity,reserved_units:0,stock_status:'available'}],
-   product_pack_definitions:[{id:'box10',units_per_carton:10}],inventory_locations:[{id:'main',active:true}]
-  }[table]||[];
- };
+ ctx.client={rpc:async name=>{reads.push(name);return {data:{rows:[{id:'r',request_number:'PS-1',product_id:'p1',organization_id:'org',salesperson_user_id:'a',status:'waiting',quantity:2,expires_on:'2027-01-01',extension_count:0,page_summary:true,product_name:'Blood bag',client_label:'Fixture Hospital',available_units:quantity}],availability_error:false,as_of:'2026-10-02',total:1,page:0,pages:1,counts:{all:1,waiting:1,arrived:quantity>=2?1:0,mine:1,due:0,closed:0},mine_arrived:quantity>=2?1:0}};}};
  await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Waiting for stock/);
  ctx.view='inventory';quantity=2;ctx.view='pending';
- await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Stock arrived: 2 available/);assert.match(content.innerHTML,/Stock has arrived for 1/);
+ await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/pending-arrived/);assert.match(content.innerHTML,/Stock has arrived for 1/);
+ assert.equal(vm.runInContext('pendingPageData.rows[0].available_units',ctx),2,'the summary retains exact availability for the detail path');
  ctx.view='inventory';quantity=0;ctx.view='pending';
- await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Waiting for stock/);assert.doesNotMatch(content.innerHTML,/Stock arrived: 2 available|Stock has arrived for/);
- assert.equal(reads.filter(table=>table==='inventory_lots').length,3);
- assert.equal(reads.filter(table=>table==='pending_stock_requests').length,1,'returning only refreshes availability; request rows retain their existing cache');
+ await ctx.pendingStockWorkspace();assert.match(content.innerHTML,/Waiting for stock/);assert.doesNotMatch(content.innerHTML,/pending-arrived|Stock has arrived for/);
+ assert.deepEqual(reads,['pending_stock_page','pending_stock_page','pending_stock_page']);
+ assert.equal(vm.runInContext('pendingRows.length',ctx),0,'bounded pages do not replace the complete request cache');
 });
 test('state labels: arrived, partial, waiting, due and unknown availability',()=>{
  const ctx=load(),waiting={status:'waiting',quantity:10,expires_on:'2027-03-30'},today='2026-09-30';

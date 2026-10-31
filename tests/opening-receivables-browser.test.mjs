@@ -1,3 +1,4 @@
+import {leaveScopeSource,leaveContextSource} from './helpers/leave-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -12,7 +13,9 @@ async function fixture(t){
   crypto.randomUUID=()=> '00000000-0000-4000-8000-000000000003';window.fixtureBooksSelectAll=async table=>table==='organizations'?[{id:'00000000-0000-4000-8000-000000000001',name:'Fixture Clinic',location:'Dar'}]:[{id:'00000000-0000-4000-8000-000000000002',source:'Legacy GL',created_at:'2026-10-01'}];
   window.client={rpc:async(name,args)=>{calls.push({name,args});if(name==='opening_receivables_check')return window.checkError?{error:{message:checkError}}:{data:{gl_import_id:args.p_gl_import_id,cutover_date:args.p_cutover,reconciled:true,difference_minor:0,imported_gl_ar_minor:12345,opening_residual_minor:12345,control_ar_minor:12345,customer_subledger_minor:12345}};
    if(name==='opening_receivables_status')return {data:null};if(window.delayPost)await new Promise(resolve=>window.releasePost=resolve);if(window.offline)throw Error('Connection lost');return {data:{gl_import_id:args.p_gl_import_id,cutover_date:args.p_cutover,reconciled:true,difference_minor:0,invoices:[{invoice_id:'invoice'}],imported_count:1}};}};});
- for(const name of ['vendor/xlsx.full.min.js','business-date.js','sales-domain.js','accounting-ledger.js','financial-import.js','opening-receivables.js'])await p.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
+ for(const name of ['ui-motion.js','ui-page-header.js','vendor/xlsx.full.min.js','business-date.js','sales-domain.js','accounting-ledger.js','financial-import.js','opening-receivables.js'])await p.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
+ await p.evaluate(()=>{window.sessionLoadEpoch=0;});
+ await p.addScriptTag({content:leaveScopeSource+'\n'+leaveContextSource});
  await p.evaluate(async()=>{booksSelectAll=fixtureBooksSelectAll;booksSection='opening';await openingReceivablesWorkspace('actor',()=>true)});
  await p.locator('[name="source"]').fill('Legacy AR');await p.locator('[name="cutover"]').fill('2026-10-01');await p.locator('[name="gl"]').selectOption('00000000-0000-4000-8000-000000000002');
  const text='Invoice Reference,Customer UUID,Invoice Date,Due Date,Residual Amount,Currency\r\nHIST-001,00000000-0000-4000-8000-000000000001,2026-08-01,2026-09-01,123.45,TZS';

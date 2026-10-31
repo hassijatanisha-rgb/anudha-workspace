@@ -1,9 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {statusTone} from './helpers/status-ui.mjs';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
-function load(){const ctx=vm.createContext({esc:s=>String(s??''),catalogCategoryOf:p=>p.category||'unclassified'});vm.runInContext(read('data-quality.js'),ctx);return ctx;}
+function load(){const ctx=vm.createContext({workspacePageHeader,statusTone,esc:s=>String(s??''),catalogCategoryOf:p=>p.category||'unclassified'});vm.runInContext(read('data-quality.js'),ctx);return ctx;}
 const product=(extra={})=>({id:'p',name:'Blood Bag',sku:'AN-00001',category:'consumables',source:{company:'Fixture Co',specification:'450 ml'},...extra});
 test('no colour when complete, yellow for one problem, red for two or more',()=>{
  const ctx=load(),level=p=>ctx.productQuality(p,null).level;
@@ -37,7 +39,7 @@ test('colours, Furniture and the owner upload are wired into the pages',()=>{
  assert.match(read('supabase/migrations/202609300048_apply_product_list.sql'),/'machines','furniture','reagents'/);
 });
 test('product pickers label reviewed products so a choice can be found again',()=>{
- const ctx=vm.createContext({products:[{id:'p1',name:'Old name',sku:'',source:{}}],reviewedCatalogProduct:p=>({...p,name:'Reviewed name',source:{company:'Co',specification:'S'}}),esc:s=>String(s),inventoryProductChoice:p=>`${p.name} · ${p.id}`});
+ const ctx=vm.createContext({workspacePageHeader,products:[{id:'p1',name:'Old name',sku:'',source:{}}],reviewedCatalogProduct:p=>({...p,name:'Reviewed name',source:{company:'Co',specification:'S'}}),esc:s=>String(s),inventoryProductChoice:p=>`${p.name} · ${p.id}`});
  vm.runInContext(read('sales-delivery.js').match(/function salesProductChoices\(\)\{.*\}/)[0],ctx);
  assert.match(ctx.salesProductChoices(),/Reviewed name · p1/);assert.doesNotMatch(ctx.salesProductChoices(),/Old name/);
 });

@@ -7,10 +7,16 @@ let financialImportState=null,financialImportEpoch=0;
 function clearFinancialImport(){financialImportEpoch++;financialImportState=null;}
 function financialImportHasDraft(){return !!financialImportState?.preview&&!financialImportState.result;}
 function financialImportIsPosting(){return !!financialImportState&&(financialImportState.busy||financialImportState.uncertain);}
-function financialImportConfirmLeave(){
+async function financialImportConfirmLeave(current=workspaceNavigationContext().current){
+ if(!current())return false;
  if(typeof view==='undefined'||view!=='books'||typeof booksSection==='undefined'||booksSection!=='import')return true;
+ const actor=me,epoch=financialImportEpoch,state=financialImportState,preview=state?.preview;
  if(financialImportIsPosting()){message('Confirm this import’s result before leaving. Wait for posting to finish, or use Retry and reconcile this import.',true);return false;}
- if(financialImportHasDraft()&&!confirm('Discard this import preview? No journals have been posted from this preview.'))return false;
+ if(preview&&!state.result){
+  if(!await askConfirm({title:'Discard import preview?',body:'No journals have been posted from this preview.',confirmLabel:'Discard preview',tone:'danger'}))return false;
+  if(!current()||me!==actor||financialImportEpoch!==epoch||view!=='books'||booksSection!=='import'||financialImportState!==state||state.preview!==preview||state.busy||state.uncertain||state.result)return false;
+ }
+ if(!current())return false;
  clearFinancialImport();return true;
 }
 function financialImportDate(value,date1904=false){
@@ -131,38 +137,53 @@ async function financialImportPost(backend,request,current){
  error.uncertain=!rejected;throw error;
 }
 async function financialImportWorkspace(actor,current){
- const epoch=++financialImportEpoch,identity=actor||await requireAccountingAccess(client,()=>me);
- const active=()=>me?.user_id===identity&&epoch===financialImportEpoch&&(current?current():view==='books'&&booksSection==='import');
+ const session=me,epoch=++financialImportEpoch,identity=actor||await requireAccountingAccess(client,()=>me);
+ const active=()=>me===session&&me?.user_id===identity&&epoch===financialImportEpoch&&(current?current():view==='books'&&booksSection==='import');
  if(!active())return;
- const [accounts,settings]=await Promise.all([booksSelectAll('acc_accounts','*',q=>q.order('code')),booksSelect('acc_settings','*')]);
+ const settings=await booksSelect('acc_settings','*');
+ let accounts=null,accountLoad=null;
+ const loadAccounts=()=>{
+  if(accounts)return Promise.resolve(accounts);
+  if(!accountLoad)accountLoad=booksSelectAll('acc_accounts','*',q=>q.order('code')).then(rows=>{if(!active())return null;accounts=rows;state.accounts=rows;return rows;}).finally(()=>{accountLoad=null;});
+  return accountLoad;
+ };
  if(!active())return;
  financialImportState={actor:identity,accounts,lockedThrough:settings[0]?.locked_through||null,workbook:null,sheet:'',preview:null,request:null,busy:false,uncertain:false,result:null};
  const state=financialImportState;
  $('#booksBody').innerHTML=`${booksCutoverChecklist()}<section class="card"><h2>Import Excel financials</h2><p>Import opening balances or journal transactions in TZS. Each Entry Reference becomes one balanced journal entry.</p><p class="muted">This imports general-ledger journals. It does not create customer invoices, receipts, allocations or stock. Reconcile receivables/payables control accounts and their customer/supplier details separately before relying on ageing reports.</p>
  <div class="actions"><button type="button" id="financialTemplate">Download Excel template</button><button type="button" id="financialCsvTemplate">Download CSV template</button></div>
  <form id="financialImportForm"><div class="grid"><label><span>Import type</span><select name="kind"><option value="opening">Opening balances</option><option value="journal">Journal transactions</option></select></label><label><span>Source name · keep the same on retries</span><input name="source" required maxlength="80" placeholder="Name of the source ledger"></label><label class="wide"><span>Excel workbook or CSV · maximum 5 MB</span><input name="file" type="file" accept=".xlsx,.csv"></label><label id="financialSheetLabel" hidden><span>Sheet to import</span><select name="sheet"></select></label></div>
- <p class="muted">The file stays in this browser during preview. Posting saves all reviewed entries together. Previously imported source/reference pairs are skipped only when their details match exactly. After a lost connection or sign-out, select the same file and source name to recover its result without posting it twice.</p><div id="financialImportPreview" aria-live="polite"></div><p id="financialImportStatus" role="status"></p><button type="submit" id="financialImportCommit" disabled>Post reviewed journals</button><button type="button" id="financialImportNew" hidden>Start another import</button></form></section>`;
+ <p class="muted">The file stays in this browser during preview. Posting saves all reviewed entries together. Previously imported source/reference pairs are skipped only when their details match exactly. After a lost connection or sign-out, select the same file and source name to recover its result without posting it twice.</p><div id="financialImportPreview" aria-live="polite"></div><p id="financialImportStatus" role="status"></p><button type="submit" id="financialImportCommit" disabled>Post reviewed journals</button><button type="button" id="financialImportNew" hidden>Start another import</button><p id="financialImportNewStatus" role="status"></p></form></section>`;
  const form=$('#financialImportForm'),status=$('#financialImportStatus'),button=$('#financialImportCommit');
  const redraw=()=>{
   const p=state.preview;
-  $('#financialImportPreview').innerHTML=!p?'':`<h3>${p.entries.length} entries · ${p.rows.length} rows</h3>${p.errors.length?`<p class="error">${p.errors.length} problems must be corrected in the file before posting.</p><ul class="error">${p.errors.slice(0,50).map(error=>`<li>${esc(error)}</li>`).join('')}</ul>${p.errors.length>50?'<p>Only the first 50 problems are listed; row details show the remaining problems.</p>':''}`:'<p>Every entry balances and all account codes are active.</p>'}<div class="table-wrap"><table><thead><tr><th>Entry reference</th><th>Date</th><th>Debits</th><th>Credits</th></tr></thead><tbody>${p.entries.map(entry=>`<tr><td>${esc(entry.reference)}</td><td>${esc(entry.date)}</td><td>${booksMoney(entry.lines.reduce((total,line)=>total+line.debit_minor,0))}</td><td>${booksMoney(entry.lines.reduce((total,line)=>total+line.credit_minor,0))}</td></tr>`).join('')}</tbody></table></div><div class="table-wrap"><table><thead><tr><th>Row</th>${financialImportHeaders.map(h=>`<th>${esc(h)}</th>`).join('')}<th>Check</th></tr></thead><tbody>${p.rows.map(row=>`<tr><td>${row.number}</td>${row.values.map(value=>`<td>${esc(String(value))}</td>`).join('')}<td>${row.errors.length?esc(row.errors.join(' ')):'Ready'}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#financialImportPreview').innerHTML=!p?'':`<h3>${p.entries.length} entries · ${p.rows.length} rows</h3>${p.errors.length?`<p class="error">${p.errors.length} problems must be corrected in the file before posting.</p><ul class="error">${p.errors.slice(0,50).map(error=>`<li>${esc(error)}</li>`).join('')}</ul>${p.errors.length>50?'<p>Only the first 50 problems are listed; row details show the remaining problems.</p>':''}`:'<p>Every entry balances and all account codes are active.</p>'}<div class="table-wrap"><table><thead><tr><th>Entry reference</th><th>Date</th><th>Debits</th><th class="numeric-cell">Credits</th></tr></thead><tbody>${p.entries.map(entry=>`<tr><td>${esc(entry.reference)}</td><td>${esc(entry.date)}</td><td class="numeric-cell">${booksMoney(entry.lines.reduce((total,line)=>total+line.debit_minor,0))}</td><td class="numeric-cell">${booksMoney(entry.lines.reduce((total,line)=>total+line.credit_minor,0))}</td></tr>`).join('')}</tbody></table></div><div class="table-wrap"><table><thead><tr><th>Row</th>${financialImportHeaders.map(h=>`<th>${esc(h)}</th>`).join('')}<th>Check</th></tr></thead><tbody>${p.rows.map(row=>`<tr><td>${row.number}</td>${row.values.map(value=>`<td>${esc(String(value))}</td>`).join('')}<td>${row.errors.length?esc(row.errors.join(' ')):'Ready'}</td></tr>`).join('')}</tbody></table></div>`;
   for(const control of [form.kind,form.source,form.file,form.sheet])control.disabled=state.busy||state.uncertain||!!state.result;
   $('#financialImportNew').hidden=!state.result;
-  button.disabled=state.busy||!!state.result||!p||!!p.errors.length||!form.source.value.trim();button.textContent=state.busy?'Posting…':state.uncertain?'Retry and reconcile this import':'Post reviewed journals';
+  button.disabled=state.busy||!!state.result||!p||!!p.errors.length||!form.source.value.trim();button.textContent=state.uncertain?'Retry and reconcile this import':'Post reviewed journals';
  };
  const preview=()=>{if(!active())return;state.request=null;state.result=null;state.preview=state.workbook?financialImportPreview(state.workbook.Sheets[state.sheet],accounts,{date1904:!!state.workbook.Workbook?.WBProps?.date1904,lockedThrough:state.lockedThrough}):null;status.textContent='';redraw();};
- $('#financialTemplate').onclick=()=>{if(active())XLSX.writeFile(financialImportTemplate(accounts),'financial-journals-template.xlsx');};
+ $('#financialTemplate').onclick=()=>run(async()=>{if(!active())return;const rows=await loadAccounts();if(active()&&rows)XLSX.writeFile(financialImportTemplate(rows),'financial-journals-template.xlsx');});
  $('#financialCsvTemplate').onclick=()=>{if(active())booksDownload('financial-journals-template.csv',booksCsv(financialImportHeaders.map((h,i)=>[String(i),h]),[]));};
- $('#financialImportNew').onclick=()=>{if(active())financialImportWorkspace(identity,current).catch(error=>message(error.message,true));};
+ // A failed settings read keeps this confirmed form available for the same read-only retry.
+ const newImport=$('#financialImportNew'),newStatus=$('#financialImportNewStatus');let newImportEpoch=epoch;
+ const canStartImport=()=>me===session&&me?.user_id===identity&&financialImportEpoch===newImportEpoch&&(current?current():view==='books'&&booksSection==='import')&&newImport.isConnected;
+ newImport.onclick=()=>{
+  if(!canStartImport()||newImport.disabled)return;if(busy){actionFeedbackRefuse(newImport,newStatus);return;}actionFeedbackShow(actionFeedbackReference(newImport),'');newImport.disabled=true;
+  return run(async()=>{const loading=financialImportWorkspace(identity,current);newImportEpoch=financialImportEpoch;try{await loading;}catch(error){if(canStartImport())throw error;}finally{if(canStartImport())newImport.disabled=false;}},{origin:newImport,errorTarget:newStatus,busyLabel:'Starting another import…'});
+ };
  let fileEpoch=0;
- form.file.onchange=async()=>{const generation=++fileEpoch;state.workbook=null;state.preview=null;state.request=null;form.sheet.innerHTML='';$('#financialSheetLabel').hidden=true;redraw();status.textContent='Reading file locally…';try{const workbook=await financialImportRead(form.file.files[0]);if(!active()||generation!==fileEpoch)return;state.workbook=workbook;state.sheet=workbook.SheetNames.includes('Journal')?'Journal':workbook.SheetNames[0];form.sheet.innerHTML=workbook.SheetNames.map(name=>`<option value="${esc(name)}"${name===state.sheet?' selected':''}>${esc(name)}</option>`).join('');$('#financialSheetLabel').hidden=workbook.SheetNames.length===1;preview();}catch(error){if(active()&&generation===fileEpoch){status.textContent=error.message;redraw();}}};
+ form.file.onchange=async()=>{const generation=++fileEpoch;state.workbook=null;state.preview=null;state.request=null;form.sheet.innerHTML='';$('#financialSheetLabel').hidden=true;redraw();status.textContent='Reading file locally…';try{const [workbook,rows]=await Promise.all([financialImportRead(form.file.files[0]),loadAccounts()]);if(!active()||generation!==fileEpoch||!rows)return;state.workbook=workbook;state.sheet=workbook.SheetNames.includes('Journal')?'Journal':workbook.SheetNames[0];form.sheet.innerHTML=workbook.SheetNames.map(name=>`<option value="${esc(name)}"${name===state.sheet?' selected':''}>${esc(name)}</option>`).join('');$('#financialSheetLabel').hidden=workbook.SheetNames.length===1;preview();}catch(error){if(active()&&generation===fileEpoch){status.textContent=error.message;redraw();}}};
  form.sheet.onchange=()=>{state.sheet=form.sheet.value;preview();};form.kind.onchange=preview;form.source.oninput=()=>{state.request=null;redraw();};
  form.onsubmit=async event=>{
   event.preventDefault();if(!active()||button.disabled)return;
+  if(busy){actionFeedbackRefuse(button,status);return;}actionFeedbackShow(actionFeedbackReference(button),'');
   if(!state.request)state.request={p_id:crypto.randomUUID(),p_source:form.source.value.trim(),p_kind:form.kind.value,p_entries:state.preview.entries};
   state.busy=true;status.textContent='Checking access and posting reviewed journals…';redraw();
-  try{await requireAccountingAccess(client,()=>me);if(!active())return;const result=await financialImportPost(client,state.request,active);if(!active())return;state.result=result;state.uncertain=false;status.textContent=`Import confirmed: ${result.imported_count} posted, ${result.skipped_count} already imported. ${result.entries.map(entry=>`${entry.reference}: ${entry.entry_number}`).join('; ')}`;}
+  return run(async()=>{
+  try{await requireAccountingAccess(client,()=>me);if(!active())return;const result=await financialImportPost(client,state.request,active);if(!active())return;state.result=result;state.uncertain=false;status.textContent=`Import confirmed: ${result.imported_count} posted, ${result.skipped_count} already imported. ${result.entries.map(entry=>`${entry.reference}: ${entry.entry_number}`).join('; ')}`;message('Financial import confirmed.');}
   catch(error){if(active()){state.uncertain=!!error.uncertain;status.textContent=error.message;}}
   finally{if(active()){state.busy=false;redraw();}}
+  },{origin:button,errorTarget:status,busyLabel:'Posting reviewed journals…'});
  };
 }

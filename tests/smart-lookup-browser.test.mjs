@@ -63,7 +63,7 @@ try{
  console.log('PASS: ordinary select and free-text datalist retain their existing value behavior');
 
  await page.evaluate(()=>{window.me={user_id:'sales',role:'staff'};window.esc=value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');});
- for(const file of ['sales-domain.js','product-pricing.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ for(const file of ['ui-page-header.js','sales-domain.js','product-pricing.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   productPricingActor=me;productSalePrices=new Map([[pricingKey(fixtureProducts[1].id,'TZS'),{unit_price_minor:10000}]]);
   const form=document.createElement('form');form.id='pricingForm';form.innerHTML='<div id="pricingHelp"></div><select name="currency"><option>TZS</option></select><div data-proforma-line><label><span>Quoted product</span><input name="productChoice" list="pricingProducts" required></label><input name="quantity" type="number" value="1" required>'+pricingLineFields()+'</div><datalist id="pricingProducts" data-lookup-values="products"></datalist><button>Save quote</button>';

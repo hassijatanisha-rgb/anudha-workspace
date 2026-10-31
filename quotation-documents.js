@@ -3,8 +3,8 @@
 function quotationDocumentsButton(record){return `<button type="button" data-quotation-documents="${esc(record.id)}">Quotation documents</button>`;}
 function productBrochuresButton(product){return `<button type="button" data-product-brochures="${esc(product.id)}">Product brochures</button>`;}
 function bindQuotationDocuments(){
- document.querySelectorAll('[data-quotation-documents]').forEach(button=>button.onclick=()=>run(()=>openQuotationDocuments(salesProforma(button.dataset.quotationDocuments))));
- document.querySelectorAll('[data-product-brochures]').forEach(button=>button.onclick=()=>run(()=>openDocumentAttachments('product',button.dataset.productBrochures,salesProduct(button.dataset.productBrochures).name)));
+ document.querySelectorAll('[data-quotation-documents]').forEach(button=>button.onclick=()=>run(()=>openQuotationDocuments(salesProforma(button.dataset.quotationDocuments)),{origin:button}));
+ document.querySelectorAll('[data-product-brochures]').forEach(button=>button.onclick=()=>run(()=>openDocumentAttachments('product',button.dataset.productBrochures,salesProduct(button.dataset.productBrochures).name),{origin:button}));
 }
 function quotationDocumentParents(record){
  const parents=[{type:'proforma',id:record.id,label:'Quotation supporting files'}],seen=new Set();
@@ -40,9 +40,10 @@ function quotationSupportingZip(files){
 }
 async function openQuotationDocuments(record){
  if(!record?.id||!me?.user_id)throw Error('Choose a saved quotation.');
- const actor=me,openingView=view,epoch=salesEpoch,version=record.version,selected=new Map();let dialog=null,busy=false,page=0,parentIndex=0;
+ const actor=me,openingView=view,epoch=salesEpoch,version=record.version,trigger=document.activeElement,selected=new Map();let dialog=null,working=false,page=0,parentIndex=0;
+ const scopeCurrent=()=>me===actor&&view===openingView&&salesEpoch===epoch&&salesProforma(record.id)?.version===version;
  const current=()=>{
-  const valid=me===actor&&view===openingView&&salesEpoch===epoch&&salesProforma(record.id)?.version===version&&(!dialog||dialog.isConnected);
+  const valid=scopeCurrent()&&(!dialog||dialog.isConnected);
   if(!valid){selected.clear();if(dialog?.isConnected){dialog.close();dialog.remove();}}
   return valid;
  };
@@ -55,16 +56,25 @@ async function openQuotationDocuments(record){
  await requireAccess('proforma',record.id);await loadSalesRevision(record);checkCurrent();
  const parents=quotationDocumentParents(record);
  dialog=document.createElement('dialog');dialog.className='document-attachments no-print';dialog.setAttribute('aria-label','Quotation documents');
+ actionFeedbackRememberDialog(dialog);
  dialog.innerHTML=`<h2>Quotation documents · ${esc(record.document_number)}</h2><p>1. Save the quotation PDF with <strong>Print / PDF</strong>. Internal remarks are excluded.</p><button type="button" data-quote-print>Print / PDF</button><p>2. Review the supporting files and product brochures below. Select only files intended for this customer; no files are selected automatically.</p><label>Document source<select data-quote-source>${parents.map((parent,index)=>`<option value="${index}">${esc(parent.label)}</option>`).join('')}</select></label><section data-quote-files aria-label="Available supporting files"></section><div class="actions"><button type="button" data-quote-previous>Previous</button><span data-quote-page></span><button type="button" data-quote-next>Next</button><button type="button" data-quote-upload>Upload / view source files</button></div><p data-quote-selection>0 files selected</p><button type="button" data-quote-download disabled>Download selected supporting files (ZIP)</button><p>3. Attach the quotation PDF and the reviewed supporting files to your message. The ZIP contains the selected files and a customer cover note; it does not contain the quotation PDF. Email is sent manually in your email app. This workspace does not automatically email quotations. Record “sent to client” only after sending.</p><p data-quote-status role="status" aria-live="polite"></p><button type="button" data-quote-close>Close</button>`;
- document.body.append(dialog);dialog.showModal();
+ document.body.append(dialog);showWorkspaceDialog(dialog,{size:'large',trigger});
  const source=dialog.querySelector('[data-quote-source]'),list=dialog.querySelector('[data-quote-files]'),status=dialog.querySelector('[data-quote-status]'),previous=dialog.querySelector('[data-quote-previous]'),next=dialog.querySelector('[data-quote-next]'),download=dialog.querySelector('[data-quote-download]');
- dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});dialog.addEventListener('close',()=>{selected.clear();dialog.remove();});
- dialog.querySelector('[data-quote-close]').onclick=()=>{if(!busy)dialog.close();};
- dialog.querySelector('[data-quote-print]').onclick=()=>{if(!busy&&current()){dialog.close();printSalesDocument(record.id);}};
- dialog.querySelector('[data-quote-upload]').onclick=()=>{if(!busy&&current()){const parent=parents[parentIndex];dialog.close();run(()=>openDocumentAttachments(parent.type,parent.id,parent.label));}};
+ const requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>working,isDirty:()=>false});
+ dialog.addEventListener('close',()=>{selected.clear();dialog.remove();});
+ dialog.querySelector('[data-quote-close]').onclick=requestClose;
+ dialog.querySelector('[data-quote-print]').onclick=async()=>{
+  if(working||!current())return;working=true;
+  // Keep printing in the initiating click; the selector is excluded by no-print.
+  const closing=closeWorkspaceDialog(dialog);try{printSalesDocument(record.id);}finally{await closing;working=false;}
+ };
+ const upload=dialog.querySelector('[data-quote-upload]');upload.onclick=()=>{if(!working&&current())return run(async()=>{
+  const parent=parents[parentIndex],closing=requestClose();working=true;
+  try{if(!await closing||!scopeCurrent())return;await openDocumentAttachments(parent.type,parent.id,parent.label);}finally{working=false;}
+ },{origin:upload});};
  function selectionChanged(){
   const size=[...selected.values()].reduce((total,row)=>total+Number(row.byte_size),0);
-  dialog.querySelector('[data-quote-selection]').textContent=`${selected.size} files selected · ${(size/1048576).toFixed(1)} MB (maximum 20 files / 50 MB)`;download.disabled=busy||selected.size===0;
+  dialog.querySelector('[data-quote-selection]').textContent=`${selected.size} files selected · ${(size/1048576).toFixed(1)} MB (maximum 20 files / 50 MB)`;download.disabled=working||selected.size===0;
  }
  async function loadPage(){
   const parent=parents[parentIndex];await requireAccess(parent.type,parent.id);
@@ -73,7 +83,7 @@ async function openQuotationDocuments(record){
   const rows=(result.data||[]).slice(0,25);
   list.innerHTML=rows.map(row=>`<label><input type="checkbox" data-quote-file="${esc(row.id)}" ${selected.has(row.id)?'checked':''}>${esc(row.original_filename)} · ${(Number(row.byte_size)/1048576).toFixed(1)} MB · ${esc(row.uploaded_at)}</label>`).join('')||`<p>${parent.type==='product'?'No product brochures have been uploaded for this product.':'No quotation supporting files have been uploaded.'}</p>`;
   list.querySelectorAll('[data-quote-file]').forEach(input=>input.onchange=()=>{
-   if(busy||!current())return;
+   if(working||!current())return;
    const row=rows.find(item=>item.id===input.dataset.quoteFile);
    if(input.checked){
     const total=[...selected.values()].reduce((sum,item)=>sum+Number(item.byte_size),Number(row.byte_size));
@@ -85,16 +95,24 @@ async function openQuotationDocuments(record){
   previous.disabled=page===0;next.disabled=(result.data||[]).length<=25;dialog.querySelector('[data-quote-page]').textContent=`Page ${page+1}`;
  }
  async function reload(index,nextPage){
-  if(busy||!current())return;busy=true;source.disabled=true;download.disabled=true;list.innerHTML='';parentIndex=index;page=nextPage;
+  if(working||!current())return;working=true;source.disabled=true;download.disabled=true;list.innerHTML='';parentIndex=index;page=nextPage;
   try{await loadPage();if(current())status.textContent='';}
-  catch(error){if(current()){list.innerHTML='';previous.disabled=true;next.disabled=true;status.textContent=`Files could not load: ${error.message}`;}}
-  finally{busy=false;if(current()){source.disabled=false;selectionChanged();}}
+  catch(error){if(current()){list.innerHTML='';previous.disabled=true;next.disabled=true;status.textContent=`Files could not load: ${error.message}`;}return error;}
+  finally{working=false;if(current()){source.disabled=false;selectionChanged();}}
  }
- source.onchange=()=>reload(Number(source.value),0);previous.onclick=()=>{if(page>0)return reload(parentIndex,page-1);};next.onclick=()=>{if(!next.disabled)return reload(parentIndex,page+1);};
+ async function reloadFromControl(index,nextPage,button){
+  if(working||!current())return;
+  if(busy){source.value=String(parentIndex);return run(async()=>{},{origin:button,errorTarget:status});}
+  button.disabled=true;
+  await run(async()=>{const error=await reload(index,nextPage);if(error&&current())message(status.textContent,true);},{origin:button,errorTarget:status,busyLabel:'Loading documents…'});
+ }
+ source.onchange=()=>reloadFromControl(Number(source.value),0,source);previous.onclick=()=>{if(page>0)return reloadFromControl(parentIndex,page-1,previous);};next.onclick=()=>{if(!next.disabled)return reloadFromControl(parentIndex,page+1,next);};
  download.onclick=async()=>{
-  if(busy||!selected.size||!current())return;busy=true;source.disabled=true;download.disabled=true;
+  if(working||!selected.size||!current())return;
+  if(busy)return run(async()=>{},{origin:download,errorTarget:status});
+  working=true;source.disabled=true;download.disabled=true;
   list.querySelectorAll('[data-quote-file]').forEach(input=>input.disabled=true);
-  try{
+  await run(async()=>{try{
    const rows=[...selected.values()],files=[];let size=0;
    for(const row of rows){
     await requireAccess(row.record_type,row.record_id);status.textContent=`Preparing file ${files.length+1} of ${rows.length}…`;
@@ -106,10 +124,11 @@ async function openQuotationDocuments(record){
    files.unshift({name:'00-Customer cover note.txt',bytes:new TextEncoder().encode(quotationCustomerNote(record,rows.map(row=>row.original_filename)))});
    const zip=quotationSupportingZip(files);checkCurrent();
    const url=URL.createObjectURL(zip),link=document.createElement('a');
-   try{link.href=url;link.download=String(record.document_number||'Quotation').replace(/[^a-zA-Z0-9_.-]+/g,'-').slice(0,80)+'-supporting-files.zip';link.rel='noopener';document.body.append(link);link.click();status.textContent='Supporting-file ZIP download requested. Attach the quotation PDF separately and review all files before sending. Nothing has been emailed or marked sent.';}
+   try{link.href=url;link.download=String(record.document_number||'Quotation').replace(/[^a-zA-Z0-9_.-]+/g,'-').slice(0,80)+'-supporting-files.zip';link.rel='noopener';document.body.append(link);link.click();status.textContent='Supporting-file ZIP download requested. Attach the quotation PDF separately and review all files before sending. Nothing has been emailed or marked sent.';message(status.textContent);}
    finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-  }catch(error){if(current())status.textContent=`Package download failed: ${error.message||'Please retry.'}`;}
-  finally{busy=false;if(current()){source.disabled=false;list.querySelectorAll('[data-quote-file]').forEach(input=>input.disabled=false);selectionChanged();}}
+  }catch(error){if(current()){status.textContent=`Package download failed: ${error.message||'Please retry.'}`;message(status.textContent,true);}}
+  finally{working=false;if(current()){source.disabled=false;list.querySelectorAll('[data-quote-file]').forEach(input=>input.disabled=false);selectionChanged();}}
+  },{origin:download,successOrigin:actionFeedbackReference(download),errorTarget:status,busyLabel:'Preparing download…'});
  };
  await reload(0,0);
 }

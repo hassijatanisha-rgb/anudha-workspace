@@ -1,3 +1,4 @@
+import {installLeaveContext} from './helpers/leave-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -60,7 +61,7 @@ test('Delivery ready action uses packer-checked RPC and preserves actor guard',(
 });
 test('Opening a different task replaces delivery focus and opening a proforma clears it',async()=>{
  const ctx=vm.createContext({salesLoaded:true,salesFocusedDelivery:'old',salesFocusedProforma:'old-pf',salesSection:'delivery',salesEditing:'',view:'sales',render:()=>{}});
- vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);
+ installLeaveContext(ctx);vm.runInContext(readFileSync(new URL('../work-assignments.js',import.meta.url),'utf8'),ctx);
  await ctx.workOpenRecord({record_type:'delivery',record_id:'new'});assert.equal(ctx.salesFocusedDelivery,'new');assert.equal(ctx.salesFocusedProforma,'');
  await ctx.workOpenRecord({record_type:'proforma',record_id:'pf'});assert.equal(ctx.salesFocusedDelivery,'');assert.equal(ctx.salesFocusedProforma,'pf');
 });

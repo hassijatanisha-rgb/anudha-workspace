@@ -41,17 +41,19 @@ function showTwoStepPrompt(onDone){
 }
 // My settings card.
 async function renderTwoStepSettings(target){
- const box=document.createElement('section');box.className='card two-step-settings';box.innerHTML='<h2>Two-step sign-in</h2><p role="status">Checking…</p>';target.append(box);
+ const actor=me,role=me?.role,box=document.createElement('section');box.className='card two-step-settings';box.innerHTML='<h2>Two-step sign-in</h2><p role="status">Checking…</p>';target.append(box);
  let factor;try{factor=await twoStepFactor();}catch(error){box.innerHTML=`<h2>Two-step sign-in</h2><p role="alert">Could not check: ${esc(error.message)}</p>`;return;}
  const required=await twoStepRequired();
  box.innerHTML=factor
-  ?`<h2>Two-step sign-in <span class="tag two-step-on">On</span></h2><p class="muted">When you sign in, you type your password and then the 6-digit code from your phone. Someone who steals your password still cannot get in.</p>${required?'<p class="muted">Required for owners and accounts, so it cannot be turned off. If you lose your phone, ask the owner to reset it.</p>':'<button type="button" id="twoStepOff" class="danger">Turn off</button>'}`
-  :`<h2>Two-step sign-in <span class="tag">Off</span></h2><p class="muted">Protects your login if someone learns your password. You will need your phone each time you sign in.</p><button type="button" id="twoStepOn" class="primary-action">Turn on</button>`;
+  ?`<h2>Two-step sign-in <span class="tag two-step-on chip chip--${statusTone('success')}">On</span></h2><p class="muted">When you sign in, you type your password and then the 6-digit code from your phone. Someone who steals your password still cannot get in.</p>${required?'<p class="muted">Required for owners and accounts, so it cannot be turned off. If you lose your phone, ask the owner to reset it.</p>':'<button type="button" id="twoStepOff" class="danger">Turn off</button>'}`
+  :`<h2>Two-step sign-in <span class="tag chip chip--${statusTone(required?'waiting':'inactive')}">Off</span></h2><p class="muted">Protects your login if someone learns your password. You will need your phone each time you sign in.</p><button type="button" id="twoStepOn" class="primary-action">Turn on</button>`;
  $('#twoStepOn')?.addEventListener('click',()=>run(()=>startTwoStepSetup(box)));
- $('#twoStepOff')?.addEventListener('click',()=>run(async()=>{
-  if(!confirm('Turn off two-step sign-in? Your login will be protected by your password only.'))return;
-  const result=await client.auth.mfa.unenroll({factorId:factor.id});if(result.error)throw Error(result.error.message);
-  await client.auth.refreshSession();box.remove();await renderTwoStepSettings(target);message('Two-step sign-in is off.');
+ const off=box.querySelector('#twoStepOff');off?.addEventListener('click',()=>run(async()=>{
+  const current=()=>me===actor&&me?.role===role&&view==='settings'&&target.isConnected&&box.isConnected&&box.querySelector('#twoStepOff')===off;
+  if(!current()||!await askConfirm({title:'Turn off two-step sign-in?',body:'Your login will be protected by your password only.',confirmLabel:'Turn off two-step sign-in',tone:'danger'}))return;
+  if(!current())return;
+  const result=await client.auth.mfa.unenroll({factorId:factor.id});if(!current())return;if(result.error)throw Error(result.error.message);
+  await client.auth.refreshSession();if(!current())return;box.remove();await renderTwoStepSettings(target);if(me===actor&&view==='settings'&&target.isConnected)message('Two-step sign-in is off.');
  }));
 }
 // Owners and accounts must use two-step sign-in (migration 080). These ask the database about the signed-in person
@@ -90,15 +92,16 @@ async function decorateStaffTwoStep(){
  rows.forEach(row=>{
   if(!row.isConnected)return;
   const id=row.dataset.staffRow,status=row.querySelector('[data-staff-two-step-status]');
-  if(status)status.textContent=result.error||!on.has(id)?'Two-step unavailable':on.get(id)?'Two-step: on':'Two-step: off';
+  if(status){status.textContent=result.error||!on.has(id)?'Two-step unavailable':on.get(id)?'Two-step: on':'Two-step: off';status.className='chip chip--'+statusTone(result.error||!on.has(id)?'failed':on.get(id)?'success':'inactive');}
   const cell=row.querySelector('[data-staff-reset]')?.closest('.actions');
   if(!result.error&&on.get(id)&&cell&&!cell.querySelector('[data-two-step-reset]'))cell.insertAdjacentHTML('beforeend',`<button type="button" class="danger" data-two-step-reset="${esc(id)}" aria-label="Reset two-step for ${esc(employeeName(id))}">Reset two-step</button>`);
   row.querySelectorAll('[data-two-step-reset]').forEach(button=>button.onclick=()=>run(async()=>{
-   const name=employeeName(id);
-   if(!confirm(`Reset two-step sign-in for ${name}? Use this when their phone is lost. They can sign in with their password and turn it on again.`))return;
-   await staffAccountsCall({action:'reset_two_step',user_id:id});if(me!==actor||!row.isConnected)return;
-   if(status)status.textContent='Two-step: off';
-   button.replaceWith(Object.assign(document.createElement('span'),{className:'muted',textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
+   const name=employeeName(id),role=me?.role,department=me?.department,binding=button.onclick,current=()=>me===actor&&(me?.role==='owner'||me?.role==='head')&&me.role===role&&me.department===department&&view==='staff'&&row.isConnected&&row.dataset.staffRow===id&&button.isConnected&&row.querySelector('[data-two-step-reset]')===button&&button.onclick===binding;
+   if(!current()||!await askConfirm({title:`Reset two-step sign-in for ${name}?`,body:'Use this when their phone is lost. They can sign in with their password and turn it on again.',confirmLabel:'Reset two-step sign-in',tone:'danger'}))return;
+   if(!current())return;
+   await staffAccountsCall({action:'reset_two_step',user_id:id});if(!current())return;
+   if(status){status.textContent='Two-step: off';status.className='chip chip--'+statusTone('inactive');}
+   button.replaceWith(Object.assign(document.createElement('span'),{className:'muted chip chip--'+statusTone('done'),textContent:'Two-step reset'}));message(`Two-step sign-in reset for ${name}.`);
   }));
  });
 }

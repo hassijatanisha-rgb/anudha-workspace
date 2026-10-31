@@ -72,8 +72,8 @@ async function loadOrderWorkflow(panel){
 function bindOrderWorkflow(){
  document.querySelectorAll('[data-order-workflow]').forEach(panel=>{
   panel.querySelector('[data-order-refresh]').onclick=()=>run(()=>salesDeliveryWorkspace(true));
-  panel.querySelectorAll('[data-order-delivery]').forEach(button=>button.onclick=()=>{salesFocusedDelivery=button.dataset.orderDelivery;salesSection='delivery';salesEditing='';salesDeliveryWorkspace();});
+  panel.querySelectorAll('[data-order-delivery]').forEach(button=>button.onclick=()=>run(()=>{salesFocusedDelivery=button.dataset.orderDelivery;salesSection='delivery';salesEditing='';return salesDeliveryWorkspace();}));
   loadOrderWorkflow(panel);
  });
- document.querySelectorAll('[data-order-proforma]').forEach(button=>button.onclick=()=>{salesFocusedProforma=button.dataset.orderProforma;salesFocusedDelivery='';salesSection='proformas';salesEditing='';salesDeliveryWorkspace();});
+ document.querySelectorAll('[data-order-proforma]').forEach(button=>button.onclick=()=>run(()=>{salesFocusedProforma=button.dataset.orderProforma;salesFocusedDelivery='';salesSection='proformas';salesEditing='';return salesDeliveryWorkspace();}));
 }

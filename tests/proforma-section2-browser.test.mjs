@@ -1,10 +1,11 @@
+import {leaveScopeSource,leaveContextSource} from './helpers/leave-context.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.PROFORMA_BROWSER_QA==='1';
-const sources=['business-date.js','row-index.js','company-forms.js','sales-domain.js','customer-contracts.js','product-pricing.js','proforma-commercial.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['ui-motion.js','ui-page-header.js','status-ui.js','business-date.js','row-index.js','company-forms.js','sales-domain.js','customer-contracts.js','product-pricing.js','proforma-commercial.js','sales-delivery.js','action-forms.js','accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -18,7 +19,7 @@ async function fixture(t){
  await page.route('**/*',route=>route.abort());
  await page.setContent('<section id="content"></section><div id="notice"></div>');
  await page.evaluate(()=>{
-  window.$=s=>document.querySelector(s);window.me={user_id:'actor',role:'staff'};window.view='sales';
+  window.$=s=>document.querySelector(s);window.me={user_id:'actor',role:'staff'};window.view='sales';window.hasArea=()=>true;
   window.esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let sequence=0;crypto.randomUUID=()=>`00000000-0000-0000-0000-${String(++sequence).padStart(12,'0')}`;
   window.message=s=>$('#notice').textContent=s;
@@ -27,9 +28,10 @@ async function fixture(t){
   window.organizations=[{id:'branch',name:'Fixture Hospital',location:'Dar'}];window.orgIndex=new Map(organizations.map(row=>[row.id,row]));
   window.contacts=[{id:'contact',organization_id:'branch',first_name:'Named',last_name:'Contact',status:'valid'}];
   window.products=[{id:'product',name:'Fixture Product',sku:'SKU'}];window.inventoryLocations=[];window.inventoryLots=[];
+  window.listsLoaded=true;window.loadLists=async()=>{listsLoaded=true};
   window.inventoryOption=(id,label,selected=false)=>`<option value="${esc(id)}" ${selected?'selected':''}>${esc(label)}</option>`;
   window.inventoryProductChoice=p=>p.name;window.inventoryProductFromChoice=value=>products.find(p=>p.name===value);
-  window.rows=[];window.lines=[];window.revisions=[];window.contracts=[];window.prices=[{product_id:'product',currency:'TZS',unit_price_minor:10000,version:1}];window.calls=[];window.loads=0;window.accountingAllowed=true;window.accessChecks=0;window.reads=[];
+  window.rows=[];window.lines=[];window.revisions=[];window.contracts=[];window.prices=[{product_id:'product',currency:'TZS',unit_price_minor:10000,version:1}];window.calls=[];window.loads=0;window.accountingAllowed=true;window.accessChecks=0;window.reads=[];window.pageReads=[];
   window.client={from:table=>{
    const query={},filters=[];let bounds=null,limit=null,single=false;
    for(const method of ['select','order'])query[method]=()=>query;
@@ -37,13 +39,18 @@ async function fixture(t){
    query.then=(ok,bad)=>{loads++;reads.push({table,filters,bounds,limit,single});let data=table==='sales_proformas'?rows:table==='sales_proforma_lines'?lines:table==='sales_proforma_revisions'?revisions:table==='customer_contracts'?contracts:table==='product_sale_prices'?prices:[];data=data.filter(row=>filters.every(([key,value,kind])=>kind==='in'?value.includes(row[key]):kind==='neq'?row[key]!==value:row[key]===value));if(limit!==null)data=data.slice(0,limit);if(bounds)data=data.slice(bounds[0],bounds[1]+1);return Promise.resolve({data:structuredClone(single?data[0]:data)}).then(ok,bad)};return query;
   },rpc:async(name,args)=>{
    if(name==='accounting_access'){accessChecks++;return {data:accountingAllowed}}
+   if(name==='sales_proforma_page'){
+    pageReads.push(args);
+    if(rows.length)throw Error('This write-flow fixture expects an empty initial Pro forma register');
+    return {data:{rows:[],total:0,page:0,pages:1,counts:{all:0,mine:0,placement:0},live_status:[],discount_policy:null}};
+   }
    calls.push({name,args});if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);
-   if(window.saveError)return {error:{message:saveError}};
+   if(window.saveError)return {error:{message:saveError,...(window.saveErrorCode?{code:window.saveErrorCode}:{})}};
    if(window.invalidResponse)return {data:window.invalidResponse==='empty'?null:window.invalidResponse==='wrong-id'?{id:'different',version:1}:{id:args.p_id}};
    if(name==='advance_sales_proforma'){
     const row=rows.find(row=>row.id===args.p_id);row.status=args.p_action==='accept'?'accepted':args.p_action==='send'?'sent':'draft';row.version++;return {data:structuredClone(row)};
    }
-   const row={id:args.p_id,version:args.p_expected_version+1,revision:args.p_expected_version+1,document_number:'PF-FIXTURE',status:'draft',organization_id:args.p_organization_id,contact_id:args.p_contact_id,currency:args.p_currency,valid_until:args.p_valid_until,delivery_period:args.p_delivery_period,payment_terms:args.p_payment_terms,notes:args.p_notes,commercial_kind:args.p_commercial_kind,contract_id:args.p_contract_id,installation_required:args.p_installation_required,installation_charge_notes:args.p_installation_charge_notes,internal_notes:args.p_internal_notes,subtotal_minor:10000,discount_minor:0,tax_minor:0,total_minor:10000};
+   const row={id:args.p_id,version:args.p_expected_version+1,revision:args.p_expected_version+1,document_number:'PF-FIXTURE',status:'draft',prepared_by:me.user_id,organization_id:args.p_organization_id,contact_id:args.p_contact_id,currency:args.p_currency,valid_until:args.p_valid_until,delivery_period:args.p_delivery_period,payment_terms:args.p_payment_terms,notes:args.p_notes,commercial_kind:args.p_commercial_kind,contract_id:args.p_contract_id,installation_required:args.p_installation_required,installation_charge_notes:args.p_installation_charge_notes,internal_notes:args.p_internal_notes,subtotal_minor:10000,discount_minor:0,tax_minor:0,total_minor:10000};
    row.revision=(rows.find(r=>r.id===row.id)?.revision||0)+1;
    const totals=args.p_lines.map(proformaLineTotal);row.subtotal_minor=totals.reduce((sum,line)=>sum+line.gross,0);row.discount_minor=totals.reduce((sum,line)=>sum+line.discount,0);row.tax_minor=totals.reduce((sum,line)=>sum+line.tax,0);row.total_minor=row.subtotal_minor-row.discount_minor+row.tax_minor;
    rows=rows.filter(r=>r.id!==row.id).concat(row);
@@ -52,12 +59,15 @@ async function fixture(t){
    const snapshot={documentNumber:row.document_number,revision:row.revision,organizationId:row.organization_id,contactId:row.contact_id,organizationName:organization.name,organizationLocation:organization.location,contactName:[contact.title==='N/A'?'':contact.title,contact.first_name,contact.last_name].filter(Boolean).join(' '),currency:row.currency,validUntil:row.valid_until,deliveryPeriod:row.delivery_period,paymentTerms:row.payment_terms,notes:row.notes,commercialKind:row.commercial_kind,contractId:row.contract_id,installationRequired:row.installation_required,installationChargeNotes:row.installation_charge_notes,subtotalMinor:row.subtotal_minor,discountMinor:row.discount_minor,taxMinor:row.tax_minor,totalMinor:row.total_minor,lines:args.p_lines.map(line=>({...line,productName:products.find(p=>p.id===line.productId).name}))};
    const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
    if(revisions.some(revision=>revision.proforma_id===row.id&&revision.revision===row.revision))throw Error('Revision already exists');
-   revisions.push(freeze(structuredClone({proforma_id:row.id,revision:row.revision,snapshot})));
+   revisions.push(freeze(structuredClone({proforma_id:row.id,revision:row.revision,created_by:me.user_id,snapshot})));
    return {data:row};
   }};
  });
  for(const source of sources)await page.addScriptTag({content:source});
- await page.evaluate(()=>salesDeliveryWorkspace());return page;
+ await page.evaluate(()=>{window.sessionLoadEpoch=0;window.returnCreditPostingConfirmLeave=()=>true;window.financialImportConfirmLeave=async()=>true;window.openingReceivablesConfirmLeave=async()=>true;});
+ await page.addScriptTag({content:leaveScopeSource+'\n'+leaveContextSource});
+ await page.evaluate(()=>salesDeliveryWorkspace());
+ assert.deepEqual(await page.evaluate(()=>({pageReads:pageReads.length,writes:calls.length})),{pageReads:1,writes:0});return page;
 }
 async function fillEntry(p){
  await p.locator('#newProforma').click();
@@ -75,7 +85,7 @@ acceptance('Added proforma items can be removed immediately',async t=>{
 });
 acceptance('Create retry retains its document ID and entered values after failed RPC',async t=>{
  const p=await fixture(t);await fillEntry(p);await p.evaluate(()=>window.saveError='Connection lost');await save(p);
- assert.equal(await p.locator('[name="description"]').inputValue(),'Fixture description');await save(p,2);
+ assert.equal(await p.locator('[name="description"]').inputValue(),'Fixture description');await p.locator('[data-proforma-retry]').click();await p.waitForFunction(()=>calls.length===2&&pending===0);
  const calls=await p.evaluate(()=>window.calls);assert.equal(calls[0].args.p_id,calls[1].args.p_id);
  assert.equal(calls[1].args.p_expected_version,0);
 });
@@ -85,16 +95,16 @@ for(const invalid of ['empty','wrong-id','missing-version'])acceptance(`Unconfir
  assert.equal(await p.locator('[name="description"]').inputValue(),'Fixture description');
  assert.doesNotMatch(await p.locator('#notice').innerText(),/saved with an immutable revision/i);
 });
-acceptance('Save disables submission while pending and restores it after failure',async t=>{
- const p=await fixture(t);await fillEntry(p);await p.evaluate(()=>{window.delaySave=true;window.saveError='Retry later'});
+acceptance('Save disables submission while pending and restores it after a definite SQL rejection',async t=>{
+ const p=await fixture(t);await fillEntry(p);await p.evaluate(()=>{window.delaySave=true;window.saveError='Retry later';window.saveErrorCode='P0001'});
  await p.locator('#proformaForm [type="submit"]').click();await p.waitForFunction(()=>typeof releaseSave==='function');
  assert.equal(await p.locator('#proformaForm [type="submit"]').isDisabled(),true);
  await p.evaluate(()=>releaseSave());await p.waitForFunction(()=>pending===0);
  assert.equal(await p.locator('#proformaForm [type="submit"]').isDisabled(),false);
 });
-acceptance('Confirmed create closes editor and prints the saved document',async t=>{
+acceptance('Confirmed create retains its editor and opens the saved document explicitly for print',async t=>{
  const p=await fixture(t);await fillEntry(p);await save(p);
- assert.equal(await p.locator('#proformaForm').count(),0);assert.equal(await p.locator('[data-document-card]').count(),1,await p.locator('#notice').innerText());assert.equal(await p.locator('[data-document-card] .heading h2').textContent(),'PF-FIXTURE');
+ assert.equal(await p.locator('#proformaForm').count(),1);await p.locator('[data-sales-saved] button').click();await p.waitForFunction(()=>pending===0);assert.equal(await p.locator('#proformaForm').count(),0);assert.equal(await p.locator('[data-document-card]').count(),1,await p.locator('#notice').innerText());assert.equal(await p.locator('[data-document-card] .heading h2').textContent(),'PF-FIXTURE');
  const saved=await p.evaluate(()=>({args:calls[0].args,snapshot:revisions[0].snapshot}));assert.equal(saved.args.p_lines[0].unitPriceMinor,10000);assert.equal(saved.args.p_commercial_kind,'sale');assert.equal(saved.args.p_installation_required,true);assert.equal(saved.args.p_installation_charge_notes,'Fixture service terms');assert.equal(saved.args.p_internal_notes,'Fixture internal planning');
  assert.equal(saved.snapshot.commercialKind,'sale');assert.equal(saved.snapshot.installationRequired,true);assert.equal(saved.snapshot.installationChargeNotes,'Fixture service terms');assert.ok(!Object.hasOwn(saved.snapshot,'internalNotes'));assert.match(await p.locator('[data-document-card] aside.no-print').innerText(),/Fixture internal planning/);
  await p.evaluate(()=>window.print=()=>{window.printed=document.querySelector('.print-document')?.dataset.documentCard});

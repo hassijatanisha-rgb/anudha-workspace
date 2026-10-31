@@ -16,7 +16,7 @@ test('paginated directory and failures fail closed',async()=>{
  assert.equal(await c.loadEmployeeNames(),true);assert.equal(c.employeeName('b'),'Francis');c.client.rpc=async()=>({error:{message:'offline'}});assert.equal(await c.loadEmployeeNames(),false);assert.equal(c.employeeName('b'),'Employee name not set');
 });
 test('owner saves name against the looked-up account version without changing access',async()=>{
- const calls=[];const c=fixture(async(name,args)=>{calls.push([name,args]);return {data:name==='lookup_staff_display_name'?{user_id:'person',name_version:4}:{}};});c.me.role='owner';
+ const calls=[];const c=fixture(async(name,args)=>{calls.push([name,args]);return {data:name==='lookup_staff_display_name'?{user_id:'person',name_version:4}:{user_id:'person',name_version:5,display_name:'Fatima'}};});c.me.role='owner';
  await c.saveEmployeeNameByEmail('person@example.invalid','Fatima');assert.equal(calls[1][0],'set_staff_display_name');assert.equal(calls[1][1].p_user_id,'person');assert.equal(calls[1][1].p_expected_version,4);assert.equal(calls[1][1].p_display_name,'Fatima');
  c.me.role='staff';await assert.rejects(c.saveEmployeeNameByEmail('person@example.invalid','Other'),/owner/);assert.equal(calls.length,2);
 });

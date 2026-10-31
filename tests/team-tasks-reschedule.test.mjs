@@ -1,3 +1,5 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
+import {statusTone} from './helpers/status-ui.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -5,7 +7,7 @@ import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
 const giver='00000000-0000-4000-8000-0000000000d2',worker='00000000-0000-4000-8000-0000000000d3';
 function load(user,role='staff'){
- const ctx=vm.createContext({me:{user_id:user,role},employeeName:id=>id===giver?'Asha':'Baraka',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')});
+ const ctx=vm.createContext({workspacePageHeader,statusTone,me:{user_id:user,role},employeeName:id=>id===giver?'Asha':'Baraka',esc:s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')});
  vm.runInContext(read('team-tasks.js')+';Object.assign(globalThis,{teamTaskCard,teamTaskCanMove,setMoves:m=>{teamTaskMoves=m}});',ctx);return ctx;
 }
 const task=(extra={})=>({id:'t1',task_number:'TK-000001',title:'Call the official',details:'',urgency:'urgent',due_at:'2099-01-01T09:00:00Z',assignee_user_id:worker,assigned_by:giver,status:'open',version:1,reschedule_count:0,...extra});

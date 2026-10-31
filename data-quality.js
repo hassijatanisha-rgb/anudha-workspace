@@ -4,7 +4,7 @@
 function qualityLevel(count){return count<=0?'':count===1?'yellow':'red';}
 function qualityBadge(level,issues){
  if(!level)return '';
- return `<span class="quality-badge quality-${level}" title="${esc(issues.join('; '))}">${level==='yellow'?'Yellow':'Red'} · ${issues.length} to fix</span>`;
+ return `<span class="quality-badge quality-${esc(level)} chip chip--${statusTone(level==='yellow'?'warning':'danger')}" title="${esc(issues.join('; '))}">${level==='yellow'?'Yellow':'Red'} · ${issues.length} to fix</span>`;
 }
 function productDuplicateKey(p){const s=p.source||{};return [p.name,s.company,s.specification||s.model].map(v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ')).join('|');}
 function productDuplicateCounts(rows){const counts=new Map();for(const p of rows){const key=productDuplicateKey(p);counts.set(key,(counts.get(key)||0)+1);}return counts;}

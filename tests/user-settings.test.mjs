@@ -1,10 +1,11 @@
+import {workspacePageHeader} from './helpers/page-header.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function load(storage){
  const html={style:{},dataset:{}};
- const ctx=vm.createContext({document:{documentElement:html},localStorage:storage});
+ const ctx=vm.createContext({workspacePageHeader,document:{documentElement:html},localStorage:storage});
  vm.runInContext(readFileSync(new URL('../user-settings.js',import.meta.url),'utf8'),ctx);return {ctx,html};
 }
 const memory=(initial={})=>{const data={...initial};return {getItem:k=>k in data?data[k]:null,setItem:(k,v)=>{data[k]=String(v)},data};};
@@ -28,4 +29,15 @@ test('settings page is in the menu, routed, and loaded before app.js',()=>{
  const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'),html=read('index.src.html');
  assert.match(read('workspace-navigation.js'),/\['My settings','settings'\]/);assert.match(read('app.js'),/view==='settings'\)return settingsWorkspace\(\)/);
  assert.ok(html.indexOf('user-settings.js')>html.indexOf('reports.js')&&html.indexOf('user-settings.js')<html.indexOf('app.js'));
+});
+test('appearance restores only recognized preferences, defaults to System, and needs no network',()=>{
+ for(const choice of ['system','light','dark'])assert.equal(load(memory({'anudha.theme':choice})).html.dataset.theme,choice);
+ for(const choice of ['','sepia','__proto__','<img src=x>'])assert.equal(load(memory({'anudha.theme':choice})).html.dataset.theme,'system');
+ const storage=memory(),{ctx,html}=load(storage);assert.equal(ctx.saveWorkspaceTheme('dark'),true);assert.equal(html.dataset.theme,'dark');assert.equal(storage.data['anudha.theme'],'dark');
+ assert.throws(()=>ctx.saveWorkspaceTheme('sepia'),/Choose Light, Dark or System/);assert.equal(html.dataset.theme,'dark');assert.equal(storage.data['anudha.theme'],'dark');
+ assert.equal(ctx.saveWorkspaceTheme('system'),true);assert.equal(html.dataset.theme,'system');
+});
+test('blocked appearance storage retains the explicit choice for this visit and reports it was not saved',()=>{
+ const {ctx,html}=load({getItem(){throw Error('blocked')},setItem(){throw Error('blocked')}});assert.equal(html.dataset.theme,'system');
+ assert.equal(ctx.saveWorkspaceTheme('light'),false);assert.equal(html.dataset.theme,'light');ctx.applyWorkspaceTheme();assert.equal(html.dataset.theme,'light');
 });
