@@ -13072,10 +13072,11 @@ async function navHistoryChanged(){
  if(hash===navLastHash){if(index!==null&&index!==navLastIndex){workspaceLeaveSequence++;navHistoryAttempt=null;navLastIndex=index;}return;}
  if(navHistoryAttempt?.hash===hash)return;
  navRememberListPlace();const sourceKey=navListEntryKey();
- const context=workspaceNavigationContext(),attempt={hash},previous=navLastHash,previousIndex=navLastIndex;navHistoryAttempt=attempt;
+ // Before sign-in hydration, defer context capture just like the initial deep link.
+ const context=(()=>{try{return typeof me}catch{return 'undefined'}})()!=='undefined'&&me?workspaceNavigationContext():null,attempt={hash},previous=navLastHash,previousIndex=navLastIndex;navHistoryAttempt=attempt;
  try{
-  const allowed=await confirmWorkspaceLeave(context.current);
-  if(!context.current()||navHistoryAttempt!==attempt)return;
+  const allowed=context?await confirmWorkspaceLeave(context.current):true;
+  if(context&&!context.current()||navHistoryAttempt!==attempt)return;
   if(!allowed){
    if(index!==null&&index!==previousIndex){navHistoryRestoring={hash:previous,index:previousIndex};history.go(previousIndex-index);}
    // A legacy/unindexed destination has no recoverable cursor distance. Keep it
