@@ -137,3 +137,15 @@ test('same-actor session epoch changes suppress old read, save and validation ca
   if(f.form){f.elements.phone.value='bad';f.blur('phone');await f.send();assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,1);}
  }
 });
+
+
+test('self profile: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture();await f.start();const form=f.form,control=f.elements.display_name,button=form.querySelector('[type="submit"]');control.value=' ';await f.send();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.validation.textContent,'1 field needs attention');control.value='New Name';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.validation.textContent,'1 field needs attention');assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,0);
+ await f.send();assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,1);assert.equal(f.calls.at(-1).args.p_values.display_name,'New Name');assert.equal(f.calls.at(-1).args.p_expected_values.name_version,2);
+});
+
+test('self profile: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture();await f.start();const form=f.form,control=f.elements.display_name,button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.send();assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,0);assert.equal(f.validation.textContent,'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='New Name';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.validation.textContent,'1 field needs attention');const next=f.elements.phone;next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.validation.textContent,'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,0);
+});

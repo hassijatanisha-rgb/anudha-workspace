@@ -124,7 +124,7 @@ function workspaceQuestion({title,body='',confirmLabel='Save',tone='normal',labe
   dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dismiss();});
   dialog.addEventListener('close',()=>{if(!closing)finish(text?null:false);});
   const check=()=>{const problem=String(validate(input.value)||'');error.textContent=problem;input.setAttribute('aria-invalid',String(!!problem));return !problem;};
-  if(text)input.addEventListener('blur',check);
+  if(text)input.addEventListener('blur',event=>{if(!fieldBlurToAction(event))check();});
   form.addEventListener('submit',event=>{event.preventDefault();if(!current()){question.cancel();return;}if(text&&!check()){input.focus();return;}close(text?input.value:true);});
   showWorkspaceDialog(dialog,{size:'small'});(text?input:tone==='danger'?cancel:confirm).focus();
  });

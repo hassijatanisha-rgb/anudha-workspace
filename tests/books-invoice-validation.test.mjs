@@ -98,3 +98,17 @@ test('stale actor/view/epoch/data/current form suppress blur, submit, and late w
 test('obsolete quantity responses and errors cannot replace newer form or its validation state',async()=>{
  for(const change of ['actor','route','epoch','data','duplicate','detach'])for(const reject of [false,true]){const f=await fixture({chosen:''}),wait=deferred();f.read=()=>wait.promise;const reading=f.change('order');f.replace(change);const before=f.status.textContent;if(reject)wait.reject(Error('Obsolete quantities'));else wait.resolve({data:{proforma_id:'order',version:7,lines:[line()]}});await reading;assert.equal(f.status.textContent,before);assert.equal(f.quantities().length,0);assert.equal(f.writes().length,0);}
 });
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+test('invoice correction followed by action blur preserves layout until submit',async()=>{
+ const f=await fixture(),input=f.input('accountsref');input.value='';f.blur(input);assert.equal(f.summary.textContent,'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');input.value=' APPROVED ';const html=f.form.innerHTML;
+ dispatchCorrectionChange(input);f.post.focus();f.blur(input,f.post);assert.equal(f.form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,f.post);assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_accounts_reference,'APPROVED');assert.equal(error(input),'');
+});
+test('invoice action blur still requires valid fields on submit',async()=>{
+ const f=await fixture(),input=f.input('accountsref');input.value='';f.blur(input,f.post);assert.equal(f.summary.textContent,'');await f.submit();assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.ok(error(input));
+});

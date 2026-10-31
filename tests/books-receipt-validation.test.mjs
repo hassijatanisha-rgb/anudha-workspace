@@ -90,3 +90,17 @@ test('stale actor, route, epoch, data and disconnected form suppress blur, submi
   for(const reject of [false,true]){const g=await fixture(),wait=deferred();g.write=()=>wait.promise;const posting=g.submit();g.replace(change);g.input('amount').value='';g.blur(g.input('amount'));if(reject)wait.reject(Error('Old failure'));else wait.resolve({data:saved(g.calls[0].args)});await posting;assert.equal(g.summary.textContent,'');assert.equal(g.node('[data-books-posted]'),null);assert.deepEqual(g.messages,[]);assert.equal(g.form.inert,true);}
  }
 });
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+test('receipt correction followed by action blur preserves layout until submit',async()=>{
+ const f=await fixture(),input=f.input('amount'),button=f.form.querySelector('[type="submit"]');input.value='';f.blur(input);assert.equal(f.summary.textContent,'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');input.value='100.25';const html=f.form.innerHTML;
+ dispatchCorrectionChange(input);button.focus();f.blur(input,button);assert.equal(f.form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,button);assert.equal(f.calls.length,0);
+ await f.submit();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_amount_minor,10025);assert.equal(error(input),'');
+});
+test('receipt action blur still requires valid fields on submit',async()=>{
+ const f=await fixture(),input=f.input('amount');input.value='';f.blur(input,f.form.querySelector('[type="submit"]'));assert.equal(f.summary.textContent,'');await f.submit();assert.equal(f.calls.length,0);assert.equal(f.document.activeElement,input);assert.ok(error(input));
+});

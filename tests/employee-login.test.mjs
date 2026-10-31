@@ -1,3 +1,5 @@
+import {dom} from './helpers/dom-identity.mjs';
+import {installNativeFormControls} from './helpers/native-form-controls.mjs';
 import {workspacePageHeader} from './helpers/page-header.mjs';
 import {installWorkspaceDialogFixture} from './helpers/workspace-dialog-fixture.mjs';
 import test from 'node:test';
@@ -55,21 +57,21 @@ test('staff logins are created and reset through the owner-only server function,
 });
 test('password changes accept eight characters, reject shorter or mismatched values, and preserve first-login replacement',async()=>{
  for(const required of [false,true]){
-  const {ctx}=load(),updates=[],events={},button={disabled:false},alert={},cancel={},form={elements:{password:{value:''},confirm:{value:''}},querySelector:s=>s==='[type="submit"]'?button:alert,reset(){this.resetCalled=true;}};
-  const dialog={isConnected:true,setAttribute(){},addEventListener(name,handler){events[name]=handler;},querySelector:s=>s==='form'?form:s==='[data-close]'?cancel:null,showModal(){},close(){this.closed=true;}};
-  ctx.view='settings';ctx.busy=false;ctx.run=fn=>fn();ctx.me={user_id:'actor'};ctx.document={createElement:()=>dialog,body:{append(){}}};ctx.message=()=>{};let loaded=false;ctx.load=async()=>{loaded=true;};
+  const {ctx}=load(),updates=[],document=dom();installNativeFormControls(document);const proto=Object.getPrototypeOf(document.body),matches=proto.matches;proto.matches=function(selector){return selector.split(',').some(part=>matches.call(this,part.trim()));};proto.reset=function(){for(const input of this.querySelectorAll('input'))input.value='';this.resetCalled=true;};
+  ctx.view='settings';ctx.busy=false;ctx.run=fn=>fn();ctx.me={user_id:'actor'};ctx.document=document;ctx.message=()=>{};let loaded=false;ctx.load=async()=>{loaded=true;};
   ctx.client.auth={updateUser:async payload=>{updates.push(payload);return {};}};
-  installWorkspaceDialogFixture(ctx);ctx.openChangePassword({required});
+  installWorkspaceDialogFixture(ctx);vm.runInContext(readFileSync(new URL('../client-rules.js',import.meta.url),'utf8'),ctx);ctx.openChangePassword({required});
+  const dialog=document.querySelector('dialog'),form=dialog.querySelector('form'),button=form.querySelector('[type="submit"]'),alert=form.querySelector('[role="alert"]'),cancel=dialog.querySelector('[data-close]');
   assert.equal((dialog.innerHTML.match(/minlength="8"/g)||[]).length,2);
   assert.equal((dialog.innerHTML.match(/maxlength="72"/g)||[]).length,2);
-  if(required){assert.equal(cancel.hidden,true);let prevented=false;events.cancel({preventDefault(){prevented=true;}});assert.equal(prevented,true);}
+  if(required){assert.equal(cancel.hidden,true);let prevented=false;for(const {fn}of dialog.events.cancel)fn({preventDefault(){prevented=true;}});assert.equal(prevented,true);}
   const submit=()=>form.onsubmit({preventDefault(){}});
   form.elements.password.value=form.elements.confirm.value='aBcD123';await submit();
-  assert.equal(updates.length,0);assert.match(alert.textContent,/at least 8/);
+  assert.equal(updates.length,0);assert.equal(alert.textContent,'2 fields need attention');assert.match(form.elements.password.closest('label').textContent,/at least 8/);
   form.elements.password.value='aBcD1234';form.elements.confirm.value='different';await submit();
-  assert.equal(updates.length,0);assert.match(alert.textContent,/do not match/);
+  assert.equal(updates.length,0);assert.equal(alert.textContent,'1 field needs attention');assert.match(form.elements.confirm.closest('label').textContent,/do not match/);
   form.elements.confirm.value='aBcD1234';await submit();
   assert.equal(updates.length,1);assert.equal(updates[0].password,'aBcD1234');assert.equal(updates[0].data.must_change_password,false);
-  assert.equal(form.resetCalled,true);assert.equal(button.disabled,false);assert.equal(loaded,required);assert.equal(!!dialog.closed,required);
+  assert.equal(form.resetCalled,true);assert.equal(button.disabled,false);assert.equal(loaded,required);assert.equal(!dialog.isConnected,required);
  }
 });

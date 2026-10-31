@@ -106,3 +106,15 @@ test('supplier stale actor, epoch, request, section, route and replaced-form lis
 test('supplier owner-only active selector remains unchanged for owner and staff',()=>{
  const f=fixture({section:'suppliers',edit:true});assert.ok(f.form.elements.active);f.ctx.me.role='staff';const html=f.ctx.supplierEditor(f.suppliers[0]);assert.doesNotMatch(html,/name="active"/);assert.match(html,/Supplier name/);
 });
+
+
+test('supplier: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture({section:'suppliers',edit:true});const form=f.form,control=f.form.elements.name,button=form.querySelector('[type="submit"]');control.value=' ';await f.submitEvent();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.error.textContent,'1 field needs attention');control.value='Updated supplier';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.error.textContent,'1 field needs attention');assert.equal(f.writes.length,0);
+ await f.submitEvent();assert.equal(f.writes.length,1);assert.equal(f.writes[0].name,'save_supplier');assert.equal(f.writes[0].args.p_fields.name,'Updated supplier');assert.equal(f.writes[0].args.p_expected_version,1);
+});
+
+test('supplier: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture({section:'suppliers',edit:true});const form=f.form,control=f.form.elements.name,button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submitEvent();assert.equal(f.writes.length,0);assert.equal(f.error.textContent,'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='Updated supplier';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.error.textContent,'1 field needs attention');const next=f.form.elements.phone;next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.error.textContent,'');assert.equal(f.document.activeElement,next);assert.equal(f.writes.length,0);
+});

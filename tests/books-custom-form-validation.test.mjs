@@ -79,3 +79,21 @@ for(const kind of ['fiscal','invoice','receipt']){
   for(const stale of [false,true]){const f=await fixture(kind),wait=deferred();f.valid();f.write=()=>wait.promise;f.submitButton.focus();const pending=f.submit();if(stale)f.c.view='personal';wait.resolve({error:{message:'Save rejected'}});await pending;assert.equal(f.submitButton.disabled,stale);assert.equal(f.form.inert,stale);assert.equal(f.writes().length,1);if(!stale){assert.equal(f.document.activeElement,f.submitButton);f.write=async(name,args)=>({data:f.saved(name,args)});await f.submit();assert.deepEqual(f.writes()[1].args,f.writes()[0].args);}}
  });
 }
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+for(const kind of kinds)test(`${kind}: correction followed by action blur preserves layout until submit`,async()=>{
+ const f=await fixture(kind);f.valid();const input=f.field(kind==='fiscal'?'receipt':kind==='account'?'name':kind==='lock'?'date':'reason');
+ if(kind==='lock')input._nativeError='Enter a valid date.';else input.value='';f.blur(input);assert.equal(f.summary.textContent,'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');
+ f.valid();input._nativeError='';const html=f.form.innerHTML;dispatchCorrectionChange(input);f.submitButton.focus();f.blur(input,f.submitButton);
+ assert.equal(f.form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,f.submitButton);assert.equal(f.writes().length,0);
+ if(['fiscal','invoice','receipt'].includes(kind))assert.equal(f.form.contains(f.submitButton),false,'covers external form submit buttons');
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.error(input),'');
+});
+for(const kind of kinds)test(`${kind}: action blur cannot bypass submit validation`,async()=>{
+ const f=await fixture(kind);f.valid();const input=f.field(kind==='fiscal'?'receipt':kind==='account'?'name':kind==='lock'?'date':'reason');
+ if(kind==='lock')input._nativeError='Enter a valid date.';else input.value='';f.blur(input,f.submitButton);assert.equal(f.summary.textContent,'');await f.submit();assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.ok(f.error(input));
+});

@@ -74,3 +74,17 @@ test('an unavailable saved pack is a field error and lookup errors focus only th
 test('tracked packaging-only correction preserves total units and its existing non-serial RPC',async()=>{
  const f=fixture({tracked:true}),form=f.form('correct');form.elements.sealedCartons.value='0';form.elements.looseUnits.value='5';form.elements.receivingSerials.value='Unneeded duplicates\nUnneeded duplicates';f.refresh(form);await f.submit(form);assert.equal(f.writes().length,1);assert.equal(f.writes()[0].name,'set_inventory_opening_balance');assert.equal(f.writes()[0].args.p_sealed_cartons,0);assert.equal(f.writes()[0].args.p_loose_units,5);assert.equal(f.writes()[0].args.p_expected_version,7);assert.equal('p_serials' in f.writes()[0].args,false);assert.equal(f.ids,0);
 });
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+for(const action of ['opening','correct'])test(`${action}: correction followed by action blur preserves layout until submit`,async()=>{
+ const f=fixture(),form=f.form(action),input=form.elements.reason,button=form.querySelector('[type="submit"]');input.value='';await f.submit(form);assert.equal(f.summary(form),'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');input.value='Verified physical count';const html=form.innerHTML;
+ dispatchCorrectionChange(input);button.focus();dispatchFocusout(input,button);assert.equal(form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,button);assert.equal(f.writes().length,0);
+ await f.submit(form);assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_reason,'Verified physical count');
+});
+for(const action of ['opening','correct'])test(`${action}: action blur still requires valid fields on submit`,async()=>{
+ const f=fixture(),form=f.form(action),input=form.elements.reason;input.value='';dispatchFocusout(input,form.querySelector('[type="submit"]'));assert.equal(f.summary(form),'');await f.submit(form);assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.equal(f.summary(form),'1 field needs attention');
+});

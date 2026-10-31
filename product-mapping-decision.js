@@ -8,13 +8,17 @@ async function openProductMappingDecision(row,onSaved,isCurrent=()=>true){
  if(response.error)throw Error(`Saved mappings unavailable: ${response.error.message}`);
  const previous=response.data?.[0],canLink=row.match.status==='exact'&&row.match.productIds.length===1;
  const dialog=document.createElement('dialog');dialog.className='product-review-editor';
- dialog.innerHTML=`<form><h2>Save mapping decision</h2><p>Source: ${esc(row.sourceKey)}</p><p>${esc(row.corrected.name)} · ${esc(row.corrected.manufacturer||'Manufacturer missing')}</p><p>This records the product identity only. Stock is not imported, and source stock warnings remain unresolved.</p><p>Previous decision: ${esc(previous?`${previous.decision} · ${previous.product_id||'No product'} · version ${previous.version}`:'None')}</p><label>Decision<select name="decision">${canLink?`<option value="linked">Confirm product ${esc(row.match.productIds[0])}</option>`:''}<option value="unresolved">Keep unresolved — needs further review</option></select></label><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><p role="alert"></p><div class="actions"><button type="button" data-cancel>Cancel</button><button type="submit">Save decision only</button></div></form>`;
- const requestId=crypto.randomUUID(),form=dialog.querySelector('form'),initial=workspaceFormSnapshot(form);let saving=false,committed=false;
+ dialog.innerHTML=`<form><h2>Save mapping decision</h2><p>Source: ${esc(row.sourceKey)}</p><p>${esc(row.corrected.name)} · ${esc(row.corrected.manufacturer||'Manufacturer missing')}</p><p>This records the product identity only. Stock is not imported, and source stock warnings remain unresolved.</p><p>Previous decision: ${esc(previous?`${previous.decision} · ${previous.product_id||'No product'} · version ${previous.version}`:'None')}</p><p role="alert"></p><label>Decision<select name="decision">${canLink?`<option value="linked">Confirm product ${esc(row.match.productIds[0])}</option>`:''}<option value="unresolved">Keep unresolved — needs further review</option></select></label><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><div class="actions"><button type="button" data-cancel>Cancel</button><button type="submit">Save decision only</button></div></form>`;
+ const requestId=crypto.randomUUID(),form=dialog.querySelector('form'),initial=workspaceFormSnapshot(form);let saving=false,committed=false;form.noValidate=true;
+ const validationErrors=()=>{const errors=nativeFormErrors(form);if(new FormData(form).get('decision')==='linked'&&!canLink)errors.set(form.elements.decision,'Resolve product identity before confirming a link.');return errors;};
+ form.addEventListener('focusout',event=>{const control=event.target;if(me!==actor||!canEditRecords()||!isCurrent()||saving||committed||!dialog.open||!dialog.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,validationErrors().get(control)||'');form.querySelector('[role="alert"]').textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
   if(me!==actor||!canEditRecords()){alert.textContent='Login changed. Close and reopen this review.';return;}
   if(!isCurrent()){alert.textContent='Preview changed. Close and reopen this review.';return;}
-  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}saving=true;button.disabled=true;alert.textContent='';
+  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}
+  const errors=validationErrors();alert.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
+  saving=true;button.disabled=true;alert.textContent='';
   const data=new FormData(form),decision=data.get('decision');
   await run(async()=>{
   try{

@@ -547,12 +547,12 @@ function proformaBindValidation(form){
  const actor=me,epoch=salesEpoch,request=salesWorkspaceRequest,touched=new WeakSet(),current=()=>me===actor&&salesEpoch===epoch&&salesWorkspaceRequest===request&&view==='sales'&&form.isConnected&&$('#proformaForm')===form;
  proformaValidationContexts.set(form,{current,touched});form.noValidate=true;
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;
+  const control=fieldValidationSource(event.target);if(!current()||fieldBlurToAction(event)||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;
   touched.add(control);const row=control.closest('[data-proforma-line]');if(row)pricingRefreshRow(row,form,{replacePrice:false});
   showFieldError(control,nativeFieldError(control));if(form.dataset.validationSubmitted==='true')proformaValidationSummary(form);
  });
- form.addEventListener('change',()=>{
-  if(!current()||form.dataset.saving==='true')return;
+ form.addEventListener('change',event=>{
+  if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||form.dataset.saving==='true')return;
   const errors=proformaFieldErrors(form);
   for(const control of form.querySelectorAll('input,select,textarea'))if(touched.has(control))showFieldError(control,errors.get(control)||'');
   if(form.dataset.validationSubmitted==='true')proformaValidationSummary(form);
@@ -618,12 +618,12 @@ function deliveryBindValidation(form){
  const current=()=>me===actor&&actor.active!==false&&sessionLoadEpoch===session&&salesEpoch===epoch&&salesWorkspaceRequest===request&&view==='sales'&&salesSection==='delivery'&&location.hash===hash&&$('#content')===root&&form.isConnected&&$('#deliveryForm')===form&&hasArea('deliveries');
  deliveryValidationContexts.set(form,{current,touched});form.noValidate=true;
  form.addEventListener('focusout',event=>{
-  const departed=event.target;if(!current()||form.dataset.saving==='true'||form.dataset.savedDelivery||!form.contains(departed)||!departed.matches('input,select,textarea'))return;
+  const departed=event.target;if(!current()||fieldBlurToAction(event)||form.dataset.saving==='true'||form.dataset.savedDelivery||!form.contains(departed)||!departed.matches('input,select,textarea'))return;
   const control=departed.name==='collection'?form.querySelector('[name="collection"]'):departed;touched.add(control);showFieldError(control,deliveryFieldErrors(form).get(control)||'');deliveryCollectionErrorHost(form);
   if(form.dataset.validationSubmitted==='true')deliveryValidationSummary(form);
  });
- form.addEventListener('change',()=>{
-  if(!current()||form.dataset.saving==='true'||form.dataset.savedDelivery)return;
+ form.addEventListener('change',event=>{
+  if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||form.dataset.saving==='true'||form.dataset.savedDelivery)return;
   const errors=deliveryFieldErrors(form);for(const control of form.querySelectorAll('input,select,textarea'))if(touched.has(control))showFieldError(control,errors.get(control)||'');deliveryCollectionErrorHost(form);
   if(form.dataset.validationSubmitted==='true')deliveryValidationSummary(form);
  });

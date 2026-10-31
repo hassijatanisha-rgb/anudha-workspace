@@ -24,8 +24,8 @@ export function installNativeFormControls(document){
 
 // Dispatch the bubbling event to registered listeners. onfocusout is not a
 // browser event-handler property and must not make a broken binding pass here.
-export function dispatchFocusout(control){
- const event=new Event('focusout',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+export function dispatchFocusout(control,relatedTarget=null){
+ const event=new Event('focusout',{bubbles:true});Object.defineProperty(event,'target',{value:control});Object.defineProperty(event,'relatedTarget',{value:relatedTarget});
  for(let node=control;node;node=node.parentElement){
   Object.defineProperty(event,'currentTarget',{configurable:true,value:node});
   for(const {fn}of [...(node.events.focusout||[])])fn.call(node,event);

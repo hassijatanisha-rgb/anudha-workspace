@@ -46,9 +46,9 @@ test('each amount uses the unchanged money parser for malformed and unsafe value
  f.line(0,'debit').value=' 50.25 ';f.blur(f.line(0,'debit'));assert.equal(f.error(f.line(0,'debit')),'');
 });
 
-test('the mutually exclusive debit/credit rule is visible on either departed amount and clears together',async()=>{
+test('the mutually exclusive debit/credit rule is visible on either departed amount and clears together on submit',async()=>{
  const f=await fixture();f.line(0,'credit').value='10';f.blur(f.line(0,'debit'));assert.match(f.error(f.line(0,'debit')),/either a debit or a credit/);assert.equal(f.error(f.line(0,'credit')),'');await f.submit();assert.equal(f.summary().textContent,'2 fields need attention');assert.match(f.error(f.line(0,'credit')),/either a debit or a credit/);assert.equal(f.writes().length,0);
- f.line(0,'credit').value='';f.change(f.line(0,'credit'));assert.equal(f.summary().textContent,'');
+ f.line(0,'credit').value='';f.change(f.line(0,'credit'));assert.equal(f.summary().textContent,'2 fields need attention');await f.submit();assert.equal(f.summary().textContent,'');assert.equal(f.writes().length,1);
 });
 
 test('minimum-line and imbalance errors have editable targets while empty rows stay optional',async()=>{
@@ -83,4 +83,21 @@ test('Add line preserves the existing draft rebuild and request lifecycle withou
 for(const change of ['actor','view','section','epoch','data','detach'])test(`${change} replacement suppresses stale blur, submit and late posting results`,async()=>{
  const f=await fixture(),form=f.form(),memo=f.field('memo'),summary=f.summary();f.replace(change);memo.value='';f.blur(memo);form.onsubmit({preventDefault(){}});assert.equal(summary.textContent,'');assert.equal(f.writes().length,0);
  const g=await fixture(),wait=deferred(),old=g.form();g.write=()=>wait.promise;const posting=g.submit();g.replace(change);wait.resolve({data:saved(g.writes()[0].args)});await posting;assert.equal(old.inert,true);assert.equal(g.node('[data-books-posted]'),null);
+});
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+test('journal correction followed by action blur preserves layout through change and focusout',async()=>{
+ const f=await fixture(),input=f.field('memo');input.value='';f.blur(input);assert.equal(f.summary().textContent,'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');input.value=' Office rent ';const html=f.form().innerHTML;
+ dispatchCorrectionChange(input);assert.equal(f.form().innerHTML,html,'text change must not mutate errors before focusout');f.post().focus();f.blur(input,f.post());assert.equal(f.form().innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,f.post());assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_memo,' Office rent ');assert.equal(f.error(input),'');
+});
+test('journal selector change still eagerly refreshes touched fields',async()=>{
+ const f=await fixture(),input=f.line(0,'accountId');input.value='';f.blur(input);assert.ok(f.error(input));input.value='bank';dispatchCorrectionChange(input);assert.equal(f.error(input),'');assert.equal(f.summary().textContent,'');assert.equal(f.writes().length,0);
+});
+test('journal action blur still requires valid fields on submit',async()=>{
+ const f=await fixture(),input=f.field('memo');input.value='';f.blur(input,f.post());assert.equal(f.summary().textContent,'');await f.submit();assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.ok(f.error(input));
 });

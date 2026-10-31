@@ -198,7 +198,7 @@ function booksFormValidation(form,summary,current){
  const fieldErrors=new Map();form.noValidate=true;
  const updateSummary=()=>{summary.textContent=fieldErrorSummary(fieldErrors.size);};
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);if(!current()||!form.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
+  if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||!form.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   const problem=nativeFieldError(control);if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();
  });
  return ()=>{const errors=nativeFormErrors(form);fieldErrors.clear();for(const [control,problem]of errors)fieldErrors.set(control,problem);updateSummary();showFieldErrors(form,errors);return !errors.size;};
@@ -358,7 +358,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
    showFieldError(control,problem);updateSummary();
   };
   form.addEventListener('focusout',event=>{
-   const control=fieldValidationSource(event.target);
+   if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);
    if(!current()||posting||uncertain||committed||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
    validateControl(control);
   });
@@ -581,7 +581,7 @@ async function booksReceipts(actor,current){
  const updateSummary=()=>{for(const control of fieldErrors.keys())if(!form.contains(control))fieldErrors.delete(control);summary.textContent=fieldErrorSummary(fieldErrors.size);};
  const validateControl=control=>{const problem=collectErrors().errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);
+  if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);
   if(!active()||!form.isConnected||posting||committed||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   validateControl(control);
  });
@@ -635,8 +635,8 @@ async function booksJournal(actor,current){
  };
  const updateSummary=()=>{summary.textContent=fieldErrorSummary(fieldErrors.size);};
  const validateControl=(control,errors=collectErrors())=>{const problem=errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
- form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||committed||posting||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
- form.addEventListener('change',()=>{if(!valid()||!form.isConnected||committed||posting)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
+ form.addEventListener('focusout',event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||committed||posting||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
+ form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!valid()||!form.isConnected||committed||posting)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
  const check=()=>{const result=booksJournalCheck(read());$('#booksJournalCheck').textContent=result.problem||`Balanced: ${moneyDisplay(result.debit)} debit and credit.`;$('#booksJournalCheck').className=result.problem?'error':'muted';return result;};
  const save=()=>{booksDraft={journal:{date:form.date.value,memo:form.memo.value,lines:read()}};};
  form.oninput=check;check();

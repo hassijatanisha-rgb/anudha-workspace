@@ -88,3 +88,17 @@ test('stale actor, route, section, epoch, request, action, transfer or replaceme
 test('late rejected request never publishes an error into replacement context',async()=>{
  for(const mode of ['actor','route','request','replace']){const f=fixture(),write=deferred();f.write=()=>write.promise;const pending=f.submit();if(mode==='actor')f.ctx.me={...f.actor};else if(mode==='route')f.ctx.view='personal';else if(mode==='request')f.get('inventoryOperationsRequest++');else f.form.replaceWith(f.document.createElement('form'));write.resolve({error:Error('Stale rejection')});await pending;assert.doesNotMatch(f.document.body.textContent,/Stale rejection/);assert.equal(f.writes().length,1);}
 });
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+test('request correction followed by action blur preserves layout until submit',async()=>{
+ const f=fixture(),form=f.form,input=form.elements.reason,button=form.querySelector('[type="submit"]');input.value='';await f.submit();assert.equal(f.summary(),'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error');input.value='Checked carton seals';const html=form.innerHTML;
+ dispatchCorrectionChange(input);button.focus();dispatchFocusout(input,button);assert.equal(form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,button);assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_reason,'Checked carton seals');
+});
+test('request action blur still requires valid fields on submit',async()=>{
+ const f=fixture(),form=f.form,input=form.elements.reason;input.value='';dispatchFocusout(input,form.querySelector('[type="submit"]'));assert.equal(f.summary(),'');await f.submit();assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.equal(f.summary(),'1 field needs attention');
+});

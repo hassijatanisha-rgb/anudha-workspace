@@ -47,23 +47,35 @@ function bindPasswordNotice(section,dialog,password,requestClose){
  section.querySelector('[data-close]').onclick=requestClose;
  section.querySelector('[data-copy-password]').onclick=async event=>{try{await navigator.clipboard.writeText(password);event.target.textContent='Copied';}catch{event.target.textContent='Select and copy it';}};
 }
+function employeeFormValidation(form,summary,current,readErrors){
+ const touched=new Set();form.noValidate=true;
+ const update=errors=>{let count=0;for(const control of touched){const problem=errors.get(control)||'';showFieldError(control,problem);if(problem)count++;}summary.textContent=fieldErrorSummary(count);};
+ form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||fieldBlurToAction(event)||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled)return;touched.add(control);update(readErrors());});
+ form.addEventListener('change',event=>{if(event.target.matches('select')&&current()&&touched.size)update(readErrors());});
+ return ()=>{const errors=readErrors();for(const control of form.querySelectorAll('input,select,textarea'))touched.add(control);update(errors);showFieldErrors(form,errors);return !errors.size;};
+}
 function openStaffOnboarding(){
  if(me?.role!=='owner'&&me?.role!=='head')throw Error('Only the owner or a department head can add employees.');
  const owner=me.role==='owner',actor=me,role0=me.role,openingView=view,trigger=document.activeElement,directory=document.querySelector('[data-staff-directory]'),directoryEpoch=directory?.staffEpoch,current=()=>me===actor&&me?.role===role0&&view===openingView&&dialog.isConnected;
  const dialog=document.createElement('dialog');dialog.className='staff-onboarding';dialog.setAttribute('aria-label','Add employee');
- dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label>${owner?`<label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="head">Department head — manages their department's staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><label><span>Department</span><select name="department">${departmentLabels.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:`<p>Department: <strong>${esc(departmentLabel(me.department))}</strong></p>`}<div data-access>${accessCheckboxes(startingAccess(owner?'':me.department))}</div><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
+ dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><p role="alert"></p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label>${owner?`<label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="head">Department head — manages their department's staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><label><span>Department</span><select name="department">${departmentLabels.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:`<p>Department: <strong>${esc(departmentLabel(me.department))}</strong></p>`}<div data-access>${accessCheckboxes(startingAccess(owner?'':me.department))}</div><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  const form=dialog.querySelector('form'),alert=form.querySelector('[role="alert"]'),done=dialog.querySelector('[data-step="done"]');
  // New accounts start with their department's usual areas; owners need no list.
  const refreshAccess=()=>{const role=form.elements.role?.value||'staff',box=form.querySelector('[data-access]');box.hidden=role==='owner';if(owner)box.innerHTML=accessCheckboxes(startingAccess(form.elements.department.value));};
  form.elements.department?.addEventListener('change',refreshAccess);form.elements.role?.addEventListener('change',refreshAccess);
  let working=false,refreshing=false;const initial=workspaceFormSnapshot(form),requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>working||refreshing,isDirty:()=>!form.hidden&&workspaceFormSnapshot(form)!==initial});
+ const validate=employeeFormValidation(form,alert,()=>current()&&!working&&!form.hidden,()=>{
+  const errors=nativeFormErrors(form),phone=form.elements.phone,department=form.elements.department;
+  if(owner&&form.elements.role.value==='head'&&!department.value)errors.set(department,'Choose the department this head will manage.');
+  if(phone.value.trim()&&!/^\+[0-9][0-9\s()-]{7,20}$/.test(phone.value.trim())&&!errors.has(phone))errors.set(phone,'Enter the phone with country code, for example +255712345678, or leave it empty.');
+  return errors;
+ });
  dialog.querySelector('[data-close]').onclick=requestClose;showWorkspaceDialog(dialog,{size:'large',trigger});
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled||!current())return;
+  if(!validate())return;
   const fullName=form.elements.fullName.value.trim().replace(/\s+/g,' '),phone=form.elements.phone.value.trim(),role=owner?form.elements.role.value:'staff',department=owner?form.elements.department.value:me.department,access=role==='owner'?[]:checkedAreas(form);
-  if(owner&&role==='head'&&!department){alert.textContent='Choose the department this head will manage.';return;}
-  if(phone&&!/^\+[0-9][0-9\s()-]{7,20}$/.test(phone)){alert.textContent='Enter the phone with country code, for example +255712345678, or leave it empty.';return;}
   if(busy){actionFeedbackRefuse(button,alert);return;}button.disabled=true;working=true;
   return run(async()=>{alert.textContent='';
   try{
@@ -346,16 +358,23 @@ function requirePasswordChange(user){if(!user?.app_metadata?.must_change_passwor
 function openChangePassword({required=false}={}){
  if(!me?.user_id)throw Error('Sign in first.');
  const actor=me,openingView=view,trigger=document.activeElement,dialog=document.createElement('dialog'),scopeCurrent=()=>me===actor&&view===openingView,current=()=>scopeCurrent()&&dialog.isConnected;dialog.className='change-password';dialog.setAttribute('aria-label','Change my password');
- dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<label><span>New password (at least 8 characters)</span><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
+ dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<p role="alert"></p><label><span>New password (at least 8 characters)</span><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  const form=dialog.querySelector('form'),alert=form.querySelector('[role="alert"]');
  let working=false;const requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>required||working,isDirty:()=>!!form.elements.password.value||!!form.elements.confirm.value});
+ const validate=employeeFormValidation(form,alert,()=>current()&&!working,()=>{
+  const errors=nativeFormErrors(form),password=form.elements.password,confirm=form.elements.confirm;
+  // Password length uses the exact entered value, including whitespace.
+  for(const control of [password,confirm])if(control.validity.valid&&control.value.length>=8&&control.value.length<=72)errors.delete(control);
+  if(password.value.length<8)errors.set(password,'Use at least 8 characters.');
+  if(password.value!==confirm.value&&!errors.has(confirm))errors.set(confirm,'The two passwords do not match.');
+  return errors;
+ });
  dialog.querySelector('[data-close]').hidden=required;dialog.querySelector('[data-close]').onclick=requestClose;showWorkspaceDialog(dialog,{size:'small',trigger});
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled||!current())return;
   const password=form.elements.password.value,confirm=form.elements.confirm.value;
-  if(password.length<8)return alert.textContent='Use at least 8 characters.';
-  if(password!==confirm)return alert.textContent='The two passwords do not match.';
+  if(!validate())return;
   if(busy){actionFeedbackRefuse(button,alert);return;}button.disabled=true;working=true;
   return run(async()=>{alert.textContent='';
   try{

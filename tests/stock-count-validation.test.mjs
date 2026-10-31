@@ -114,3 +114,15 @@ test('actual shared run refuses a busy save before disabling it and preserves th
 test('actual shared run preserves caller-owned disabled state after a confirmed count',async()=>{
  const f=fixture(),button=f.form.querySelector('#countSave');await f.submit();assert.equal(f.calls.length,1);assert.equal(f.form.dataset.countSaved,'true');assert.equal(button.disabled,true);assert.equal(button.getAttribute('aria-busy'),null);assert.equal(button.classList.contains('action-is-busy'),false);assert.equal(f.ctx.busy,false);await f.submit();assert.equal(f.calls.length,1);
 });
+
+
+test('stock count: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture();const form=f.form,control=f.field('quantity'),button=form.querySelector('[type="submit"]');control.value=' ';await f.submit();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');control.value='1.001';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.calls.length,0);
+ await f.submit();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_quantity,1.001);assert.equal(f.calls[0].args.p_unit,'KG');
+});
+
+test('stock count: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture();const form=f.form,control=f.field('quantity'),button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.calls.length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='1.001';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');const next=f.field('notes');next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.length,0);
+});

@@ -233,10 +233,10 @@ function bindServiceIntake(form){
  const validateControl=(control,errors=collectErrors())=>{const problem=errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
  form.addEventListener('focusout',event=>{
   const control=fieldValidationSource(event.target);
-  if(!current()||button.disabled||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
+  if(!current()||fieldBlurToAction(event)||button.disabled||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   validateControl(control);
  });
- form.addEventListener('change',()=>{if(!current()||button.disabled)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
+ form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||button.disabled)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
  field('serialUnknown').onchange=()=>{field('serial').disabled=field('serialUnknown').checked;field('serial').required=!field('serialUnknown').checked;};
  field('organizationId').onchange=()=>{refreshContacts();if(!field('location').value)field('location').value=orgIndex.get(field('organizationId').value)?.location||'';};
  field('siteOrganizationId').onchange=()=>{refreshContacts();const site=orgIndex.get(field('siteOrganizationId').value);if(site?.location)field('location').value=site.location;};

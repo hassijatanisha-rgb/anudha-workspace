@@ -16,7 +16,7 @@ const actionCancel=actionEditorForm.querySelector('#actionCancel');
 const dismissActionForm=bindWorkspaceDialogDismiss(actionDialog,{isBusy:()=>actionSaving,isDirty:()=>workspaceFormSnapshot(actionEditorForm)!==actionInitialValues});
 actionCancel.addEventListener('click',dismissActionForm);
 actionDialog.addEventListener('close',()=>{actionSubmit=null});
-actionEditorForm.addEventListener('focusout',event=>{const control=event.target;if(actionSaving||me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch||!actionSubmit||!actionDialog.open||!actionFields.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(actionValidationSubmitted)actionFeedbackShow(actionFeedbackReference(actionSave),fieldErrorSummary(actionFields.querySelectorAll('.field-error').length),'error',actionError);});
+actionEditorForm.addEventListener('focusout',event=>{const control=event.target;if(fieldBlurToAction(event)||actionSaving||me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch||!actionSubmit||!actionDialog.open||!actionFields.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(actionValidationSubmitted)actionFeedbackShow(actionFeedbackReference(actionSave),fieldErrorSummary(actionFields.querySelectorAll('.field-error').length),'error',actionError);});
 actionEditorForm.addEventListener('submit',async e=>{
  e.preventDefault();if(actionSaving||!actionSubmit)return;
  if(me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch){actionError.textContent='Login changed. Close and reopen this form.';return;}

@@ -21,7 +21,7 @@ function fixture({reduced=false,phone=false}={}){
  };
  const trigger=document.createElement('button');trigger.rect={left:20,top:20,width:44,height:44,right:64,bottom:64};document.body.append(trigger);trigger.focus();
  const context=vm.createContext({DOMMatrixReadOnly:class{constructor(value){this.m42=value?.startsWith('matrix(')?Number(value.slice(7,-1).split(',')[5]):0;}},document,me:{user_id:'owner'},matchMedia:query=>({matches:query.includes('reduced-motion')?reduced:phone}),getComputedStyle:node=>({opacity:node.style.opacity||node.renderedOpacity||'1',transform:node.style.transform||node.renderedTransform||'none',getPropertyValue:key=>({'--m-base':'200ms','--m-slow':'300ms','--m-fade':'150ms','--ease-in':'cubic-bezier(.2,.8,.2,1)','--ease-out':'cubic-bezier(.8,.2,.8,1)'}[key])})});
- vm.runInContext(source,context);
+ vm.runInContext(readFileSync(new URL('../client-rules.js',import.meta.url),'utf8'),context);vm.runInContext(source,context);
  const dialogs=()=>document.querySelectorAll('dialog'),last=()=>animations.at(-1);
  const complete=async()=>{last().finish();await tick();};
  const submit=dialog=>dialog.querySelector('form').fire('submit');
@@ -144,3 +144,9 @@ test('rebinding dismissal uses the current form callbacks and installs one cance
  test('regrabbing a sheet mid-animation tracks from the rendered offset without a jump',()=>{
  const f=fixture({phone:true}),dialog=f.document.createElement('dialog');f.document.body.append(dialog);let dismisses=0;f.context.bindWorkspaceDialogDrag(dialog,()=>dismisses++);f.context.showWorkspaceDialog(dialog);dialog.renderedTransform='matrix(1,0,0,1,0,20)';dialog.renderedOpacity='.8';const handle=dialog.querySelector('.dialog-drag-handle');handle.fire('pointerdown',{pointerId:1,button:0,clientY:100});assert.equal(dialog.style.transform,'translateY(20px)');assert.equal(dialog.style.opacity,'0.8');handle.fire('pointermove',{pointerId:1,clientY:105});assert.equal(dialog.style.transform,'translateY(25px)');assert.equal(dialog.style.opacity,'0.775');handle.fire('pointerup',{pointerId:1});assert.equal(dismisses,0);
  });
+
+test('text correction cannot move Save or Cancel during blur; submit still validates',async()=>{
+ for(const targetIndex of [0,1]){
+  const f=fixture(),answer=f.context.askText({title:'Product name',label:'Name',value:'',validate:value=>value.trim()?'':'Enter a product name.'}),dialog=f.dialogs()[0],input=dialog.querySelector('input'),error=dialog.querySelector('[role="alert"]');input.fire('blur');input.value='Analyzer';input.fire('blur',{relatedTarget:dialog.querySelectorAll('button')[targetIndex]});assert.equal(error.textContent,'Enter a product name.');assert.equal(input.getAttribute('aria-invalid'),'true');f.submit(dialog);await f.complete();assert.equal(await answer,'Analyzer');
+ }
+});

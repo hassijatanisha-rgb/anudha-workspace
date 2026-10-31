@@ -125,7 +125,7 @@ async function edit(c){
  const current=()=>me===actor&&editing===record&&$('#editor').open&&form.isConnected;
  const check=control=>{control=fieldValidationSource(control);if(!current()||editSaving||!control.name||!form.contains(control))return;touched.add(control);const errors=contactValidationErrors({...record,...Object.fromEntries(new FormData(form))});showFieldError(control,errors[control.name]||'');if(form.dataset.validationSubmitted)showContactValidationSummary(form,form.querySelectorAll('.field-error').length);};
  if(form.contactFocusout)form.removeEventListener('focusout',form.contactFocusout);
- form.contactFocusout=event=>check(event.target);form.addEventListener('focusout',form.contactFocusout);
+ form.contactFocusout=event=>{if(!fieldBlurToAction(event))check(event.target);};form.addEventListener('focusout',form.contactFocusout);
  const hint=()=>{$('#phoneHint').textContent=phoneLengthMessage(country.value);};country.onchange=()=>{if(!current()||editSaving)return;code.value=window.PHONE_RULES[country.value]?'+'+window.PHONE_RULES[country.value].code:'';hint();for(const control of [phone,code])if(touched.has(control)||control.getAttribute('aria-invalid')==='true')check(control);};hint();
  const initial=workspaceFormSnapshot(form);$('#formError').textContent='';
  $('#closeEditor').onclick=bindWorkspaceDialogDismiss($('#editor'),{isBusy:()=>editSaving,isDirty:()=>workspaceFormSnapshot(form)!==initial});

@@ -27,7 +27,7 @@ async function openProductReview(id){
  const isDirty=()=>!committed&&workspaceFormSnapshot(form)!==initial,dirtyStatus=form.querySelector('[data-product-review-dirty]');
  const updateDirtyStatus=()=>{if(!current()||!dialog.open||!dialog.isConnected)return;const text=committed?'Correction saved':isDirty()?'Unsaved changes':'No changes';if(dirtyStatus.textContent!==text)dirtyStatus.textContent=text;};
  form.oninput=updateDirtyStatus;form.onchange=updateDirtyStatus;
- form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(validationSubmitted)actionFeedbackShow(actionFeedbackReference(form.querySelector('[type="submit"]')),fieldErrorSummary(form.querySelectorAll('.field-error').length),'error',form.querySelector('[role="alert"]'));});
+ form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,nativeFieldError(control));if(validationSubmitted)actionFeedbackShow(actionFeedbackReference(form.querySelector('[type="submit"]')),fieldErrorSummary(form.querySelectorAll('.field-error').length),'error',form.querySelector('[role="alert"]'));});
  dialog.querySelector('[data-close]').onclick=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>saving,isDirty});
  actionFeedbackRememberDialog(dialog);showWorkspaceDialog(dialog,{size:'medium'});
  form.onsubmit=async event=>{

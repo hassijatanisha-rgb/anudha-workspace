@@ -292,7 +292,7 @@ function renderProductPriceDetail(target,current,currency=productPriceCurrency||
  pricingBindEditorAmount(form.elements.price,()=>active()&&form.dataset.saving!=='true');
  const notice=form.querySelector('[data-price-error]'),touched=new Set(),summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
  const check=control=>{touched.add(control);showFieldError(control,pricingEditorFieldError(control,selected.currency));if(form.dataset.validationSubmitted==='true')summary();};form.noValidate=true;
- form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;check(control);});
+ form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;check(control);});
  form.addEventListener('change',event=>{if(!active())return;if(event.target.name==='currency'){if(request){form.elements.currency.value=selected.currency;message('A previous save was not confirmed. Retry its original values or refresh before changing currency.',true);}else choose();if(form.dataset.saving!=='true')for(const control of [form.elements.currency,form.elements.price])if(touched.has(control)||form.dataset.validationSubmitted==='true')check(control);}});
  form.onsubmit=event=>{event.preventDefault();if(!active()||form.dataset.saving==='true')return;const button=form.querySelector('[type="submit"]');if(button.disabled)return;
   if(busy){actionFeedbackRefuse(button,notice);return;}

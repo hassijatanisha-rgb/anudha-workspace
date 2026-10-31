@@ -320,7 +320,7 @@ function bindStockCount(bodyOnly=false){
   const current=()=>me===actor&&sessionLoadEpoch===sessionEpoch&&countEpoch===epoch&&countPageRequest===request&&countPicked===picked&&countGodown===godown&&countOpenSession()?.id===sessionId&&view==='stockcount'&&countTab==='count'&&form.isConnected&&$('#countForm')===form;
   const summary=(count=form.querySelectorAll('.field-error').length)=>{form.querySelector('#countFormError').textContent=fieldErrorSummary(count);};form.noValidate=true;
   if(form.countFocusout)form.removeEventListener('focusout',form.countFocusout);
-  form.countFocusout=event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.countSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,countFieldError(control));if(form.dataset.validationSubmitted==='true')summary();};
+  form.countFocusout=event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.countSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,countFieldError(control));if(form.dataset.validationSubmitted==='true')summary();};
   form.addEventListener('focusout',form.countFocusout);
   form.onsubmit=event=>{event.preventDefault();if(!current())return;const button=form.querySelector('#countSave'),notice=form.querySelector('#countFormError');if(button.disabled)return;
    if(busy){actionFeedbackRefuse(button,notice);return;}

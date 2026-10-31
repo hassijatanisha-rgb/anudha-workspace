@@ -17,6 +17,22 @@ test('native bubbling focusout validates only the departed field and preserves h
  reference.value='Approved reference';f.blur(reference);assert.equal(reference.getAttribute('aria-describedby'),'approval-help');assert.equal(f.form().querySelectorAll('.field-error').length,0);
 });
 
+test('corrected approval text keeps its error and summary stable through change and Save blur until the first submit',async()=>{
+ const f=deliveryApprovalFixture({runtime:true}),reference=f.field('accountsReference'),save=f.form().querySelector('[type="submit"]');reference.value='';await f.submitEvent();const error=reference.closest('label').querySelector('.field-error');assert.ok(error);assert.equal(summary(f).textContent,'1 field needs attention');
+ reference.value='Corrected approval';f.fire(reference,'change');assert.equal(reference.closest('label').querySelector('.field-error'),error);save.focus();f.blur(reference,save);assert.equal(reference.closest('label').querySelector('.field-error'),error);assert.equal(summary(f).textContent,'1 field needs attention');assert.equal(f.document.activeElement,save);assert.equal(f.calls.length,0);
+ await f.submitEvent();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_accounts_reference,'Corrected approval');assert.equal(f.calls[0].args.p_id,recordId);assert.equal(f.form().querySelectorAll('.field-error').length,0);assert.equal(f.form().dataset.savedDelivery,recordId);assert.equal(save.disabled,true);
+});
+
+test('approval action blur does not add errors before submit, which still validates and focuses the first field',async()=>{
+ const f=deliveryApprovalFixture({runtime:true}),reference=f.field('accountsReference'),save=f.form().querySelector('[type="submit"]');reference.value='';save.focus();f.fire(reference,'change');f.blur(reference,save);assert.equal(f.form().querySelectorAll('.field-error').length,0);assert.equal(summary(f).textContent,'');assert.equal(f.document.activeElement,save);
+ await f.submitEvent();assert.equal(f.calls.length,0);assert.equal(summary(f).textContent,'1 field needs attention');assert.equal(f.document.activeElement,reference);
+});
+
+test('external approval action blur retains corrected feedback while an ordinary field blur clears it',async()=>{
+ const f=deliveryApprovalFixture(),reference=f.field('accountsReference'),action=f.document.createElement('button');action.type='button';f.document.body.append(action);reference.value='';await f.submit();const error=reference.closest('label').querySelector('.field-error');reference.value='Corrected approval';f.fire(reference,'change');f.blur(reference,action);assert.equal(reference.closest('label').querySelector('.field-error'),error);assert.equal(summary(f).textContent,'1 field needs attention');
+ f.field('expectedDeliveryDate').focus();f.blur(reference,f.field('expectedDeliveryDate'));assert.equal(f.form().querySelectorAll('.field-error').length,0);assert.equal(summary(f).textContent,'');assert.equal(f.document.activeElement,f.field('expectedDeliveryDate'));assert.equal(f.calls.length,0);
+});
+
 test('either departed radio presents the same visible group error; choosing a value clears it without shifting focus',()=>{
  const f=deliveryApprovalFixture();f.select('');radios(f)[1].focus();f.blur(radios(f)[1]);const host=f.form().querySelector('[data-delivery-collection-errors]');assert.equal(host.querySelectorAll('.field-error').length,1);assert.equal(f.document.activeElement,radios(f)[1]);f.blur(radios(f)[0]);assert.equal(host.querySelectorAll('.field-error').length,1);
  f.select('lobby');f.fire(radios(f)[0],'change');assert.equal(host.querySelectorAll('.field-error').length,0);assert.equal(radios(f)[0].getAttribute('aria-invalid'),null);assert.equal(f.document.activeElement,radios(f)[1]);assert.equal(f.calls.length,0);

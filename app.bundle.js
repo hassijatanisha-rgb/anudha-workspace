@@ -94,6 +94,8 @@ function showFieldError(control,message){
  const descriptions=new Set(((control.getAttribute('aria-describedby')||'')+' '+(source.getAttribute('aria-describedby')||'')).split(/\s+/).filter(Boolean));descriptions.add(state.node.id);control.setAttribute('aria-describedby',[...descriptions].join(' '));
 }
 function fieldErrorSummary(count){return count?`${count} ${count===1?'field needs':'fields need'} attention`:'';}
+// Changing error height during pointer focus can move the action before its click lands.
+function fieldBlurToAction(event){return !!event.relatedTarget?.closest?.('button,[role="button"],input[type="submit"],input[type="button"],input[type="reset"],a[href]');}
 function nativeFieldError(control){
  control=fieldValidationSource(control);
  if(!control.willValidate)return '';
@@ -1068,13 +1070,17 @@ async function openProductMappingDecision(row,onSaved,isCurrent=()=>true){
  if(response.error)throw Error(`Saved mappings unavailable: ${response.error.message}`);
  const previous=response.data?.[0],canLink=row.match.status==='exact'&&row.match.productIds.length===1;
  const dialog=document.createElement('dialog');dialog.className='product-review-editor';
- dialog.innerHTML=`<form><h2>Save mapping decision</h2><p>Source: ${esc(row.sourceKey)}</p><p>${esc(row.corrected.name)} · ${esc(row.corrected.manufacturer||'Manufacturer missing')}</p><p>This records the product identity only. Stock is not imported, and source stock warnings remain unresolved.</p><p>Previous decision: ${esc(previous?`${previous.decision} · ${previous.product_id||'No product'} · version ${previous.version}`:'None')}</p><label>Decision<select name="decision">${canLink?`<option value="linked">Confirm product ${esc(row.match.productIds[0])}</option>`:''}<option value="unresolved">Keep unresolved — needs further review</option></select></label><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><p role="alert"></p><div class="actions"><button type="button" data-cancel>Cancel</button><button type="submit">Save decision only</button></div></form>`;
- const requestId=crypto.randomUUID(),form=dialog.querySelector('form'),initial=workspaceFormSnapshot(form);let saving=false,committed=false;
+ dialog.innerHTML=`<form><h2>Save mapping decision</h2><p>Source: ${esc(row.sourceKey)}</p><p>${esc(row.corrected.name)} · ${esc(row.corrected.manufacturer||'Manufacturer missing')}</p><p>This records the product identity only. Stock is not imported, and source stock warnings remain unresolved.</p><p>Previous decision: ${esc(previous?`${previous.decision} · ${previous.product_id||'No product'} · version ${previous.version}`:'None')}</p><p role="alert"></p><label>Decision<select name="decision">${canLink?`<option value="linked">Confirm product ${esc(row.match.productIds[0])}</option>`:''}<option value="unresolved">Keep unresolved — needs further review</option></select></label><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><div class="actions"><button type="button" data-cancel>Cancel</button><button type="submit">Save decision only</button></div></form>`;
+ const requestId=crypto.randomUUID(),form=dialog.querySelector('form'),initial=workspaceFormSnapshot(form);let saving=false,committed=false;form.noValidate=true;
+ const validationErrors=()=>{const errors=nativeFormErrors(form);if(new FormData(form).get('decision')==='linked'&&!canLink)errors.set(form.elements.decision,'Resolve product identity before confirming a link.');return errors;};
+ form.addEventListener('focusout',event=>{const control=event.target;if(me!==actor||!canEditRecords()||!isCurrent()||saving||committed||!dialog.open||!dialog.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,validationErrors().get(control)||'');form.querySelector('[role="alert"]').textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
   if(me!==actor||!canEditRecords()){alert.textContent='Login changed. Close and reopen this review.';return;}
   if(!isCurrent()){alert.textContent='Preview changed. Close and reopen this review.';return;}
-  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}saving=true;button.disabled=true;alert.textContent='';
+  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}
+  const errors=validationErrors();alert.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
+  saving=true;button.disabled=true;alert.textContent='';
   const data=new FormData(form),decision=data.get('decision');
   await run(async()=>{
   try{
@@ -1182,18 +1188,21 @@ async function openProductMachineLinks(id){
  const choices=[...machines];
  for(const missing of selected)if(!choices.some(p=>p.id===missing))choices.push({id:missing,name:'Unavailable machine — remove or review',source:{}});
  const dialog=document.createElement('dialog');dialog.className='product-review-editor';
- dialog.innerHTML=`<form><h2>Compatible machines</h2><p>${esc(product.name)} · ${esc(product.source?.company||'Manufacturer needs review')}</p><p>Link this same product to every compatible machine. This does not copy or move stock.</p><label>Search machines<input type="search" autocomplete="off" placeholder="Name, manufacturer or model"></label><div class="machine-link-options" data-machine-choices>${choices.map(p=>`<label data-machine-search="${esc([p.name,p.source?.company,p.source?.specification,p.source?.model,p.sku].join(' ').toLowerCase())}"><input type="checkbox" name="machineId" value="${esc(p.id)}" ${selected.has(p.id)?'checked':''}>${esc(p.name)} · ${esc(p.source?.company||'Manufacturer needs review')} · ${esc(p.source?.specification||p.source?.model||'Specification needs review')} · ${esc(p.sku||'Stock code missing')} · ID: ${esc(p.id)}</label>`).join('')||'<p>No machines are classified yet. Confirm their product categories first.</p>'}</div><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save machine links</button></div></form>`;
+ dialog.innerHTML=`<form><h2>Compatible machines</h2><p>${esc(product.name)} · ${esc(product.source?.company||'Manufacturer needs review')}</p><p>Link this same product to every compatible machine. This does not copy or move stock.</p><p role="alert"></p><label>Search machines<input type="search" autocomplete="off" placeholder="Name, manufacturer or model"></label><div class="machine-link-options" data-machine-choices>${choices.map(p=>`<label data-machine-search="${esc([p.name,p.source?.company,p.source?.specification,p.source?.model,p.sku].join(' ').toLowerCase())}"><input type="checkbox" name="machineId" value="${esc(p.id)}" ${selected.has(p.id)?'checked':''}>${esc(p.name)} · ${esc(p.source?.company||'Manufacturer needs review')} · ${esc(p.source?.specification||p.source?.model||'Specification needs review')} · ${esc(p.sku||'Stock code missing')} · ID: ${esc(p.id)}</label>`).join('')||'<p>No machines are classified yet. Confirm their product categories first.</p>'}</div><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save machine links</button></div></form>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  dialog.querySelector('input[type="search"]').oninput=event=>{
   const query=event.target.value.trim().toLowerCase();
   dialog.querySelectorAll('[data-machine-search]').forEach(row=>{row.hidden=!row.dataset.machineSearch.includes(query)});
  };
- const form=dialog.querySelector('form'),requestId=crypto.randomUUID(),initial=workspaceFormSnapshot(form);let saving=false,committed=false;
+ const form=dialog.querySelector('form'),requestId=crypto.randomUUID(),initial=workspaceFormSnapshot(form);let saving=false,committed=false;form.noValidate=true;
+ form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!dialog.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,nativeFieldError(control));form.querySelector('[role="alert"]').textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
  dialog.querySelector('[data-close]').onclick=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>saving,isDirty:()=>!committed&&workspaceFormSnapshot(form)!==initial});
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
   if(!current()||!canEditRecords()){alert.textContent='Login changed. Close and reopen this form.';return;}
-  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}saving=true;button.disabled=true;alert.textContent='';
+  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}
+  const errors=nativeFormErrors(form);alert.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
+  saving=true;button.disabled=true;alert.textContent='';
   const data=new FormData(form),ids=data.getAll('machineId');
   await run(async()=>{
   try{
@@ -1241,7 +1250,7 @@ async function openProductReview(id){
  const isDirty=()=>!committed&&workspaceFormSnapshot(form)!==initial,dirtyStatus=form.querySelector('[data-product-review-dirty]');
  const updateDirtyStatus=()=>{if(!current()||!dialog.open||!dialog.isConnected)return;const text=committed?'Correction saved':isDirty()?'Unsaved changes':'No changes';if(dirtyStatus.textContent!==text)dirtyStatus.textContent=text;};
  form.oninput=updateDirtyStatus;form.onchange=updateDirtyStatus;
- form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(validationSubmitted)actionFeedbackShow(actionFeedbackReference(form.querySelector('[type="submit"]')),fieldErrorSummary(form.querySelectorAll('.field-error').length),'error',form.querySelector('[role="alert"]'));});
+ form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,nativeFieldError(control));if(validationSubmitted)actionFeedbackShow(actionFeedbackReference(form.querySelector('[type="submit"]')),fieldErrorSummary(form.querySelectorAll('.field-error').length),'error',form.querySelector('[role="alert"]'));});
  dialog.querySelector('[data-close]').onclick=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>saving,isDirty});
  actionFeedbackRememberDialog(dialog);showWorkspaceDialog(dialog,{size:'medium'});
  form.onsubmit=async event=>{
@@ -2198,7 +2207,7 @@ const inventoryCountBlurHandlers=new WeakMap();
 function bindInventoryCountForm(form){
  const actor=me,epoch=inventoryEpoch,request=inventoryStockPageRequest,action=inventoryStockActionRequest,target=$('#content'),current=()=>me===actor&&view==='inventory'&&inventorySection==='stock'&&inventoryEpoch===epoch&&inventoryStockPageRequest===request&&inventoryStockActionRequest===action&&target?.isConnected&&$('#content')===target&&form.isConnected&&target.contains(form);
  const notice=form.querySelector('[data-inventory-count-error]'),button=form.querySelector('[type="submit"]'),touched=new Set(),summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
- const blur=event=>{const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryCountFormErrors(form);showFieldError(control,errors.get(control)||'');
+ const blur=event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryCountFormErrors(form);showFieldError(control,errors.get(control)||'');
   if(['packId','sealedCartons','looseUnits'].includes(control.name))for(const name of ['sealedCartons','looseUnits','receivingSerials']){const related=form.elements[name];if(related&&(touched.has(related)||form.dataset.validationSubmitted==='true'))showFieldError(related,errors.get(related)||'');}
   if(form.dataset.validationSubmitted==='true')summary();
  };
@@ -2225,7 +2234,7 @@ const inventoryRequestBlurHandlers=new WeakMap();
 function bindInventoryRequestForm(form){
  const actor=me,epoch=inventoryEpoch,request=inventoryOperationsRequest,action=inventoryOperationsActionRequest,target=$('#content'),current=()=>me===actor&&inventoryActor===actor&&view==='inventory'&&inventorySection==='transfers'&&inventoryEpoch===epoch&&inventoryOperationsRequest===request&&inventoryOperationsActionRequest===action&&inventoryTransferReady&&inventoryTransferId==='new'&&target?.isConnected&&$('#content')===target&&form.isConnected&&target.contains(form);
  const notice=form.querySelector('[data-inventory-request-error]'),button=form.querySelector('[type="submit"]'),touched=new Set(),summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
- const blur=event=>{const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||form.dataset.inventorySaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryRequestFormErrors(form);showFieldError(control,errors.get(control)||'');
+ const blur=event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||form.dataset.inventorySaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryRequestFormErrors(form);showFieldError(control,errors.get(control)||'');
   if(control===form.elements.sourceLotId)for(const related of [form.elements.toLocationId,form.elements.cartons])if(touched.has(related)||form.dataset.validationSubmitted==='true')showFieldError(related,errors.get(related)||'');
   if(form.dataset.validationSubmitted==='true')summary();
  };
@@ -2258,7 +2267,7 @@ function bindInventoryActionForm(form){
  const actor=me,epoch=inventoryEpoch,section=inventorySection,transfer=['dispatch','receive'].includes(form.dataset.inventoryAction),request=transfer?inventoryOperationsRequest:inventoryStockPageRequest,action=transfer?inventoryOperationsActionRequest:inventoryStockActionRequest,target=$('#content');
  const current=()=>me===actor&&inventoryActor===actor&&view==='inventory'&&inventorySection===section&&inventoryEpoch===epoch&&target?.isConnected&&$('#content')===target&&form.isConnected&&target.contains(form)&&(transfer?section==='transfers'&&inventoryOperationsRequest===request&&inventoryOperationsActionRequest===action&&inventoryTransferReady&&inventoryTransferId===form.dataset.transfer:section==='stock'&&inventoryStockPageRequest===request&&inventoryStockActionRequest===action);
  const notice=form.querySelector('[data-inventory-action-error]'),button=form.querySelector('[type="submit"]'),touched=new Set(),summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
- const blur=event=>{const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||form.dataset.inventorySaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryActionFormErrors(form);showFieldError(control,errors.get(control)||'');
+ const blur=event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||form.inert||form.dataset.saving==='true'||form.dataset.inventorySaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=inventoryActionFormErrors(form);showFieldError(control,errors.get(control)||'');
   const serials=form.elements.transferSerials;if(control===form.elements.actualUnits&&serials&&(touched.has(serials)||form.dataset.validationSubmitted==='true'))showFieldError(serials,errors.get(serials)||'');
   summary();
  };
@@ -3191,7 +3200,7 @@ function renderProductPriceDetail(target,current,currency=productPriceCurrency||
  pricingBindEditorAmount(form.elements.price,()=>active()&&form.dataset.saving!=='true');
  const notice=form.querySelector('[data-price-error]'),touched=new Set(),summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
  const check=control=>{touched.add(control);showFieldError(control,pricingEditorFieldError(control,selected.currency));if(form.dataset.validationSubmitted==='true')summary();};form.noValidate=true;
- form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;check(control);});
+ form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;check(control);});
  form.addEventListener('change',event=>{if(!active())return;if(event.target.name==='currency'){if(request){form.elements.currency.value=selected.currency;message('A previous save was not confirmed. Retry its original values or refresh before changing currency.',true);}else choose();if(form.dataset.saving!=='true')for(const control of [form.elements.currency,form.elements.price])if(touched.has(control)||form.dataset.validationSubmitted==='true')check(control);}});
  form.onsubmit=event=>{event.preventDefault();if(!active()||form.dataset.saving==='true')return;const button=form.querySelector('[type="submit"]');if(button.disabled)return;
   if(busy){actionFeedbackRefuse(button,notice);return;}
@@ -3807,12 +3816,12 @@ function proformaBindValidation(form){
  const actor=me,epoch=salesEpoch,request=salesWorkspaceRequest,touched=new WeakSet(),current=()=>me===actor&&salesEpoch===epoch&&salesWorkspaceRequest===request&&view==='sales'&&form.isConnected&&$('#proformaForm')===form;
  proformaValidationContexts.set(form,{current,touched});form.noValidate=true;
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;
+  const control=fieldValidationSource(event.target);if(!current()||fieldBlurToAction(event)||form.dataset.saving==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;
   touched.add(control);const row=control.closest('[data-proforma-line]');if(row)pricingRefreshRow(row,form,{replacePrice:false});
   showFieldError(control,nativeFieldError(control));if(form.dataset.validationSubmitted==='true')proformaValidationSummary(form);
  });
- form.addEventListener('change',()=>{
-  if(!current()||form.dataset.saving==='true')return;
+ form.addEventListener('change',event=>{
+  if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||form.dataset.saving==='true')return;
   const errors=proformaFieldErrors(form);
   for(const control of form.querySelectorAll('input,select,textarea'))if(touched.has(control))showFieldError(control,errors.get(control)||'');
   if(form.dataset.validationSubmitted==='true')proformaValidationSummary(form);
@@ -3878,12 +3887,12 @@ function deliveryBindValidation(form){
  const current=()=>me===actor&&actor.active!==false&&sessionLoadEpoch===session&&salesEpoch===epoch&&salesWorkspaceRequest===request&&view==='sales'&&salesSection==='delivery'&&location.hash===hash&&$('#content')===root&&form.isConnected&&$('#deliveryForm')===form&&hasArea('deliveries');
  deliveryValidationContexts.set(form,{current,touched});form.noValidate=true;
  form.addEventListener('focusout',event=>{
-  const departed=event.target;if(!current()||form.dataset.saving==='true'||form.dataset.savedDelivery||!form.contains(departed)||!departed.matches('input,select,textarea'))return;
+  const departed=event.target;if(!current()||fieldBlurToAction(event)||form.dataset.saving==='true'||form.dataset.savedDelivery||!form.contains(departed)||!departed.matches('input,select,textarea'))return;
   const control=departed.name==='collection'?form.querySelector('[name="collection"]'):departed;touched.add(control);showFieldError(control,deliveryFieldErrors(form).get(control)||'');deliveryCollectionErrorHost(form);
   if(form.dataset.validationSubmitted==='true')deliveryValidationSummary(form);
  });
- form.addEventListener('change',()=>{
-  if(!current()||form.dataset.saving==='true'||form.dataset.savedDelivery)return;
+ form.addEventListener('change',event=>{
+  if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||form.dataset.saving==='true'||form.dataset.savedDelivery)return;
   const errors=deliveryFieldErrors(form);for(const control of form.querySelectorAll('input,select,textarea'))if(touched.has(control))showFieldError(control,errors.get(control)||'');deliveryCollectionErrorHost(form);
   if(form.dataset.validationSubmitted==='true')deliveryValidationSummary(form);
  });
@@ -5128,7 +5137,7 @@ function bindLeads(){
   const active=leadSaveCurrent(),current=()=>active()&&form.isConnected&&$('#leadForm')===form,notice=form.querySelector('#leadFormError'),button=form.querySelector('[type="submit"]'),touched=new Set();
   const summary=(errors,count=form.querySelectorAll('.field-error').length+(errors.has(form.elements.estimatedValue)?1:0))=>{notice.textContent=[fieldErrorSummary(count),errors.get(form.elements.estimatedValue)].filter(Boolean).join('. ');};
   const refreshValidation=()=>{const errors=leadFormErrors(form);for(const control of form.querySelectorAll('input,select,textarea'))if(fieldValidationSource(control)===control&&(touched.has(control)||form.dataset.validationSubmitted==='true'))showFieldError(control,errors.get(control)||'');if(form.dataset.validationSubmitted==='true')summary(errors);};
-  form.noValidate=true;form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.leadSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;touched.add(control);const errors=leadFormErrors(form);showFieldError(control,errors.get(control)||'');if(form.dataset.validationSubmitted==='true')summary(errors);});
+  form.noValidate=true;form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.leadSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;touched.add(control);const errors=leadFormErrors(form);showFieldError(control,errors.get(control)||'');if(form.dataset.validationSubmitted==='true')summary(errors);});
   const callerExtra=()=>form.querySelectorAll('[data-caller-extra]').forEach(label=>label.hidden=!!form.elements.contactId.value);
   form.elements.organizationId.onchange=event=>{if(!current()||form.dataset.saving==='true')return;form.elements.contactId.innerHTML='<option value="">Not a named contact</option>'+salesContactOptions(event.target.value);callerExtra();refreshValidation();};
   form.elements.contactId.onchange=()=>{if(!current()||form.dataset.saving==='true')return;callerExtra();refreshValidation();};
@@ -5368,7 +5377,7 @@ function bindPendingStock(){
  if(form){
   const button=form.querySelector('[type="submit"]'),notice=form.querySelector('#pendingFormError'),active=()=>current()&&form.isConnected&&$('#pendingForm')===form,summary=(count=form.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};
   if(pendingUnverifiedId&&pendingUnverifiedId===pendingRequestId)button.disabled=true;
-  form.noValidate=true;form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||button.disabled||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,pendingFormFieldError(control));if(form.dataset.validationSubmitted==='true')summary();});
+  form.noValidate=true;form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!active()||button.disabled||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,pendingFormFieldError(control));if(form.dataset.validationSubmitted==='true')summary();});
   form.elements.organizationId.onchange=event=>{if(!active())return;const org=event.target.value;form.elements.contactId.innerHTML='<option value="">No named contact</option>'+salesContactOptions(org);form.elements.proformaId.innerHTML='<option value="">Not linked</option>'+salesProformas.filter(p=>p.organization_id===org&&!p.deleted_at).map(p=>inventoryOption(p.id,p.document_number)).join('');};
   form.onsubmit=event=>{event.preventDefault();if(!active()||button.disabled)return;if(busy){actionFeedbackRefuse(button,notice);return;}
    const errors=pendingFormErrors(form);form.dataset.validationSubmitted='true';summary(errors.size);showFieldErrors(form,errors);if(errors.size)return;button.disabled=true;
@@ -6115,7 +6124,7 @@ function bindPurchasing(){
  if(form){
   const actor=me,epoch=purchaseEpoch,request=purchaseWorkspaceRequest,section=purchaseSection,current=()=>me===actor&&purchaseEpoch===epoch&&purchaseWorkspaceRequest===request&&purchaseSection===section&&view==='purchasing'&&form.isConnected&&$('#purchaseForm')===form;
   const summary=(count=form.querySelectorAll('.field-error').length)=>{form.querySelector('#purchaseFormError').textContent=fieldErrorSummary(count);};form.noValidate=true;
-  form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.saved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,purchaseFieldError(control));if(form.dataset.validationSubmitted==='true')summary();});
+  form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.saved==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,purchaseFieldError(control));if(form.dataset.validationSubmitted==='true')summary();});
   form.oninput=event=>{if(!current()||form.dataset.saving==='true'||form.dataset.saved==='true')return;const control=fieldValidationSource(event.target);if(control.name!=='productChoice')return;const row=control.closest('[data-purchase-line]');if(row?.dataset.pending&&inventoryProductFromChoice(control.value)?.id!==row.dataset.product)purchaseClearPendingLine(row);};
   $('#addPurchaseLine').onclick=()=>{if(current()&&form.dataset.saving!=='true'&&form.dataset.saved!=='true')$('#purchaseLines').insertAdjacentHTML('beforeend',purchaseLineRow());};
   $('#purchaseLines').onclick=event=>{if(!current()||form.dataset.saving==='true'||form.dataset.saved==='true')return;const remove=event.target.closest('[data-remove-purchase-line]');if(!remove)return;if(form.querySelectorAll('[data-purchase-line]').length>1){remove.closest('tr').remove();if(form.dataset.validationSubmitted==='true')summary();}else form.querySelector('#purchaseFormError').textContent='A purchase request needs at least one item.';};
@@ -6128,7 +6137,7 @@ function bindPurchasing(){
  if(supplierForm){
   const actor=me,epoch=purchaseEpoch,request=purchaseWorkspaceRequest,section=purchaseSection,current=()=>me===actor&&purchaseEpoch===epoch&&purchaseWorkspaceRequest===request&&purchaseSection===section&&view==='purchasing'&&supplierForm.isConnected&&$('#supplierForm')===supplierForm;
   const notice=supplierForm.querySelector('#supplierFormError'),summary=(count=supplierForm.querySelectorAll('.field-error').length)=>{notice.textContent=fieldErrorSummary(count);};supplierForm.noValidate=true;
-  supplierForm.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||supplierForm.dataset.saving==='true'||supplierForm.dataset.saved==='true'||!supplierForm.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(supplierForm.dataset.validationSubmitted==='true')summary();});
+  supplierForm.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||supplierForm.dataset.saving==='true'||supplierForm.dataset.saved==='true'||!supplierForm.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,nativeFieldError(control));if(supplierForm.dataset.validationSubmitted==='true')summary();});
   supplierForm.onsubmit=event=>{event.preventDefault();if(!current())return;const button=supplierForm.querySelector('[type="submit"]');if(button.disabled)return;
    if(busy){actionFeedbackRefuse(button,notice);return;}
    const errors=nativeFormErrors(supplierForm);supplierForm.dataset.validationSubmitted='true';summary(errors.size);showFieldErrors(supplierForm,errors);if(errors.size)return;button.disabled=true;
@@ -6499,7 +6508,7 @@ function bindStockCount(bodyOnly=false){
   const current=()=>me===actor&&sessionLoadEpoch===sessionEpoch&&countEpoch===epoch&&countPageRequest===request&&countPicked===picked&&countGodown===godown&&countOpenSession()?.id===sessionId&&view==='stockcount'&&countTab==='count'&&form.isConnected&&$('#countForm')===form;
   const summary=(count=form.querySelectorAll('.field-error').length)=>{form.querySelector('#countFormError').textContent=fieldErrorSummary(count);};form.noValidate=true;
   if(form.countFocusout)form.removeEventListener('focusout',form.countFocusout);
-  form.countFocusout=event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.countSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,countFieldError(control));if(form.dataset.validationSubmitted==='true')summary();};
+  form.countFocusout=event=>{const control=fieldValidationSource(event.target);if(!current()||form.dataset.saving==='true'||form.dataset.countSaved==='true'||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,countFieldError(control));if(form.dataset.validationSubmitted==='true')summary();};
   form.addEventListener('focusout',form.countFocusout);
   form.onsubmit=event=>{event.preventDefault();if(!current())return;const button=form.querySelector('#countSave'),notice=form.querySelector('#countFormError');if(button.disabled)return;
    if(busy){actionFeedbackRefuse(button,notice);return;}
@@ -7057,7 +7066,7 @@ async function loadSettingsProfile(section){
   };
   const collectErrors=()=>{const errors=nativeFormErrors(form);for(const control of [form.elements.display_name,form.elements.phone]){const problem=fieldProblem(control);if(problem)errors.set(control,problem);}return errors;};
   form.noValidate=true;
-  form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
+  form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
   reload.onclick=()=>{if(current()&&!saving)return run(()=>loadSettingsProfile(section),{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
   form.onsubmit=async event=>{
    event.preventDefault();if(saving||!current())return;
@@ -7360,10 +7369,10 @@ function bindServiceIntake(form){
  const validateControl=(control,errors=collectErrors())=>{const problem=errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
  form.addEventListener('focusout',event=>{
   const control=fieldValidationSource(event.target);
-  if(!current()||button.disabled||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
+  if(!current()||fieldBlurToAction(event)||button.disabled||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   validateControl(control);
  });
- form.addEventListener('change',()=>{if(!current()||button.disabled)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
+ form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!current()||button.disabled)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
  field('serialUnknown').onchange=()=>{field('serial').disabled=field('serialUnknown').checked;field('serial').required=!field('serialUnknown').checked;};
  field('organizationId').onchange=()=>{refreshContacts();if(!field('location').value)field('location').value=orgIndex.get(field('organizationId').value)?.location||'';};
  field('siteOrganizationId').onchange=()=>{refreshContacts();const site=orgIndex.get(field('siteOrganizationId').value);if(site?.location)field('location').value=site.location;};
@@ -9448,7 +9457,7 @@ function workspaceQuestion({title,body='',confirmLabel='Save',tone='normal',labe
   dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dismiss();});
   dialog.addEventListener('close',()=>{if(!closing)finish(text?null:false);});
   const check=()=>{const problem=String(validate(input.value)||'');error.textContent=problem;input.setAttribute('aria-invalid',String(!!problem));return !problem;};
-  if(text)input.addEventListener('blur',check);
+  if(text)input.addEventListener('blur',event=>{if(!fieldBlurToAction(event))check();});
   form.addEventListener('submit',event=>{event.preventDefault();if(!current()){question.cancel();return;}if(text&&!check()){input.focus();return;}close(text?input.value:true);});
   showWorkspaceDialog(dialog,{size:'small'});(text?input:tone==='danger'?cancel:confirm).focus();
  });
@@ -10171,7 +10180,7 @@ function booksFormValidation(form,summary,current){
  const fieldErrors=new Map();form.noValidate=true;
  const updateSummary=()=>{summary.textContent=fieldErrorSummary(fieldErrors.size);};
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);if(!current()||!form.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
+  if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!current()||!form.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   const problem=nativeFieldError(control);if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();
  });
  return ()=>{const errors=nativeFormErrors(form);fieldErrors.clear();for(const [control,problem]of errors)fieldErrors.set(control,problem);updateSummary();showFieldErrors(form,errors);return !errors.size;};
@@ -10331,7 +10340,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
    showFieldError(control,problem);updateSummary();
   };
   form.addEventListener('focusout',event=>{
-   const control=fieldValidationSource(event.target);
+   if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);
    if(!current()||posting||uncertain||committed||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
    validateControl(control);
   });
@@ -10554,7 +10563,7 @@ async function booksReceipts(actor,current){
  const updateSummary=()=>{for(const control of fieldErrors.keys())if(!form.contains(control))fieldErrors.delete(control);summary.textContent=fieldErrorSummary(fieldErrors.size);};
  const validateControl=control=>{const problem=collectErrors().errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
  form.addEventListener('focusout',event=>{
-  const control=fieldValidationSource(event.target);
+  if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);
   if(!active()||!form.isConnected||posting||committed||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   validateControl(control);
  });
@@ -10608,8 +10617,8 @@ async function booksJournal(actor,current){
  };
  const updateSummary=()=>{summary.textContent=fieldErrorSummary(fieldErrors.size);};
  const validateControl=(control,errors=collectErrors())=>{const problem=errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
- form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||committed||posting||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
- form.addEventListener('change',()=>{if(!valid()||!form.isConnected||committed||posting)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
+ form.addEventListener('focusout',event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||committed||posting||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
+ form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!valid()||!form.isConnected||committed||posting)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
  const check=()=>{const result=booksJournalCheck(read());$('#booksJournalCheck').textContent=result.problem||`Balanced: ${moneyDisplay(result.debit)} debit and credit.`;$('#booksJournalCheck').className=result.problem?'error':'muted';return result;};
  const save=()=>{booksDraft={journal:{date:form.date.value,memo:form.memo.value,lines:read()}};};
  form.oninput=check;check();
@@ -11891,23 +11900,35 @@ function bindPasswordNotice(section,dialog,password,requestClose){
  section.querySelector('[data-close]').onclick=requestClose;
  section.querySelector('[data-copy-password]').onclick=async event=>{try{await navigator.clipboard.writeText(password);event.target.textContent='Copied';}catch{event.target.textContent='Select and copy it';}};
 }
+function employeeFormValidation(form,summary,current,readErrors){
+ const touched=new Set();form.noValidate=true;
+ const update=errors=>{let count=0;for(const control of touched){const problem=errors.get(control)||'';showFieldError(control,problem);if(problem)count++;}summary.textContent=fieldErrorSummary(count);};
+ form.addEventListener('focusout',event=>{const control=fieldValidationSource(event.target);if(!current()||fieldBlurToAction(event)||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled)return;touched.add(control);update(readErrors());});
+ form.addEventListener('change',event=>{if(event.target.matches('select')&&current()&&touched.size)update(readErrors());});
+ return ()=>{const errors=readErrors();for(const control of form.querySelectorAll('input,select,textarea'))touched.add(control);update(errors);showFieldErrors(form,errors);return !errors.size;};
+}
 function openStaffOnboarding(){
  if(me?.role!=='owner'&&me?.role!=='head')throw Error('Only the owner or a department head can add employees.');
  const owner=me.role==='owner',actor=me,role0=me.role,openingView=view,trigger=document.activeElement,directory=document.querySelector('[data-staff-directory]'),directoryEpoch=directory?.staffEpoch,current=()=>me===actor&&me?.role===role0&&view===openingView&&dialog.isConnected;
  const dialog=document.createElement('dialog');dialog.className='staff-onboarding';dialog.setAttribute('aria-label','Add employee');
- dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label>${owner?`<label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="head">Department head — manages their department's staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><label><span>Department</span><select name="department">${departmentLabels.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:`<p>Department: <strong>${esc(departmentLabel(me.department))}</strong></p>`}<div data-access>${accessCheckboxes(startingAccess(owner?'':me.department))}</div><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
+ dialog.innerHTML=`<form><h2>Add employee</h2><p class="muted">No email needed. The employee ID is made from the name, for example Tanisha Hassija → tanisha.hassija.</p><p role="alert"></p><label><span>Full name</span><input name="fullName" required minlength="2" maxlength="120" autocomplete="off"></label><label><span>Phone · with country code, optional</span><input name="phone" inputmode="tel" maxlength="24" placeholder="+255712345678" autocomplete="off"></label>${owner?`<label><span>Role</span><select name="role"><option value="staff">Staff</option><option value="head">Department head — manages their department's staff</option><option value="owner">Owner — full access, can manage staff</option></select></label><label><span>Department</span><select name="department">${departmentLabels.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>`:`<p>Department: <strong>${esc(departmentLabel(me.department))}</strong></p>`}<div data-access>${accessCheckboxes(startingAccess(owner?'':me.department))}</div><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Create login</button></div></form><section data-step="done" hidden></section>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  const form=dialog.querySelector('form'),alert=form.querySelector('[role="alert"]'),done=dialog.querySelector('[data-step="done"]');
  // New accounts start with their department's usual areas; owners need no list.
  const refreshAccess=()=>{const role=form.elements.role?.value||'staff',box=form.querySelector('[data-access]');box.hidden=role==='owner';if(owner)box.innerHTML=accessCheckboxes(startingAccess(form.elements.department.value));};
  form.elements.department?.addEventListener('change',refreshAccess);form.elements.role?.addEventListener('change',refreshAccess);
  let working=false,refreshing=false;const initial=workspaceFormSnapshot(form),requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>working||refreshing,isDirty:()=>!form.hidden&&workspaceFormSnapshot(form)!==initial});
+ const validate=employeeFormValidation(form,alert,()=>current()&&!working&&!form.hidden,()=>{
+  const errors=nativeFormErrors(form),phone=form.elements.phone,department=form.elements.department;
+  if(owner&&form.elements.role.value==='head'&&!department.value)errors.set(department,'Choose the department this head will manage.');
+  if(phone.value.trim()&&!/^\+[0-9][0-9\s()-]{7,20}$/.test(phone.value.trim())&&!errors.has(phone))errors.set(phone,'Enter the phone with country code, for example +255712345678, or leave it empty.');
+  return errors;
+ });
  dialog.querySelector('[data-close]').onclick=requestClose;showWorkspaceDialog(dialog,{size:'large',trigger});
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled||!current())return;
+  if(!validate())return;
   const fullName=form.elements.fullName.value.trim().replace(/\s+/g,' '),phone=form.elements.phone.value.trim(),role=owner?form.elements.role.value:'staff',department=owner?form.elements.department.value:me.department,access=role==='owner'?[]:checkedAreas(form);
-  if(owner&&role==='head'&&!department){alert.textContent='Choose the department this head will manage.';return;}
-  if(phone&&!/^\+[0-9][0-9\s()-]{7,20}$/.test(phone)){alert.textContent='Enter the phone with country code, for example +255712345678, or leave it empty.';return;}
   if(busy){actionFeedbackRefuse(button,alert);return;}button.disabled=true;working=true;
   return run(async()=>{alert.textContent='';
   try{
@@ -12190,16 +12211,23 @@ function requirePasswordChange(user){if(!user?.app_metadata?.must_change_passwor
 function openChangePassword({required=false}={}){
  if(!me?.user_id)throw Error('Sign in first.');
  const actor=me,openingView=view,trigger=document.activeElement,dialog=document.createElement('dialog'),scopeCurrent=()=>me===actor&&view===openingView,current=()=>scopeCurrent()&&dialog.isConnected;dialog.className='change-password';dialog.setAttribute('aria-label','Change my password');
- dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<label><span>New password (at least 8 characters)</span><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
+ dialog.innerHTML=`<form><h2>${required?'Choose your own password':'Change my password'}</h2>${required?'<p>You signed in with a temporary password. Choose a password only you know before continuing.</p>':''}<p role="alert"></p><label><span>New password (at least 8 characters)</span><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><label><span>Type it again</span><input name="confirm" type="password" minlength="8" maxlength="72" required autocomplete="new-password"></label><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save new password</button></div></form>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  const form=dialog.querySelector('form'),alert=form.querySelector('[role="alert"]');
  let working=false;const requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>required||working,isDirty:()=>!!form.elements.password.value||!!form.elements.confirm.value});
+ const validate=employeeFormValidation(form,alert,()=>current()&&!working,()=>{
+  const errors=nativeFormErrors(form),password=form.elements.password,confirm=form.elements.confirm;
+  // Password length uses the exact entered value, including whitespace.
+  for(const control of [password,confirm])if(control.validity.valid&&control.value.length>=8&&control.value.length<=72)errors.delete(control);
+  if(password.value.length<8)errors.set(password,'Use at least 8 characters.');
+  if(password.value!==confirm.value&&!errors.has(confirm))errors.set(confirm,'The two passwords do not match.');
+  return errors;
+ });
  dialog.querySelector('[data-close]').hidden=required;dialog.querySelector('[data-close]').onclick=requestClose;showWorkspaceDialog(dialog,{size:'small',trigger});
  form.onsubmit=async event=>{
   event.preventDefault();const button=form.querySelector('[type="submit"]');if(button.disabled||!current())return;
   const password=form.elements.password.value,confirm=form.elements.confirm.value;
-  if(password.length<8)return alert.textContent='Use at least 8 characters.';
-  if(password!==confirm)return alert.textContent='The two passwords do not match.';
+  if(!validate())return;
   if(busy){actionFeedbackRefuse(button,alert);return;}button.disabled=true;working=true;
   return run(async()=>{alert.textContent='';
   try{
@@ -13431,7 +13459,7 @@ async function edit(c){
  const current=()=>me===actor&&editing===record&&$('#editor').open&&form.isConnected;
  const check=control=>{control=fieldValidationSource(control);if(!current()||editSaving||!control.name||!form.contains(control))return;touched.add(control);const errors=contactValidationErrors({...record,...Object.fromEntries(new FormData(form))});showFieldError(control,errors[control.name]||'');if(form.dataset.validationSubmitted)showContactValidationSummary(form,form.querySelectorAll('.field-error').length);};
  if(form.contactFocusout)form.removeEventListener('focusout',form.contactFocusout);
- form.contactFocusout=event=>check(event.target);form.addEventListener('focusout',form.contactFocusout);
+ form.contactFocusout=event=>{if(!fieldBlurToAction(event))check(event.target);};form.addEventListener('focusout',form.contactFocusout);
  const hint=()=>{$('#phoneHint').textContent=phoneLengthMessage(country.value);};country.onchange=()=>{if(!current()||editSaving)return;code.value=window.PHONE_RULES[country.value]?'+'+window.PHONE_RULES[country.value].code:'';hint();for(const control of [phone,code])if(touched.has(control)||control.getAttribute('aria-invalid')==='true')check(control);};hint();
  const initial=workspaceFormSnapshot(form);$('#formError').textContent='';
  $('#closeEditor').onclick=bindWorkspaceDialogDismiss($('#editor'),{isBusy:()=>editSaving,isDirty:()=>workspaceFormSnapshot(form)!==initial});
@@ -13748,7 +13776,7 @@ const actionCancel=actionEditorForm.querySelector('#actionCancel');
 const dismissActionForm=bindWorkspaceDialogDismiss(actionDialog,{isBusy:()=>actionSaving,isDirty:()=>workspaceFormSnapshot(actionEditorForm)!==actionInitialValues});
 actionCancel.addEventListener('click',dismissActionForm);
 actionDialog.addEventListener('close',()=>{actionSubmit=null});
-actionEditorForm.addEventListener('focusout',event=>{const control=event.target;if(actionSaving||me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch||!actionSubmit||!actionDialog.open||!actionFields.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(actionValidationSubmitted)actionFeedbackShow(actionFeedbackReference(actionSave),fieldErrorSummary(actionFields.querySelectorAll('.field-error').length),'error',actionError);});
+actionEditorForm.addEventListener('focusout',event=>{const control=event.target;if(fieldBlurToAction(event)||actionSaving||me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch||!actionSubmit||!actionDialog.open||!actionFields.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,nativeFieldError(control));if(actionValidationSubmitted)actionFeedbackShow(actionFeedbackReference(actionSave),fieldErrorSummary(actionFields.querySelectorAll('.field-error').length),'error',actionError);});
 actionEditorForm.addEventListener('submit',async e=>{
  e.preventDefault();if(actionSaving||!actionSubmit)return;
  if(me!==actionFormActor||actionFeedbackEpoch!==actionFormEpoch){actionError.textContent='Login changed. Close and reopen this form.';return;}

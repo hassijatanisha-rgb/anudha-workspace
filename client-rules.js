@@ -54,6 +54,8 @@ function showFieldError(control,message){
  const descriptions=new Set(((control.getAttribute('aria-describedby')||'')+' '+(source.getAttribute('aria-describedby')||'')).split(/\s+/).filter(Boolean));descriptions.add(state.node.id);control.setAttribute('aria-describedby',[...descriptions].join(' '));
 }
 function fieldErrorSummary(count){return count?`${count} ${count===1?'field needs':'fields need'} attention`:'';}
+// Changing error height during pointer focus can move the action before its click lands.
+function fieldBlurToAction(event){return !!event.relatedTarget?.closest?.('button,[role="button"],input[type="submit"],input[type="button"],input[type="reset"],a[href]');}
 function nativeFieldError(control){
  control=fieldValidationSource(control);
  if(!control.willValidate)return '';

@@ -9,8 +9,8 @@ const plain=value=>JSON.parse(JSON.stringify(value));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const kinds=['review','links','mapping','tally'];
-function fixture(kind){
- const document=dom(),prototype=Object.getPrototypeOf(document.body),html=Object.getOwnPropertyDescriptor(prototype,'innerHTML'),animations=[],calls=[],effects=[],questions=[];
+function fixture(kind,{match={status:'exact',productIds:['product']}}={}){
+ const document=dom(),prototype=Object.getPrototypeOf(document.body),html=Object.getOwnPropertyDescriptor(prototype,'innerHTML'),animations=[],calls=[],effects=[],questions=[],feedback=[],requests=[];
  installNativeFormControls(document);
  const matches=prototype.matches;prototype.matches=function(selector){return selector.split(',').some(part=>matches.call(this,part.trim()));};
  Object.defineProperties(prototype,{
@@ -28,21 +28,21 @@ function fixture(kind){
   get(name){return this.entries.find(entry=>entry[0]===name)?.[1]??null;}getAll(name){return this.entries.filter(entry=>entry[0]===name).map(entry=>entry[1]);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}
  }
  const product={id:'product',name:'Product',source:{category:'reagents',machine_ids:['machine']}},machine={id:'machine',name:'Analyzer',source:{category:'machines'}},review={product_id:'product',version:2,name:'Product',company:'Maker',specification:'200 ml',sale_status:'active',batch_required:true,expiry_required:false};
- const c=vm.createContext({document,$:selector=>document.querySelector(selector),me:{user_id:'owner',role:'owner'},view:'inventory',inventorySection:kind==='tally'?'review':'catalog',generation:1,allowed:true,busy:false,FormData:Fields,crypto:{randomUUID:()=> 'request-id'},esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),matchMedia:()=>({matches:false}),getComputedStyle:()=>({opacity:'1',transform:'none',getPropertyValue:key=>key==='--m-fade'?'150ms':'200ms'}),canEditRecords:()=>c.allowed,recordsLockedText:'Read only',products:[product],
+ const c=vm.createContext({document,$:selector=>document.querySelector(selector),me:{user_id:'owner',role:'owner'},view:'inventory',inventorySection:kind==='tally'?'review':'catalog',generation:1,allowed:true,busy:false,FormData:Fields,crypto:{randomUUID:()=>{requests.push('request-id');return 'request-id'}},esc:value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),matchMedia:()=>({matches:false}),getComputedStyle:()=>({opacity:'1',transform:'none',getPropertyValue:key=>key==='--m-fade'?'150ms':'200ms'}),canEditRecords:()=>c.allowed,recordsLockedText:'Read only',products:[product],
   catalogIsActive:()=>true,catalogSaveContext:()=>{const actor=c.me,generation=c.generation;return {current:()=>c.me===actor&&c.generation===generation&&c.view==='inventory'&&c.inventorySection==='catalog'}},loadCatalogProduct:async()=>product,catalogRows:()=>[product,machine],catalogCategoryOf:p=>p.source.category,catalogDetailRows:new Map([['product',{review,links:{product_id:'product',version:2,machine_ids:['machine']}}]]),loadCatalogMachines:async()=>[machine],refreshCatalogSavedProduct:async(...args)=>effects.push(['refresh',...args]),catalogInvalidateProductCaches:()=>effects.push(['invalidate']),render:()=>effects.push(['render']),message:(...args)=>effects.push(['message',...args]),loadLists:async()=>true,all:async()=>[],companyDate:()=> '2026-10-29',productStockReview:()=>({issues:[]}),inventoryProductChoice:p=>p.name,inventoryProductChoices:()=>'',inventoryProductFromChoice:name=>name==='Product'?product:null,
   actionFeedbackRememberDialog(){},actionFeedbackRefuse:(_button,error)=>{error.textContent='Busy'},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:kind==='mapping'?{source_key:'source-key',version:3,decision:'linked'}:{product_id:'product',version:3,machine_ids:['machine']}}},from:table=>({select(){return this},eq(){return this},order(){return this},limit:async()=>({data:table==='product_source_mapping_reviews'?[{version:2}]:[{source_id:'source',product_id:'product',version:2,pieces:10}]}),maybeSingle:async()=>({data:{id:'source',product_name:'Product',godown:'Store',quantity:10,unit:'PCS',source_file:'Source',source_row:1}})})}});
- c.run=async(fn,options)=>{try{return await fn()}catch(error){options.errorTarget.textContent=error.message}};
+ c.run=async(fn,options)=>{feedback.push(options);try{return await fn()}catch(error){options.errorTarget.textContent=error.message}};
  c.actionFeedbackReference=node=>({node});c.actionFeedbackShow=(_reference,text,_kind,target)=>{target.textContent=text;};
  for(const name of ['client-rules.js','ui-dialogs.js','product-review-ui.js','product-machine-links.js','product-mapping-decision.js','tally-stock-review.js'])vm.runInContext(read(name),c);
  c.askConfirm=async options=>{questions.push(options);return true};
  const get=code=>vm.runInContext(code,c);get("tallyActor=me;tallyPageData={rows:[{id:'source'}]};");c.tallyStockScreen=async()=>{get('tallyRequest++');effects.push(['refresh']);return true};
  const current=()=>c.generation===1&&c.view==='inventory';
  async function open(){
-  if(kind==='review')await c.openProductReview('product');else if(kind==='links')await c.openProductMachineLinks('product');else if(kind==='mapping')await c.openProductMappingDecision({sourceKey:'source-key',original:{name:'Raw'},corrected:{name:'Product'},match:{status:'exact',productIds:['product']}},saved=>effects.push(['saved',saved]),current);else await c.openTallyCorrection('source');
+  if(kind==='review')await c.openProductReview('product');else if(kind==='links')await c.openProductMachineLinks('product');else if(kind==='mapping')await c.openProductMappingDecision({sourceKey:'source-key',original:{name:'Raw'},corrected:{name:'Product'},match},saved=>effects.push(['saved',saved]),current);else await c.openTallyCorrection('source');
   const dialog=document.querySelector('dialog'),form=dialog.querySelector('form'),button=form.querySelector('[type="submit"]'),cancel=dialog.querySelector(kind==='mapping'?'[data-cancel]':'[data-close]');
   return {dialog,form,button,cancel,change(){form.elements.reason.value='  Checked source  ';},submit:()=>form.onsubmit({preventDefault(){},target:form})};
  }
- return {c,document,root,trigger,calls,effects,questions,animations,get,open,finish:async()=>{animations.at(-1).finish();await tick();},stale(mode){if(mode==='actor')c.me={...c.me};else if(mode==='route')c.view='personal';else if(mode==='request'){c.generation++;get('tallyRequest++');}else{c.allowed=false;c.me.role='staff';}}};
+ return {c,document,root,trigger,calls,effects,questions,animations,feedback,requests,get,open,finish:async()=>{animations.at(-1).finish();await tick();},stale(mode){if(mode==='actor')c.me={...c.me};else if(mode==='route')c.view='personal';else if(mode==='request'){c.generation++;get('tallyRequest++');}else{c.allowed=false;c.me.role='staff';}}};
 }
 for(const kind of kinds){
  test(`${kind}: shared size and clean Cancel await exit, then remove and restore focus`,async()=>{
@@ -126,4 +126,80 @@ test('product correction status and input survive failed writes; confirmed recei
 });
 test('product correction status cannot update after actor, route or request changes or after removal',async()=>{
  for(const mode of ['actor','route','request','removed']){const f=fixture('review'),e=await f.open(),status=e.form.querySelector('[data-product-review-dirty]');if(mode==='removed')e.dialog.remove();else f.stale(mode);e.change();e.form.oninput({target:e.form.elements.reason});e.form.onchange({target:e.form.elements.reason});assert.equal(status.textContent,'No changes',mode);assert.equal(f.calls.length,0,mode);}
+});
+
+for(const kind of ['links','mapping']){
+ test(`${kind}: first invalid blur counts only departed fields and correction clears it without moving focus`,async()=>{
+  const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');reason.value=' abc ';reason.setAttribute('aria-describedby','source-help');e.cancel.focus();dispatchFocusout(reason);
+  assert.equal(summary.textContent,'1 field needs attention');assert.equal(f.document.activeElement,e.cancel);assert.equal(reason.value,' abc ');assert.equal(reason.getAttribute('aria-invalid'),'true');assert.match(reason.getAttribute('aria-describedby'),/^source-help field-error-/);assert.match(reason.closest('label').querySelector('.field-error').textContent,/at least 5/);
+  reason.value='Checked source';dispatchFocusout(reason);assert.equal(summary.textContent,'');assert.equal(reason.getAttribute('aria-describedby'),'source-help');assert.equal(reason.getAttribute('aria-invalid'),null);assert.equal(e.form.querySelectorAll('.field-error').length,0);assert.equal(f.calls.length,0);assert.equal(e.form.events.focusout.length,1);assert.equal(e.form.noValidate,true);
+  assert.equal(summary.parentElement,e.form);assert.ok(e.form.children.indexOf(summary)<e.form.children.indexOf(e.form.querySelector('label')));
+ });
+ test(`${kind}: submit validates trimmed required and length constraints before any asynchronous action`,async()=>{
+  for(const value of ['','   ',' abc ','x'.repeat(1001)]){
+   const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');reason.value=value;const focus=reason.focus;reason.focus=function(options){assert.equal(summary.textContent,'1 field needs attention');return focus.call(this,options)};
+   await e.submit();assert.equal(f.calls.length,0);assert.equal(f.feedback.length,0);assert.equal(f.requests.length,1);assert.equal(f.document.activeElement,reason);assert.equal(reason.scrolledIntoView.block,'center');assert.equal(reason.value,value);assert.equal(e.dialog.open,true);assert.equal(e.button.disabled,false);
+  }
+ });
+ test(`${kind}: custom validation stays text-only and first invalid focus follows visible DOM order`,async()=>{
+  const f=fixture(kind),e=await f.open(),first=e.form.querySelector('input,select'),reason=e.form.elements.reason;first.setCustomValidity('<img src=x> Check selection');await e.submit();
+  assert.equal(e.form.querySelector('[role="alert"]').textContent,'2 fields need attention');assert.equal(f.document.activeElement,first);assert.equal(e.form.querySelector('.field-error').querySelector('img'),null);assert.match(e.form.querySelector('.field-error').textContent,/<img src=x>/);assert.equal(f.calls.length,0);
+  first.disabled=true;await e.submit();assert.equal(e.form.querySelector('[role="alert"]').textContent,'1 field needs attention');assert.equal(f.document.activeElement,reason);assert.equal(first.getAttribute('aria-invalid'),null);
+ });
+ test(`${kind}: blur cannot overwrite feedback while saving, committed, stale or disconnected`,async()=>{
+  for(const mode of ['saving','committed','actor','route','request','permission','removed','closed']){
+   const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]'),wait=deferred();let saving;
+   if(mode==='saving'){e.change();f.c.client.rpc=()=>wait.promise;saving=e.submit();}
+   else if(mode==='committed'){e.change();saving=e.submit();await tick();}
+   else if(mode==='removed')e.dialog.remove();else if(mode==='closed')e.dialog.close();else f.stale(mode);
+   summary.textContent='Retained feedback';reason.value='';dispatchFocusout(reason);assert.equal(summary.textContent,'Retained feedback',mode);assert.equal(e.form.querySelectorAll('.field-error').length,0,mode);
+   if(mode==='saving'){wait.resolve({error:{message:'Version changed'}});await saving;}
+   if(mode==='committed'){await f.finish();await saving;}
+  }
+ });
+ test(`${kind}: busy refusal retains data and valid failed retry keeps explicit action origin and request identity`,async()=>{
+  const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');e.change();f.c.busy=true;await e.submit();assert.equal(summary.textContent,'Busy');assert.equal(f.calls.length,0);assert.equal(f.feedback.length,0);assert.equal(e.button.disabled,false);
+  f.c.busy=false;f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {error:{message:'Version changed'}}};await e.submit();assert.match(summary.textContent,/Not confirmed saved.*Version changed/);assert.equal(reason.value,'  Checked source  ');await e.submit();
+  assert.equal(f.calls.length,2);assert.deepEqual(plain(f.calls[0]),plain(f.calls[1]));assert.equal(f.requests.length,1);assert.equal(f.feedback.length,2);for(const options of f.feedback){assert.equal(options.origin,e.button);assert.equal(options.errorTarget,summary);assert.equal(options.busyLabel,'Saving…');}assert.equal(e.button.disabled,false);
+ });
+}
+test('mapping eligibility uses the existing conditional link rule for blur and submission',async()=>{
+ const f=fixture('mapping',{match:{status:'ambiguous',productIds:['product','other']}}),e=await f.open(),decision=e.form.elements.decision,reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');decision.innerHTML+='<option value="linked">Injected stale choice</option>';decision.value='linked';reason.focus();dispatchFocusout(decision);
+ assert.equal(summary.textContent,'1 field needs attention');assert.match(decision.closest('label').querySelector('.field-error').textContent,/Resolve product identity before confirming a link/);assert.equal(f.document.activeElement,reason);assert.equal(reason.getAttribute('aria-invalid'),null);
+ await e.submit();assert.equal(summary.textContent,'2 fields need attention');assert.equal(f.document.activeElement,decision);assert.equal(f.calls.length,0);assert.equal(f.feedback.length,0);decision.value='unresolved';dispatchFocusout(decision);assert.equal(summary.textContent,'1 field needs attention');e.change();dispatchFocusout(reason);assert.equal(summary.textContent,'');
+ f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {data:{source_key:'source-key',version:3,decision:'unresolved'}}};const saving=e.submit();await tick();assert.deepEqual(plain(f.calls[0]),{name:'save_product_source_mapping_review',args:{p_id:'request-id',p_source_key:'source-key',p_expected_version:2,p_product_id:null,p_decision:'unresolved',p_snapshot:{original:{name:'Raw'},corrected:{name:'Product'}},p_reason:'Checked source'}});await f.finish();await saving;assert.equal(f.effects.filter(effect=>effect[0]==='saved').length,1);
+});
+test('machine selections stay exact through filtering, missing choices and explicit clearing',async()=>{
+ for(const mode of ['filtered','missing','empty']){
+  const f=fixture('links');if(mode==='missing')f.c.catalogDetailRows.get('product').links.machine_ids=['missing','machine'];const e=await f.open(),search=e.form.querySelector('input[type="search"]');e.change();search.value='No matches';search.oninput({target:search});if(mode==='empty')for(const node of e.form.querySelectorAll('[name="machineId"]'))node.checked=false;
+  const saving=e.submit();await tick();assert.deepEqual(plain(f.calls[0]),{name:'save_product_machine_link_review',args:{p_id:'request-id',p_product_id:'product',p_expected_version:2,p_machine_ids:mode==='empty'?[]:mode==='missing'?['machine','missing']:['machine'],p_reason:'Checked source'}});await f.finish();await saving;
+ }
+});
+
+for(const kind of ['links','mapping']){
+ test(`${kind}: corrected reason keeps action geometry until the first Save click submits`,async()=>{
+  const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');reason.value='bad';dispatchFocusout(reason);const error=reason.closest('label').querySelector('.field-error');e.change();
+  dispatchFocusout(reason,e.button);assert.equal(reason.closest('label').querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');assert.equal(f.calls.length,0);
+  const saving=e.submit();await tick();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_reason,'Checked source');assert.equal(e.form.querySelectorAll('.field-error').length,0);assert.equal(summary.textContent,'');assert.equal(e.button.disabled,true);await f.finish();await saving;
+ });
+ test(`${kind}: Cancel focus keeps errors stable and rejected discard keeps the correction`,async()=>{
+  const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');reason.value='bad';dispatchFocusout(reason);const error=reason.closest('label').querySelector('.field-error');e.change();f.c.askConfirm=async()=>false;
+  dispatchFocusout(reason,e.cancel);assert.equal(reason.closest('label').querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');assert.equal(await e.cancel.onclick(),false);assert.equal(reason.value,'  Checked source  ');assert.equal(e.dialog.open,true);assert.equal(f.calls.length,0);
+  dispatchFocusout(reason,f.trigger);assert.equal(reason.closest('label').querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');dispatchFocusout(reason,e.form.querySelector('input,select'));assert.equal(e.form.querySelectorAll('.field-error').length,0);assert.equal(summary.textContent,'');
+ });
+ test(`${kind}: deferred action blur still validates invalid submission`,async()=>{
+  const f=fixture(kind),e=await f.open(),reason=e.form.elements.reason;reason.value='bad';dispatchFocusout(reason,e.button);assert.equal(e.form.querySelectorAll('.field-error').length,0);await e.submit();assert.equal(f.calls.length,0);assert.equal(e.form.querySelector('[role="alert"]').textContent,'1 field needs attention');assert.equal(f.document.activeElement,reason);assert.equal(e.button.disabled,false);
+ });
+}
+
+
+test('product correction: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture('review'),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');await e.submit();const error=e.form.querySelector('.field-error');assert.ok(error);assert.equal(summary.textContent,'1 field needs attention');e.change();
+ dispatchFocusout(reason,e.button);assert.equal(e.form.querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');assert.equal(f.calls.length,0);
+ const saving=e.submit();await tick();assert.equal(f.calls.length,1);assert.equal(f.calls[0].name,'save_product_detail_review');assert.equal(f.calls[0].args.p_reason,'Checked source');assert.equal(f.calls[0].args.p_expected_version,2);assert.equal(e.form.querySelectorAll('.field-error').length,0);await f.finish();await saving;
+});
+
+test('product correction: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture('review'),e=await f.open(),reason=e.form.elements.reason,summary=e.form.querySelector('[role="alert"]');reason.value='bad';dispatchFocusout(reason,e.button);assert.equal(e.form.querySelectorAll('.field-error').length,0);await e.submit();assert.equal(f.calls.length,0);assert.equal(summary.textContent,'1 field needs attention');assert.equal(f.document.activeElement,reason);
+ const error=e.form.querySelector('.field-error');e.change();dispatchFocusout(reason,e.cancel);assert.equal(e.form.querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');dispatchFocusout(reason,f.trigger);assert.equal(e.form.querySelector('.field-error'),error);assert.equal(summary.textContent,'1 field needs attention');const next=e.form.elements.name;next.focus();dispatchFocusout(reason,next);assert.equal(e.form.querySelectorAll('.field-error').length,0);assert.equal(summary.textContent,'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.length,0);
 });

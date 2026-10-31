@@ -92,3 +92,15 @@ test('stale actor, epoch, request, section, route and replaced form suppress old
   f.blur(f.field('productChoice'));add();await f.submit();assert.equal(old.querySelectorAll('.field-error').length,0);assert.equal(f.rows().length,1);assert.equal(f.calls.length,0);
  }
 });
+
+
+test('purchase request: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture();const form=f.form,control=f.field('productChoice'),button=form.querySelector('[type="submit"]');control.value=' ';await f.submit();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');control.value='Reagent';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.calls.length,0);
+ await f.submit();assert.equal(f.calls.length,1);assert.equal(f.calls[0].name,'save_purchase_request');assert.equal(f.calls[0].args.p_lines[0].product_id,'p1');
+});
+
+test('purchase request: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture();const form=f.form,control=f.field('productChoice'),button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.calls.length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='Reagent';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');const next=f.field('quantity');next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.length,0);
+});

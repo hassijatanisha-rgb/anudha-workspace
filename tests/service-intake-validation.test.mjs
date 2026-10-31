@@ -43,6 +43,22 @@ test('blur validates only the departed control while preserving help and deliber
  control.value='Known model';f.blur(control);assert.equal(f.error(control),'');assert.equal(control.getAttribute('aria-describedby'),'model-help');assert.equal(f.summary().textContent,'');assert.equal(f.calls.length,0);
 });
 
+for(const caseType of ['service','installation'])test(`${caseType} corrected text keeps feedback stable through change and Save blur until the first submit`,async()=>{
+ const f=fixture({caseType}),control=f.field('model');control.value='';await f.submit();const error=control.closest('label').querySelector('.field-error');assert.ok(error);assert.equal(f.summary().textContent,'1 field needs attention');
+ control.value='Corrected model';f.change(control);assert.equal(control.closest('label').querySelector('.field-error'),error);f.post.focus();f.blur(control,f.post);assert.equal(control.closest('label').querySelector('.field-error'),error);assert.equal(f.summary().textContent,'1 field needs attention');assert.equal(f.document.activeElement,f.post);assert.equal(f.calls.length,0);
+ await f.submit();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_model,'Corrected model');assert.equal(f.calls[0].args.p_case_type,caseType);assert.equal(f.calls[0].args.p_id,'request-1');assert.equal(f.summary().textContent,'');assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.confirmations.length,1);
+});
+
+test('intake action blur does not add errors before submit, which still validates and focuses the first field',async()=>{
+ const f=fixture(),control=f.field('model');control.value='';f.post.focus();f.change(control);f.blur(control,f.post);assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.summary().textContent,'');assert.equal(f.document.activeElement,f.post);
+ await f.submit();assert.equal(f.calls.length,0);assert.equal(f.summary().textContent,'1 field needs attention');assert.equal(f.document.activeElement,control);
+});
+
+test('external intake action blur retains corrected feedback while an ordinary field blur clears it',async()=>{
+ const f=fixture(),control=f.field('model'),action=f.document.createElement('button');action.type='button';f.document.body.append(action);control.value='';await f.submit();const error=control.closest('label').querySelector('.field-error');control.value='Corrected model';f.change(control);f.blur(control,action);assert.equal(control.closest('label').querySelector('.field-error'),error);assert.equal(f.summary().textContent,'1 field needs attention');
+ f.field('problem').focus();f.blur(control,f.field('problem'));assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.summary().textContent,'');assert.equal(f.document.activeElement,f.field('problem'));assert.equal(f.calls.length,0);
+});
+
 test('submit shows every native error count before focusing the DOM-first invalid field',async()=>{
  const f=fixture();f.field('organizationId').value='';f.field('model').value=' ';f.field('location').value='A';f.field('problem').value='';const focus=f.field('organizationId').focus;f.field('organizationId').focus=function(...args){assert.equal(f.summary().textContent,'4 fields need attention');return focus.apply(this,args)};
  await f.submit();assert.equal(f.summary().textContent,'4 fields need attention');assert.equal(f.document.activeElement,f.field('organizationId'));assert.deepEqual(plain(f.field('organizationId').scrolledIntoView),{block:'center',behavior:'instant'});assert.equal(f.calls.length,0);assert.equal(f.post.disabled,false);assert.equal(f.ids(),1);

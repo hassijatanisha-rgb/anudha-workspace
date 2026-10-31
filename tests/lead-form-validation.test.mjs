@@ -73,3 +73,15 @@ test('stale actor/session/route/render or replacement form cannot validate or su
 test('late rejected writes cannot place stale errors into current lead details',async()=>{
  for(const mode of ['actor','session','route','render','form']){const f=fixture(),old=f.form,held=deferred();f.write=()=>held.promise;const saving=f.submit();if(mode==='actor')f.ctx.me={...f.actor};else if(mode==='session')f.ctx.sessionLoadEpoch++;else if(mode==='route')f.ctx.view='personal';else if(mode==='render')f.get('leadRenderEpoch++');else old.replaceWith(f.document.createElement('form'));held.reject(Error('Private old write'));await saving;assert.doesNotMatch(f.document.body.textContent,/Private old write/,mode);assert.equal(f.reads.length,0,mode);assert.equal(f.ctx.busy,false,mode);}
 });
+
+
+test('lead: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture();const form=f.form,control=f.field('subject'),button=form.querySelector('[type="submit"]');control.value=' ';await f.submit();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');control.value='Analyzer quote';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.calls.length,0);
+ await f.submit();assert.equal(f.calls.length,1);assert.equal(f.calls[0].name,'save_sales_lead');assert.equal(f.calls[0].args.p_fields.subject,'Analyzer quote');assert.equal(f.calls[0].args.p_expected_version,3);
+});
+
+test('lead: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture();const form=f.form,control=f.field('subject'),button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.calls.length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='Analyzer quote';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');const next=f.field('details');next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.length,0);
+});

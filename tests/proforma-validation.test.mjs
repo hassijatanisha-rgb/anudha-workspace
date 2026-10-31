@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {dom} from './helpers/dom-identity.mjs';
-import {installNativeFormControls} from './helpers/native-form-controls.mjs';
+import {installNativeFormControls,dispatchFocusout} from './helpers/native-form-controls.mjs';
 import {installLookupDom} from './helpers/lookup-dom.mjs';
 
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
@@ -43,6 +43,22 @@ test('blur validates only the departed control, preserves its help and never mov
  const f=fixture();f.field('description').setAttribute('aria-describedby','description-help');f.field('description').value='  ';f.field('paymentTerms').value='';f.field('notes').focus();f.fire(f.field('description'),'focusout');
  assert.equal(f.document.activeElement,f.field('notes'));assert.equal(f.form.querySelectorAll('.field-error').length,1);assert.match(f.field('description').getAttribute('aria-describedby'),/^description-help /);assert.equal(f.field('paymentTerms').getAttribute('aria-invalid'),null);assert.equal(f.field('description').value,'  ');
  f.field('description').value='Retained text';f.fire(f.field('description'),'focusout');assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.field('description').getAttribute('aria-describedby'),'description-help');
+});
+
+test('corrected text keeps its error and summary stable through change and Save blur until the first submit',async()=>{
+ const f=fixture(),control=f.field('description'),save=f.form.querySelector('[type="submit"]');control.value='';await f.submit();const error=control.closest('label').querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');
+ control.value='Corrected description';f.fire(control,'change');assert.equal(control.closest('label').querySelector('.field-error'),error);save.focus();dispatchFocusout(control,save);assert.equal(control.closest('label').querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,save);assert.equal(f.calls.length,0);
+ f.fire(f.form,'submit');await f.runs.at(-1).promise;assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_lines[0].description,'Corrected description');assert.equal(f.calls[0].args.p_id,'request-id');assert.equal(f.summary(),'');assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.form.dataset.version,'1');
+});
+
+test('an action blur does not add errors before submit, which still validates and focuses the first field',async()=>{
+ const f=fixture(),control=f.field('description'),save=f.form.querySelector('[type="submit"]');control.value='';save.focus();f.fire(control,'change');dispatchFocusout(control,save);assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,save);
+ f.fire(f.form,'submit');await f.runs.at(-1).promise;assert.equal(f.calls.length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+});
+
+test('external action blur retains corrected feedback while an ordinary field blur clears it',async()=>{
+ const f=fixture(),control=f.field('description'),action=f.document.createElement('a');action.setAttribute('href','#other');f.document.body.append(action);control.value='';await f.submit();const error=control.closest('label').querySelector('.field-error');control.value='Corrected description';f.fire(control,'change');dispatchFocusout(control,action);assert.equal(control.closest('label').querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');
+ f.field('notes').focus();dispatchFocusout(control,f.field('notes'));assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,f.field('notes'));assert.equal(f.calls.length,0);
 });
 
 test('date, range, step and custom native errors remain authoritative; readonly price errors focus the product',async()=>{

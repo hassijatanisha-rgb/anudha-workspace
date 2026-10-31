@@ -77,3 +77,15 @@ test('stale actor, route, epoch, detached or replacement form cannot validate or
 test('late rejected create cannot leak an error or unlock a stale form',async()=>{
  for(const mode of ['actor','route','epoch','replace']){const f=fixture(),old=f.form,button=old.querySelector('[type="submit"]'),held=deferred();f.write=()=>held.promise;const saving=f.submit();if(mode==='actor')f.ctx.me={...f.actor};else if(mode==='route')f.ctx.view='reports';else if(mode==='epoch')f.get('pendingRenderEpoch++');else f.document.querySelector('#pendingEditor').innerHTML='<form id="pendingForm"><p>Replacement</p></form>';held.reject(Error('Old create error'));await saving;assert.doesNotMatch(f.document.body.textContent,/Old create error/,mode);assert.equal(button.disabled,true,mode);assert.equal(button.getAttribute('aria-busy'),null,mode);assert.equal(f.ctx.busy,false,mode);assert.equal(f.writes().length,1,mode);}
 });
+
+
+test('pending stock: action blur retains corrected error layout until the first submit',async()=>{
+ const f=fixture();const form=f.form,control=f.field('quantity'),button=form.querySelector('[type="submit"]');control.value=' ';await f.submit();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');control.value='5';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_quantity,5);assert.equal(f.writes()[0].args.p_product_id,'product');
+});
+
+test('pending stock: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=fixture();const form=f.form,control=f.field('quantity'),button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.writes().length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='5';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');const next=f.field('notes');next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,next);assert.equal(f.writes().length,0);
+});

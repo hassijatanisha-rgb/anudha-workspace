@@ -35,18 +35,21 @@ async function openProductMachineLinks(id){
  const choices=[...machines];
  for(const missing of selected)if(!choices.some(p=>p.id===missing))choices.push({id:missing,name:'Unavailable machine — remove or review',source:{}});
  const dialog=document.createElement('dialog');dialog.className='product-review-editor';
- dialog.innerHTML=`<form><h2>Compatible machines</h2><p>${esc(product.name)} · ${esc(product.source?.company||'Manufacturer needs review')}</p><p>Link this same product to every compatible machine. This does not copy or move stock.</p><label>Search machines<input type="search" autocomplete="off" placeholder="Name, manufacturer or model"></label><div class="machine-link-options" data-machine-choices>${choices.map(p=>`<label data-machine-search="${esc([p.name,p.source?.company,p.source?.specification,p.source?.model,p.sku].join(' ').toLowerCase())}"><input type="checkbox" name="machineId" value="${esc(p.id)}" ${selected.has(p.id)?'checked':''}>${esc(p.name)} · ${esc(p.source?.company||'Manufacturer needs review')} · ${esc(p.source?.specification||p.source?.model||'Specification needs review')} · ${esc(p.sku||'Stock code missing')} · ID: ${esc(p.id)}</label>`).join('')||'<p>No machines are classified yet. Confirm their product categories first.</p>'}</div><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><p role="alert"></p><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save machine links</button></div></form>`;
+ dialog.innerHTML=`<form><h2>Compatible machines</h2><p>${esc(product.name)} · ${esc(product.source?.company||'Manufacturer needs review')}</p><p>Link this same product to every compatible machine. This does not copy or move stock.</p><p role="alert"></p><label>Search machines<input type="search" autocomplete="off" placeholder="Name, manufacturer or model"></label><div class="machine-link-options" data-machine-choices>${choices.map(p=>`<label data-machine-search="${esc([p.name,p.source?.company,p.source?.specification,p.source?.model,p.sku].join(' ').toLowerCase())}"><input type="checkbox" name="machineId" value="${esc(p.id)}" ${selected.has(p.id)?'checked':''}>${esc(p.name)} · ${esc(p.source?.company||'Manufacturer needs review')} · ${esc(p.source?.specification||p.source?.model||'Specification needs review')} · ${esc(p.sku||'Stock code missing')} · ID: ${esc(p.id)}</label>`).join('')||'<p>No machines are classified yet. Confirm their product categories first.</p>'}</div><label>Reason / source checked<textarea name="reason" minlength="5" maxlength="1000" required></textarea></label><div class="actions"><button type="button" data-close>Cancel</button><button type="submit">Save machine links</button></div></form>`;
  document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());
  dialog.querySelector('input[type="search"]').oninput=event=>{
   const query=event.target.value.trim().toLowerCase();
   dialog.querySelectorAll('[data-machine-search]').forEach(row=>{row.hidden=!row.dataset.machineSearch.includes(query)});
  };
- const form=dialog.querySelector('form'),requestId=crypto.randomUUID(),initial=workspaceFormSnapshot(form);let saving=false,committed=false;
+ const form=dialog.querySelector('form'),requestId=crypto.randomUUID(),initial=workspaceFormSnapshot(form);let saving=false,committed=false;form.noValidate=true;
+ form.addEventListener('focusout',event=>{const control=event.target;if(!current()||!canEditRecords()||saving||committed||!dialog.open||!dialog.isConnected||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,nativeFieldError(control));form.querySelector('[role="alert"]').textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
  dialog.querySelector('[data-close]').onclick=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>saving,isDirty:()=>!committed&&workspaceFormSnapshot(form)!==initial});
  form.onsubmit=async event=>{
   event.preventDefault();const alert=form.querySelector('[role="alert"]'),button=form.querySelector('[type="submit"]');
   if(!current()||!canEditRecords()){alert.textContent='Login changed. Close and reopen this form.';return;}
-  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}saving=true;button.disabled=true;alert.textContent='';
+  if(saving||committed||button.disabled)return;if(busy){actionFeedbackRefuse(button,alert);return;}
+  const errors=nativeFormErrors(form);alert.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
+  saving=true;button.disabled=true;alert.textContent='';
   const data=new FormData(form),ids=data.getAll('machineId');
   await run(async()=>{
   try{

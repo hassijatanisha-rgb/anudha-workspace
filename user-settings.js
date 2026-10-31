@@ -45,7 +45,7 @@ async function loadSettingsProfile(section){
   };
   const collectErrors=()=>{const errors=nativeFormErrors(form);for(const control of [form.elements.display_name,form.elements.phone]){const problem=fieldProblem(control);if(problem)errors.set(control,problem);}return errors;};
   form.noValidate=true;
-  form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea'))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
+  form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
   reload.onclick=()=>{if(current()&&!saving)return run(()=>loadSettingsProfile(section),{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
   form.onsubmit=async event=>{
    event.preventDefault();if(saving||!current())return;

@@ -77,3 +77,13 @@ test('shared action blur and submit use the actual lookup canonical constraint a
  const f=fixture();let saved;f.open('<label>Client<select name="client" required data-lookup><option value="">Choose client</option><option value="client-id">Clinic</option></select></label>',values=>{saved=values.client;});f.ctx.setWorkspacePopover=(node,open)=>{node.hidden=!open;};installLookupDom(f.ctx);const source=f.field('client');f.ctx.lookupAttach(source);const proxy=source._lookupBox.querySelector('input.lookup-input');dispatchFocusout(proxy);assert.equal(f.form.querySelectorAll('.field-error').length,1);assert.equal(proxy.getAttribute('aria-invalid'),'true');assert.equal(source.getAttribute('aria-invalid'),null);await f.submit();assert.equal(f.error(),'1 field needs attention');assert.ok(f.document.activeElement===proxy);assert.equal(saved,undefined);
  f.ctx.lookupPick(source._lookupBox,{value:'client-id',label:'Clinic'});dispatchFocusout(proxy);assert.equal(f.form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(saved,'client-id');assert.equal(f.dialog.open,false);
 });
+
+for(const destination of ['submit','cancel','external'])test(`action form keeps corrected feedback stable while focusing ${destination}, then validates on submit`,async()=>{
+ const f=fixture();let writes=0;f.open('<label>Name<input name="name" required></label>',()=>writes++);await f.submit();const input=f.field('name'),error=input.closest('label').querySelector('.field-error'),summary=f.error();
+ input.value='Corrected';const target=destination==='external'?f.document.createElement('button'):destination==='cancel'?f.form.querySelector('#actionCancel'):f.form.querySelector('[type="submit"]');if(destination==='external')f.document.body.append(target);
+ dispatchFocusout(input,target);assert.equal(input.closest('label').querySelector('.field-error'),error);assert.equal(f.error(),summary);assert.equal(writes,0);await f.submit();assert.equal(writes,1);assert.equal(f.dialog.open,false);
+});
+test('action blur guard covers native and linked action controls without suppressing field validation',()=>{
+ const f=fixture();for(const html of ['<button><span>Save</span></button>','<input type="submit">','<input type="reset">','<input type="button">','<a href="#next">Next</a>','<span role="button">Act</span>']){const box=f.document.createElement('div');box.innerHTML=html;assert.equal(f.ctx.fieldBlurToAction({relatedTarget:box.querySelector('span')||box.firstChild}),true,html);}
+ for(const target of [null,{},f.document.createElement('input'),f.document.createElement('select')])assert.equal(f.ctx.fieldBlurToAction({relatedTarget:target}),false);
+});

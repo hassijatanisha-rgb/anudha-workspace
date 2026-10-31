@@ -162,3 +162,17 @@ test('location edits use the same cancellation boundary without changing its for
 test('accepted navigation locks outgoing forms until the read settles and restores prior locks on failure',async()=>{
  const f=navigationFixture(),read=deferred();f.ctx.askConfirm=async()=>true;f.ctx.inventoryWorkspace=()=>read.promise;const other=f.document.querySelector('form[data-inventory-action="correct"]');other.inert=true;const pending=f.activate('#inventoryRefresh');await new Promise(setImmediate);assert.equal(f.form.inert,true);assert.equal(other.inert,true);read.reject(Error('Navigation read failed'));await pending;assert.equal(f.form.isConnected,true);assert.equal(f.form.inert,false);assert.equal(other.inert,true);assert.equal(f.form.elements.reason.value,'Unsaved inventory note');assert.equal(f.writes().length,0);
 });
+
+function dispatchCorrectionChange(control){
+ const event=new Event('change',{bubbles:true});Object.defineProperty(event,'target',{value:control});
+ for(let node=control;node;node=node.parentElement){Object.defineProperty(event,'currentTarget',{configurable:true,value:node});node.onchange?.call(node,event);for(const {fn}of [...(node.events.change||[])])fn.call(node,event);}
+}
+
+for(const action of ['dispatch','receive','open','issue'])test(`${action}: correction followed by action blur preserves layout until submit`,async()=>{
+ const f=fixture(action),form=f.form,input=form.elements.reason||form.elements.note,button=form.querySelector('[type="submit"]');input.value='';dispatchFocusout(input);assert.equal(f.summary(),'1 field needs attention');const errorNode=input.closest('label').querySelector('.field-error'),value=action==='receive'?'Counted and checked':'Verified stock action';input.value=value;const html=form.innerHTML;
+ dispatchCorrectionChange(input);button.focus();dispatchFocusout(input,button);assert.equal(form.innerHTML,html);assert.equal(input.closest('label').querySelector('.field-error'),errorNode);assert.equal(f.document.activeElement,button);assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args[action==='receive'?'p_note':'p_reason'],value);
+});
+for(const action of ['dispatch','receive','open','issue'])test(`${action}: action blur still requires valid fields on submit`,async()=>{
+ const f=fixture(action),form=f.form,input=form.elements.reason||form.elements.note;input.value='';dispatchFocusout(input,form.querySelector('[type="submit"]'));assert.equal(f.summary(),'');await f.submit();assert.equal(f.writes().length,0);assert.equal(f.document.activeElement,input);assert.equal(f.summary(),'1 field needs attention');
+});

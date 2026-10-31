@@ -15,6 +15,7 @@ export function dom(){
   setAttribute(key,value){this.attrs[key]=value;}getAttribute(key){return this.attrs[key]??null;}
   contains(node){return this===node||this.children.some(child=>child.contains(node));}
   matches(selector){
+   if(selector.includes(',')&&!selector.includes(':not('))return selector.split(',').some(part=>this.matches(part.trim()));
    let no=true;selector=selector.replace(/:not\(([^)]+)\)/g,(_,negative)=>{if(this.matches(negative))no=false;return '';});if(!no)return false;
    if(selector===':disabled')return this.disabled;
    const attrs=[...selector.matchAll(/\[([^=\]]+)(?:="([^"]*)")?\]/g)];if(attrs.some(([,key,value])=>!(key in this.attrs)||value!==undefined&&this.attrs[key]!==value))return false;

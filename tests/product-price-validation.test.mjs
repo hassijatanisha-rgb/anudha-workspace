@@ -111,3 +111,15 @@ test('a failed save returns focus to its originating button and preserves focus 
 test('a confirmed save preserves focus moved to another control while the write is pending',async()=>{
  const f=await fixture(),button=f.form.querySelector('[type="submit"]'),held=deferred();f.write=args=>held.promise.then(()=>({data:f.price(args.p_currency,args.p_unit_price_minor,args.p_expected_version+1)}));button.focus();const saving=f.submit(),elsewhere=f.document.createElement('input');f.document.body.append(elsewhere);elsewhere.focus();f.row.prices[0]=f.price('TZS',125000,5);held.resolve();await saving;assert.equal(f.document.activeElement,elsewhere);assert.equal(f.writes().length,1);assert.ok(f.form);
 });
+
+
+test('price: action blur retains corrected error layout until the first submit',async()=>{
+ const f=await fixture();const form=f.form,control=f.field('reason'),button=form.querySelector('[type="submit"]');control.value=' ';await f.submit();const error=form.querySelector('.field-error');assert.ok(error);assert.equal(f.summary(),'1 field needs attention');control.value='Approved price change';
+ dispatchFocusout(control,button);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.writes().length,0);
+ await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_reason,'Approved price change');assert.equal(f.writes()[0].args.p_unit_price_minor,125000);
+});
+
+test('price: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
+ const f=await fixture();const form=f.form,control=f.field('reason'),button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.writes().length,0);assert.equal(f.summary(),'1 field needs attention');assert.equal(f.document.activeElement,control);
+ const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='Approved price change';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.summary(),'1 field needs attention');const next=f.field('price');next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.summary(),'');assert.equal(f.document.activeElement,next);assert.equal(f.writes().length,0);
+});

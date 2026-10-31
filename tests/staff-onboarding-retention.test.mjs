@@ -1,3 +1,4 @@
+import {installNativeFormControls} from './helpers/native-form-controls.mjs';
 import {workspacePageHeader} from './helpers/page-header.mjs';
 import {installWorkspaceDialogFixture} from './helpers/workspace-dialog-fixture.mjs';
 import test from 'node:test';
@@ -8,10 +9,10 @@ import {dom} from './helpers/dom-identity.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8'),record={user_id:'new-staff',role:'staff',active:true,phone:'',department:'sales',access:['records']};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 function fixture(){
- const document=dom(),root=document.createElement('main');document.body.append(root);root.innerHTML='<header>Staff</header><div data-staff-directory><input id="search"><article>Existing person</article></div>';const directory=root.querySelector('[data-staff-directory]');directory.staffEpoch=1;directory.staffRows=[];let refreshed=0;directory.staffRefresh=()=>refreshed++;const calls=[];
+ const document=dom();installNativeFormControls(document);const root=document.createElement('main');document.body.append(root);root.innerHTML='<header>Staff</header><div data-staff-directory><input id="search"><article>Existing person</article></div>';const directory=root.querySelector('[data-staff-directory]');directory.staffEpoch=1;directory.staffRows=[];let refreshed=0;directory.staffRefresh=()=>refreshed++;const calls=[];
  const c=vm.createContext({workspacePageHeader,document,busy:false,run:fn=>fn(),me:{user_id:'owner',role:'owner'},view:'staff',esc:s=>String(s??''),navigator:{clipboard:{writeText:async()=>{}}},config:{},window:{ERP_CONFIG:{staffLoginDomain:'staff.example.invalid'}},client:{functions:{invoke:async(name,args)=>{calls.push({name,args});return {data:{user_id:'new-staff',employee_id:'test.person',full_name:'Test Person',temporary_password:'FICTIONAL-TEST-ONLY',warnings:[]}};}},rpc:async(name,args)=>{calls.push({name,args});return {data:{user_id:'new-staff',display_name:'Test Person',name_version:1}};},from:table=>({select(columns){calls.push({table,columns});return this;},eq(key,id){calls.at(-1).eq=[key,id];return this;},single:async()=>({data:record})})},staff:()=>assert.fail('No full Staff reload')});
  const dialogs=installWorkspaceDialogFixture(c);
- for(const file of ['employee-names.js','staff-access.js','employee-login.js'])vm.runInContext(read(file),c);c.accessCheckboxes=()=>'';c.checkedAreas=()=>['records'];c.loadEmployeeNames=()=>assert.fail('No full directory name read');c.openStaffOnboarding();const dialog=document.querySelector('dialog'),form=dialog.querySelector('form');for(const [key,value]of Object.entries({fullName:'Test Person',phone:'',role:'staff',department:'sales'}))form.elements[key].value=value;
+ for(const file of ['client-rules.js','employee-names.js','staff-access.js','employee-login.js'])vm.runInContext(read(file),c);c.accessCheckboxes=()=>'';c.checkedAreas=()=>['records'];c.loadEmployeeNames=()=>assert.fail('No full directory name read');c.openStaffOnboarding();const dialog=document.querySelector('dialog'),form=dialog.querySelector('form');for(const [key,value]of Object.entries({fullName:'Test Person',phone:'',role:'staff',department:'sales'}))form.elements[key].value=value;
  return {c,dialogs,document,root,directory,dialog,form,calls,refreshed:()=>refreshed,save:()=>form.onsubmit({preventDefault(){},target:form})};
 }
 test('creation retains the credentials and Staff directory, adding only the scoped verified employee',async()=>{
