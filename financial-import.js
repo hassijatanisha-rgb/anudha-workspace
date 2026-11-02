@@ -30,6 +30,11 @@ function financialImportDate(value,date1904=false){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(text)||text.startsWith('0000')||Number.isNaN(Date.parse(`${text}T00:00:00Z`))||new Date(`${text}T00:00:00Z`).toISOString().slice(0,10)!==text)throw Error('Use a valid YYYY-MM-DD date.');
  return text;
 }
+function financialImportMoney(value){
+ // Require text once numeric spreadsheet cells cannot retain 15 significant digits including cents.
+ if(typeof value==='number'&&Math.abs(value)>=10000000000000)throw Error('Amounts of 10,000,000,000,000 or more must use Text cells or CSV text to preserve every decimal place.');
+ return moneyMinor(String(value));
+}
 function financialImportPreview(sheet,accounts,{date1904=false,today=booksToday(),lockedThrough=null}={}){
  const rows=[],entries=[],errors=[],byCode=new Map(accounts.filter(a=>a.active).map(a=>[a.code,a])),groups=new Map();
  const fail=message=>({rows,entries,errors:[message]});
@@ -58,7 +63,7 @@ function financialImportPreview(sheet,accounts,{date1904=false,today=booksToday(
   if(currency!=='TZS')bad('Currency must be TZS. Convert and reconcile foreign balances outside this import first.');
   try{date=financialImportDate(rawDate,date1904);if(date>booksAddDays(today,31))bad('Date cannot be more than 31 days ahead.');if(lockedThrough&&date<=lockedThrough)bad(`The books are locked through ${lockedThrough}.`);}catch(error){bad(error.message);}
   const account=byCode.get(code);if(!account)bad(`Unknown or inactive account code: ${code||'(blank)'}.`);
-  try{debit=String(rawDebit).trim()===''?0:moneyMinor(String(rawDebit));credit=String(rawCredit).trim()===''?0:moneyMinor(String(rawCredit));if((debit>0)===(credit>0))bad('Enter a positive Debit or Credit, with the other blank or zero.');}catch(error){bad(error.message);}
+  try{debit=String(rawDebit).trim()===''?0:financialImportMoney(rawDebit);credit=String(rawCredit).trim()===''?0:financialImportMoney(rawCredit);if((debit>0)===(credit>0))bad('Enter a positive Debit or Credit, with the other blank or zero.');}catch(error){bad(error.message);}
   if(!reference)continue;
   let group=groups.get(reference);
   if(!group){group={reference,date,memo,lines:[],rows:[],debit:0,credit:0};groups.set(reference,group);}
@@ -71,7 +76,7 @@ function financialImportPreview(sheet,accounts,{date1904=false,today=booksToday(
   const problems=[];
   if(group.lines.length<2||group.lines.length>200)problems.push('Each entry needs between 2 and 200 lines.');
   if(!Number.isSafeInteger(group.debit)||!Number.isSafeInteger(group.credit))problems.push('The entry total is too large.');
-  else if(group.debit!==group.credit)problems.push(`Debits and credits differ by ${moneyDisplay(Math.abs(group.debit-group.credit))}.`);
+  else if(group.debit!==group.credit)problems.push(`Debits and credits differ by ${moneyExactDisplay(Math.abs(group.debit-group.credit))}.`);
   for(const problem of problems)group.rows.forEach(row=>row.errors.push(problem));
   entries.push({reference:group.reference,date:group.date,memo:group.memo,lines:group.lines});
  }
@@ -111,6 +116,7 @@ function financialImportTemplate(accounts){
   ['Opening balances and journal transactions · TZS only'],
   ['Use one line per account; repeat Entry Reference, Date and Memo for every line of the same entry.'],
   ['Dates: YYYY-MM-DD or Excel dates without times. Debit/Credit: non-negative amounts with at most two decimal places.'],
+  ['Amounts of 10,000,000,000,000 or more must use Text cells or CSV text to preserve every decimal place.'],
   ['Every entry must balance and contain 2–200 lines. Maximum 1,000 rows and 100 entries per import.'],
   ['Use a stable source name and unique entry references. An unchanged entry is skipped; changed references are rejected.'],
   ['Use account codes from Accounts. Paste values only; formulas and foreign currencies are rejected.'],
@@ -157,7 +163,7 @@ async function financialImportWorkspace(actor,current){
  const form=$('#financialImportForm'),status=$('#financialImportStatus'),button=$('#financialImportCommit');
  const redraw=()=>{
   const p=state.preview;
-  $('#financialImportPreview').innerHTML=!p?'':`<h3>${p.entries.length} entries · ${p.rows.length} rows</h3>${p.errors.length?`<p class="error">${p.errors.length} problems must be corrected in the file before posting.</p><ul class="error">${p.errors.slice(0,50).map(error=>`<li>${esc(error)}</li>`).join('')}</ul>${p.errors.length>50?'<p>Only the first 50 problems are listed; row details show the remaining problems.</p>':''}`:'<p>Every entry balances and all account codes are active.</p>'}<div class="table-wrap"><table><thead><tr><th>Entry reference</th><th>Date</th><th>Debits</th><th class="numeric-cell">Credits</th></tr></thead><tbody>${p.entries.map(entry=>`<tr><td>${esc(entry.reference)}</td><td>${esc(entry.date)}</td><td class="numeric-cell">${booksMoney(entry.lines.reduce((total,line)=>total+line.debit_minor,0))}</td><td class="numeric-cell">${booksMoney(entry.lines.reduce((total,line)=>total+line.credit_minor,0))}</td></tr>`).join('')}</tbody></table></div><div class="table-wrap"><table><thead><tr><th>Row</th>${financialImportHeaders.map(h=>`<th>${esc(h)}</th>`).join('')}<th>Check</th></tr></thead><tbody>${p.rows.map(row=>`<tr><td>${row.number}</td>${row.values.map(value=>`<td>${esc(String(value))}</td>`).join('')}<td>${row.errors.length?esc(row.errors.join(' ')):'Ready'}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#financialImportPreview').innerHTML=!p?'':`<h3>${p.entries.length} entries · ${p.rows.length} rows</h3>${p.errors.length?`<p class="error">${p.errors.length} problems must be corrected in the file before posting.</p><ul class="error">${p.errors.slice(0,50).map(error=>`<li>${esc(error)}</li>`).join('')}</ul>${p.errors.length>50?'<p>Only the first 50 problems are listed; row details show the remaining problems.</p>':''}`:'<p>Every entry balances and all account codes are active.</p>'}<div class="table-wrap"><table><thead><tr><th>Entry reference</th><th>Date</th><th>Debits</th><th class="numeric-cell">Credits</th></tr></thead><tbody>${p.entries.map(entry=>`<tr><td>${esc(entry.reference)}</td><td>${esc(entry.date)}</td><td class="numeric-cell">${moneyExactDisplay(entry.lines.reduce((total,line)=>total+line.debit_minor,0))}</td><td class="numeric-cell">${moneyExactDisplay(entry.lines.reduce((total,line)=>total+line.credit_minor,0))}</td></tr>`).join('')}</tbody></table></div><div class="table-wrap"><table><thead><tr><th>Row</th>${financialImportHeaders.map(h=>`<th>${esc(h)}</th>`).join('')}<th>Check</th></tr></thead><tbody>${p.rows.map(row=>`<tr><td>${row.number}</td>${row.values.map(value=>`<td>${esc(String(value))}</td>`).join('')}<td>${row.errors.length?esc(row.errors.join(' ')):'Ready'}</td></tr>`).join('')}</tbody></table></div>`;
   for(const control of [form.kind,form.source,form.file,form.sheet])control.disabled=state.busy||state.uncertain||!!state.result;
   $('#financialImportNew').hidden=!state.result;
   button.disabled=state.busy||!!state.result||!p||!!p.errors.length||!form.source.value.trim();button.textContent=state.uncertain?'Retry and reconcile this import':'Post reviewed journals';

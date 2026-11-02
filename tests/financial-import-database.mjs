@@ -15,7 +15,7 @@ try{
  create function accounting_access() returns boolean language sql stable as $$select auth.uid()='${ACTOR}'::uuid$$;
  create function inventory_owner() returns boolean language sql stable as $$select auth.uid()='${ACTOR}'::uuid$$;
  set test.actor='${ACTOR}';`);
- for(const name of ['202610160087_accounting_ledger.sql','202610160096_financial_import.sql','202610160096_financial_import.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
+ for(const name of ['202610160087_accounting_ledger.sql','202610160096_financial_import.sql','202610160096_financial_import.sql','202611020156_accounting_posting_integrity.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
  const as=actor=>db.exec(`reset role;set test.actor='${actor}';set role authenticated`);
  const q=(sql,args)=>db.query(sql,args),one=async(sql,args)=>(await q(sql,args)).rows[0];
  const entry=(reference='OPEN-1',amount=12550)=>({reference,date:'2026-10-10',memo:'Reviewed opening balance',lines:[{account_id:BANK,debit_minor:amount,credit_minor:0,description:'Bank statement balance'},{account_id:EQUITY,debit_minor:0,credit_minor:amount,description:'Opening capital'}]});

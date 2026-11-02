@@ -72,7 +72,7 @@ test('actual runtime preserves pending locks, exact posting arguments and the co
 });
 
 test('failed writes retain their request and form values; malformed success only retries saved details',async()=>{
- const f=await fixture();f.write=async()=>({error:{message:'Posting rejected'}});await f.submit();assert.equal(f.form().inert,false);assert.equal(f.post().disabled,false);assert.match(f.summary().textContent,/Posting rejected/);f.write=async()=>({data:{id:'wrong'}});await f.submit();assert.equal(f.writes()[0].args.p_id,f.writes()[1].args.p_id);assert.equal(f.form().inert,true);assert.ok(f.node('[data-books-posted-retry]'));await f.submit();assert.equal(f.writes().length,2);
+ const f=await fixture();f.write=async()=>({error:{code:'P0001',message:'Posting rejected'}});await f.submit();assert.equal(f.form().inert,false);assert.equal(f.post().disabled,false);assert.match(f.summary().textContent,/Posting rejected/);f.write=async()=>({data:{id:'wrong'}});await f.submit();assert.equal(f.writes()[0].args.p_id,f.writes()[1].args.p_id);assert.equal(f.form().inert,true);assert.ok(f.node('[data-books-posted-retry]'));await f.submit();assert.equal(f.writes().length,2);
  f.node('[data-books-posted-retry]').onclick();await f.pending();assert.ok(f.node('[data-books-posted-open]'));assert.equal(f.writes().length,2);assert.equal(f.calls.filter(call=>call.table==='acc_journal_entries').length,1);
 });
 

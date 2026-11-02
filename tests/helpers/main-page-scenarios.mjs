@@ -39,7 +39,7 @@ Object.assign(rpcs,{
 tables.customer_contracts=query=>{assert.match(query.columns,/customer:organizations\(name\)/);assert.deepEqual(query.range,[0,30]);return Array.from({length:31},(_,n)=>({id:'contract-'+n,contract_number:'CON-'+n,title:'Fictional Contract '+n,kind:'service',status:'draft',organization_id:'clinic',customer:{name:'Fictional Contract Customer'},starts_on:'2026-10-01',ends_on:null,reference:'',version:1}));};
 tables.acc_settings=query=>{assert.equal(query.columns,'*');return [{version:2,locked_through:null}];};
 tables.discount_policy=query=>{assert.equal(query.columns,'id,head_limit_basis_points,version,updated_by,updated_at');assert.deepEqual(query.filters,[]);assert.equal(query.single,true);return {id:true,version:3,head_limit_basis_points:1500,updated_by:'actor',updated_at:'2026-10-29T08:00:00Z'};};
-rpcs.acc_trial_balance=Array.from({length:50},(_,n)=>({...account(n),debit_minor:10000,credit_minor:10000}));
+rpcs.acc_financial_report=args=>{assert.equal(args.p_kind,'trial');assert.match(args.p_as_of,/^\d{4}-\d{2}-\d{2}$/);return {kind:'trial',row_count:50,rows:Array.from({length:50},(_,n)=>({...account(n),debit_minor:'10000',credit_minor:'10000'}))};};
 // Read-only menu pages, populated register boundaries, and explicit import entry screens.
 const countSession={id:'count-session',name:'Fictional Physical Count',status:'open',version:1,opened_by:'actor',opened_at:'2026-10-29T08:00:00Z'};
 Object.assign(rpcs,{

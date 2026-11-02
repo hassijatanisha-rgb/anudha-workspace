@@ -84,7 +84,7 @@ test('a pending write locks fields and rejects duplicate submission or Add line 
  for(const kind of ['receipt','journal','reversal']){const f=await fixture(kind),wait=deferred();let writes=0;f.c.client.rpc=async()=>{writes++;return wait.promise;};const posting=f.submit();assert.equal(f.form.inert,true);f.submit();if(kind==='journal')f.node('#booksAddLine').onclick();assert.equal(writes,1);wait.resolve({data:f.c.saved});await posting;await f.submit();assert.equal(writes,1);assert.equal(f.writes().bodyWrites,1);}
 });
 test('failed writes remain editable and retry with the original stable ID without claiming success',async()=>{
- for(const kind of ['receipt','journal','reversal']){const f=await fixture(kind);f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});throw Error('Posting rejected');};await assert.rejects(f.submit(),/Posting rejected/);assert.equal(f.form.inert,false);assert.equal(f.node('[data-books-posted]'),null);assert.equal(f.messages.length,0);f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {data:f.c.saved};};await f.submit();assert.equal(f.calls.length,2);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),f.expectedArgs);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[1].args)),f.expectedArgs);assert.ok(f.node('[data-books-posted-open]'));}
+ for(const kind of ['receipt','journal','reversal']){const f=await fixture(kind);f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {error:{code:'P0001',message:'Posting rejected'}};};await assert.rejects(f.submit(),/Posting rejected/);assert.equal(f.form.inert,false);assert.equal(f.node('[data-books-posted]'),null);assert.equal(f.messages.length,0);f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {data:f.c.saved};};await f.submit();assert.equal(f.calls.length,2);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),f.expectedArgs);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[1].args)),f.expectedArgs);assert.ok(f.node('[data-books-posted-open]'));}
 });
 test('incomplete confirmation keeps saved form locked; Retry reads only its ID and never posts twice',async()=>{
  for(const kind of ['receipt','journal','reversal']){const f=await fixture(kind),verified=f.c.saved;f.c.saved={id:'wrong'};await f.submit();const notice=f.node('[data-books-posted]');assert.match(notice.textContent,/recorded, but|posted, but/);assert.match(notice.textContent,/could not be verified/);assert.equal(f.node('[data-books-posted-open]'),null);assert.equal(f.form.inert,true);assert.equal(f.calls.length,1);if(kind==='reversal')assert.equal(f.node('#booksJournalReverse').textContent,'Reverse');await f.submit();assert.equal(f.calls.length,1);
@@ -113,4 +113,42 @@ test('stale saved-record buttons cannot change selected record or launch a works
 
 test('header verification preserves SQL trim semantics for tabs in receipt references and journal descriptions',async()=>{
  for(const kind of ['receipt','journal','reversal']){const f=await fixture(kind);if(kind==='receipt'){f.form.reference.value=' \tREF\t ';f.c.saved.reference='\tREF\t';}else if(kind==='journal'){f.form.memo.value=' \tOffice rent\t ';f.c.saved.memo='\tOffice rent\t';}else{f.form.reason.value=' \tCorrection\t ';f.c.saved.memo='Reversal of JE-ORIGINAL: \tCorrection\t';}await f.submit();assert.ok(f.node('[data-books-posted-open]'));assert.equal(f.node('[data-books-posted-retry]'),null);}
+});
+
+for(const kind of ['receipt','journal'])test(`${kind} lost response locks original payload, prevents navigation and retries once without edits`,async()=>{
+ const f=await fixture(kind),first=f.expectedArgs;f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});throw Error('Connection lost');};
+ await f.submit();assert.equal(f.form.inert,true);assert.equal(f.c.booksPostingConfirmLeave(()=>true),false);assert.equal(f.get('booksPendingPosting')!==null,true);
+ if(kind==='receipt'){f.form.amount.value='999';f.form.reference.value='Changed';f.node('[data-books-allocate]').value='90';}
+ else{f.form.memo.value='Changed';f.node('[data-jl="debit"]').value='999';f.node('#booksAddLine').onclick();}
+ await f.submit();assert.equal(f.calls.length,1);f.node('#booksTransactionBack').onclick();await f.c.running;assert.equal(f.calls.length,1);
+ f.c.client.rpc=async(name,args)=>{f.calls.push({name,args});return {data:f.c.saved}};
+ f.node('[data-books-posting-retry]').onclick();await f.c.running;
+ assert.deepEqual(JSON.parse(JSON.stringify(f.calls.map(call=>call.args))),[first,first]);assert.equal(f.form.inert,true);assert.ok(f.node('[data-books-posted-open]'));assert.equal(f.node('[data-books-uncertain]'),null);assert.equal(f.c.booksPostingConfirmLeave(()=>true),true);assert.equal(f.get('booksPendingPosting'),null);
+});
+for(const kind of ['receipt','journal'])test(`${kind} unknown server errors stay locked, including rejection on an uncertain retry`,async()=>{
+ const f=await fixture(kind);f.c.client.rpc=async()=>({error:{code:'08006',message:'Connection interrupted'}});await f.submit();assert.equal(f.form.inert,true);assert.ok(f.node('[data-books-posting-retry]'));
+ f.c.client.rpc=async()=>({error:{code:'P0001',message:'Cannot confirm prior request'}});f.node('[data-books-posting-retry]').onclick();await f.c.running;assert.equal(f.form.inert,true);assert.match(f.node('[data-books-uncertain]').textContent,/Cannot confirm prior request/);assert.equal(f.c.booksPostingConfirmLeave(()=>true),false);
+ f.replace('actor');const calls=f.calls.length;f.node('[data-books-posting-retry]').onclick();await f.c.running;assert.equal(f.calls.length,calls);assert.equal(f.c.booksPostingConfirmLeave(()=>true),true);
+});
+test('pending receipt protects browser unload and clears its in-memory guard after confirmation',async()=>{
+ const f=await fixture(),listeners=new Map();f.c.addEventListener=(name,handler)=>listeners.set(name,handler);f.c.removeEventListener=(name,handler)=>{if(listeners.get(name)===handler)listeners.delete(name)};
+ const wait=deferred();f.c.client.rpc=()=>wait.promise;const posting=f.submit();let prevented=false;const event={preventDefault(){prevented=true}};listeners.get('beforeunload')(event);assert.equal(prevented,true);assert.equal(event.returnValue,'');
+ wait.resolve({data:f.c.saved});await posting;assert.equal(listeners.size,0);
+});
+test('manual journal account picker excludes receivables, and aggregate amount limits are explicit',async()=>{
+ const f=await fixture('journal');f.c.data.accounts.push({id:'ar',code:'1300',name:'Receivables',account_type:'asset',system_key:'receivables',active:true});await f.c.booksJournal('accountant',()=>true);assert.equal(f.node('option[value="ar"]'),null);
+ const result=f.c.booksJournalCheck([{accountId:'bank',debit:'90071992547409.91'},{accountId:'bank',debit:'0.01'},{accountId:'expense',credit:'90071992547409.91'},{accountId:'expense',credit:'0.01'}]);assert.match(result.problem,/total is too large/);
+ assert.match(f.c.booksMoney(12345),/123\.45/);assert.match(f.c.booksMoney(1),/0\.01/);assert.equal(f.c.booksDecimal(Number.MAX_SAFE_INTEGER),'90071992547409.91');assert.equal(f.c.booksDecimal(-12345),'-123.45');
+});
+
+for(const kind of ['receipt','journal'])test(`${kind} malformed success retains leave and unload protection until saved identity is verified`,async()=>{
+ const f=await fixture(kind),listeners=new Map(),saved=f.c.saved;f.c.addEventListener=(name,handler)=>listeners.set(name,handler);f.c.removeEventListener=(name)=>listeners.delete(name);f.c.saved={id:'wrong'};
+ await f.submit();assert.equal(f.c.booksPostingConfirmLeave(()=>true),false);assert.ok(listeners.has('beforeunload'));assert.equal(f.form.inert,true);
+ f.c.readRow=saved;f.node('[data-books-posted-retry]').onclick();await f.c.running;assert.equal(f.c.booksPostingConfirmLeave(()=>true),true);assert.equal(listeners.size,0);
+});
+test('report snapshots require complete row counts and exact integer strings',async()=>{
+ const f=await fixture('journal'),row={account_id:'bank',code:'1200',name:'Bank',debit_minor:'9007199254740991',credit_minor:'0'};
+ f.c.client.rpc=async(name,args)=>{assert.equal(name,'acc_financial_report');assert.equal(args.p_kind,'trial');return {data:{kind:'trial',rows:[row],row_count:1}}};
+ const rows=await f.c.booksReportSnapshot('trial',{p_as_of:'2026-11-02'});assert.equal(rows[0].debit_minor,'9007199254740991');
+ for(const data of [{kind:'trial',rows:[row],row_count:2},{kind:'pl',rows:[row],row_count:1},{kind:'trial',rows:[{...row,debit_minor:9007199254740991}],row_count:1},{kind:'trial',rows:[{...row,debit_minor:'1.01'}],row_count:1}]){f.c.client.rpc=async()=>({data});await assert.rejects(f.c.booksReportSnapshot('trial',{}),/complete report/);}
 });

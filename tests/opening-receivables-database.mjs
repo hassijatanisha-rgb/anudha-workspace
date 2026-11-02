@@ -1,7 +1,7 @@
 // Disposable PostgreSQL using actual accounting, opening import, receipt and ageing migrations.
 import assert from 'node:assert/strict';
 import {createOrderFixture} from './helpers/order-database-fixture.mjs';
-const f=await createOrderFixture({extraMigrations:['202610160096_financial_import.sql','202610180107_partial_order_invoices.sql','202610180108_invoice_quantity_delivery.sql','202610180110_return_credit_rounding.sql','202610190111_post_return_credits.sql','202610190112_opening_receivables.sql']});
+const f=await createOrderFixture({extraMigrations:['202610160096_financial_import.sql','202610180107_partial_order_invoices.sql','202610180108_invoice_quantity_delivery.sql','202610180110_return_credit_rounding.sql','202610190111_post_return_credits.sql','202610190112_opening_receivables.sql','202611020156_accounting_posting_integrity.sql']});
 const {db,id,as,admin,one,ORG,ACCOUNTS,SALES,OWNER,dates}=f;
 const AR='a0000000-0000-4000-8000-000000001300',EQUITY='a0000000-0000-4000-8000-000000003000',BANK='a0000000-0000-4000-8000-000000001200';
 let sequence=8200,checks=0;const fresh=()=>id(sequence++),cutover='2026-10-01';
@@ -29,7 +29,7 @@ try{
  });
  await check('GL mismatch and broader AR mismatch both fail without partial rows',async()=>{
   const batch=await gl();await reject(()=>post(batch,[row({amount_minor:1})]),/does not equal/);assert.equal(await count('acc_invoices'),0);
-  await db.query('select post_manual_journal($1,$2,$3,$4::jsonb)',[fresh(),cutover,'Unexplained AR difference',JSON.stringify([{account_id:AR,debit_minor:100,credit_minor:0},{account_id:EQUITY,debit_minor:0,credit_minor:100}])]);
+  await gl(100,'OPEN-UNATTACHED');
   await reject(()=>post(batch),/AR reconciliation failed/);assert.equal(await count('acc_invoices'),0);
  });
  await check('inactive or named customers, currencies, precision, dates and duplicates fail',async()=>{

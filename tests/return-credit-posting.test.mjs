@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const enabled=process.env.RETURN_CREDIT_BROWSER_QA==='1';
 const source=readFileSync(new URL('../return-credit-posting.js',import.meta.url),'utf8');
+const money=readFileSync(new URL('../sales-domain.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const feedback=readFileSync(new URL('../action-feedback.js',import.meta.url),'utf8')+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+app.slice(app.indexOf('function friendlyError('),app.indexOf('let editSaving=false;'));
 let browser;
@@ -22,7 +23,7 @@ async function fixture(){
   window.companyDate=()=> '2026-10-19';window.clearBooks=()=>{};window.message=(text)=>messages.push(text);window.requireAccountingAccess=async()=> 'accounts';
   window.client={from(table){const q={select(){return q;},eq(){return q;},async maybeSingle(){readCalls.push(table);return {data:table==='accounting_draft_history'?saved:posted};}};return q;},async rpc(name,args){rpcCalls.push({name,args:structuredClone(args)});if(mode==='lost')throw Error('Offline');if(mode==='recover'){posted=credit;throw Error('Lost response');}if(mode==='deferred')return new Promise(resolve=>window.resolvePost=resolve);if(mode==='denied')return {error:{code:'P0001',message:'Books locked'}};posted=credit;return {data:credit};}};
  });
- await page.addStyleTag({content:':root{--m-base:200ms;--m-slow:300ms;--m-fade:150ms;--ease-in:ease-out;--ease-out:ease-out}'});await page.addScriptTag({content:readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:feedback});await page.addScriptTag({content:source});return page;
+ await page.addStyleTag({content:':root{--m-base:200ms;--m-slow:300ms;--m-fade:150ms;--ease-in:ease-out;--ease-out:ease-out}'});await page.addScriptTag({content:readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:feedback});await page.addScriptTag({content:money});await page.addScriptTag({content:source});return page;
 }
 acceptance('review shows exact immutable amounts, escapes source text and does not post',async()=>{
  const page=await fixture();try{
@@ -83,9 +84,9 @@ acceptance('late review cannot reopen after navigation and duplicate fast opens 
 });
 
 test('saved allocation validates integer minor units and exact total before any posting',()=>{
- const c=vm.createContext({workspacePageHeader,Number,String,Error});vm.runInContext(source,c);
+ const c=vm.createContext({workspacePageHeader,Number,String,Error});vm.runInContext(money+'\n'+source,c);
  const saved={body:{currency:'TZS',totalMinor:11804,source:{invoiceId:'inv',returnId:'ret'},lines:[{proformaLineId:'line',quantityReturned:1,netMinor:10003,taxMinor:1801}]}};
- assert.equal(c.returnCreditPostingSnapshot(saved).total,11804);assert.equal(c.returnCreditPostingMoney(11804),'118.04');
+ assert.equal(c.returnCreditPostingSnapshot(saved).total,11804);assert.equal(c.returnCreditPostingMoney(11804).replace(/\s/g,' '),'TZS 118.04');assert.equal(c.returnCreditPostingMoney(Number.MAX_SAFE_INTEGER).replace(/\s/g,' '),'TZS 90,071,992,547,409.91');
  for(const change of [()=>saved.body.lines[0].netMinor=0.1,()=>saved.body.lines[0].netMinor=-1,()=>saved.body.lines[0].netMinor=Number.MAX_SAFE_INTEGER+1]){change();assert.throws(()=>c.returnCreditPostingSnapshot(saved),/Accounts review/);}
  saved.body.lines[0].netMinor=10003;saved.body.totalMinor=11803;assert.throws(()=>c.returnCreditPostingSnapshot(saved),/does not balance/);
  saved.body.source.invoiceId=null;assert.throws(()=>c.returnCreditPostingSnapshot(saved),/linked to an ERP invoice/);

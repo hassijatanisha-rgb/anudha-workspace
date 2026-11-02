@@ -9,7 +9,7 @@ export const leaveContextSource=nav.slice(nav.indexOf('let navWhileBusy='),nav.i
 // Unmounted feature guards are inert; integration tests load all authored scripts.
 export function leaveContextGlobals(ctx){
  installStockTransition(ctx);
- for(const [key,value]of Object.entries({me:{user_id:'fixture'},view:'sales',sessionLoadEpoch:0,location:{hash:''},salesSection:'proformas',salesFocusedProforma:'',salesFocusedDelivery:'',salesEditing:'',booksSection:'overview',askConfirm:async()=>false,returnCreditPostingConfirmLeave:()=>true,financialImportConfirmLeave:async()=>true,openingReceivablesConfirmLeave:async()=>true,salesConfirmLeave:async()=>true,inventoryConfirmLeave:async()=>true,confirmPurchasingLeave:async()=>true}))if(!(key in ctx))ctx[key]=value;
+ for(const [key,value]of Object.entries({me:{user_id:'fixture'},view:'sales',sessionLoadEpoch:0,location:{hash:''},salesSection:'proformas',salesFocusedProforma:'',salesFocusedDelivery:'',salesEditing:'',booksSection:'overview',askConfirm:async()=>false,booksPostingConfirmLeave:()=>true,returnCreditPostingConfirmLeave:()=>true,financialImportConfirmLeave:async()=>true,openingReceivablesConfirmLeave:async()=>true,salesConfirmLeave:async()=>true,inventoryConfirmLeave:async()=>true,confirmPurchasingLeave:async()=>true}))if(!(key in ctx))ctx[key]=value;
  vm.runInContext(leaveScopeSource,ctx);
 }
 export function installLeaveContext(ctx){

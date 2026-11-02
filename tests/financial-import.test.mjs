@@ -56,6 +56,22 @@ test('Excel date systems reject times and the fictional 1900 leap day',()=>{
  assert.throws(()=>run(ctx,'financialImportDate(60)'),/valid YYYY-MM-DD/);assert.throws(()=>run(ctx,'financialImportDate(46200.5)'),/without a time/);
 });
 
+test('import reports the exact minor-unit difference and rejects ambiguous large numeric cells',()=>{
+ const ctx=load(),unequal=rows();unequal[0][4]='123.45';unequal[1][5]='123.44';
+ assert.match(preview(ctx,sheet(ctx,unequal)).errors.join(' ').replace(/\s/g,' '),/differ by TZS 0\.01/);
+ for(const amount of [10000000000000,90071992547409.91]){const values=rows();values[0][4]=amount;values[1][5]=amount;assert.match(preview(ctx,sheet(ctx,values)).errors.join(' '),/must use Text cells or CSV text/);}
+ const valid=rows();valid[0][4]=9999999999999.99;valid[1][5]=9999999999999.99;assert.equal(preview(ctx,sheet(ctx,valid)).errors.length,0);
+ valid[0][4]='90071992547409.91';valid[1][5]='90071992547409.91';const exact=preview(ctx,sheet(ctx,valid));assert.equal(exact.errors.length,0);assert.equal(exact.entries[0].lines[0].debit_minor,Number.MAX_SAFE_INTEGER);
+});
+
+test('actual XLSX numeric cells fail the precision boundary while CSV text retains exact large amounts',async()=>{
+ const ctx=load(),values=rows();values[0][4]=90071992547409.91;values[1][5]=90071992547409.91;ctx.sheet=sheet(ctx,values);
+ const data=run(ctx,"(()=>{const w=XLSX.utils.book_new();XLSX.utils.book_append_sheet(w,sheet,'Journal');return XLSX.write(w,{type:'array',bookType:'xlsx'});})()");
+ ctx.file={name:'large.xlsx',size:data.byteLength,arrayBuffer:async()=>data};const workbook=await run(ctx,'financialImportRead(file)');assert.match(preview(ctx,workbook.Sheets.Journal).errors.join(' '),/must use Text cells or CSV text/);
+ const csv='Entry Reference,Date,Memo,Account Code,Debit,Credit,Line Description,Currency\nR1,2026-10-10,Opening balance,1200,90071992547409.91,,,TZS\nR1,2026-10-10,Opening balance,3000,,90071992547409.91,,TZS';
+ ctx.file={name:'large.csv',size:csv.length,text:async()=>csv};const read=await run(ctx,'financialImportRead(file)'),p=preview(ctx,read.Sheets[read.SheetNames[0]]);assert.equal(p.errors.length,0);assert.equal(p.entries[0].lines[0].debit_minor,Number.MAX_SAFE_INTEGER);
+});
+
 test('file, worksheet, entry and row bounds fail visibly',async()=>{
  const ctx=load();ctx.file={name:'huge.xlsx',size:5*1024*1024+1,arrayBuffer:()=>{throw Error('Must not read oversized file');}};
  await assert.rejects(run(ctx,'financialImportRead(file)'),/no larger than 5 MB/);
@@ -147,6 +163,7 @@ test('financial file preview waits for complete accounts and retains exact balan
  f.ctx.booksSelectAll=()=>new Promise(resolve=>{release=resolve});f.ctx.financialImportRead=async()=>({SheetNames:['Journal'],Sheets:{Journal:sheet(f.ctx,rows())}});
  const reading=f.form.file.onchange();await new Promise(setImmediate);assert.equal(run(f.ctx,'financialImportState.preview'),null);assert.equal(f.nodes.get('#financialImportCommit').disabled,true);
  release(f.ctx.accounts);await reading;assert.equal(run(f.ctx,'financialImportState.preview.errors.length'),0);assert.equal(run(f.ctx,'financialImportState.preview.entries[0].lines[0].debit_minor'),12550);assert.equal(f.nodes.get('#financialImportCommit').disabled,false);
+ assert.match(f.nodes.get('#financialImportPreview').innerHTML.replace(/\s/g,' '),/TZS 125\.50/);
 });
 test('failed financial account reads cannot enable import and an explicit retry can recover',async()=>{
  const f=importWorkspaceFixture();await f.ctx.financialImportWorkspace('owner');let attempts=0;f.ctx.booksSelectAll=async()=>{if(++attempts===1)throw Error('Ledger accounts offline');return f.ctx.accounts};f.ctx.financialImportRead=async()=>({SheetNames:['Journal'],Sheets:{Journal:sheet(f.ctx,rows())}});
