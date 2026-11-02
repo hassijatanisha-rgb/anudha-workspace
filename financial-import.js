@@ -99,13 +99,14 @@ function financialImportXlsxBounds(data){
  }
  if(offset!==end)throw Error('The workbook archive directory is invalid.');
 }
-async function financialImportRead(file){
+async function financialImportRead(file,{maxRows=financialImportLimits.rows}={}){
+ if(!Number.isSafeInteger(maxRows)||maxRows<1||maxRows>10000)throw Error('Spreadsheet row limit must be between 1 and 10,000.');
  if(!file||!Number.isFinite(file.size)||file.size<=0||file.size>financialImportLimits.bytes)throw Error('Choose a non-empty workbook or CSV no larger than 5 MB.');
  if(!/\.(xlsx|csv)$/i.test(file.name))throw Error('Choose an .xlsx workbook or an Excel CSV file.');
  if(typeof XLSX==='undefined')throw Error('The Excel reader is unavailable. Reload the page and retry.');
  const csv=/\.csv$/i.test(file.name),data=csv?await file.text():await file.arrayBuffer();
  if(!csv)financialImportXlsxBounds(data);
- const workbook=XLSX.read(data,{type:csv?'string':'array',raw:true,cellDates:false,cellFormula:true,cellText:false,sheetRows:financialImportLimits.rows+2});
+ const workbook=XLSX.read(data,{type:csv?'string':'array',raw:true,cellDates:false,cellFormula:true,cellText:false,sheetRows:maxRows+2});
  if(!workbook.SheetNames?.length||workbook.SheetNames.length>financialImportLimits.sheets)throw Error('Choose a workbook containing 1–20 sheets.');
  return workbook;
 }

@@ -18,10 +18,10 @@ async function fixture(){
   let sequence=0;crypto.randomUUID=()=>`fixture-${++sequence}`;window.view='accounting';window.busy=false;window.$=selector=>document.querySelector(selector);window.me={user_id:'accounts'};window.rpcCalls=[];window.readCalls=[];window.mode='success';window.posted=null;window.messages=[];
   window.row={id:'draft',kind:'credit_note',version:1,organization_id:'org'};
   window.saved={body:{currency:'TZS',totalMinor:11804,source:{invoiceId:'invoice',returnId:'return',returnNumber:'<img src=x onerror=alert(1)>',taxInvoiceReference:'INV-1'},lines:[{proformaLineId:'line',quantityReturned:1,netMinor:10003,taxMinor:1801}]}};
-  window.credit={id:'credit',draft_id:'draft',credit_number:'CN-1',credit_date:'2026-10-19',total_minor:11804};
+  window.credit={id:'credit',draft_id:'draft',credit_number:'CN-1',credit_date:'2026-10-19',draft_version:1,invoice_id:'invoice',return_id:'return',currency:'TZS',net_minor:10003,tax_minor:1801,total_minor:11804,replaces_credit_id:null};
   window.esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   window.companyDate=()=> '2026-10-19';window.clearBooks=()=>{};window.message=(text)=>messages.push(text);window.requireAccountingAccess=async()=> 'accounts';
-  window.client={from(table){const q={select(){return q;},eq(){return q;},async maybeSingle(){readCalls.push(table);return {data:table==='accounting_draft_history'?saved:posted};}};return q;},async rpc(name,args){rpcCalls.push({name,args:structuredClone(args)});if(mode==='lost')throw Error('Offline');if(mode==='recover'){posted=credit;throw Error('Lost response');}if(mode==='deferred')return new Promise(resolve=>window.resolvePost=resolve);if(mode==='denied')return {error:{code:'P0001',message:'Books locked'}};posted=credit;return {data:credit};}};
+  window.client={from(table){const q={select(){return q;},eq(){return q;},order(){return q;},limit(){return q;},async maybeSingle(){readCalls.push(table);return {data:table==='accounting_draft_history'?saved:posted};}};return q;},async rpc(name,args){rpcCalls.push({name,args:structuredClone(args)});credit={...credit,id:args.p_id,credit_date:args.p_credit_date,draft_version:args.p_expected_version};if(mode==='lost')throw Error('Offline');if(mode==='recover'){posted=credit;throw Error('Lost response');}if(mode==='deferred')return new Promise(resolve=>window.resolvePost=resolve);if(mode==='denied')return {error:{code:'P0001',message:'Books locked'}};posted=credit;return {data:credit};}};
  });
  await page.addStyleTag({content:':root{--m-base:200ms;--m-slow:300ms;--m-fade:150ms;--ease-in:ease-out;--ease-out:ease-out}'});await page.addScriptTag({content:readFileSync(new URL('../client-rules.js',import.meta.url),'utf8')});await page.addScriptTag({content:readFileSync(new URL('../ui-dialogs.js',import.meta.url),'utf8')});await page.addScriptTag({content:feedback});await page.addScriptTag({content:money});await page.addScriptTag({content:source});return page;
 }
@@ -43,7 +43,7 @@ acceptance('unknown outcome blocks leaving and retries the exact request identit
   const calls=await page.evaluate(()=>rpcCalls);assert.deepEqual(calls[0].args,calls[1].args);assert.equal(await page.evaluate(()=>returnCreditPostingConfirmLeave()),true);
  }finally{await page.close();}
 });
-acceptance('lost response reconciles by saved draft without creating a second posting',async()=>{
+acceptance('lost response reconciles by exact request identity without creating a second posting',async()=>{
  const page=await fixture();try{
   await page.evaluate(()=>{mode='recover';return openReturnCreditPosting(row);});await page.getByRole('button',{name:'Post credit to books'}).click();await page.getByText('CN-1 posted',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>rpcCalls.length),1);assert.equal(await page.evaluate(()=>readCalls.filter(x=>x==='acc_credit_notes').length),2);
