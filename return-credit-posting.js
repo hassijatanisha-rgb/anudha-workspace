@@ -6,7 +6,7 @@ function returnCreditPostingConfirmLeave(current=()=>true){
  if(!returnCreditPostingState?.busy&&!returnCreditPostingState?.uncertain)return true;
  message('Resolve the return credit posting outcome before leaving this page.',true);return false;
 }
-function returnCreditPostingMoney(value){const minor=Number(value);if(!Number.isSafeInteger(minor)||minor<0)throw Error('The saved credit amount is invalid.');return (minor/100).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function returnCreditPostingMoney(value){const minor=Number(value);if(!Number.isSafeInteger(minor)||minor<0)throw Error('The saved credit amount is invalid.');return moneyExactDisplay(minor);}
 function returnCreditPostingSnapshot(saved){
  const body=saved?.body;
  if(!body?.source?.invoiceId||!body.source.returnId)throw Error('Only returned-goods drafts linked to an ERP invoice can post. External invoices and older drafts need Accounts review.');
@@ -51,7 +51,7 @@ async function openReturnCreditPosting(row){
  function confirmed(credit){
   if(!credit?.id||credit.draft_id!==row.id||!credit.credit_number)throw Error('Server did not confirm this return credit.');
   state.uncertain=false;
-  dialog.innerHTML=`<h2 id="${titleId}">${esc(credit.credit_number)} posted</h2><p>Accounting date: ${esc(credit.credit_date)} · TZS ${returnCreditPostingMoney(credit.total_minor)}</p><p>Sales and VAT were reversed against customer receivables. Any payment above the revised invoice balance is customer credit; no refund was issued.</p><p>This posting is permanent. The saved form remains a draft and cannot change the posted amounts.</p><button type="button" data-credit-close>Close</button>`;
+  dialog.innerHTML=`<h2 id="${titleId}">${esc(credit.credit_number)} posted</h2><p>Accounting date: ${esc(credit.credit_date)} · ${returnCreditPostingMoney(credit.total_minor)}</p><p>Sales and VAT were reversed against customer receivables. Any payment above the revised invoice balance is customer credit; no refund was issued.</p><p>This posting is permanent. The saved form remains a draft and cannot change the posted amounts.</p><button type="button" data-credit-close>Close</button>`;
   dialog.querySelector('[data-credit-close]').onclick=close;
   if(state.busy){const closeButton=dialog.querySelector('[data-credit-close]');actionFeedbackActive.successOrigin=actionFeedbackReference(closeButton);closeButton.focus({preventScroll:true});message('Return credit posted.');}
   if(typeof clearBooks==='function')clearBooks();
@@ -59,7 +59,7 @@ async function openReturnCreditPosting(row){
  try{
   if(posted.data){document.body.append(dialog);confirmed(posted.data);showWorkspaceDialog(dialog,{size:'medium',trigger});return;}
   const snapshot=returnCreditPostingSnapshot(history.data);
-  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit (TZS)</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><p role="alert"></p><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
+  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><p role="alert"></p><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
   document.body.append(dialog);form=dialog.querySelector('form');initial=workspaceFormSnapshot(form);
   const fields=form.querySelector('fieldset'),status=form.querySelector('[role="status"]'),button=form.querySelector('[type="submit"]'),cancel=form.querySelector('[data-credit-close]');cancel.onclick=close;
   const summary=form.querySelector('[role="alert"]'),fieldErrors=new Map();form.noValidate=true;

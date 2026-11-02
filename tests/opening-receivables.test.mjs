@@ -15,6 +15,10 @@ const rows=()=>[['HIST-001',customer,'2026-08-01','2026-09-01','123.45','TZS']];
 test('preview converts residual TZS exactly and matches customers by UUID',()=>{
  const f=fixture(),p=f.preview(rows());assert.equal(p.errors.length,0);assert.equal(p.totalMinor,12345);assert.equal(p.entries[0].amount_minor,12345);assert.equal(p.rows[0].customer,'Fixture Clinic');
 });
+test('opening residuals require text at the numeric precision boundary and preserve its exact cents',()=>{
+ const f=fixture(),r=rows();r[0][4]=90071992547409.91;assert.match(f.preview(r).errors.join(' '),/must use Text cells or CSV text/);
+ r[0][4]='90071992547409.91';const p=f.preview(r);assert.equal(p.errors.length,0);assert.equal(p.totalMinor,Number.MAX_SAFE_INTEGER);
+});
 test('actual XLSX and CSV readers retain original invoice and due dates',async()=>{
  const f=fixture();f.ctx.source=f.sheet(rows());const data=f.run("(()=>{const w=XLSX.utils.book_new();XLSX.utils.book_append_sheet(w,source,'Receivables');return XLSX.write(w,{type:'array',bookType:'xlsx'});})()");
  const workbook=await f.ctx.financialImportRead({name:'residuals.xlsx',size:data.byteLength,arrayBuffer:async()=>data});
@@ -64,6 +68,13 @@ function openingWorkspaceFixture(){
  f.run("booksSection='opening'");
  return {...f,calls,downloads,nodes,form};
 }
+test('opening preview and reconciliation show all accepted cents',async()=>{
+ const f=openingWorkspaceFixture();await f.ctx.openingReceivablesWorkspace('owner');f.form.elements.source.value='Reviewed AR';f.form.elements.gl.value='gl';f.form.elements.sheet.value='Receivables';
+ f.ctx.financialImportRead=async()=>({SheetNames:['Receivables'],Sheets:{Receivables:f.sheet(rows())}});await f.form.elements.file.onchange();
+ assert.match(f.nodes.get('#openingPreview').innerHTML.replace(/\s/g,' '),/TZS 123\.45/);
+ f.ctx.requireAccountingAccess=async()=> 'owner';f.ctx.message=()=>{};f.ctx.client.rpc=async()=>({data:{reconciled:true,difference_minor:0,imported_gl_ar_minor:12345,opening_residual_minor:12345,control_ar_minor:12345,customer_subledger_minor:12345}});
+ await f.nodes.get('#openingCheck').onclick();assert.equal((f.nodes.get('#openingStatus').textContent.replace(/\s/g,' ').match(/TZS 123\.45/g)||[]).length,4);
+});
 test('opening receivables loads customer identities only for an explicit Excel template or file',async()=>{
  const f=openingWorkspaceFixture();await f.ctx.openingReceivablesWorkspace('owner');assert.deepEqual(f.calls,[]);
  let release;f.ctx.booksSelectAll=async table=>{f.calls.push(table);return new Promise(resolve=>{release=resolve});};

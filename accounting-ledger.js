@@ -3,19 +3,20 @@
 // receipts, lock date and reports. The database checks access, balance and permanence; this page only shows and asks.
 let booksSection='overview',booksData=null,booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''},booksDraft=null,booksEpoch=0,booksInvoicePageData=null,booksInvoicePage=0,booksWaitingPage=0;
 let booksTransactionPageData=null,booksTransactionPages={receipts:0,journal:0},booksTransactionSelected='',booksTransactionActor=null;
-let booksInvoicePreview=null,booksInvoiceRecordData=null;
+let booksInvoicePreview=null,booksInvoiceRecordData=null,booksPendingPosting=null;
 let booksAccountPageData=null,booksAccountSearch='',booksAccountType='',booksAccountPage=0,booksLedgerPageData=null,booksLedgerPage=0;
 const booksSections=[['overview','Overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel'],['opening','Opening receivables']];
 const booksTypes=[['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['income','Income'],['expense','Expenses']];
 const booksMethods=[['bank','Bank transfer'],['cash','Cash'],['mobile_money','Mobile money'],['cheque','Cheque']];
 
 function openBooksSection(section){booksSection=booksSections.some(([key])=>key===section)?section:'overview';booksDraft=null;booksTransactionSelected='';}
-function clearBooks(){booksClearInvoicePreview();booksEpoch++;booksInvoiceRecordData=null;booksData=null;booksInvoicePageData=null;booksInvoicePage=0;booksWaitingPage=0;booksTransactionPageData=null;booksTransactionPages={receipts:0,journal:0};booksTransactionSelected='';booksTransactionActor=null;booksAccountPageData=null;booksAccountSearch='';booksAccountType='';booksAccountPage=0;booksLedgerPageData=null;booksLedgerPage=0;booksDraft=null;booksSection='overview';booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''};booksClearPrint();}
+function clearBooks(){booksPendingPosting?.dispose();booksClearInvoicePreview();booksEpoch++;booksInvoiceRecordData=null;booksData=null;booksInvoicePageData=null;booksInvoicePage=0;booksWaitingPage=0;booksTransactionPageData=null;booksTransactionPages={receipts:0,journal:0};booksTransactionSelected='';booksTransactionActor=null;booksAccountPageData=null;booksAccountSearch='';booksAccountType='';booksAccountPage=0;booksLedgerPageData=null;booksLedgerPage=0;booksDraft=null;booksSection='overview';booksReport={kind:'trial',from:'',to:'',asOf:'',accountId:''};booksClearPrint();}
 function booksTransactionLanding(){return ['receipts','journal'].includes(booksSection)&&!booksTransactionSelected;}
 function booksToday(now=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);}
 function booksAddDays(date,days){const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function booksMonthStart(date){return `${date.slice(0,7)}-01`;}
-function booksMoney(minor,currency='TZS'){return minor==null?'—':moneyDisplay(Number(minor),currency);}
+function booksMoney(minor,currency='TZS'){return minor==null?'—':moneyExactDisplay(minor,currency);}
+function booksDecimal(minor){const amount=BigInt(minor),absolute=amount<0n?-amount:amount;return `${amount<0n?'-':''}${absolute/100n}.${String(absolute%100n).padStart(2,'0')}`;}
 function booksCustomer(id,data=booksData){if(data?.customerNames)return data.customerNames.get(id)||'Customer not loaded';return (typeof orgIndex!=='undefined'&&orgIndex.get(id)?.name)||(organizations||[]).find(o=>o.id===id)?.name||'Customer not loaded';}
 function booksAccountLabel(account){return account?`${account.code} · ${account.name}`:'Unknown account';}
 
@@ -33,8 +34,9 @@ function booksJournalCheck(lines){
    debit+=d;credit+=c;
   }catch(error){if(!problem)problem=`Line ${index+1}: ${error.message}`;}
  });
+ if(!problem&&(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit)))problem='The entry total is too large. Split it into smaller balanced entries.';
  if(!problem&&used<2)problem='An entry needs at least two lines.';
- if(!problem&&debit!==credit)problem=`Debits and credits differ by ${moneyDisplay(Math.abs(debit-credit))}.`;
+ if(!problem&&debit!==credit)problem=`Debits and credits differ by ${moneyExactDisplay(Math.abs(debit-credit))}.`;
  return {debit,credit,difference:debit-credit,problem};
 }
 // Spread a receipt over a customer's invoices, oldest due first.
@@ -111,7 +113,7 @@ async function booksInvoiceRegister(actor,current){
  $('#booksRegisterCsv').onclick=()=>run(async()=>{
   if(!active())return;const rows=[],seen=new Set();let count=null;
   for(let page=0;;page++){const data=booksInvoicePageResult(await booksRpc('acc_invoice_register',{p_invoice_page:page,p_waiting_page:0}));if(!active())return;if(count!==null&&count!==data.invoiceCount||data.invoices.some(invoice=>seen.has(invoice.id)))throw Error('Invoices changed while the CSV was loading. Retry the export.');count=data.invoiceCount;for(const invoice of data.invoices){seen.add(invoice.id);rows.push(invoice);}if((page+1)*50>=count)break;}
-  booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer_name','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],rows.map(invoice=>({...invoice,total:(Number(invoice.total_minor)/100).toFixed(2),paid:(invoice.paid/100).toFixed(2),owed:(invoice.outstanding/100).toFixed(2),status:invoice.state.label}))));
+  booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer_name','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],rows.map(invoice=>({...invoice,total:booksDecimal(invoice.total_minor),paid:booksDecimal(invoice.paid),owed:booksDecimal(invoice.outstanding),status:invoice.state.label}))));
  });
  wireBooksInvoiceActions(d);
 }
@@ -153,12 +155,12 @@ function booksTransactionRegister(actor,current){
  if(receipts)$('#booksTransactionCsv').onclick=()=>run(async()=>{
   if(!active())return;const rows=[],seen=new Set();let total=null;
   for(let page=0;;page++){const result=booksTransactionPageResult(await booksRpc('acc_transaction_page',{p_section:section,p_page:page}),section);if(!active())return;if(total!==null&&total!==result.total||result.page!==page||result.rows.some(row=>seen.has(row.id)))throw Error('Receipts changed while the CSV was loading. Retry the export.');total=result.total;for(const row of result.rows){seen.add(row.id);rows.push(row);}if(page+1>=result.pages)break;}
-  booksDownload(`receipts-${data.today}.csv`,booksCsv([['receipt_number','Receipt'],['receipt_date','Date'],['customer','Customer'],['method','Method'],['reference','Reference'],['amount','Amount'],['status','Status']],rows.map(row=>({...row,customer:row.customer_name||'Customer not loaded',amount:(Number(row.amount_minor)/100).toFixed(2),status:row.voided_at?'Void':'Recorded'}))));
+  booksDownload(`receipts-${data.today}.csv`,booksCsv([['receipt_number','Receipt'],['receipt_date','Date'],['customer','Customer'],['method','Method'],['reference','Reference'],['amount','Amount'],['status','Status']],rows.map(row=>({...row,customer:row.customer_name||'Customer not loaded',amount:booksDecimal(row.amount_minor),status:row.voided_at?'Void':'Recorded'}))));
  });
 }
 function booksTransactionBack(actor,current){
  const session=me,section=booksSection,selected=booksTransactionSelected;
- $('#booksTransactionBack').onclick=()=>run(async()=>{if(!current()||me!==session||me?.user_id!==actor)return;booksTransactionSelected='';booksDraft=null;const epoch=booksEpoch+1;await booksWorkspace();if(me===session&&view==='books'&&booksSection===section&&booksEpoch===epoch&&booksTransactionLanding()){const button=selected==='new'?$('#booksTransactionNew'):[...document.querySelectorAll('[data-books-transaction-open]')].find(item=>item.dataset.booksTransactionOpen===selected);(button||$('#booksTransactionPageStatus'))?.focus({preventScroll:true});}});
+ $('#booksTransactionBack').onclick=()=>run(async()=>{if(!current()||me!==session||me?.user_id!==actor||!booksPostingConfirmLeave(current))return;booksTransactionSelected='';booksDraft=null;const epoch=booksEpoch+1;await booksWorkspace();if(me===session&&view==='books'&&booksSection===section&&booksEpoch===epoch&&booksTransactionLanding()){const button=selected==='new'?$('#booksTransactionNew'):[...document.querySelectorAll('[data-books-transaction-open]')].find(item=>item.dataset.booksTransactionOpen===selected);(button||$('#booksTransactionPageStatus'))?.focus({preventScroll:true});}});
 }
 function booksCutoverChecklist(){
  return `<details class="card"><summary>Opening books and stock</summary><p>A successful Excel import does not complete the opening books. Accounts must reconcile and approve each stage before using the ERP balances for live reporting.</p><ol><li><strong>Cutover date and source:</strong> agree the final date, retain the source files and back up the current workspace.</li><li><strong>Test records:</strong> review test invoices, receipts and deliveries. Use the supported cancellation, void or reversal process; never delete posted history. Test entries remain in reports until correctly reversed.</li><li><strong>Account mapping and opening trial balance:</strong> map ledger codes, preview balanced journals, post once and compare every balance with the source.</li><li><strong>Customer receivables:</strong> import genuine outstanding invoice references and residual amounts using Opening receivables. Reconcile the customer total to the receivables control account without posting it twice.</li><li><strong>Supplier payables:</strong> reconcile supplier details and the payable control account separately. The journal importer does not create supplier bills or allocations.</li><li><strong>Physical stock:</strong> count and approve actual location, batch, expiry, carton conversion and machine serials in Stock count. Provisional quantities are not verified physical counts.</li><li><strong>Prices and tax details:</strong> review selling prices, currencies, tax rates and customer tax details. Missing prices must be configured before quoting.</li><li><strong>Final sign-off:</strong> reconcile banks, cash, receivables, payables and stock valuation; verify employee access and a controlled split-order workflow; set the approved lock date.</li></ol><p class="muted">This is a checklist, not a recorded approval. Keep the owner's reconciliation and sign-off with the cutover source documents.</p></details>`;
@@ -435,7 +437,7 @@ async function booksInvoices(actor=me?.user_id,workspaceCurrent=()=>true){
  }
  if(!workspaceCurrent()||me!==session||view!=='books'||booksEpoch!==epoch)return;
  $('#booksInvoicesCsv').onclick=()=>{if(invoices.some(invoice=>invoice.booksVoidPending))return;booksDownload(`invoices-${d.today}.csv`,booksCsv([['invoice_number','Invoice'],['invoice_date','Date'],['due_date','Due'],['customer','Customer'],['tra_receipt_number','TRA receipt'],['buyer_tin','Customer TIN'],['total','Total'],['paid','Paid'],['owed','Owed'],['status','Status']],
-  invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:(Number(i.total_minor)/100).toFixed(2),paid:(i.paid/100).toFixed(2),owed:(i.outstanding/100).toFixed(2),status:i.state.label}))));};
+  invoices.map(i=>({...i,customer:booksCustomer(i.organization_id),total:booksDecimal(i.total_minor),paid:booksDecimal(i.paid),owed:booksDecimal(i.outstanding),status:i.state.label}))));};
  wireBooksInvoiceActions();
 }
 function booksClearPrint(){
@@ -534,6 +536,46 @@ function booksPostedConfirmation(form,kind,data,expected,current,onVerified=()=>
  };
  try{show(booksPostedResult(data,kind,expected));}catch(error){failed(error);}
 }
+function booksPostingConfirmLeave(current=()=>true){
+ if(!current())return false;
+ const pending=booksPendingPosting;
+ if(!pending||!pending.current())return true;
+ pending.focus();return false;
+}
+// Receipts and journals keep one immutable request until an interrupted posting is resolved.
+function booksPostingControl(form,kind,current){
+ const button=form.querySelector('[type="submit"]'),summary=form.querySelector('[role="alert"]');
+ let sending=false,committed=false,uncertain=false,attempt=null,notice=null;
+ const active=()=>current()&&form.isConnected;
+ const beforeUnload=event=>{if(active()&&(sending||uncertain)){event.preventDefault();event.returnValue='';}};
+ const state={current:()=>active()&&(sending||uncertain),focus:()=>{const retry=notice?.querySelector('button')||form.nextElementSibling?.querySelector('[data-books-posted-retry]');if(retry)retry.focus({preventScroll:true});else summary.textContent='This posting is still running. Wait for its result before leaving.';},dispose:()=>{globalThis.removeEventListener?.('beforeunload',beforeUnload);if(booksPendingPosting===state)booksPendingPosting=null;}};
+ const post=async()=>{
+  if(!active()||sending||committed)return;
+  sending=true;form.inert=true;booksPendingPosting=state;globalThis.addEventListener?.('beforeunload',beforeUnload);
+  const retry=notice?.querySelector('button');if(retry)retry.disabled=true;
+  let result;
+  try{
+   result=await client.rpc(kind==='receipt'?'record_receipt':'post_manual_journal',JSON.parse(JSON.stringify(attempt.args)));
+   if(result.error){uncertain=uncertain||!(['P0001','42501','40001','40P01'].includes(result.error.code)||/^(22|23)[0-9A-Z]{3}$/.test(result.error.code||''));throw Error(result.error.message);}
+   committed=true;uncertain=true;if(!active())return;
+   notice?.remove();notice=null;booksPostedConfirmation(form,kind,result.data,attempt.expected,active,()=>{uncertain=false;state.dispose();});
+  }catch(error){
+   if(!result?.error)uncertain=true;
+   if(!active()){state.dispose();return;}
+   if(!uncertain){state.dispose();throw error;}
+   if(!notice){notice=document.createElement('section');notice.className='notice';notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');notice.dataset.booksUncertain=kind;form.after(notice);}
+   notice.innerHTML=`<p>The ${kind==='receipt'?'receipt':'journal entry'} result is not confirmed: ${esc(error.message)}. Submitted details stay locked. Retry the same transaction to check its result safely.</p><button type="button" data-books-posting-retry>Retry same ${kind==='receipt'?'receipt':'journal entry'}</button>`;
+   const retry=notice.querySelector('button');retry.onclick=()=>{if(!active()||sending||committed)return;if(busy){actionFeedbackRefuse(retry,notice);return;}return run(post,{origin:retry,errorTarget:notice});};
+   if(document.activeElement===document.body||form.contains(document.activeElement)||notice.contains(document.activeElement))retry.focus({preventScroll:true});
+  }finally{sending=false;if(!active())state.dispose();else if(!committed&&!uncertain)form.inert=false;}
+ };
+ return {locked:()=>sending||committed||uncertain,submit:(args,expected)=>{
+  if(!active()||sending||committed||uncertain)return;
+  if(busy){actionFeedbackRefuse(button,summary);return;}
+  attempt=JSON.parse(JSON.stringify({args,expected}));
+  return run(post,{origin:button,errorTarget:summary});
+ }};
+}
 async function booksReceipts(actor,current){
  const d=booksData,session=me,active=()=>current()&&me===session&&me?.user_id===actor&&booksData===d;
  if(!active())return;
@@ -560,7 +602,7 @@ async function booksReceipts(actor,current){
   <p id="booksReceiptCheck" class="muted"></p>
   <div class="actions"><button type="submit">Record receipt</button></div></form></section>`;
  booksTransactionBack(actor,current);
- const form=$('#booksReceiptForm'),id=crypto.randomUUID();let committed=false,posting=false;
+ const form=$('#booksReceiptForm'),id=crypto.randomUUID();const posting=booksPostingControl(form,'receipt',active);
  const summary=$('#booksReceiptErrors'),fieldErrors=new Map();form.noValidate=true;
  const allocationInputs=()=>[...document.querySelectorAll('[data-books-allocate]')];
  const check=()=>{
@@ -568,7 +610,7 @@ async function booksReceipts(actor,current){
   try{amount=form.amount.value.trim()?moneyMinor(form.amount.value):0;}catch(error){problem=`Amount: ${error.message}`;errors.set(form.amount,error.message);}
   for(const input of allocationInputs()){if(!input.value.trim())continue;try{applied+=moneyMinor(input.value);running.push([input,applied]);}catch(error){problem=problem||`Allocation: ${error.message}`;errors.set(input,error.message);}}
   if(!problem&&applied>amount){problem='The amounts applied add up to more than the amount received.';errors.set(running.find(([,total])=>total>amount)[0],problem);}
-  $('#booksReceiptCheck').textContent=problem||(amount?`Applied ${moneyDisplay(applied)} · left as customer credit ${moneyDisplay(amount-applied)}`:'');
+  $('#booksReceiptCheck').textContent=problem||(amount?`Applied ${moneyExactDisplay(applied)} · left as customer credit ${moneyExactDisplay(amount-applied)}`:'');
   $('#booksReceiptCheck').className=problem?'error':'muted';
   return {amount,problem,errors};
  };
@@ -582,40 +624,34 @@ async function booksReceipts(actor,current){
  const validateControl=control=>{const problem=collectErrors().errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
  form.addEventListener('focusout',event=>{
   if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);
-  if(!active()||!form.isConnected||posting||committed||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
+  if(!active()||!form.isConnected||posting.locked()||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;
   validateControl(control);
  });
  const showOpen=()=>{
   const open=openFor(form.organization.value);
   $('#booksAllocation').innerHTML=!form.organization.value?'<p class="muted">Choose a customer to see what they owe.</p>':open.length?`<h3>Apply to invoices</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Due</th><th class="numeric-cell">Owed</th><th>Apply (TZS)</th></tr></thead><tbody>${open.map(i=>`<tr><td>${esc(i.invoice_number)}</td><td>${esc(i.due_date)}</td><td class="numeric-cell">${booksMoney(i.outstanding)}</td><td><label><span>Apply (TZS) · optional</span><input data-books-allocate="${esc(i.id)}" inputmode="decimal" aria-label="Apply (TZS) · optional · ${esc(i.invoice_number)}"></label></td></tr>`).join('')}</tbody></table></div><button type="button" id="booksOldestFirst">Apply to oldest invoices first</button>`:'<p class="muted">This customer has no unpaid invoices. The receipt will be kept as a customer credit.</p>';
   const oldest=$('#booksOldestFirst');
-  if(oldest)oldest.onclick=()=>{const {amount,problem}=check();if(problem&&!amount)return;const plan=booksAllocateOldest(amount,open);allocationInputs().forEach(input=>{const v=plan.get(input.dataset.booksAllocate);input.value=v?(v/100).toFixed(2):'';});check();for(const control of [...fieldErrors.keys()])validateControl(control);};
+  if(oldest)oldest.onclick=()=>{const {amount,problem}=check();if(problem&&!amount)return;const plan=booksAllocateOldest(amount,open);allocationInputs().forEach(input=>{const v=plan.get(input.dataset.booksAllocate);input.value=v?booksDecimal(v):'';});check();for(const control of [...fieldErrors.keys()])validateControl(control);};
   allocationInputs().forEach(input=>input.oninput=check);check();updateSummary();
  };
  form.organization.onchange=showOpen;form.amount.oninput=check;showOpen();
- form.onsubmit=event=>{event.preventDefault();if(!active()||!form.isConnected||committed||posting)return;const {amount,errors}=collectErrors();fieldErrors.clear();for(const [control,problem]of errors)fieldErrors.set(control,problem);updateSummary();showFieldErrors(form,errors);if(errors.size)return;
+ form.onsubmit=event=>{event.preventDefault();if(!active()||!form.isConnected||posting.locked())return;const {amount,errors}=collectErrors();fieldErrors.clear();for(const [control,problem]of errors)fieldErrors.set(control,problem);updateSummary();showFieldErrors(form,errors);if(errors.size)return;
   const allocations=allocationInputs().filter(i=>i.value.trim()).map(i=>({invoice_id:i.dataset.booksAllocate,amount_minor:moneyMinor(i.value)}));
   const args={p_id:id,p_organization_id:form.organization.value,p_date:form.date.value,p_amount_minor:amount,p_method:form.method.value,p_reference:form.reference.value,p_deposit_account_id:form.deposit.value,p_allocations:allocations};
-  run(async()=>{if(!active()||!form.isConnected||committed||posting)return;posting=true;form.inert=true;
-   try{
-    const r=await booksRpc('record_receipt',args);committed=true;if(!active()||!form.isConnected)return;
-    booksPostedConfirmation(form,'receipt',r,{id,organization_id:args.p_organization_id,receipt_date:args.p_date,amount_minor:args.p_amount_minor,method:args.p_method,reference:args.p_reference.replace(/^ +| +$/g,''),deposit_account_id:args.p_deposit_account_id,created_by:actor},active);
-   }catch(error){if(active()&&form.isConnected)throw error;}
-   finally{posting=false;if(!committed&&active()&&form.isConnected)form.inert=false;}
-  });};
+  posting.submit(args,{id,organization_id:args.p_organization_id,receipt_date:args.p_date,amount_minor:args.p_amount_minor,method:args.p_method,reference:args.p_reference.replace(/^ +| +$/g,''),deposit_account_id:args.p_deposit_account_id,created_by:actor});};
 }
 async function booksJournal(actor,current){
  const d=booksData,session=me,valid=()=>current()&&me===session&&me?.user_id===actor&&booksData===d;
  if(!valid())return;
  if(booksTransactionSelected!=='new')return booksJournalDetail(actor,current);
  const draft=booksDraft?.journal||{date:d.today,memo:'',lines:[{},{}]};
- const active=d.accounts.filter(a=>a.active);
+ const active=d.accounts.filter(a=>a.active&&a.system_key!=='receivables');
  const lineRow=(line,i)=>`<tr><td><label><span>Account · required when used</span><select data-jl="accountId" data-i="${i}" aria-label="Account · required when used, line ${i+1}"><option value="">Choose account</option>${booksTypes.map(([type,label])=>`<optgroup label="${label}">${active.filter(a=>a.account_type===type).map(a=>`<option value="${esc(a.id)}"${a.id===line.accountId?' selected':''}>${esc(booksAccountLabel(a))}</option>`).join('')}</optgroup>`).join('')}</select></label></td><td><label><span>Debit (TZS)</span><input data-jl="debit" data-i="${i}" inputmode="decimal" value="${esc(line.debit||'')}" aria-label="Debit (TZS), line ${i+1}"></label></td><td><label><span>Credit (TZS)</span><input data-jl="credit" data-i="${i}" inputmode="decimal" value="${esc(line.credit||'')}" aria-label="Credit (TZS), line ${i+1}"></label></td><td><label><span>Note · optional</span><input data-jl="description" data-i="${i}" maxlength="300" value="${esc(line.description||'')}" aria-label="Note · optional, line ${i+1}"></label></td></tr>`;
- $('#booksBody').innerHTML=`<section class="card"><h2>New journal entry</h2><p class="muted">For anything that is not a customer invoice or receipt: expenses, supplier bills, salaries, opening balances, depreciation. Debits must equal credits.</p><form id="booksJournalForm"><p id="booksJournalErrors" class="error" role="alert"></p><p class="muted">Date and description are required. Use at least two lines, each with an account and either a debit or a credit. Leave unused lines blank.</p><div class="grid"><label><span>Date · required</span><input name="date" type="date" required value="${esc(draft.date)}"></label><label><span>Description · required</span><input name="memo" required minlength="3" maxlength="500" value="${esc(draft.memo)}" placeholder="e.g. October office rent"></label></div>
+ $('#booksBody').innerHTML=`<section class="card"><h2>New journal entry</h2><p class="muted">Record expenses, supplier balances, salaries and depreciation. Use customer invoices and receipts for receivables, and Import Excel for opening balances. Debits must equal credits.</p><form id="booksJournalForm"><p id="booksJournalErrors" class="error" role="alert"></p><p class="muted">Date and description are required. Use at least two lines, each with an account and either a debit or a credit. Leave unused lines blank.</p><div class="grid"><label><span>Date · required</span><input name="date" type="date" required value="${esc(draft.date)}"></label><label><span>Description · required</span><input name="memo" required minlength="3" maxlength="500" value="${esc(draft.memo)}" placeholder="e.g. October office rent"></label></div>
  <div class="table-wrap"><table><thead><tr><th>Account</th><th>Debit (TZS)</th><th>Credit (TZS)</th><th>Note</th></tr></thead><tbody id="booksJournalLines">${draft.lines.map(lineRow).join('')}</tbody></table></div>
  <p id="booksJournalCheck" class="muted"></p><div class="actions"><button type="button" id="booksAddLine">Add line</button><button type="submit">Post entry</button></div></form></section>`;
  booksTransactionBack(actor,current);
- const form=$('#booksJournalForm'),id=crypto.randomUUID();let committed=false,posting=false;
+ const form=$('#booksJournalForm'),id=crypto.randomUUID();const posting=booksPostingControl(form,'journal',valid);
  const read=()=>{const out=[];document.querySelectorAll('[data-jl]').forEach(input=>{const i=Number(input.dataset.i);out[i]=out[i]||{};out[i][input.dataset.jl]=input.value;});return out;};
  const button=form.querySelector('[type="submit"]'),summary=$('#booksJournalErrors'),fieldErrors=new Map();form.noValidate=true;
  const collectErrors=()=>{
@@ -635,23 +671,17 @@ async function booksJournal(actor,current){
  };
  const updateSummary=()=>{summary.textContent=fieldErrorSummary(fieldErrors.size);};
  const validateControl=(control,errors=collectErrors())=>{const problem=errors.get(control)||'';if(problem)fieldErrors.set(control,problem);else fieldErrors.delete(control);showFieldError(control,problem);updateSummary();};
- form.addEventListener('focusout',event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||committed||posting||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
- form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!valid()||!form.isConnected||committed||posting)return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
- const check=()=>{const result=booksJournalCheck(read());$('#booksJournalCheck').textContent=result.problem||`Balanced: ${moneyDisplay(result.debit)} debit and credit.`;$('#booksJournalCheck').className=result.problem?'error':'muted';return result;};
+ form.addEventListener('focusout',event=>{if(fieldBlurToAction(event))return;const control=fieldValidationSource(event.target);if(!valid()||!form.isConnected||posting.locked()||!form.contains(control)||!control.matches('input,select,textarea')||control.disabled||control.readOnly)return;validateControl(control);});
+ form.addEventListener('change',event=>{if(!event.target.matches('select,input[type="checkbox"],input[type="radio"]')||!valid()||!form.isConnected||posting.locked())return;const errors=collectErrors();for(const control of fieldErrors.keys())validateControl(control,errors);});
+ const check=()=>{const result=booksJournalCheck(read());$('#booksJournalCheck').textContent=result.problem||`Balanced: ${moneyExactDisplay(result.debit)} debit and credit.`;$('#booksJournalCheck').className=result.problem?'error':'muted';return result;};
  const save=()=>{booksDraft={journal:{date:form.date.value,memo:form.memo.value,lines:read()}};};
  form.oninput=check;check();
- $('#booksAddLine').onclick=()=>{if(!valid()||!form.isConnected||committed||posting)return;save();booksDraft.journal.lines.push({});booksJournal(actor,current);};
- form.onsubmit=event=>{event.preventDefault();if(!valid()||!form.isConnected||committed||posting)return;if(busy){actionFeedbackRefuse(button,summary);return;}const result=check();
+ $('#booksAddLine').onclick=()=>{if(!valid()||!form.isConnected||posting.locked())return;save();booksDraft.journal.lines.push({});booksJournal(actor,current);};
+ form.onsubmit=event=>{event.preventDefault();if(!valid()||!form.isConnected||posting.locked())return;if(busy){actionFeedbackRefuse(button,summary);return;}const result=check();
   const errors=collectErrors();fieldErrors.clear();for(const [control,problem]of errors)fieldErrors.set(control,problem);updateSummary();showFieldErrors(form,errors);if(errors.size||result.problem)return;
   const posted=read().filter(l=>l.accountId||String(l.debit||'').trim()||String(l.credit||'').trim()).map(l=>({account_id:l.accountId,debit_minor:String(l.debit||'').trim()?moneyMinor(l.debit):0,credit_minor:String(l.credit||'').trim()?moneyMinor(l.credit):0,description:l.description||''}));
   const args={p_id:id,p_date:form.date.value,p_memo:form.memo.value,p_lines:posted};
-  run(async()=>{if(!valid()||!form.isConnected||committed||posting)return;posting=true;form.inert=true;
-   try{
-    const r=await booksRpc('post_manual_journal',args);committed=true;if(!valid()||!form.isConnected)return;
-    booksPostedConfirmation(form,'journal',r,{id,entry_date:args.p_date,memo:args.p_memo.replace(/^ +| +$/g,''),source_type:'manual',source_id:null,reverses_entry_id:null,currency:'TZS',created_by:actor},valid);
-   }catch(error){if(valid()&&form.isConnected)throw error;}
-   finally{posting=false;if(!committed&&valid()&&form.isConnected)form.inert=false;}
-  },{origin:button,errorTarget:summary});};
+  posting.submit(args,{id,entry_date:args.p_date,memo:args.p_memo.replace(/^ +| +$/g,''),source_type:'manual',source_id:null,reverses_entry_id:null,currency:'TZS',created_by:actor});};
 }
 async function booksJournalDetail(actor,current){
  const d=booksData,session=me,id=booksTransactionSelected,active=()=>current()&&me===session&&me?.user_id===actor&&booksData===d&&booksTransactionSelected===id;
@@ -800,24 +830,30 @@ async function booksLedgerRegister(actor,current){
  $('#booksReportCsv').onclick=()=>run(async()=>{if(!active()||!data.account)return;const rows=await complete();if(rows&&active())booksDownload(`account-ledger-${data.to}.csv`,booksCsv(booksLedgerColumns,booksLedgerRows(rows)));});
  $('#booksReportPrint').onclick=()=>run(async()=>{if(!active()||!data.account)return;const rows=await complete();if(!rows||!active())return;const area=document.createElement('section');area.className='books-print';area.innerHTML=booksLedgerReportHtml(data,rows);document.body.append(area);try{booksPrint(area);}finally{area.remove();}});
 }
+async function booksReportSnapshot(kind,args){
+ const result=await booksRpc('acc_financial_report',{p_kind:kind,...args});
+ const amounts=kind==='trial'?['debit_minor','credit_minor']:kind==='ageing'?['current_minor','days_1_30_minor','days_31_60_minor','days_61_90_minor','days_over_90_minor','unapplied_credit_minor','balance_minor']:['amount_minor'];
+ if(result?.kind!==kind||!Array.isArray(result.rows)||!Number.isSafeInteger(result.row_count)||result.row_count!==result.rows.length||result.rows.some(row=>!row||amounts.some(key=>typeof row[key]!=='string'||! /^-?(0|[1-9]\d*)$/.test(row[key]))))throw Error('The complete report could not be verified. Retry before relying on these totals.');
+ return result.rows;
+}
 const booksReportKinds=[['trial','Trial balance'],['pl','Profit and loss'],['bs','Balance sheet'],['ageing','Customer ageing'],['ledger','Account ledger']];
 async function booksReports(actor,current){
  const d=booksData,today=d.today,r=booksReport;
  r.asOf=r.asOf||today;r.from=r.from||booksMonthStart(today);r.to=r.to||today;
  const ranged=r.kind==='pl'||r.kind==='ledger';
  let columns=[],rows=[],totals='';
- if(r.kind==='trial'){rows=await booksRpc('acc_trial_balance',{p_as_of:r.asOf});columns=[['code','Code'],['name','Account'],['debit','Debit'],['credit','Credit']];
-  const dr=rows.reduce((s,x)=>s+Number(x.debit_minor),0),cr=rows.reduce((s,x)=>s+Number(x.credit_minor),0);rows=rows.map(x=>({...x,debit:Number(x.debit_minor)?booksMoney(x.debit_minor):'',credit:Number(x.credit_minor)?booksMoney(x.credit_minor):''}));
+ if(r.kind==='trial'){rows=await booksReportSnapshot('trial',{p_as_of:r.asOf});columns=[['code','Code'],['name','Account'],['debit','Debit'],['credit','Credit']];
+  const dr=rows.reduce((s,x)=>s+BigInt(x.debit_minor),0n),cr=rows.reduce((s,x)=>s+BigInt(x.credit_minor),0n);rows=rows.map(x=>({...x,debit:Number(x.debit_minor)?booksMoney(x.debit_minor):'',credit:Number(x.credit_minor)?booksMoney(x.credit_minor):''}));
   totals=`Total debits ${booksMoney(dr)} · total credits ${booksMoney(cr)}${dr===cr?' · balanced':' · NOT BALANCED'}`;}
- if(r.kind==='pl'){const raw=await booksRpc('acc_profit_and_loss',{p_from:r.from,p_to:r.to});const inc=raw.filter(x=>x.account_type==='income'),exp=raw.filter(x=>x.account_type==='expense');
-  const ti=inc.reduce((s,x)=>s+Number(x.amount_minor),0),te=exp.reduce((s,x)=>s+Number(x.amount_minor),0);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
+ if(r.kind==='pl'){const raw=await booksReportSnapshot('pl',{p_from:r.from,p_to:r.to});const inc=raw.filter(x=>x.account_type==='income'),exp=raw.filter(x=>x.account_type==='expense');
+  const ti=inc.reduce((s,x)=>s+BigInt(x.amount_minor),0n),te=exp.reduce((s,x)=>s+BigInt(x.amount_minor),0n);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
   rows=[...inc.map(x=>({...x,section:'Income',amount:booksMoney(x.amount_minor)})),{section:'Income',name:'Total income',amount:booksMoney(ti)},...exp.map(x=>({...x,section:'Expenses',amount:booksMoney(x.amount_minor)})),{section:'Expenses',name:'Total expenses',amount:booksMoney(te)},{section:'Result',name:ti-te>=0?'Net profit':'Net loss',amount:booksMoney(ti-te)}];}
- if(r.kind==='bs'){const raw=await booksRpc('acc_balance_sheet',{p_as_of:r.asOf});const sum=t=>raw.filter(x=>x.account_type===t).reduce((s,x)=>s+Number(x.amount_minor),0);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
+ if(r.kind==='bs'){const raw=await booksReportSnapshot('bs',{p_as_of:r.asOf});const sum=t=>raw.filter(x=>x.account_type===t).reduce((s,x)=>s+BigInt(x.amount_minor),0n);columns=[['section','Section'],['code','Code'],['name','Account'],['amount','Amount']];
   rows=booksTypes.slice(0,3).flatMap(([t,label])=>[...raw.filter(x=>x.account_type===t).map(x=>({...x,section:label,amount:booksMoney(x.amount_minor)})),{section:label,name:`Total ${label.toLowerCase()}`,amount:booksMoney(sum(t))}]);
   totals=`Assets ${booksMoney(sum('asset'))} · liabilities and equity ${booksMoney(sum('liability')+sum('equity'))}${sum('asset')===sum('liability')+sum('equity')?' · balanced':' · NOT BALANCED'}`;}
- if(r.kind==='ageing'){const raw=await booksRpc('acc_receivables_ageing',{p_as_of:r.asOf});columns=[['customer','Customer'],['cur','Not yet due'],['d30','1–30 days'],['d60','31–60'],['d90','61–90'],['d91','Over 90'],['credit','Unapplied credit'],['bal','Balance']];
+ if(r.kind==='ageing'){const raw=await booksReportSnapshot('ageing',{p_as_of:r.asOf});columns=[['customer','Customer'],['cur','Not yet due'],['d30','1–30 days'],['d60','31–60'],['d90','61–90'],['d91','Over 90'],['credit','Unapplied credit'],['bal','Balance']];
   rows=raw.map(x=>({customer:x.customer,cur:booksMoney(x.current_minor),d30:booksMoney(x.days_1_30_minor),d60:booksMoney(x.days_31_60_minor),d90:booksMoney(x.days_61_90_minor),d91:booksMoney(x.days_over_90_minor),credit:booksMoney(x.unapplied_credit_minor),bal:booksMoney(x.balance_minor)}));
-  totals=`Total owed ${booksMoney(raw.reduce((s,x)=>s+Number(x.balance_minor),0))}`;}
+  totals=`Total owed ${booksMoney(raw.reduce((s,x)=>s+BigInt(x.balance_minor),0n))}`;}
 
  if(!current())return;
  const title=booksReportKinds.find(([k])=>k===r.kind)[1];

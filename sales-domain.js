@@ -12,6 +12,13 @@ function moneyDisplay(minor,currency='TZS'){
  const digits=currency==='TZS'?0:2;
  return new Intl.NumberFormat('en-TZ',{style:'currency',currency,currencyDisplay:currency==='TZS'?'code':'symbol',minimumFractionDigits:digits,maximumFractionDigits:digits}).format(Number(minor)/100);
 }
+function moneyExactDisplay(minor,currency='TZS'){
+ if((typeof minor==='number'&&!Number.isSafeInteger(minor))||!['number','string','bigint'].includes(typeof minor)||!/^-?\d+$/.test(String(minor)))return 'Invalid amount';
+ const amount=BigInt(minor),absolute=amount<0n?-amount:amount,fraction=String(absolute%100n).padStart(2,'0');
+ // Format the whole units separately so dividing a large amount never rounds away its cents.
+ const parts=new Intl.NumberFormat('en-TZ',{style:'currency',currency,currencyDisplay:currency==='TZS'?'code':'symbol',minimumFractionDigits:2,maximumFractionDigits:2}).formatToParts(absolute/100n);
+ return (amount<0n?'-':'')+parts.map(part=>part.type==='fraction'?fraction:part.value).join('');
+}
 function proformaLineTotal(line){
  const gross=line.quantity*line.unitPriceMinor,discount=Math.round(gross*line.discountBasisPoints/10000),tax=Math.round((gross-discount)*line.taxBasisPoints/10000);
  if(![gross,discount,tax,gross-discount+tax].every(Number.isSafeInteger))throw Error('Line total is too large.');

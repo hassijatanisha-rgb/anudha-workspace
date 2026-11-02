@@ -44,7 +44,7 @@ function workspaceNavigationContext(){
  return {current:()=>me===actor&&sessionLoadEpoch===epoch&&view===sourceView&&workspaceRefreshScope()===scope&&location.hash===hash&&request===workspaceLeaveSequence};
 }
 async function confirmWorkspaceLeave(current=workspaceNavigationContext().current){
- for(const guard of [returnCreditPostingConfirmLeave,financialImportConfirmLeave,openingReceivablesConfirmLeave,salesConfirmLeave,inventoryConfirmLeave,confirmPurchasingLeave]){
+ for(const guard of [booksPostingConfirmLeave,returnCreditPostingConfirmLeave,financialImportConfirmLeave,openingReceivablesConfirmLeave,salesConfirmLeave,inventoryConfirmLeave,confirmPurchasingLeave]){
   if(!current()||!await guard(current))return false;
  }
  return current();

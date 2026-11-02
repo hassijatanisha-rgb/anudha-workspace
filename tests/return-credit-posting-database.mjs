@@ -1,7 +1,7 @@
 // Actual workflow/credit RPCs in disposable PostgreSQL; no production data or storage bytes.
 import assert from 'node:assert/strict';
 import {createOrderFixture} from './helpers/order-database-fixture.mjs';
-const f=await createOrderFixture({extraMigrations:['202610160096_financial_import.sql','202610180107_partial_order_invoices.sql','202610180108_invoice_quantity_delivery.sql','202610180110_return_credit_rounding.sql','202610190111_post_return_credits.sql','202610190111_post_return_credits.sql',...(process.env.RETURN_CREDIT_WITH_OPENING==='1'?['202610190112_opening_receivables.sql']:[])]});
+const f=await createOrderFixture({extraMigrations:['202610160096_financial_import.sql','202610180107_partial_order_invoices.sql','202610180108_invoice_quantity_delivery.sql','202610180110_return_credit_rounding.sql','202610190111_post_return_credits.sql','202610190111_post_return_credits.sql',...(process.env.RETURN_CREDIT_WITH_OPENING==='1'?['202610190112_opening_receivables.sql','202611020156_accounting_posting_integrity.sql']:[])]});
 const {db,id,OWNER,SALES,ACCOUNTS,PACKER,DRIVER,OUTSIDER,ORG,CONTACT,REAGENT,HUB,REAGENT_PACK,REAGENT_LOT,as,admin,one,dates,load}=f;
 let counter=7000,checks=0;
 const fresh=()=>id(counter++);
