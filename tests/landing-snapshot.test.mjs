@@ -99,15 +99,15 @@ test('export bootstrap measures only eligible original landing controls without 
  }
 });
 
-test('generator exports all 125 ready role/cases with hashed shell scripts, exact bootstrap and axe',async()=>{
+test('generator exports all 134 ready role/cases with hashed shell scripts, exact bootstrap and axe',async()=>{
  const output=await mkdtemp(join(tmpdir(),'erp-axe-landings-'));
  try{
-  const manifest=await exportAxeLandings({output});assert.equal(manifest.completed,true);assert.equal(manifest.navigationTargets,43);assert.equal(manifest.renderedVariants,45);assert.equal(manifest.expectedCases,125);assert.equal(manifest.cases.length,125);assert.equal(new Set(manifest.cases.map(row=>row.id)).size,125);
-  assert.deepEqual(Object.fromEntries(['owner','head','staff'].map(role=>[role,manifest.cases.filter(row=>row.role===role).length])),{owner:44,head:41,staff:40});assert.ok(manifest.styles.every(style=>/^[a-f0-9]{64}$/.test(style.sha256)));assert.match(manifest.limitations.join(' '),/Keyboard behavior.*geometry.*larger-text/);assert.match(manifest.limitations.join(' '),/Route buttons and workflow controls are unsupported/);
+  const manifest=await exportAxeLandings({output});assert.equal(manifest.completed,true);assert.equal(manifest.navigationTargets,46);assert.equal(manifest.renderedVariants,48);assert.equal(manifest.expectedCases,134);assert.equal(manifest.cases.length,134);assert.equal(new Set(manifest.cases.map(row=>row.id)).size,134);
+  assert.deepEqual(Object.fromEntries(['owner','head','staff'].map(role=>[role,manifest.cases.filter(row=>row.role===role).length])),{owner:47,head:44,staff:43});assert.ok(manifest.styles.every(style=>/^[a-f0-9]{64}$/.test(style.sha256)));assert.match(manifest.limitations.join(' '),/Keyboard behavior.*geometry.*larger-text/);assert.match(manifest.limitations.join(' '),/Route buttons and workflow controls are unsupported/);
   assert.equal(manifest.mode,'fictional-landings-with-authored-shell');assert.deepEqual(manifest.runtimeScripts.map(script=>script.url),shellScripts);assert.match(manifest.shellReadiness,/data-shell-mode.*data-landing-shell-ready.*primary-action.*Packing TV/);
   for(const script of manifest.runtimeScripts)assert.equal(script.sha256,sha256(await readFile(new URL('../'+script.path,import.meta.url))));
   assert.equal(await readFile(join(output,'shell-bootstrap.js'),'utf8'),shellBootstrapSource);assert.deepEqual(manifest.shellBootstrap,{url:shellBootstrapScript,sha256:sha256(shellBootstrapSource)});
-  const context=vm.createContext({window:{}});vm.runInContext(await readFile(join(output,'manifest.js'),'utf8'),context);assert.equal(context.window.axeLandingCases.length,125);
+  const context=vm.createContext({window:{}});vm.runInContext(await readFile(join(output,'manifest.js'),'utf8'),context);assert.equal(context.window.axeLandingCases.length,134);
   for(const item of context.window.axeLandingCases){assert.deepEqual(Object.keys(item),['id','role','page','url']);assert.match(item.url,/^\/axe-landings\/[a-z0-9-]+\.html$/);const html=await readFile(join(output,item.id+'.html'),'utf8');assert.deepEqual([...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(match=>match[1]),scripts);assert.equal((html.match(/<script\b/g)||[]).length,scripts.length);const record=manifest.cases.find(row=>row.id===item.id);assert.match(record.navigationSha256,/^[a-f0-9]{64}$/);assert.equal(record.markupSha256,sha256(html.match(/<body[^>]*>[\s\S]*?(?=<script)/)[0]+'</body>'));}
  }finally{await rm(output,{recursive:true,force:true});}
 });
@@ -115,7 +115,7 @@ test('generator exports all 125 ready role/cases with hashed shell scripts, exac
 test('failed fictional reads remain explicit failed manifest records rather than cheap passing exports',async()=>{
  const output=await mkdtemp(join(tmpdir(),'erp-axe-failure-')),original=rpcs.inventory_stock_page;rpcs.inventory_stock_page=()=>{throw Error('Fictional unavailable stock');};
  try{
-  const manifest=await exportAxeLandings({output});assert.equal(manifest.completed,false);assert.equal(manifest.cases.length,125);assert.deepEqual(manifest.cases.filter(row=>row.status==='failed').map(row=>row.id),['stock--owner','stock--head','stock--staff']);assert.ok(manifest.cases.filter(row=>row.status==='failed').every(row=>row.error));
-  const context=vm.createContext({window:{}});vm.runInContext(await readFile(join(output,'manifest.js'),'utf8'),context);assert.equal(context.window.axeLandingCases.length,122);assert.ok(context.window.axeLandingCases.every(row=>!row.id.startsWith('stock--')));
+  const manifest=await exportAxeLandings({output});assert.equal(manifest.completed,false);assert.equal(manifest.cases.length,134);assert.deepEqual(manifest.cases.filter(row=>row.status==='failed').map(row=>row.id),['stock--owner','stock--head','stock--staff']);assert.ok(manifest.cases.filter(row=>row.status==='failed').every(row=>row.error));
+  const context=vm.createContext({window:{}});vm.runInContext(await readFile(join(output,'manifest.js'),'utf8'),context);assert.equal(context.window.axeLandingCases.length,131);assert.ok(context.window.axeLandingCases.every(row=>!row.id.startsWith('stock--')));
  }finally{rpcs.inventory_stock_page=original;await rm(output,{recursive:true,force:true});}
 });

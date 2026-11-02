@@ -98,16 +98,16 @@ test('Escape closes More when keyboard focus is on the bottom bar',async()=>{
  f.motions.at(-1).pending.resolve();await close;assert.equal(f.panel.hidden,true);assert.equal(f.document.activeElement,f.more);
 });
 
-test('role groups preserve all43 original destinations and permission attributes',()=>{
+test('role groups preserve all46 destinations and their permission attributes',()=>{
  const f=fixture(1200),groups=f.nav.querySelectorAll('.nav-group'),expected={
   Workspace:['dashboard','personal:task','reports','personal:note','personal:event','travel'],
   Sales:['contacts','leads:leads','requests:inquiries','requests:complaints','sales:proformas','contracts','prices'],
   Stores:['inventory:catalog','sales:delivery','packing:queue','packing:screen','pending','purchasing:orders','purchasing:suppliers','inventory:stock','inventory:transfers','inventory:locations','stockcount:count','stockcount:review','inventory:review'],
   Service:['service:installations','service:schedule','service:forms'],
-  Accounts:['accounting','books:overview','books:invoices','books:receipts','books:journal','books:accounts','books:reports','books:import','books:opening'],
+  Accounts:['accounting','books:overview','books:invoices','books:receipts','books:credits','books:suppliers','books:valuation','books:journal','books:accounts','books:reports','books:import','books:opening'],
   Admin:['guide','staff','settings','recycle','approvals']
  };
- assert.deepEqual(groups.map(group=>group.getAttribute('aria-label')),Object.keys(expected));assert.equal(f.originalNodes.length,43);assert.deepEqual(f.nav.querySelectorAll('[data-view]'),f.originalNodes);
+ assert.deepEqual(groups.map(group=>group.getAttribute('aria-label')),Object.keys(expected));assert.equal(f.originalNodes.length,46);assert.deepEqual(f.nav.querySelectorAll('[data-view]'),f.originalNodes);
  const key=node=>node.dataset.view+(node.dataset.workspaceSection?':'+node.dataset.workspaceSection:'');
  for(const group of groups){const name=group.getAttribute('aria-label'),panel=group.querySelector('.nav-group-items'),toggle=group.querySelector('.nav-group-toggle');assert.deepEqual(panel.querySelectorAll('[data-view]').map(key),expected[name]);assert.equal(toggle.getAttribute('aria-controls'),panel.id);assert.equal(toggle.getAttribute('aria-label'),name);assert.equal(panel.hidden,name!=='Workspace');}
  assert.deepEqual(f.originalNodes.filter(node=>node.hasAttribute('data-owner-only')).map(key).sort(),['staff','approvals','recycle','stockcount:review','inventory:review'].sort());

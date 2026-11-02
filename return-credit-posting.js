@@ -36,7 +36,7 @@ async function openReturnCreditPosting(row){
   if(!sameSource())return;
   [history,posted]=await Promise.all([
    client.from('accounting_draft_history').select('body').eq('draft_id',row.id).eq('version',1).maybeSingle(),
-   client.from('acc_credit_notes').select('*').eq('draft_id',row.id).maybeSingle()
+   client.from('acc_credit_notes').select('*').eq('draft_id',row.id).order('created_at',{ascending:false}).limit(1).maybeSingle()
   ]);
  }catch(error){if(sameSource())throw error;return;}
  if(!sameSource())return;
@@ -44,22 +44,23 @@ async function openReturnCreditPosting(row){
  const dialog=document.createElement('dialog'),titleId='return-credit-posting-title-'+request;dialog.className='return-credit-posting';dialog.setAttribute('aria-labelledby',titleId);
  const state={dialog,busy:false,uncertain:false,attempt:null};returnCreditPostingState=state;
  const current=()=>sameSource()&&dialog.isConnected&&returnCreditPostingState===state;
- let form=null,initial='';
+ let form=null,initial='',snapshot=null;
  const requestClose=bindWorkspaceDialogDismiss(dialog,{isBusy:()=>!current()||state.busy||state.uncertain,isDirty:()=>!!form?.isConnected&&workspaceFormSnapshot(form)!==initial});
  const close=async()=>{if(!current())return false;const closed=await requestClose();return closed&&sameSource();};
  dialog.addEventListener('close',()=>{dialog.remove();if(sameSource()&&returnCreditPostingState===state)returnCreditPostingState=null;});
- function confirmed(credit){
+ function confirmed(credit,recovering=false){
   if(!credit?.id||credit.draft_id!==row.id||!credit.credit_number)throw Error('Server did not confirm this return credit.');
+  if(state.attempt&&((recovering&&credit.id!==state.attempt.p_id)||credit.credit_date!==state.attempt.p_credit_date||Number(credit.draft_version)!==state.attempt.p_expected_version||credit.invoice_id!==snapshot.source.invoiceId||credit.return_id!==snapshot.source.returnId||credit.currency!=='TZS'||credit.replaces_credit_id!=null||String(credit.net_minor)!==String(snapshot.net)||String(credit.tax_minor)!==String(snapshot.tax)||String(credit.total_minor)!==String(snapshot.total)))throw Error('Server did not confirm the submitted return credit details.');
   state.uncertain=false;
-  dialog.innerHTML=`<h2 id="${titleId}">${esc(credit.credit_number)} posted</h2><p>Accounting date: ${esc(credit.credit_date)} · ${returnCreditPostingMoney(credit.total_minor)}</p><p>Sales and VAT were reversed against customer receivables. Any payment above the revised invoice balance is customer credit; no refund was issued.</p><p>This posting is permanent. The saved form remains a draft and cannot change the posted amounts.</p><button type="button" data-credit-close>Close</button>`;
+  dialog.innerHTML=`<h2 id="${titleId}">${esc(credit.credit_number)} ${credit.voided_at?'voided':'posted'}</h2><p>Accounting date: ${esc(credit.credit_date)} · ${returnCreditPostingMoney(credit.total_minor)}</p><p>${credit.voided_at?'This original credit was reversed by a dated correction. The amount above is its historical posting, not an available customer credit.':'Sales and VAT were reversed against customer receivables. Any payment above the revised invoice balance is customer credit; no refund was issued.'}</p><p>The saved form remains a draft and cannot change posted amounts. Review dated reversals and corrections in Accounts → Customer credits.</p><button type="button" data-credit-close>Close</button>`;
   dialog.querySelector('[data-credit-close]').onclick=close;
-  if(state.busy){const closeButton=dialog.querySelector('[data-credit-close]');actionFeedbackActive.successOrigin=actionFeedbackReference(closeButton);closeButton.focus({preventScroll:true});message('Return credit posted.');}
+  if(state.busy){const closeButton=dialog.querySelector('[data-credit-close]');actionFeedbackActive.successOrigin=actionFeedbackReference(closeButton);closeButton.focus({preventScroll:true});message(credit.voided_at?'Return credit confirmed as voided.':'Return credit posted.');}
   if(typeof clearBooks==='function')clearBooks();
  }
  try{
   if(posted.data){document.body.append(dialog);confirmed(posted.data);showWorkspaceDialog(dialog,{size:'medium',trigger});return;}
-  const snapshot=returnCreditPostingSnapshot(history.data);
-  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or change stock.</p><form><p role="alert"></p><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
+  snapshot=returnCreditPostingSnapshot(history.data);
+  dialog.innerHTML=`<h2 id="${titleId}">Post returned-goods credit</h2><p>${esc(snapshot.source.returnNumber||'Returned goods')} · original invoice ${esc(snapshot.source.taxInvoiceReference||'')}</p><p>The original return allocation is posted. Later edits to the printable form do not change these amounts.</p><dl><dt>Sales reversal</dt><dd>${returnCreditPostingMoney(snapshot.net)}</dd><dt>VAT reversal</dt><dd>${returnCreditPostingMoney(snapshot.tax)}</dd><dt>Customer credit</dt><dd>${returnCreditPostingMoney(snapshot.total)}</dd></dl><p>A paid invoice produces customer credit. This does not pay a refund or move physical stock. When stock accounting is active, it restores the original returned cost.</p><form><p role="alert"></p><fieldset><label>Accounting date <input name="date" type="date" required value="${esc(typeof companyDate==='function'?companyDate():new Date().toISOString().slice(0,10))}"></label></fieldset><p role="status"></p><div class="actions"><button type="button" class="button-quiet" data-credit-close>Cancel</button><button type="submit" class="button-primary">Post credit to books</button></div></form>`;
   document.body.append(dialog);form=dialog.querySelector('form');initial=workspaceFormSnapshot(form);
   const fields=form.querySelector('fieldset'),status=form.querySelector('[role="status"]'),button=form.querySelector('[type="submit"]'),cancel=form.querySelector('[data-credit-close]');cancel.onclick=close;
   const summary=form.querySelector('[role="alert"]'),fieldErrors=new Map();form.noValidate=true;
@@ -89,9 +90,9 @@ async function openReturnCreditPosting(row){
     else{
      state.uncertain=true;
      try{
-      const check=await client.from('acc_credit_notes').select('*').eq('draft_id',row.id).maybeSingle();
+      const check=await client.from('acc_credit_notes').select('*').eq('id',state.attempt.p_id).maybeSingle();
       if(!current())return;
-      if(!check.error&&check.data){confirmed(check.data);return;}
+      if(!check.error&&check.data){confirmed(check.data,true);return;}
      }catch(ignored){/* Keep the same identity until the server confirms the outcome. */}
      if(current()){status.textContent='Posting outcome is not confirmed. Retry the same credit to reconcile it. Do not create another draft.';message(status.textContent,true);}
     }

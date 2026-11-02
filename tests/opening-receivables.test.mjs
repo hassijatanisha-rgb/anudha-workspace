@@ -35,11 +35,11 @@ test('invalid precision, nonpositive residuals, foreign currency and dates fail 
 });
 test('formula cells, duplicate references, extra columns and overlarge sheets block import',()=>{
  const f=fixture(),s=f.sheet(rows());s.E2.f='SUM(100,23.45)';assert.match(f.ctx.openingReceivablesPreview(s,f.ctx.customers,{cutover:'2026-10-01'}).errors.join(' '),/Formulas/);
- assert.match(f.preview([...rows(),...rows()]).errors.join(' '),/unique/);assert.match(f.preview([rows()[0].concat('ignored')]).errors.join(' '),/Unexpected data/);
+ assert.match(f.preview([...rows(),...rows()]).errors.join(' '),/unique/);assert.match(f.preview([rows()[0].concat('invoice','ignored')]).errors.join(' '),/Unexpected data/);
  const huge=f.sheet(rows());huge['!fullref']='A1:F1002';assert.match(f.ctx.openingReceivablesPreview(huge,f.ctx.customers,{cutover:'2026-10-01'}).errors[0],/1,000/);
 });
 test('template includes exact active customer UUIDs and no invented residual figures',()=>{
- const f=fixture(),w=f.ctx.openingReceivablesTemplate(f.ctx.customers);assert.deepEqual(Array.from(w.SheetNames),['Receivables','Instructions','Customers']);assert.equal(w.Sheets.Receivables['!ref'],'A1:F1');assert.equal(w.Sheets.Customers.A2.v,customer);assert.equal(w.Sheets.Customers.A3,undefined);
+ const f=fixture(),w=f.ctx.openingReceivablesTemplate(f.ctx.customers);assert.deepEqual(Array.from(w.SheetNames),['Receivables','Instructions','Customers']);assert.equal(w.Sheets.Receivables['!ref'],'A1:G1');assert.equal(w.Sheets.Customers.A2.v,customer);assert.equal(w.Sheets.Customers.A3,undefined);
 });
 test('lost responses reconcile the exact batch without resending a different payload',async()=>{
  const f=fixture(),request={p_id:'request',p_gl_import_id:'gl',p_cutover:'2026-10-01'},receipt={gl_import_id:'gl',cutover_date:'2026-10-01',reconciled:true,difference_minor:0,invoices:[]},calls=[];
@@ -58,10 +58,10 @@ test('stale actor completion is discarded and uncertain previews block navigatio
 
 function openingWorkspaceFixture(){
  const f=fixture(),calls=[],downloads=[],nodes=new Map();
- const elements=Object.fromEntries(['source','cutover','gl','sheet','file'].map(name=>[name,{value:'',files:[],innerHTML:'',disabled:name==='gl',focus(){}}]));
+ const elements=Object.fromEntries(['source','cutover','gl','sheet','file','correction','reason'].map(name=>[name,{value:'',files:[],innerHTML:'',disabled:name==='gl',focus(){}}]));
  elements.cutover.value='2026-10-01';
  const fieldset={},form={elements,querySelector:()=>fieldset};
- for(const id of ['booksBody','openingStatus','openingCheck','openingPost','openingPreview','openingExcel','openingCsv','openingBatches'])nodes.set('#'+id,{innerHTML:'',textContent:'',disabled:['openingCheck','openingPost'].includes(id)});
+ for(const id of ['booksBody','openingStatus','openingCheck','openingPost','openingPreview','openingExcel','openingCsv','openingBatches','openingCorrections','openingCorrectionNote','openingCorrectionReason'])nodes.set('#'+id,{innerHTML:'',textContent:'',disabled:['openingCheck','openingPost'].includes(id)});
  nodes.set('#openingForm',form);
  Object.assign(f.ctx,{busy:false,actionFeedbackShow(){},actionFeedbackReference:node=>node,me:{user_id:'owner'},view:'books',client:{},esc:String,$:selector=>nodes.get(selector),run:fn=>fn(),booksSelectAll:async table=>{calls.push(table);return table==='organizations'?f.ctx.customers:[];}});
  f.ctx.XLSX.writeFile=(workbook,name)=>downloads.push({workbook,name});
@@ -113,4 +113,48 @@ test('a late opening-batch response cannot change a replaced session or import w
   const f=openingWorkspaceFixture();await f.ctx.openingReceivablesWorkspace('owner');let release;f.ctx.booksSelectAll=()=>new Promise(resolve=>{release=resolve});
   const loading=f.nodes.get('#openingBatches').onclick();invalidate(f);release([{id:'old',source:'Old books',created_at:'2026-10-01'}]);await loading;assert.equal(f.form.elements.gl.innerHTML,'');assert.equal(f.form.elements.gl.disabled,true);
  }
+});
+
+test('optional Kind supports positive credit rows and negative net AR while preserving legacy payloads',()=>{
+ const f=fixture(),mixed=[...rows().map(r=>[...r,'invoice']),['CREDIT-001',customer,'2026-09-01','2026-09-01','150.00','TZS','credit']],p=f.preview(mixed);
+ assert.equal(p.errors.length,0);assert.equal(p.totalMinor,-2655);assert.equal(p.entries[1].amount_minor,15000);assert.equal(p.entries[1].kind,'credit');
+ f.ctx.legacyRows=rows();const legacy=f.run('XLSX.utils.aoa_to_sheet([openingReceivablesHeaders.slice(0,6),...legacyRows])');const old=f.ctx.openingReceivablesPreview(legacy,f.ctx.customers,{cutover:'2026-10-01'});
+ assert.equal(old.errors.length,0);assert.equal(Object.hasOwn(old.entries[0],'kind'),false);assert.equal(JSON.stringify(old.entries[0]),JSON.stringify({reference:'HIST-001',organization_id:customer,invoice_date:'2026-08-01',due_date:'2026-09-01',amount_minor:12345,currency:'TZS'}));assert.equal(old.rows[0].values[6],'invoice');
+});
+test('Kind is normalized and validated without accepting signed or formula credit amounts',()=>{
+ const f=fixture();for(const kind of [' CREDIT ','Invoice','']){const p=f.preview(rows().map(r=>[...r,kind]));assert.equal(p.errors.length,0);assert.equal(p.entries[0].kind,kind.trim().toLowerCase()||'invoice');}
+ assert.match(f.preview(rows().map(r=>[...r,'refund'])).errors.join(' '),/Kind must/);
+ const negative=rows()[0];negative[4]='-123.45';assert.match(f.preview([[...negative,'credit']]).errors.join(' '),/Formulas|valid amount/);
+ const bad=f.sheet(rows());bad.G1.v='Credit?';assert.match(f.ctx.openingReceivablesPreview(bad,f.ctx.customers,{cutover:'2026-10-01'}).errors.join(' '),/seventh column must be Kind/);
+ const formula=f.sheet(rows().map(r=>[...r,'credit']));formula.G2.f='IF(A1,"credit","invoice")';assert.match(f.ctx.openingReceivablesPreview(formula,f.ctx.customers,{cutover:'2026-10-01'}).errors.join(' '),/Formulas/);
+});
+test('mixed opening preview labels net AR and the Kind column with exact signed cents',async()=>{
+ const f=openingWorkspaceFixture();await f.ctx.openingReceivablesWorkspace('owner');f.form.elements.sheet.value='Receivables';
+ f.ctx.financialImportRead=async()=>({SheetNames:['Receivables'],Sheets:{Receivables:f.sheet(rows().map(r=>[...r,'credit']))}});await f.form.elements.file.onchange();
+ const html=f.nodes.get('#openingPreview').innerHTML.replace(/\s/g,' ');assert.match(html,/Net AR/);assert.match(html,/-TZS 123\.45/);assert.match(html,/<th>Kind<\/th>/);assert.match(html,/<td>credit<\/td>/);
+ const w=f.ctx.openingReceivablesTemplate(f.ctx.customers);assert.equal(w.Sheets.Receivables.G1.v,'Kind');assert.match(f.run('XLSX.utils.sheet_to_csv(openingReceivablesTemplate(customers).Sheets.Instructions)'),/Invoice residuals minus credit residuals/);
+});
+
+test('opening correction options disable settled schedules and preserve fixed source, cutover and GL identity',async()=>{
+ const f=openingWorkspaceFixture();await f.ctx.openingReceivablesWorkspace('owner');
+ f.ctx.client.rpc=async()=>({data:[{id:'unused',source:'Legacy AR',cutover_date:'2026-10-01',gl_import_id:'gl',can_correct:true},{id:'settled',source:'Settled AR',cutover_date:'2026-10-01',gl_import_id:'gl2',can_correct:false,blocked_reason:'Has settlement history'}]});
+ await f.nodes.get('#openingCorrections').onclick();assert.match(f.form.elements.correction.innerHTML,/value="settled" disabled/);
+ f.form.elements.correction.value='settled';f.form.elements.correction.onchange();assert.equal(f.run('openingReceivablesState.correction'),null);
+ f.form.elements.correction.value='unused';f.form.elements.correction.onchange();assert.equal(f.form.elements.source.value,'Legacy AR');assert.equal(f.form.elements.source.disabled,true);assert.equal(f.form.elements.cutover.disabled,true);assert.equal(f.form.elements.gl.disabled,true);assert.equal(f.form.elements.reason.required,true);
+ f.form.elements.correction.value='';f.form.elements.correction.onchange();assert.equal(f.form.elements.source.disabled,false);assert.equal(f.form.elements.reason.required,false);assert.equal(f.form.elements.gl.disabled,true);assert.equal(f.nodes.get('#openingBatches').hidden,false);assert.equal(f.form.elements.gl.value,'');
+ f.ctx.booksSelectAll=async()=>[{id:'different-gl',source:'New batch',created_at:'2026-10-01'}];await f.nodes.get('#openingBatches').onclick();assert.equal(f.form.elements.gl.disabled,false);assert.match(f.form.elements.gl.innerHTML,/different-gl/);
+});
+test('opening correction validates and posts the complete replacement, retaining the original request after a lost response',async()=>{
+ const f=openingWorkspaceFixture(),calls=[],schedule={id:'unused',source:'Legacy AR',cutover_date:'2026-10-01',gl_import_id:'gl',can_correct:true};await f.ctx.openingReceivablesWorkspace('owner');
+ f.ctx.requireAccountingAccess=async()=> 'owner';f.ctx.message=()=>{};let offline=true;
+ f.ctx.client.rpc=async(name,args)=>{calls.push({name,args:JSON.parse(JSON.stringify(args))});if(name==='acc_opening_receivable_schedules')return {data:[schedule]};if(name==='opening_receivables_correction_check')return {data:{reconciled:true,difference_minor:'0',imported_gl_ar_minor:'12345',opening_residual_minor:'12345',control_ar_minor:'12345',customer_subledger_minor:'12345'}};if(name==='opening_receivables_status')return {data:null};if(offline)throw Error('Lost response');return {data:{gl_import_id:'gl',cutover_date:'2026-10-01',reconciled:true,difference_minor:'0',replaces_import_id:'unused',invoices:[],credits:[],imported_count:1}};};
+ await f.nodes.get('#openingCorrections').onclick();f.form.elements.correction.value='unused';f.form.elements.correction.onchange();f.form.elements.sheet.value='Receivables';f.form.elements.reason.value=' Correct opening customer ';f.ctx.financialImportRead=async()=>({SheetNames:['Receivables'],Sheets:{Receivables:f.sheet(rows())}});await f.form.elements.file.onchange();await f.nodes.get('#openingCheck').onclick();
+ await f.form.onsubmit({preventDefault(){}});assert.equal(f.run('openingReceivablesState.uncertain'),true);const first=calls.find(c=>c.name==='correct_opening_receivables');assert.equal(first.args.p_import_id,'unused');assert.equal(first.args.p_reason,'Correct opening customer');assert.equal(first.args.p_rows[0].kind,'invoice');assert.equal(Object.hasOwn(first.args,'p_gl_import_id'),false);
+ f.form.elements.reason.value='Changed after send';offline=false;await f.form.onsubmit({preventDefault(){}});const saved=calls.filter(c=>c.name==='correct_opening_receivables');assert.equal(saved.length,2);assert.deepEqual(saved[1],saved[0]);assert.match(f.nodes.get('#openingStatus').textContent,/Opening correction confirmed/);
+});
+test('a lost opening correction response recovers only its matching replacement identity',async()=>{
+ const f=fixture(),request={p_id:'new',p_import_id:'old',p_rows:[],p_reason:'Correct schedule'},schedule={id:'old',gl_import_id:'gl',cutover_date:'2026-10-01'};
+ const valid={gl_import_id:'gl',cutover_date:'2026-10-01',reconciled:true,difference_minor:0,invoices:[],replaces_import_id:'old'};
+ const result=await f.ctx.openingReceivablesPost({rpc:async name=>{if(name==='correct_opening_receivables')throw Error('Lost');return {data:valid};}},request,()=>true,schedule);assert.equal(result,valid);
+ await assert.rejects(f.ctx.openingReceivablesPost({rpc:async name=>{if(name==='correct_opening_receivables')throw Error('Lost');return {data:{...valid,replaces_import_id:'other'}};}},request,()=>true,schedule),e=>e.uncertain===true);
 });

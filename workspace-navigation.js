@@ -18,7 +18,7 @@ const workspaceGroups=[
   ['Service forms','service','forms']
  ]},
  {name:'Accounts',tone:'accounts',items:[
-  ['Accounting forms','accounting'],['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
+  ['Accounting forms','accounting'],['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Customer credits','books','credits'],['Supplier accounts','books','suppliers'],['Stock accounting','books','valuation'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
  ]},
  {name:'Admin',tone:'admin',items:[
   ['How to use','guide'],['Staff','staff'],['My settings','settings'],['Deleted items','recycle'],['Questions for the owner','approvals']
