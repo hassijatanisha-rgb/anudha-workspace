@@ -471,6 +471,7 @@ main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:br
  main .tabs button{flex:1 1 auto;min-width:0;white-space:normal}
  main .proforma-filters{display:flex;flex-wrap:nowrap;gap:var(--space-2);padding:var(--space-2);overflow-x:auto;white-space:nowrap}
  main .proforma-filters button{flex:0 0 auto;width:auto;padding:var(--space-2) var(--space-3);white-space:nowrap;font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0}
+ main .proforma-filters button:focus-visible{outline-offset:-3px}
  /* Choice buttons share the row evenly. */
  .lead-who label,.lead-sources label,.urgency-choice label{flex:1 1 calc(50% - 10px);justify-content:flex-start}
  /* Tables keep readable columns and scroll sideways inside their box. */
