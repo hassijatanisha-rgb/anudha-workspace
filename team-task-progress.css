@@ -1,6 +1,7 @@
 .team-task-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--space-5);align-items:start}
 .team-task-column{min-width:0}
-.team-task-column>.my-handoffs{margin-top:0}
+.team-tasks .team-task-column>.my-handoffs{margin:0;padding:0;border:0;background:transparent;box-shadow:var(--e-0)}
+.team-tasks .team-task-column>h2,.team-tasks .my-handoffs>h2{margin:0 0 var(--space-4)}
 .team-task-progress,.team-task-assignments{border-top:1px solid var(--line);margin-top:var(--space-4);padding-top:var(--space-3)}
 .team-task-progress h4{margin:0 0 var(--space-2)}
 .team-task-comments,.team-task-assignment-list{padding-left:var(--space-5)}

@@ -7,9 +7,8 @@ button:disabled,.button[aria-disabled="true"]{opacity:.4;cursor:not-allowed}
 button.action-is-busy{opacity:1}
 .button-secondary{background:var(--surface);border-color:var(--line);color:var(--ink)}
 dialog form>.actions{justify-content:flex-end}
-#actionCancel{margin-inline-end:var(--space-4)}
 main .actions{gap:var(--space-2)}
-main .card .actions{margin-top:var(--space-4)}
+main .card>.actions,main .card form>.actions{margin-top:var(--space-4)}
 main .heading .actions{gap:var(--space-3)}
 
 /* Primary: the step most people take next. */
@@ -103,8 +102,12 @@ main .work-step-owners label.check{display:block;padding:var(--space-1) 0}
 /* Step timing: the responsible strip turns yellow after a day and red after two, or when an expected date passes. */
 main .work-handoff.quality-yellow{background:var(--warning-bg);border-color:var(--warning)}
 main .work-handoff.quality-red{background:var(--danger-bg);border-color:var(--danger)}
-main .handoff-list li.quality-yellow{background:var(--warning-bg);border-radius:var(--r-sm);padding:var(--space-2)}
-main .handoff-list li.quality-red{background:var(--danger-bg);border-radius:var(--r-sm);padding:var(--space-2)}
+main .handoff-list{list-style:none;padding:0}
+main .handoff-list li{padding:var(--space-4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface)}
+main .handoff-list li.quality-yellow,main .handoff-list li.attention{border-inline-start:var(--status-rail) solid var(--warning)}
+main .handoff-list li.attention{padding-inline-start:var(--space-4)}
+main .handoff-list li.quality-red{border-inline-start:var(--status-rail) solid var(--danger)}
+main .handoff-list .actions{margin-top:var(--space-3)}
 main .work-timeline{margin-top:var(--space-2);width:100%}
 main .work-timeline small{display:block;color:var(--ink-2);font-size:var(--t-caption);line-height:var(--lh-caption);font-weight:var(--w-caption);letter-spacing:var(--ls-caption)}
 
@@ -159,7 +162,7 @@ main tr.report-subtotal td{font-weight:var(--w-display);background:var(--surface
 .proforma-filter-delivery::before{background:var(--info)!important;opacity:1!important}
 .proforma-filter-done::before{background:var(--success)!important;opacity:1!important}
 .proforma-filter-closed::before{background:var(--danger)!important;opacity:1!important}
-@media(max-width:600px){.proforma-tiles{grid-template-columns:1fr}}
+@media(max-width:600px){.proforma-tiles{grid-template-columns:minmax(0,1fr)}}
 @media print{.proforma-tag{border:1px solid var(--print-line);background:none;color:var(--print-ink)}}
 main .proforma-filters{flex-wrap:wrap;overflow:visible;white-space:normal}
 main .proforma-filters button{flex:0 0 auto}
@@ -192,7 +195,7 @@ main .workflow-progress{grid-template-columns:repeat(auto-fill,minmax(104px,1fr)
 .urgency-urgent{background:var(--warning-bg);color:var(--warning)}
 .urgency-normal{background:var(--neutral-bg);color:var(--ink-2)}
 .team-task{padding:var(--space-4) var(--space-5);margin-top:var(--space-3)}
-.team-task.overdue{border-left:5px solid var(--danger)}
+.team-task.overdue{border-left:var(--status-rail) solid var(--danger)}
 .team-task.closed{opacity:.75}
 .team-task h3{margin:0}
 .team-task-meta{margin:var(--space-2) 0 0}
@@ -360,8 +363,8 @@ main details[open]>summary::after{transform:rotate(225deg)}
    ========================================================================================================== */
 
 
-/* Buttons: one height and one padding everywhere in the work area and dialogs; text centred on one line. */
-main button,main .button,dialog button,dialog .button{min-height:var(--control-h);padding:0 var(--space-4);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0;border-radius:var(--r-md);vertical-align:middle}
+/* Shared controls keep breathing room when their labels wrap. */
+main button,main .button,dialog button,dialog .button{min-height:var(--control-h);padding:var(--space-2) var(--space-4);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-caption);letter-spacing:0;border-radius:var(--r-sm);vertical-align:middle}
 main .button,dialog .button{display:inline-flex;align-items:center;justify-content:center}
 /* Secondary look for look-up buttons (Refresh, History, Edit...): a real button, not floating text. */
 [data-lead-history],[data-pending-history],[data-lead-edit],[data-load-order-timing],[data-purchase-history],[data-purchase-edit],[data-supplier-edit],
@@ -433,7 +436,8 @@ main .cleanup-table{overflow-x:auto}
 /* Header: the signed-in name sits apart from the buttons around it. */
 #identity{gap:var(--space-2)}
 #identity .identity-name{padding:0 var(--space-2);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0;color:var(--ink-2);}
-#identity button{min-height:var(--control-h);padding:var(--space-2) var(--space-4);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0;}
+#identity button{min-height:var(--control-h);padding:var(--space-2) var(--space-3);border-radius:var(--r-sm);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0;}
+#identity>.bell>.bell-button{width:var(--control-h);padding:0}
 
 /* Dialogs: never wider than the screen; content scrolls inside. */
 dialog{width:min(640px,calc(100vw - 32px));max-width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:var(--space-5);overflow:auto}
@@ -465,8 +469,9 @@ main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:br
  /* Tabs wrap into rows instead of running off the edge. */
  main .tabs{flex-wrap:wrap;width:100%;overflow:visible}
  main .tabs button{flex:1 1 auto;min-width:0;white-space:normal}
- main .proforma-filters{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-1)}
- main .proforma-filters button{width:100%;padding:var(--space-2);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0}
+ main .proforma-filters{display:flex;flex-wrap:nowrap;gap:var(--space-2);padding:var(--space-2);overflow-x:auto;white-space:nowrap}
+ main .proforma-filters button{flex:0 0 auto;width:auto;padding:var(--space-2) var(--space-3);white-space:nowrap;font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0}
+ main .proforma-filters button:focus-visible{outline-offset:-3px}
  /* Choice buttons share the row evenly. */
  .lead-who label,.lead-sources label,.urgency-choice label{flex:1 1 calc(50% - 10px);justify-content:flex-start}
  /* Tables keep readable columns and scroll sideways inside their box. */
@@ -571,8 +576,18 @@ main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:br
  main .heading h1{margin:0 0 var(--space-2)}
  main .heading>div>p{margin:var(--space-2) 0 0;max-width:65ch;color:var(--ink-2)}
  main .heading>button,main .heading>.actions{flex-shrink:0}
- main .card{border-radius:var(--r-md);box-shadow:var(--e-0)}
+ main .heading>button{max-width:100%;white-space:normal}
+ main :is(.card,.profile-tile,.contact,.account-directory,.group-panel){border-radius:var(--r-md);box-shadow:var(--e-0)}
+ main .profile-tile:hover{transform:none;box-shadow:var(--e-1)}
  main .card .card{border-radius:var(--r-sm)}
+ main .proforma-tile{min-width:0;overflow-wrap:anywhere;padding:var(--space-5);gap:var(--space-2);border-radius:var(--r-md);font-weight:var(--w-body);box-shadow:var(--e-0)}
+ main .proforma-tile:hover{box-shadow:var(--e-1)}
+ main .proforma-tile>.proforma-tag{position:static;align-self:flex-start;max-width:100%;white-space:normal}
+ main .proforma-tile>strong{margin-top:0}
+ main .proforma-tile-foot{padding-top:var(--space-4)}
+ .inventory-metrics{grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:var(--space-4)}
+ .inventory-metrics>div{display:flex;flex-direction:column;padding:var(--space-4) var(--space-5);box-shadow:var(--e-0)}
+ .inventory-metrics strong{margin-top:auto;padding-top:var(--space-2);font-size:var(--t-title);line-height:var(--lh-title);font-weight:var(--w-title);letter-spacing:var(--ls-title)}
  main table thead{background:var(--surface-2);color:var(--ink-2)}
  main th{text-align:left}
  main td{line-height:var(--lh-callout)}
@@ -608,7 +623,9 @@ main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:br
   .prices-heading{flex-direction:column}
   .prices-heading>button{align-self:flex-start}
   .prices-workspace:has([data-price-editor])>.workspace-page-header{position:static}
-  .prices-workspace .inventory-metrics{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr))}
+  .inventory-metrics{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr))}
+  .inventory-metrics>div{padding:var(--space-4)}
+  .inventory-metrics strong{font-size:var(--t-headline);line-height:var(--lh-headline)}
   main .price-edit-panel{padding:var(--space-2);overflow-wrap:anywhere}
   main .price-fields{grid-template-columns:minmax(0,1fr)}
   .price-fields input,.price-fields select,.price-fields textarea{min-width:0;max-width:100%}
@@ -694,10 +711,13 @@ main h1,main h2,main h3,main td,main .card p,dialog h2,dialog p{overflow-wrap:br
 /* Keep help and updates visible; account actions share one native disclosure. */
 @media screen{
  #identity{display:flex;align-items:center;gap:var(--space-2);flex-wrap:nowrap}
- #identity>#howToUse{order:0;display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);white-space:nowrap}
+ #identity>#howToUse{order:0;display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);white-space:nowrap;border-color:transparent;background:transparent;color:var(--ink-2)}
+ #identity>#howToUse:hover{background:var(--surface-2);color:var(--ink)}
+ #identity>.bell>.bell-button{border-color:transparent;background:transparent;box-shadow:var(--e-0)}
+ #identity>.bell>.bell-button:hover{background:var(--surface-2)}
  #identity>.bell{order:1;flex:none}
  #identity>.account-menu{order:2;position:relative;min-width:0;max-width:18rem}
- #identity .account-menu>summary{display:flex;align-items:center;gap:var(--space-3);min-height:var(--control-h);padding:var(--space-2) var(--space-3);list-style:none;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-callout);letter-spacing:0;}
+ #identity .account-menu>summary{display:flex;align-items:center;gap:var(--space-2);min-height:var(--control-h);padding:var(--space-2) var(--space-3);list-style:none;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--ink);font-size:var(--t-callout);line-height:var(--lh-callout);font-weight:var(--w-caption);letter-spacing:0;}
  #identity .account-menu>summary::-webkit-details-marker{display:none}
  #identity .account-menu>summary::after{content:'';flex:none;width:.375rem;height:.375rem;margin-left:auto;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
  #identity .account-menu[open]>summary::after{transform:rotate(225deg)}
@@ -871,7 +891,8 @@ dialog.workspace-dialog[data-dialog-size="large"]{width:min(var(--dialog-lg),cal
 dialog.workspace-dialog[data-dialog-placement="side"]{height:100dvh;max-height:100dvh;margin:0 0 0 auto;border-radius:var(--r-lg) 0 0 var(--r-lg)}
 dialog.workspace-dialog::backdrop{background:var(--overlay);animation:dialog-backdrop-in var(--m-base) var(--ease-in)}
 dialog.workspace-dialog.dialog-leaving::backdrop{animation:dialog-backdrop-out var(--m-fade) var(--ease-out) forwards}
-dialog.workspace-dialog .actions{justify-content:flex-end;gap:var(--space-5)}
+dialog.workspace-dialog .actions{justify-content:flex-end;gap:var(--space-2)}
+dialog.workspace-dialog form>.actions{align-items:stretch}
 .dialog-drag-handle{display:none}
 @keyframes dialog-backdrop-in{from{opacity:0}to{opacity:1}}
 @keyframes dialog-backdrop-out{from{opacity:1}to{opacity:0}}
@@ -879,7 +900,7 @@ dialog.workspace-dialog .actions{justify-content:flex-end;gap:var(--space-5)}
 @media(max-width:600px){
  dialog.workspace-dialog[data-dialog-size]{width:100%;max-width:none;max-height:90dvh;margin:auto 0 0;padding:var(--space-4);border-radius:var(--r-lg) var(--r-lg) 0 0;transform-origin:bottom center}
  dialog.workspace-dialog[data-dialog-placement="side"]{height:auto;max-height:90dvh;margin:auto 0 0;border-radius:var(--r-lg) var(--r-lg) 0 0}
- dialog.workspace-dialog form>.actions .button-primary,dialog.workspace-dialog form>.actions .button-destructive{min-height:var(--control-phone)}
+ dialog.workspace-dialog form>.actions>button,dialog.workspace-dialog form>.actions>.button{min-height:var(--control-phone)}
  .dialog-drag-handle{display:grid;place-items:center;min-height:var(--control-h);touch-action:none;cursor:grab}
  .dialog-drag-handle::before{content:'';width:var(--space-6);height:var(--space-1);border-radius:var(--r-pill);background:var(--ink-3)}
  .dialog-drag-handle:active{cursor:grabbing}
@@ -915,9 +936,10 @@ dialog.product-review-editor .product-review-footer>p{margin:0 auto 0 0;min-widt
 .workspace-page-breadcrumbs{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);padding-block:var(--space-2);font-size:var(--t-caption);line-height:var(--lh-caption)}
 .workspace-page-breadcrumbs a{text-decoration:underline;text-underline-offset:var(--space-1)}
 @media(max-width:600px){
+ .workspace-page-header:has(.workspace-page-back){position:static}
  .workspace-page-toolbar{min-height:var(--header-phone-height);flex-wrap:wrap;gap:var(--space-3)}
  .workspace-page-actions{width:100%;justify-content:flex-end}
- .workspace-page-heading{min-width:0}
+ .workspace-page-heading{flex:1 1 12rem;min-width:0}
 }
 @media(min-width:601px) and (max-width:900px){
  .workspace-page-toolbar:has(#profileOrganizationName){flex-wrap:wrap}
@@ -978,6 +1000,12 @@ html.workspace-stock-transition::view-transition-new(workspace-stock-header){ani
 @keyframes workspace-stock-out{to{opacity:0}}
 @keyframes workspace-stock-in{from{opacity:0}}
 
+.client-pages .account-head{padding:var(--space-4) var(--space-5);border-radius:var(--r-md);background:var(--surface);color:var(--ink)}
+.client-pages .account-head>p{margin:0}
+.client-pages .account-head.incomplete,.client-pages .profile-tile.incomplete{background:var(--surface);color:var(--ink);border-color:var(--line);border-inline-start:var(--status-rail) solid var(--warning)}
+.client-pages .profile-approval{gap:var(--space-2) var(--space-3);margin:var(--space-3) 0 0}
+.client-pages .profile-approval small{flex:1 1 24rem;max-width:65ch;font-size:var(--t-caption);line-height:var(--lh-caption)}
+.client-pages .account-head.incomplete small,.client-pages .profile-tile.incomplete small{color:var(--ink-2)}
 .profile-tile.incomplete .tile-open{color:var(--ink)}
 
 /* These bounded registers keep their table relationships and original action nodes on phones. */
