@@ -84,9 +84,14 @@ test('multiple purpose-labelled entries can be added and removed, with a 20-entr
  f.form.querySelector('[data-business-remove]').onclick();assert.equal(add.disabled,false);assert.equal(f.form.querySelectorAll('[data-business-entry="emails"]').length,19);
 });
 
-test('invalid source protocols, phone content, future dates and missing evidence are refused before writes',async()=>{
+test('invalid source protocols, phone content and future dates are refused; evidence is optional',async()=>{
  const f=fixture();await f.open();f.field('website').value='javascript:alert(1)';f.field('phones0Value').value='Call someone';f.field('source_checked_on').value='2027-01-01';await f.submit();assert.equal(f.writes().length,0);assert.match(f.error(),/highlighted/);assert.equal(f.form.querySelectorAll('.field-error').length,3);
- f.field('website').value='';f.field('phones0Value').value='123';f.field('source_checked_on').value='';f.field('evidence_note').value='';await f.submit();assert.equal(f.writes().length,0);assert.match(f.error(),/field needs attention/);
+ f.field('website').value='';f.field('phones0Value').value='123';f.field('source_checked_on').value='';f.field('evidence_note').value='';await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_evidence_note,'No source evidence supplied.');assert.match(f.root.textContent,/No source evidence supplied\./);
+});
+
+test('business detail edits can omit source evidence without inventing verification or losing prior source fields',async()=>{
+ const f=fixture();await f.open();assert.match(f.field('evidence_note').closest('label').textContent,/optional/);assert.equal(f.field('evidence_note').getAttribute('required'),null);f.field('physical_address').value='Corrected address';f.field('evidence_note').value='   ';await f.submit();assert.equal(f.writes().length,1);assert.equal(f.writes()[0].args.p_evidence_note,'No source evidence supplied.');assert.equal(f.writes()[0].args.p_source_url,initial().source_url);assert.equal(f.writes()[0].args.p_source_checked_on,initial().source_checked_on);
+ await f.open();assert.equal(f.field('evidence_note').value,'');assert.equal(f.field('physical_address').value,'Corrected address');assert.equal(f.root.businessContactContext.row.version,4);assert.match(f.root.textContent,/No source evidence supplied\./);
 });
 
 test('URL whitespace and controls are rejected before fields are locked or any write is sent',async()=>{
