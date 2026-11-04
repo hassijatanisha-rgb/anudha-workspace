@@ -1,0 +1,17 @@
+.business-contact-details{margin-bottom:var(--space-5)}
+.business-contact-details h2{margin:0 0 var(--space-2)}
+.business-contact-details .heading p{margin-bottom:0}
+.business-contact-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:var(--space-5);margin:var(--space-5) 0}
+.business-contact-facts>div{min-width:0}
+.business-contact-facts dt{font-weight:var(--w-headline);margin-bottom:var(--space-2)}
+.business-contact-facts dd{margin:0;overflow-wrap:anywhere}
+.business-contact-facts ul,.business-contact-person-emails ul{list-style:none;padding:0;margin:0;display:grid;gap:var(--space-3)}
+.business-contact-facts li span,.business-contact-person-emails li span{display:block;font-size:var(--t-caption)}
+.business-contact-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.business-contact-evidence{margin-top:var(--space-4);overflow-wrap:anywhere}
+.business-contact-evidence summary{cursor:pointer;font-weight:var(--w-headline)}
+.business-contact-editor>section{margin-bottom:var(--space-5)}
+.business-contact-entry{min-width:0;border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--space-3);margin:var(--space-3) 0}
+.business-contact-entry legend{padding:0 var(--space-2);font-weight:var(--w-headline)}
+.business-contact-entry label{margin-top:var(--space-2)}
+.business-contact-details a:focus-visible,.business-contact-evidence summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}

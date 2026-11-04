@@ -106,6 +106,7 @@ async function refreshArchivedClientRecord(kind,id,scope,context){
    const approval=document.querySelector('.profile-approval');if(approval)approval.innerHTML=`<span class="tag chip chip--${statusTone('archived')}">Deleted profile</span>`;
    for(const button of document.querySelectorAll('.profile-sections button'))button.disabled=true;
    $('#profile-panel')?.replaceChildren();$('#profileBranches')?.replaceChildren();
+   $('#businessContactDetails')?.remove();
    if($('#profileBranchCount'))$('#profileBranchCount').textContent='Profile deleted';
    if($('#profileGroupSuggestions')){$('#profileGroupSuggestions').replaceChildren();$('#profileGroupSuggestions').hidden=true;}
   }
@@ -115,6 +116,7 @@ async function refreshArchivedClientRecord(kind,id,scope,context){
   for(const control of context.root.querySelectorAll('[data-edit-account],[data-delete-org],[data-approve-org],[data-link-parent],[data-group],#ungroupAccount'))control.remove();
   for(const card of context.root.querySelectorAll('[data-contact-id]'))if(scope.contactIds.includes(card.dataset.contactId))for(const button of card.querySelectorAll('button'))button.remove();
   if(scope.affectedIds.has(scope.profileId)){
+   if($('#businessContactDetails'))$('#businessContactDetails').inert=true;
    if($('#profile-panel'))$('#profile-panel').inert=true;
    if($('#profileBranches'))$('#profileBranches').inert=true;
    for(const button of document.querySelectorAll('.profile-sections button'))button.disabled=true;
@@ -146,6 +148,7 @@ function refreshSavedContactResults(){
   bindContactReviewSearch({contacts,organizations,duplicates});
  }else if(view==='contacts'&&profileTab==='contacts'&&readProfileRoute().kind==='branch'){
   const organization=orgIndex.get(readProfileRoute().id),own=contacts.filter(row=>row.organization_id===organization?.id);if(!organization)return;
+  if(typeof refreshBusinessContactEmails==='function')refreshBusinessContactEmails();
   rows=sortedContacts(own.filter(row=>inContactView(row,filter)));count=rows.length;pages=Math.max(1,Math.ceil(count/30));page=Math.min(Math.max(page,0),pages-1);label='contacts';
   html=rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>';
   for(const button of document.querySelectorAll('#contactFilters [data-filter]'))button.querySelector('small').textContent=own.filter(row=>inContactView(row,button.dataset.filter)).length;
@@ -294,7 +297,7 @@ function profileOrganizationBreadcrumb(o,isParent){
 function profileOrganizationActions(o,isParent){return canEditRecords()?`<button data-edit-account="${esc(o.id)}">Edit ${isParent?'client':'branch'} profile</button><button class="danger" data-delete-org="${esc(o.id)}">Delete ${isParent?'client':'branch'}</button>${isParent?`<button data-link-parent="${esc(o.id)}">+ Link existing branch</button>`:o.parent_id?'<button id="ungroupAccount">Remove branch from group</button>':''}`:'';}
 function profileOrganizationFacts(o){return `<strong>${esc(o.location||'Location missing')}</strong> · ${esc(o.type||'Organisation type missing')}`;}
 function profileOrganizationBack(o,isParent){return `<a class="button button-quiet" href="${isParent?'#/clients':'#/client/'+esc(rootAccount(o).id)}" aria-label="${isParent?'Back to clients':'Back to client'}">Back</a>`;}
-function profileOrganizationHeader(o,isParent){return `${workspacePageHeader({title:o.name||(isParent?'Client':'Branch')+' name missing',titleAttrs:'id="profileOrganizationName"',back:`<span id="profileOrganizationBack">${profileOrganizationBack(o,isParent)}</span>`,breadcrumbs:`<span id="profileBreadcrumb">${profileOrganizationBreadcrumb(o,isParent)}</span>`,actions:`<div class="actions" id="profileOrganizationActions">${profileOrganizationActions(o,isParent)}</div>`})}<section class="account-head ${needsRevision(o)?'incomplete':''}"><p id="profileOrganizationFacts"${isParent?'':' class="branch-location"'}>${profileOrganizationFacts(o)}</p>${profileApproval(o,isParent)}<div id="organizationSaveStatus"></div></section>`;}
+function profileOrganizationHeader(o,isParent){return `${workspacePageHeader({title:o.name||(isParent?'Client':'Branch')+' name missing',titleAttrs:'id="profileOrganizationName"',back:`<span id="profileOrganizationBack">${profileOrganizationBack(o,isParent)}</span>`,breadcrumbs:`<span id="profileBreadcrumb">${profileOrganizationBreadcrumb(o,isParent)}</span>`,actions:`<div class="actions" id="profileOrganizationActions">${profileOrganizationActions(o,isParent)}</div>`})}<section class="account-head ${needsRevision(o)?'incomplete':''}"><p id="profileOrganizationFacts"${isParent?'':' class="branch-location"'}>${profileOrganizationFacts(o)}</p>${profileApproval(o,isParent)}<div id="organizationSaveStatus"></div></section>${typeof businessContactSection==='function'?businessContactSection(o):''}`;}
 
 function profileBranches(o){
  const children=sortedAccounts(childrenByParent.get(o.id)||[]);
@@ -310,6 +313,7 @@ function refreshSavedOrganizationProfile(organizationId=readProfileRoute().id){
  const route=readProfileRoute();if(view!=='contacts'||route.kind==='clients')return;
  const record=orgIndex.get(organizationId),isParent=route.kind==='client',o=isParent?rootAccount(record):record;
  if(!o)throw Error('This profile is no longer available. Return to Clients to choose a profile.');
+ if(typeof refreshBusinessContactDetails==='function')refreshBusinessContactDetails(o);
  const active=document.activeElement,action=Object.entries(active?.dataset||{}),activeId=active?.id,x=window.scrollX,y=window.scrollY;
  const update=(selector,html)=>{const node=$(selector),template=document.createElement('template');template.innerHTML=html;if(node&&node.innerHTML!==template.innerHTML)node.innerHTML=html;};
  $('#profileOrganizationName').textContent=o.name||(isParent?'Client':'Branch')+' name missing';
@@ -333,6 +337,7 @@ function profileParent(o){
  const branches=profileBranches(o),suggestions=profileGroupSuggestions(o);
  $('#content').innerHTML=`<section class="client-pages">${profileOrganizationHeader(o,true)}<div class="heading"><h2>Branches</h2><a class="button" href="#/branch/${esc(o.id)}">Open account contacts &amp; contracts</a><span id="profileBranchCount" class="count">${branches.length} branch${branches.length===1?'':'es'}</span></div><div id="profileBranches" class="profile-grid">${branches.map(profileBranchCard).join('')}</div><section id="profileGroupSuggestions" class="group-panel" ${suggestions?'':'hidden'}>${suggestions}</section></section>`;
  rememberOrganizationRows();
+ if(typeof mountBusinessContactDetails==='function')mountBusinessContactDetails(o);
 }
 function profileBranch(o){
  const ownContacts=contacts.filter(c=>c.organization_id===o.id);
@@ -342,6 +347,7 @@ function profileBranch(o){
  const panel=profileTab==='contacts'?`<div class="heading"><div><h2>Branch contacts</h2><p id="branchContactsDescription" class="muted">Contacts for ${esc(o.location||o.name)} only · email is optional.</p>${recordsLockedNote()}</div>${canEditRecords()?'<button id="newContact">+ Contact</button>':''}</div><div class="tabs" id="contactFilters" aria-label="Contact filters">${[['all','All contacts'],['revision','Needs fixing']].map(([id,label])=>`<button data-filter="${id}" class="${filter===id?'active':''}" aria-pressed="${filter===id}">${label} <small>${ownContacts.filter(c=>inContactView(c,id)).length}</small></button>`).join('')}</div><div id="contactResults">${rows.slice(page*30,page*30+30).map(card).join('')||'<div class="empty">No contacts in this view.</div>'}</div><div id="contactPaging">${profilePagination(rows.length,pages,'contacts')}</div>`:profileTab==='history'?branchConsumerHistory(o):branchActivity(o,profileTab);
  $('#content').innerHTML=`<section class="client-pages">${profileOrganizationHeader(o,false)}<div class="profile-sections" role="tablist" aria-label="Branch sections">${tabs.map(([id,label])=>`<button role="tab" id="profile-tab-${id}" aria-selected="${profileTab===id}" aria-controls="profile-panel" data-profile-tab="${id}" class="${profileTab===id?'current':''}">${label}</button>`).join('')}</div><section id="profile-panel" role="tabpanel" aria-labelledby="profile-tab-${activeTab[0]}">${panel}</section></section>`;
  rememberContactRows();
+ if(typeof mountBusinessContactDetails==='function')mountBusinessContactDetails(o);
 }
 function profileView(){
  const route=readProfileRoute();
