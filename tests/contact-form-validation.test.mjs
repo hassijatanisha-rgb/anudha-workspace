@@ -75,6 +75,10 @@ test('country changes revalidate touched phone/code only and retain the national
  f.node('phone_country').value='';f.node('phone_country').onchange();assert.match(f.error('country_code').textContent,/Calling code/);assert.equal(f.error('phone_country'),null);assert.equal(f.node('phone').getAttribute('aria-describedby'),'phoneHint');
 });
 
+test('routine contact detail correction saves without requesting a reason',async()=>{
+ const f=fixture();await f.open({revision:3,reason:''});assert.equal(f.node('reason'),null);f.node('position').value='Corrected role';await f.submit();assert.equal(f.writes.length,1);assert.equal(f.writes[0].position,'Corrected role');assert.equal(f.writes[0].reason,'');assert.equal(f.writes[0].status,'kept');assert.equal(f.document.querySelector('#editor').open,false);
+});
+
 test('existing incorrect-record exemptions and reason requirements remain unchanged',async()=>{
  const f=fixture();await f.open({revision:3,status:'incorrect',reason:'Left the company',first_name:'',phone:''});f.blur('first_name');f.blur('phone');assert.equal(f.form.querySelectorAll('.field-error').length,0);await f.submit();assert.equal(f.writes.length,1);
  assert.throws(()=>f.ctx.validate({...valid,revision:3,status:'incorrect',reason:'',first_name:''}),error=>Object.keys(error.fields).join(',')==='reason');
