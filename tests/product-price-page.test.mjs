@@ -35,6 +35,20 @@ function fixture(){
 test('Prices uses one bounded RPC, 25 product summaries and no shared, quote, correction or import loads',async()=>{
  const f=fixture(),shared=f.ctx.products;f.set("productPricingActor=me;productSalePrices.set('old:TZS',{product_id:'old',currency:'TZS',unit_price_minor:100,version:2})");await f.ctx.pricesWorkspace();assert.deepEqual(f.calls.map(c=>c.name),['product_price_page']);assert.equal((f.target.innerHTML.match(/data-price-product=/g)||[]).length,25);assert.match(f.target.innerHTML,/1,067/);assert.match(f.target.innerHTML,/Reviewed &lt;product&gt;/);assert.doesNotMatch(f.target.innerHTML,/<product>|data-price-editor|pricingProductChoices|data-price-import-file/);assert.equal(f.ctx.products,shared);assert.equal(f.get('productSalePrices.size'),1);assert.equal(f.get("productSalePrices.get('old:TZS').version"),2);assert.ok((f.target.innerHTML.match(/<[a-z][a-z0-9-]*(?:\s|>)/gi)||[]).length<600);
 });
+test('price search restores its live editing range after the debounced response replaces the input',async()=>{
+ const f=fixture();let timer,release;
+ f.document.getElementById=id=>id?f.document.querySelector('#'+id):null;
+ f.ctx.window.scrollTo=(left,top)=>Object.assign(f.ctx.window,{scrollX:left,scrollY:top});
+ f.ctx.setTimeout=(fn,wait)=>{assert.equal(wait,150);timer=fn;return 1};f.ctx.clearTimeout=()=>{timer=null};
+ vm.runInContext(readFileSync(new URL('../search-state.js',import.meta.url),'utf8'),f.ctx);
+ await f.ctx.pricesWorkspace();
+ const input=f.nodes.get('[data-price-search]');assert.equal(input.type,'search');input.focus();input.value='Maker abcdef';input.setSelectionRange(6,6);input.oninput();
+ f.ctx.client.rpc=(name,args)=>{f.calls.push({name,args});return new Promise(resolve=>release=resolve)};
+ timer();assert.equal(f.calls.at(-1).args.p_query,'Maker abcdef');assert.ok(f.document.activeElement===input,'search remains focused while waiting for results');
+ input.setSelectionRange(7,10,'backward');input.scrollLeft=7;release({data:pageData()});await new Promise(setImmediate);
+ const next=f.nodes.get('[data-price-search]');assert.ok(next!==input,'response replaced the search control');assert.equal(next.value,'Maker abcdef');assert.ok(f.document.activeElement===next,'replacement search regains focus');
+ assert.deepEqual([next.selectionStart,next.selectionEnd,next.selectionDirection],[7,10,'backward']);assert.equal(next.scrollLeft,7);
+});
 test('missing configured prices use the attention tone while a configured zero price remains a price',()=>{
  const f=fixture(),row={id:'p0',name:'Machine',company:'Maker',specification:'Model',prices:[]};
  assert.match(f.ctx.pricingSummaryRow(row),/<span class="tag chip chip--warning">Not configured<\/span>/);

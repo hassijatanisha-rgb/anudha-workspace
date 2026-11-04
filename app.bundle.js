@@ -3267,7 +3267,7 @@ function pricingPageHtml(){
  const data=productPricePageData;
  return `<section class="prices-workspace">${workspacePageHeader({title:'Product prices',subtitle:'Configured selling prices. Missing prices are never treated as zero.',actions:'<button type="button" data-pricing-reload>Refresh prices</button>'})}
  <div class="inventory-metrics">${[['products','Products'],['configured','Configured'],['missing','Missing price']].map(([key,label])=>`<div><small>${label}${productPriceCurrency&&key!=='products'?' · '+esc(productPriceCurrency):''}</small><strong>${data.totals[key].toLocaleString('en-GB')}</strong></div>`).join('')}</div><p class="muted">Counts cover all current products for the selected currency, before search and status filters.</p>
- <section class="card price-register-panel"><h2>Selling price register</h2><div class="grid"><label><span>Find a price</span><input data-price-search type="search" maxlength="2000" value="${esc(productPriceSearch)}" placeholder="Product, manufacturer, stock code or currency"></label><label><span>Currency</span><select data-price-currency>${[['','All currencies'],['TZS','TZS'],['USD','USD'],['EUR','EUR']].map(([value,label])=>`<option value="${value}" ${productPriceCurrency===value?'selected':''}>${label}</option>`).join('')}</select></label><label><span>Price status</span><select data-price-status>${[['configured','Configured'],['missing','Missing price'],['all','All products']].map(([value,label])=>`<option value="${value}" ${productPriceStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div>
+ <section class="card price-register-panel"><h2>Selling price register</h2><div class="grid"><label><span>Find a price</span><input id="productPriceSearch" data-price-search type="search" maxlength="2000" value="${esc(productPriceSearch)}" placeholder="Product, manufacturer, stock code or currency"></label><label><span>Currency</span><select data-price-currency>${[['','All currencies'],['TZS','TZS'],['USD','USD'],['EUR','EUR']].map(([value,label])=>`<option value="${value}" ${productPriceCurrency===value?'selected':''}>${label}</option>`).join('')}</select></label><label><span>Price status</span><select data-price-status>${[['configured','Configured'],['missing','Missing price'],['all','All products']].map(([value,label])=>`<option value="${value}" ${productPriceStatus===value?'selected':''}>${label}</option>`).join('')}</select></label></div>
  <div class="heading inventory-pagination"><p data-price-page-status role="status" tabindex="-1">${data.total?`${(data.page*25+1).toLocaleString('en-GB')}–${(data.page*25+data.rows.length).toLocaleString('en-GB')} of ${data.total.toLocaleString('en-GB')} products`:'No products match these filters'} · Page ${data.page+1} of ${data.pages}</p><div><button type="button" data-price-previous ${data.page===0?'disabled':''}>Previous</button><button type="button" data-price-next ${data.page+1>=data.pages?'disabled':''}>Next</button></div></div>
  <div data-price-register>${data.rows.length?`<div class="table-wrap"><table class="product-price-table" role="table" aria-label="Product prices"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Product</th><th scope="col" role="columnheader">Configured price</th><th scope="col" role="columnheader">Details</th></tr></thead><tbody role="rowgroup">${data.rows.map(pricingSummaryRow).join('')}</tbody></table></div>`:'<p class="empty">Choose All products to find a product whose price needs configuring.</p>'}</div></section><div data-price-detail></div>
  ${data.can_edit?'<p><button type="button" data-price-import-open>Import approved prices</button></p><div data-price-import-host></div>':'<p class="muted">Only the owner or approved accounting users can change prices.</p>'}</section>`;
@@ -14019,12 +14019,17 @@ async function workspaceRefreshRun(renderScreen,receiver,args){
  clearWorkspaceReadingPlace();
  const previousState=workspaceRefreshActive;
  const retain=workspaceRefreshReady?.actor===actor&&workspaceRefreshReady.scope===scope&&target.firstChild===workspaceRefreshReady.first;
- const state={target,actor,scope,retain,rendering:true,first:target.firstChild,focus:null,details:[],x:window.scrollX,y:window.scrollY,previousBusy:previousState?.target===target?previousState.previousBusy:target.getAttribute('aria-busy'),inertNodes:previousState?.target===target?previousState.inertNodes:[]};
+ const state={target,actor,scope,retain,rendering:true,first:target.firstChild,focus:null,editing:null,details:[],x:window.scrollX,y:window.scrollY,previousBusy:previousState?.target===target?previousState.previousBusy:target.getAttribute('aria-busy'),inertNodes:previousState?.target===target?previousState.inertNodes:[]};
  workspaceRefreshActive=state;
  const capture=()=>{
-  if(!retain||target.firstChild!==state.first)return;
+  if(!retain)return;
   const active=document.activeElement;
-  if(target.contains(active))state.focus=workspaceRefreshReference(active);else if(active!==document.body)state.focus=null;
+  if(target.firstChild!==state.first){if(active!==document.body){state.focus=null;state.editing=null;}return;}
+  if(target.contains(active)){
+   state.focus=workspaceRefreshReference(active);
+   // Inert blurs the search before async results arrive, so save its editing range now.
+   state.editing=typeof active.selectionStart==='number'&&typeof active.selectionEnd==='number'?{value:active.value,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection,horizontal:active.scrollLeft}:null;
+  }else if(active!==document.body){state.focus=null;state.editing=null;}
   state.details=[...target.querySelectorAll('details')].map(node=>({reference:workspaceRefreshReference(node),open:node.open}));
   state.x=window.scrollX;state.y=window.scrollY;state.place=workspaceReadingPlace(target);
  };
@@ -14041,7 +14046,13 @@ async function workspaceRefreshRun(renderScreen,receiver,args){
     if(retain){
      for(const item of state.details){const node=workspaceRefreshResolve(target,item.reference);if(node)node.open=item.open;}
      const active=document.activeElement,node=workspaceRefreshResolve(target,state.focus);
-     if(node&&!node.disabled&&(active===document.body||!active?.isConnected||target.contains(active)))node.focus({preventScroll:true});
+     if(node&&!node.disabled&&(active===document.body||!active?.isConnected||active===node)){
+      node.focus({preventScroll:true});
+      const editing=state.editing;
+      if(active!==node&&editing&&node.value===editing.value&&typeof node.selectionStart==='number'&&typeof node.selectionEnd==='number'&&typeof node.setSelectionRange==='function'){
+       node.setSelectionRange(editing.start,editing.end,editing.direction||'none');node.scrollLeft=editing.horizontal;
+      }
+     }
      workspaceRestoreReadingPlace(state);
      if(target.firstChild!==state.first){state.retainedFirst=target.firstChild;holdWorkspaceReadingPlace(state);}
     }
