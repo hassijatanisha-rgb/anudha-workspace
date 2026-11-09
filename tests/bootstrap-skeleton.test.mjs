@@ -46,6 +46,17 @@ test('blank startup shows only neutral static shapes before auth, with no busine
  const f=fixture();f.c.authWait=deferred();const loading=f.c.load();assert.ok(f.target.querySelector('.workspace-skeleton--cards'));assert.equal(f.target.querySelectorAll('[role="status"]').length,1);assert.equal(f.target.textContent,'Loading your workspace…');assert.deepEqual(f.calls,['auth']);assert.deepEqual(f.messages,[{text:'',error:undefined}]);assert.equal(f.target.querySelector('button'),null);
  f.c.authWait.resolve({data:{user:{id:'actor'}}});await loading;assert.deepEqual(f.calls,['auth','mfa','password','setup','staff','names','dashboardWorkspace']);assert.equal(f.target.querySelector('.workspace-skeleton'),null);
 });
+test('authored HTML shows the startup skeleton before scripts and bootstrap reuses it until success, sign-in or error',async()=>{
+ const html=read('index.src.html'),content=html.match(/<section id="content">([\s\S]*?)<\/section><\/main>/)?.[1];assert.ok(content,'startup placeholder exists without JavaScript');
+ assert.ok(html.indexOf('href="workspace-skeleton.css"')<html.indexOf('<section id="content">'));assert.ok(html.indexOf(content)<html.indexOf('<script '));
+ for(const outcome of ['success','missing','error']){
+  const f=fixture();f.target.innerHTML=content;const placeholder=f.target.firstElementChild;assert.ok(placeholder.matches('.workspace-skeleton'));assert.equal(placeholder.getAttribute('aria-busy'),'true');assert.equal(f.target.querySelectorAll('[role="status"]').length,1);assert.equal(f.target.textContent,'Loading your workspace…');assert.ok(f.target.querySelector('.workspace-skeleton-shapes').matches('[aria-hidden="true"]'));assert.equal(f.target.querySelector('button'),null);
+  f.c.authWait=deferred();const loading=f.c.load();assert.equal(f.target.firstElementChild,placeholder);assert.deepEqual(f.calls,['auth']);assert.deepEqual(f.messages,[{text:'',error:undefined}]);
+  if(outcome==='error'){f.c.authWait.reject(Error('Offline'));await assert.rejects(loading,/Could not verify your session/);assert.ok(f.target.querySelector('[data-workspace-retry]'));}
+  else{f.c.authWait.resolve({data:{user:outcome==='success'?{id:'actor'}:null}});await loading;assert.ok(f.target.querySelector(outcome==='success'?'#loaded':'#login'));}
+  assert.equal(placeholder.isConnected,false);assert.equal(f.target.querySelector('.workspace-skeleton'),null);
+ }
+});
 test('bootstrap preserves MFA, temporary password and enrollment order before any staff/list/name reads',async()=>{
  for(const [flag,expected,gate] of [['mfa',['auth','mfa','mfaGate'],'mfaGate'],['passwordRequired',['auth','mfa','password'],'passwordGate'],['setup',['auth','mfa','password','setup','setupGate'],'setupGate']]){const f=fixture({shared:true});f.c[flag]=true;await f.c.load();assert.deepEqual(f.calls,expected);assert.ok(f.target.querySelector('#'+gate));assert.equal(f.target.querySelector('.workspace-skeleton'),null);}
  const f=fixture();f.c.authWait=deferred();const load=f.c.load();f.c.authWait.resolve({error:{name:'AuthSessionMissingError',message:'No session'},data:{user:null}});await load;assert.deepEqual(f.calls,['auth','login']);assert.ok(f.target.querySelector('#login'));
