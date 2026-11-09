@@ -1972,12 +1972,22 @@ function inventoryImportPlan(payload,existingProducts=[]){
   const current=groups.get(normalized)||{name,products:[],sourceRows:[]};
   current.products.push(product);current.sourceRows.push(...inventoryImportRows(product));groups.set(normalized,current);
  }
- const existing=new Map(existingProducts.map(product=>[inventoryImportNormalizedName(product.name),product]).filter(([name])=>name));
+ const existing=new Map();
+ for(const product of existingProducts){
+  const key=inventoryImportNormalizedName(product.name);
+  if(key)existing.set(key,[...(existing.get(key)||[]),product]);
+ }
  const newProducts=[],existingMatches=[],duplicateGroups=[];
  for(const [normalized,group] of groups){
+  const matches=existing.get(normalized)||[],candidates=[...group.products,...matches];
+  const identityValue=value=>inventoryImportCleanName(value).toLowerCase();
+  const companies=new Set(candidates.map(product=>identityValue(product.source?.company)));
+  const specifications=new Set(candidates.map(product=>identityValue(product.source?.specification||product.source?.model)));
+  const skus=new Set(candidates.map(product=>identityValue(product.sku)).filter(Boolean));
+  if(matches.length>1||companies.size>1||specifications.size>1||skus.size>1)throw Error(`Product identity needs review for "${group.name}". Same-name records have conflicting or incomplete manufacturer/specification details, different SKUs, or multiple existing matches. Resolve the identity before importing; no products have been imported.`);
   group.sourceRows=[...new Set(group.sourceRows)].sort((a,b)=>a-b);
   if(group.products.length>1||group.sourceRows.length>1)duplicateGroups.push({name:group.name,count:group.products.length,sourceRows:group.sourceRows});
-  const saved=existing.get(normalized);
+  const saved=matches[0];
   if(saved){existingMatches.push({name:group.name,existingProduct:saved,sourceRows:group.sourceRows});continue;}
   const first=group.products[0],source={...(first.source||{}),source_rows:group.sourceRows};delete source.source_row;
   if(group.sourceRows.length>1)source.review_notes=[...(Array.isArray(source.review_notes)?source.review_notes:[]),`Repeated in Book2 rows: ${group.sourceRows.join(', ')}`];
@@ -2515,7 +2525,11 @@ function bindInventoryWorkspace(){
  const openTools=$('#inventoryStockOpenTools');if(openTools)openTools.onclick=()=>inventoryNavigate(()=>openInventoryStockTools());
  const hideTools=$('#inventoryStockHideTools');if(hideTools)hideTools.onclick=()=>inventoryNavigate(()=>{inventoryStockSetup=false;inventoryStockSerialTools=false;paintInventoryStock();$('#inventoryStockOpenTools')?.focus()});
  const serialTools=$('#inventoryStockSerialTools');if(serialTools)serialTools.onclick=()=>run(async()=>{inventoryStockSerialTools=true;if(typeof decorateSerialTools==='function')await decorateSerialTools();});
- const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=()=>{const file=importInput.files[0],current=inventoryLeaveContext();if(!file)return;return run(async()=>{const payload=JSON.parse(await file.text());if(!current()||importInput.files[0]!==file)return;const plan=inventoryImportPlan(payload,products);if(!await inventoryConfirmLeave(current)||!current()){if(current()&&importInput.files[0]===file)importInput.value='';return;}inventoryImportPreview=plan;inventoryImportFileName=file.name;paintInventoryStock();});};
+ const importInput=$('#inventoryProductImport');if(importInput)importInput.onchange=()=>{
+  const file=importInput.files[0],context=inventoryLeaveContext(),current=()=>context()&&importInput.isConnected&&$('#inventoryProductImport')===importInput&&importInput.files[0]===file;if(!file||!current())return;
+  inventoryImportPreview=null;inventoryImportFileName='';const commit=$('#inventoryImportCommit'),status=$('#inventoryImportStatus');if(commit)commit.disabled=true;if(status)status.textContent='No file checked yet.';
+  return run(async()=>{try{if(status)status.textContent='Checking product identities…';const payload=JSON.parse(await file.text());if(!current())return;const plan=inventoryImportPlan(payload,products);if(!await inventoryConfirmLeave(current)||!current()){if(current()){importInput.value='';if(status)status.textContent='No file checked yet.';}return;}inventoryImportPreview=plan;inventoryImportFileName=file.name;paintInventoryStock();}catch(error){if(!current())return;if(status)status.textContent=error.message||'Import could not be checked.';throw error;}});
+ };
  const importCommit=$('#inventoryImportCommit');if(importCommit)importCommit.onclick=()=>{
   const plan=inventoryImportPreview,actor=me,epoch=inventoryEpoch,section=inventorySection,target=$('#content'),selected=importInput?.files[0];
   const current=()=>me===actor&&epoch===inventoryEpoch&&view==='inventory'&&inventorySection===section&&inventoryImportPreview===plan&&target?.isConnected&&$('#content')===target&&importCommit.isConnected&&$('#inventoryImportCommit')===importCommit&&importInput?.isConnected&&$('#inventoryProductImport')===importInput&&importInput.files[0]===selected;
@@ -8212,8 +8226,8 @@ async function openRequestAction(row,action){
 // or by the person doing it with their department head's approval (deadline-requests.js, migration 083).
 let teamTasks=[],teamTaskMoves=new Map(),teamTaskEvents=new Map(),teamTaskHistoryLoaded=new Set(),teamTaskRecordErrors=new Map(),teamTaskEpoch=0;
 let teamTaskSaveSequence=0;
-let teamTaskActor=null,teamTaskPageRequest=0,teamTaskDetailRequest=0,teamTaskSelectedId='',teamTaskPages={forMe:0,gave:0,results:0,finished:0},teamTaskExpanded=new Set(['forMe']);
-function clearTeamTasks(){teamTaskSaveSequence++;teamTaskEpoch++;teamTaskPageRequest++;teamTaskDetailRequest++;teamTaskActor=null;teamTaskSelectedId='';teamTaskPages={forMe:0,gave:0,results:0,finished:0};teamTaskExpanded=new Set(['forMe']);teamTasks=[];teamTaskMoves.clear();teamTaskEvents.clear();teamTaskHistoryLoaded.clear();teamTaskRecordErrors.clear();teamTaskMore.clear();clearWorkspaceDisclosureMotion();}
+let teamTaskActor=null,teamTaskPageRequest=0,teamTaskDetailRequest=0,teamTaskSelectedId='',teamTaskPages={forMe:0,gave:0,results:0,finished:0,inactive:0},teamTaskExpanded=new Set(['forMe']);
+function clearTeamTasks(){teamTaskSaveSequence++;teamTaskEpoch++;teamTaskPageRequest++;teamTaskDetailRequest++;teamTaskActor=null;teamTaskSelectedId='';teamTaskPages={forMe:0,gave:0,results:0,finished:0,inactive:0};teamTaskExpanded=new Set(['forMe']);teamTasks=[];teamTaskMoves.clear();teamTaskEvents.clear();teamTaskHistoryLoaded.clear();teamTaskRecordErrors.clear();teamTaskMore.clear();clearWorkspaceDisclosureMotion();}
 function syncTeamTaskActor(){if(teamTaskActor!==me){clearTeamTasks();teamTaskActor=me;}}
 const teamTaskMoveLimit=3;
 const teamTaskUrgency=[['do_now','Do now'],['urgent','Urgent'],['normal','Normal']];
@@ -8257,14 +8271,15 @@ function teamTaskCard(row){
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
  return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)} chip chip--${teamTaskTone(row)}">${esc(teamTaskStatusLabel(row))}</span>${moved?` <span class="urgency-tag moved-tag chip chip--${statusTone('in_progress')}">Rescheduled ${moved} of ${teamTaskMoveLimit}</span>`:''}<h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}`}</p>${!open&&row.close_note?`<p class="team-task-result"><small>Result</small>${esc(row.close_note)}</p>`:''}${open&&mine&&!gave&&moved>=teamTaskMoveLimit?`<p class="muted">Already moved ${teamTaskMoveLimit} times. Mark it done, or ask ${esc(employeeName(row.assigned_by))} to change it.</p>`:''}${teamTaskProgress(row)}${teamTaskAssignments(row)}${teamTaskHistory(teamTaskMoves.get(row.id)||[])}${recovery?`<p class="notice error" role="alert">${esc(recovery.text)}</p>`:''}${buttons.length?`<div class="actions">${buttons.map(button=>recovery?button.replace('<button','<button disabled'):button).join('')}</div>`:''}${recovery?.retry?`<button type="button" data-team-task-retry="${esc(row.id)}">Retry saved task</button>`:''}${teamTaskSelectedId===row.id?`<button type="button" data-team-task-collapse="${esc(row.id)}">Close details</button>`:''}</article>`;
 }
+function teamTaskGroupKeys(actor=me){return ['forMe','gave','results','finished',...(actor?.role==='owner'?['inactive']:[])];}
 async function loadTeamTasks(){
  const actor=me,epoch=teamTaskEpoch,request=++teamTaskPageRequest;
  const current=()=>me===actor&&epoch===teamTaskEpoch&&request===teamTaskPageRequest;
- let result;try{result=await client.rpc('team_task_page',{p_for_me_page:teamTaskPages.forMe,p_gave_page:teamTaskPages.gave,p_results_page:teamTaskPages.results,p_finished_page:teamTaskPages.finished});}catch(error){if(!current())return null;throw error;}
+ let result;try{result=await client.rpc('team_task_page',{p_for_me_page:teamTaskPages.forMe,p_gave_page:teamTaskPages.gave,p_results_page:teamTaskPages.results,p_finished_page:teamTaskPages.finished,...(actor.role==='owner'?{p_inactive_page:teamTaskPages.inactive}:{})});}catch(error){if(!current())return null;throw error;}
  if(!current())return null;
  if(result.error)throw Error(result.error.message);
  const data=result.data;
- if(!data?.groups||!['forMe','gave','results','finished'].every(key=>{const group=data.groups[key];return group&&Array.isArray(group.rows)&&group.rows.length<=teamTaskShown&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&Number.isSafeInteger(group.pages)&&group.pages>group.page;}))throw Error('The task page could not be confirmed. Refresh to retry.');
+ if(!data?.groups||!teamTaskGroupKeys().every(key=>{const group=data.groups[key];return group&&Array.isArray(group.rows)&&group.rows.length<=teamTaskShown&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&Number.isSafeInteger(group.pages)&&group.pages>group.page;}))throw Error('The task page could not be confirmed. Refresh to retry.');
  return data.groups;
 }
 function teamTaskGroups(rows,actor,now=Date.now()){
@@ -8304,7 +8319,7 @@ function bindTeamTaskDisclosures(root){
 }
 function renderTeamTaskGroups(){
  const group=(key,label)=>`<details class="team-task-group" data-team-task-group="${key}" ${teamTaskExpanded.has(key)?'open':''}><summary>${label} · ${teamTaskMore.get(key).total}</summary><div data-team-task-page="${key}">${teamTaskExpanded.has(key)?teamTaskPage(key):''}</div></details>`;
- $('#manualTasks').innerHTML=group('forMe','To do')+group('gave','Tasks I gave others');
+ $('#manualTasks').innerHTML=group('forMe','To do')+group('gave','Tasks I gave others')+(me.role==='owner'?group('inactive','Tasks for inactive staff'):'');
  $('#teamTaskFinished').innerHTML=group('results','Results of tasks I gave · last 7 days')+group('finished','Finished in the last 30 days');
  const actor=me,epoch=teamTaskEpoch;
  document.querySelectorAll('[data-team-task-group]').forEach(details=>{details.ontoggle=()=>{if(me!==actor||epoch!==teamTaskEpoch||!details.isConnected)return;const key=details.dataset.teamTaskGroup,target=details.querySelector('[data-team-task-page]');if(workspaceDisclosureOpen(details)){teamTaskExpanded.add(key);if(!target.innerHTML){target.innerHTML=teamTaskPage(key);bindTeamTaskDisclosures(target);if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes(target);}}else{teamTaskExpanded.delete(key);target.innerHTML='';}};bindWorkspaceDisclosure(details,details.querySelector('[data-team-task-page]'),{current:()=>me===actor&&epoch===teamTaskEpoch&&details.isConnected,onRequest:open=>{if(open)teamTaskExpanded.add(details.dataset.teamTaskGroup);else teamTaskExpanded.delete(details.dataset.teamTaskGroup);}});});
@@ -8313,7 +8328,7 @@ function renderTeamTaskGroups(){
  if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes();
 }
 function setTeamTaskGroups(groups){
- for(const key of ['forMe','gave','results','finished']){teamTaskMore.set(key,groups[key]);teamTaskPages[key]=groups[key].page;}
+ for(const key of teamTaskGroupKeys()){teamTaskMore.set(key,groups[key]);teamTaskPages[key]=groups[key].page;}
 }
 async function changeTeamTaskPage(button){
  if(teamTaskActor!==me||view!=='personal'||personalSection!=='task')return;
@@ -8441,7 +8456,7 @@ function teamTaskSavedRow(data,expected,read=false){
  return saved;
 }
 function reconcileSavedTeamTaskGroups(groups){
- if(!['forMe','gave','results','finished'].every(key=>{const group=groups[key];return group&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&group.pages===Math.max(1,Math.ceil(group.total/teamTaskShown))&&group.page<group.pages&&Array.isArray(group.rows)&&group.rows.length===Math.min(teamTaskShown,group.total-group.page*teamTaskShown)&&new Set(group.rows.map(row=>row.id)).size===group.rows.length&&group.rows.every(row=>['id','title','task_number','assignee_user_id','assigned_by'].every(field=>typeof row[field]==='string'&&row[field])&&Number.isFinite(Date.parse(row.due_at))&&teamTaskUrgency.some(([value])=>value===row.urgency)&&['open','done','cancelled'].includes(row.status));}))throw Error('The task register could not be confirmed.');
+ if(!teamTaskGroupKeys().every(key=>{const group=groups[key];return group&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&group.pages===Math.max(1,Math.ceil(group.total/teamTaskShown))&&group.page<group.pages&&Array.isArray(group.rows)&&group.rows.length===Math.min(teamTaskShown,group.total-group.page*teamTaskShown)&&new Set(group.rows.map(row=>row.id)).size===group.rows.length&&group.rows.every(row=>['id','title','task_number','assignee_user_id','assigned_by'].every(field=>typeof row[field]==='string'&&row[field])&&Number.isFinite(Date.parse(row.due_at))&&teamTaskUrgency.some(([value])=>value===row.urgency)&&['open','done','cancelled'].includes(row.status));}))throw Error('The task register could not be confirmed.');
  const manual=$('#manualTasks'),finished=$('#teamTaskFinished'),before=new Map([...teamTaskMore.values()].flatMap(group=>group.rows.map(row=>[row.id,row]))),cards=new Map([...manual.querySelectorAll('[data-team-task]'),...finished.querySelectorAll('[data-team-task]')].map(card=>[card.dataset.teamTask,card])),keep=new Set();
  const cardFor=row=>{
   const full=row.id===teamTaskSelectedId&&teamTasks.find(task=>task.id===row.id),html=full?teamTaskCard(full):teamTaskSummaryCard(row);let card=cards.get(row.id);
@@ -8449,7 +8464,7 @@ function reconcileSavedTeamTaskGroups(groups){
   if(!card||previousHtml!==html){const template=document.createElement('template');template.innerHTML=html;const next=template.content.firstElementChild;for(const selector of ['.team-task-assignments','.team-task-moves','.team-task-progress details'])if(workspaceDisclosureOpen(card?.querySelector(selector))&&next.querySelector(selector))next.querySelector(selector).open=true;card?.replaceWith(next);card=next;card.teamTaskMarkup=html;if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes(card);}
   keep.add(card);return card;
  };
- for(const key of ['forMe','gave','results','finished']){
+ for(const key of teamTaskGroupKeys()){
   const state=groups[key],details=document.querySelector(`[data-team-task-group="${key}"]`),target=details.querySelector('[data-team-task-page]'),summary=details.querySelector('summary');summary.textContent=summary.textContent.replace(/ · \d+$/,'')+' · '+state.total;
   if(!workspaceDisclosureOpen(details))continue;
   let pager=target.querySelector('[data-team-task-more]')?.closest('.actions');
@@ -8511,7 +8526,7 @@ function openTeamTaskEditor(row){
  const current=()=>me===actor&&epoch===teamTaskEpoch&&view==='personal'&&personalSection==='task'&&target===document.querySelector('#manualTasks');
  const fields=`<label><span>What needs doing?</span><input name="title" required minlength="2" maxlength="200" value="${esc(row?.title||'')}" placeholder="For example: send the service report to Aga Khan"></label>
  ${row&&me.role!=='owner'?'<p class="muted">To change the deadline, close this editor and use Ask for more time.</p>':''}
- <label><span>Who does it?</span><select name="assignee" required>${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
+ <label><span>Who does it?</span><select name="assignee" required>${row&&!employees.some(e=>e.user_id===assignee)?'<option value="" selected>Choose an active employee</option>':''}${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
  <fieldset class="urgency-choice"><legend>How urgent?</legend>${teamTaskUrgency.map(([key,label])=>`<label class="urgency-${key}"><input type="radio" name="urgency" value="${key}" required${row?.urgency===key?' checked':''}> ${label}</label>`).join('')}</fieldset>
  <label><span>Due</span><input type="datetime-local" name="due" required ${row&&me.role!=='owner'?'readonly':''} value="${teamTaskLocalInput(row?new Date(row.due_at):teamTaskDefaultDue())}"></label>
  <label><span>Details · optional</span><textarea name="details" maxlength="4000">${esc(row?.details||'')}</textarea></label>`;
@@ -8519,12 +8534,14 @@ function openTeamTaskEditor(row){
   if(!current())throw Error('Login or task view changed. Reopen the task.');
   if(committed||posting)return;
   if(!values.urgency)throw Error('Choose how urgent it is.');
+  if(!employees.some(employee=>employee.user_id===values.assignee))throw Error('Choose an active employee.');
   const due=new Date(row&&me.role!=='owner'?row.due_at:values.due);if(!Number.isFinite(due.getTime()))throw Error('Choose the due date and time.');
-  let result;posting=true;try{result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:row&&me.role!=='owner'?row.due_at:due.toISOString(),p_assignee:values.assignee});}catch(error){if(current())throw error;return;}finally{posting=false;}
+  const dueAt=row&&(actor.role!=='owner'||values.due===teamTaskLocalInput(new Date(row.due_at)))?row.due_at:due.toISOString();
+  let result;posting=true;try{result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:dueAt,p_assignee:values.assignee});}catch(error){if(current())throw error;return;}finally{posting=false;}
   if(!current())return;
   if(result.error)throw Error(result.error.message);committed=true;
   if(row&&values.assignee===row.assignee_user_id){if(await updateTeamTaskRecord(row,result.data,actor,epoch))message('Task updated.');return;}
-  await refreshSavedTeamTask(id,result.data,{id,version:(row?.version||0)+1,status:'open',assigned_by:row?.assigned_by||actor.user_id,assignee_user_id:values.assignee,title:values.title.replace(/^ +| +$/g,''),details:values.details||'',urgency:values.urgency,due_at:row&&actor.role!=='owner'?row.due_at:due.toISOString()},row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`,actor,epoch);
+  await refreshSavedTeamTask(id,result.data,{id,version:(row?.version||0)+1,status:'open',assigned_by:row?.assigned_by||actor.user_id,assignee_user_id:values.assignee,title:values.title.replace(/^ +| +$/g,''),details:values.details||'',urgency:values.urgency,due_at:dueAt},row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`,actor,epoch);
  });
 }
 // A result must say something: at least 3 real words, not "xxx", "ok" or "done".
@@ -13862,10 +13879,31 @@ async function listCacheRead(userId,now=Date.now()){
 async function listCacheWrite(record){try{await listCacheRun('readwrite',store=>store.put({...record,schema:listCacheSchema},'lists'));}catch{}}
 async function listCacheClear(){try{await listCacheRun('readwrite',store=>store.clear());}catch{}}
 // Latest change time in a set of rows, as an ISO string; '' when there are none.
+// Kept exactly as the server wrote it (to the microsecond), so the next load can leave out rows carrying that very
+// time: they are already in this copy. Rounding it to milliseconds made every load download again all the rows
+// that share one time (migration 089 gave every existing client and contact the same time).
 function listCacheLatest(rows,previous=''){
- let best=Date.parse(previous)||0;
- for(const row of rows){const t=Date.parse(row.updated_at);if(t>best)best=t;}
- return best?new Date(best).toISOString():'';
+ let best=previous||'',bestTime=listCacheMicros(previous);
+ for(const row of rows){const t=listCacheMicros(row.updated_at);if(t&&t>=bestTime){best=String(row.updated_at);bestTime=t;}}
+ return bestTime?best:'';
+}
+// A time in microseconds since 1970 (the server keeps microseconds; Date.parse stops at milliseconds), 0 if unreadable.
+function listCacheMicros(value){
+ const ms=Date.parse(value);if(!Number.isFinite(ms))return 0;
+ const extra=/\.\d{3}(\d{1,3})/.exec(String(value));
+ return ms*1000+(extra?Number(extra[1].padEnd(3,'0')):0);
+}
+// Confirm a watermark only after another successful overlap read at least five minutes after first seeing it.
+// Local elapsed time avoids assuming the browser clock agrees with the database clock.
+function listCacheCheckpoints(since,previous,startedAt){
+ return Object.fromEntries(Object.entries(since).map(([table,value])=>{
+  const old=previous?.[table],same=old?.since===value&&Number.isFinite(old.firstSeenAt)&&old.firstSeenAt<=startedAt;
+  return [table,{since:value,firstSeenAt:same?old.firstSeenAt:Date.now(),confirmed:same&&(old.confirmed===true||startedAt-old.firstSeenAt>=listCacheOverlap)}];
+ }));
+}
+function listCacheChanged(query,since,checkpoint){
+ const ranged=query.gte('updated_at',listCacheFrom(since));
+ return since&&checkpoint?.since===since&&checkpoint.confirmed===true&&Number.isFinite(checkpoint.firstSeenAt)&&checkpoint.firstSeenAt<=Date.now()?ranged.neq('updated_at',since):ranged;
 }
 // Ask from a little before the last change seen, so a save that committed late is not missed.
 function listCacheFrom(since){const t=Date.parse(since);return Number.isFinite(t)?new Date(t-listCacheOverlap).toISOString():'1970-01-01T00:00:00.000Z';}
@@ -14088,18 +14126,20 @@ async function all(table,columns,filter){const out=[];for(let offset=0,size=1,ro
 let listsLoaded=false,listsLoading=null,listsEpoch=0,sessionLoadEpoch=0;
 const listColumns={organizations:'id,name,location,type,parent_id,approval_status',contacts:'id,organization_id,title,first_name,last_name,position,phone_country,country_code,phone,email,status,reason,revision',products:'id,name,sku,source,match_id,match_status,revision,deleted_at'};
 async function fetchLists(userId){
- const C=listColumns,cached=typeof listCacheRead==='function'?await listCacheRead(userId):null;
+ const C=listColumns,startedAt=Date.now(),cached=typeof listCacheRead==='function'?await listCacheRead(userId):null;
  try{
   if(cached){
    // Changed rows only, archived ones included so they can leave the list.
-   const changed=(table,cols)=>all(table,cols,q=>q.gte('updated_at',listCacheFrom(cached.since[table])));
+   const changed=(table,cols)=>all(table,cols,q=>listCacheChanged(q,cached.since[table],cached.checkpoints?.[table]));
    const [od,cd,pd]=await Promise.all([changed('organizations',C.organizations+',deleted_at,updated_at'),changed('contacts',C.contacts+',deleted_at,updated_at'),changed('products',C.products+',updated_at')]);
    const o=listCacheMerge(cached.organizations,od,false),c=listCacheMerge(cached.contacts,cd,false),p=listCacheMerge(cached.products,pd,true);
-   return {o,c,p,record:{userId,savedAt:cached.savedAt,since:{organizations:listCacheLatest(od,cached.since.organizations),contacts:listCacheLatest(cd,cached.since.contacts),products:listCacheLatest(pd,cached.since.products)},organizations:o,contacts:c,products:p}};
+   const since={organizations:listCacheLatest(od,cached.since.organizations),contacts:listCacheLatest(cd,cached.since.contacts),products:listCacheLatest(pd,cached.since.products)};
+   return {o,c,p,record:{userId,savedAt:cached.savedAt,since,checkpoints:listCacheCheckpoints(since,cached.checkpoints,startedAt),organizations:o,contacts:c,products:p}};
   }
   // Deleted clients and contacts are left on the server (they were dropped here anyway), so deleted_at is not sent.
   const [o,c,p]=await Promise.all([all('organizations',C.organizations+',updated_at',q=>q.is('deleted_at',null)),all('contacts',C.contacts+',updated_at',q=>q.is('deleted_at',null)),all('products',C.products+',updated_at')]);
-  return {o,c,p,record:typeof listCacheLatest==='function'?{userId,savedAt:Date.now(),since:{organizations:listCacheLatest(o),contacts:listCacheLatest(c),products:listCacheLatest(p)},organizations:o,contacts:c,products:p}:null};
+  const since=typeof listCacheLatest==='function'?{organizations:listCacheLatest(o),contacts:listCacheLatest(c),products:listCacheLatest(p)}:null;
+  return {o,c,p,record:since?{userId,savedAt:startedAt,since,checkpoints:listCacheCheckpoints(since,null,startedAt),organizations:o,contacts:c,products:p}:null};
  }catch(e){
   if(!/updated_at/i.test(e?.message||''))throw e;
   // The server does not have change times yet (before migration 089): the original full download, nothing kept.
@@ -14120,13 +14160,13 @@ function loadLists(){
 function firstAccount(){return sortedAccounts(organizations.filter(o=>!o.parent_id))[0]?.id||'';}
 function workspaceUsesSharedLists(){return !((typeof clientDirectoryLanding==='function'&&clientDirectoryLanding())||['dashboard','staff','personal','packing','service','pending','settings','requests','accounting','stockcount','prices','contracts','approvals','guide','checklist','recycle','reports','travel'].includes(view)||(view==='inventory'&&['catalog','stock','locations','transfers','review'].includes(inventorySection))||(view==='books'&&(['overview','accounts','reports','import','opening','credits','suppliers','valuation'].includes(booksSection)||(booksSection==='invoices'&&!booksDraft?.proformaId)||(typeof booksTransactionLanding==='function'&&booksTransactionLanding())))||(view==='purchasing'&&typeof purchasingLanding==='function'&&purchasingLanding())||(view==='leads'&&typeof leadLanding==='function'&&leadLanding())||(view==='sales'&&((typeof salesProformaLanding==='function'&&salesProformaLanding())||(typeof salesDeliveryLanding==='function'&&salesDeliveryLanding()))));}
 function workspaceLoadFailure(target,placeholder,current,retry,error){if(!placeholder||!current()||target.firstElementChild!==placeholder)return;target.innerHTML=`${workspacePageHeader({title:'Workspace could not load',actions:'<button type="button" class="button-primary" data-workspace-retry>Retry loading workspace</button>'})}<section class="card"><p role="alert">${esc(friendlyError(error))}</p></section>`;const button=target.querySelector('[data-workspace-retry]');button.onclick=()=>{if(!current()||!button.isConnected||target.querySelector('[data-workspace-retry]')!==button)return;return run(()=>{target.replaceChildren();return retry();});};}
-async function load(){const loadEpoch=++sessionLoadEpoch,target=$('#content'),placeholder=!target.firstElementChild?(target.innerHTML=workspaceSkeleton('cards','Loading your workspace…'),target.firstElementChild):target.firstElementChild.matches('.workspace-skeleton')?target.firstElementChild:null;let loadingActor=me;const loadingView=view,current=()=>loadEpoch===sessionLoadEpoch&&me===loadingActor&&view===loadingView&&$('#content')===target;message(placeholder?'':'Loading your workspace…');try{const u=await client.auth.getUser();if(loadEpoch!==sessionLoadEpoch)return;if(u.error||!u.data.user)return login();if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;const r=await loadMyStaffRow(u.data.user.id);if(loadEpoch!==sessionLoadEpoch)return;if(r.error||!r.data?.active){await client.auth.signOut();login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}if(me?.user_id&&me.user_id!==r.data.user_id)clearProformaDraftStorage();me=r.data;loadingActor=me;const actor=me,first=!workspaceUsesSharedLists(),lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button><details id="accountMenu" class="account-menu"><summary aria-label="Account options for ${esc(employeeName(me.user_id))}"><svg class="identity-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 21v-2a7 7 0 0 1 14 0v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="identity-name">${esc(employeeName(me.user_id))}</span></summary><div class="account-menu-actions"><button type="button" data-view="settings">My settings</button><button id="changePassword" type="button">Change password</button><button id="logout" type="button">Sign out</button></div></details>`;bindWorkspaceAccountMenu($('#accountMenu'));if(typeof installWorkspaceSearch==='function')installWorkspaceSearch();$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();message('')}catch(error){workspaceLoadFailure(target,placeholder,current,load,error);throw error;}}
-// The signed-in person's staff record. If the per-person access list is not on the server yet (screens updated
+async function load(){const loadEpoch=++sessionLoadEpoch,target=$('#content'),placeholder=!target.firstElementChild?(target.innerHTML=workspaceSkeleton('cards','Loading your workspace…'),target.firstElementChild):target.firstElementChild.matches('.workspace-skeleton')?target.firstElementChild:null;let loadingActor=me,authTimer,accessStage='your session';const loadingView=view,current=()=>loadEpoch===sessionLoadEpoch&&me===loadingActor&&view===loadingView&&$('#content')===target;message(placeholder?'':'Loading your workspace…');try{const u=await Promise.race([client.auth.getUser(),new Promise((_,reject)=>{authTimer=setTimeout(()=>reject(Error('Authentication request timed out. Check your connection.')),20000);})]);clearTimeout(authTimer);if(!current())return;if(u.error?.name==='AuthSessionMissingError'||(!u.error&&!u.data?.user))return login();if(u.error)throw u.error;if(typeof twoStepNeeded==='function'&&await twoStepNeeded()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepPrompt(load);}if(loadEpoch!==sessionLoadEpoch)return;if(typeof requirePasswordChange==='function'&&requirePasswordChange(u.data.user))return;if(typeof twoStepSetupRequired==='function'&&await twoStepSetupRequired()){if(loadEpoch!==sessionLoadEpoch)return;message('');return showTwoStepSetupRequired(load);}if(loadEpoch!==sessionLoadEpoch)return;accessStage='staff access';const r=await loadMyStaffRow(u.data.user.id);if(!current())return;if(r.error)throw r.error;accessStage='';if(!r.data?.active){clear();const deniedEpoch=sessionLoadEpoch;target.innerHTML=workspaceSkeleton('cards','Signing out…');const deniedScreen=target.firstElementChild;try{await client.auth.signOut();}catch{}if(sessionLoadEpoch===deniedEpoch&&me===null&&view===loadingView&&$('#content')===target&&target.firstElementChild===deniedScreen)login();throw Error('Your login is not on the active staff list. Ask the administrator for access.')}if(me?.user_id&&me.user_id!==r.data.user_id)clearProformaDraftStorage();me=r.data;loadingActor=me;const actor=me,first=!workspaceUsesSharedLists(),lists=first?null:loadLists();await loadEmployeeNames();if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(first){listsLoaded=false;listsLoading=null;}else{await lists;if(loadEpoch!==sessionLoadEpoch||me!==actor)return;if(!selected)selected=firstAccount();}$('#nav').hidden=false;const staffNav=$('#staffNav');if(staffNav)staffNav.hidden=me.role!=='owner'&&me.role!=='head';$('#identity').innerHTML=`<button id="howToUse" type="button" class="howto-button">How to use</button><details id="accountMenu" class="account-menu"><summary aria-label="Account options for ${esc(employeeName(me.user_id))}"><svg class="identity-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 21v-2a7 7 0 0 1 14 0v2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span class="identity-name">${esc(employeeName(me.user_id))}</span></summary><div class="account-menu-actions"><button type="button" data-view="settings">My settings</button><button id="changePassword" type="button">Change password</button><button id="logout" type="button">Sign out</button></div></details>`;bindWorkspaceAccountMenu($('#accountMenu'));if(typeof installWorkspaceSearch==='function')installWorkspaceSearch();$('#changePassword').onclick=()=>run(async()=>openChangePassword());$('#howToUse').onclick=()=>{if(typeof openHowToUse==='function')openHowToUse()};document.querySelectorAll('#nav [data-owner-only]').forEach(item=>item.hidden=me.role!=='owner'&&!(item.dataset.view==='staff'&&me.role==='head')&&!(item.dataset.view==='recycle'&&canEditRecords()));if(typeof applyAccessNavigation==='function')applyAccessNavigation();if(typeof showAccountingNavigation==='function')showAccountingNavigation();await render();message('')}catch(error){clearTimeout(authTimer);if(accessStage){if(!current())return;error=Error(`Could not verify ${accessStage}. Please retry. ${error?.message||'Request failed'}`);clear();const failedEpoch=sessionLoadEpoch,failedActor=me;workspaceLoadFailure(target,target.firstElementChild,()=>sessionLoadEpoch===failedEpoch&&me===failedActor&&view===loadingView&&$('#content')===target,load,error);}else workspaceLoadFailure(target,placeholder,current,load,error);throw error;}}
+// A missing staff record is a confirmed absence, distinct from a failed read. If the per-person access list is not on the server yet (screens updated
 // before the database), fall back to the older record so nobody is signed out; the database still decides access.
 async function loadMyStaffRow(userId){
- const r=await client.from('staff').select('user_id,role,active,department,access').eq('user_id',userId).single();
+ const r=await client.from('staff').select('user_id,role,active,department,access').eq('user_id',userId).maybeSingle();
  if(!r.error||!/access|department|column/i.test(r.error.message||''))return r;
- const old=await client.from('staff').select('user_id,role,active').eq('user_id',userId).single();
+ const old=await client.from('staff').select('user_id,role,active').eq('user_id',userId).maybeSingle();
  if(old.data)old.data.access=['leads','proformas','deliveries','service','purchasing','stock','stock_count','travel','reports'];
  return old;
 }

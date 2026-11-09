@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mainPageFixture} from './helpers/main-page-budget-fixture.mjs';
 
 const emptyGroup={rows:[],total:0,page:0,pages:1};
-const emptyTasks={groups:Object.fromEntries(['forMe','gave','results','finished'].map(key=>[key,emptyGroup]))};
+const emptyTasks={groups:Object.fromEntries(['forMe','gave','results','finished','inactive'].map(key=>[key,emptyGroup]))};
 const emptyService={...emptyGroup,metrics:{awaiting_engineer:0,awaiting_date:0,oldest_engineer_days:null,oldest_date_days:null,due_30:0,overdue:0}};
 const board={now:new Date().toISOString(),amber_minutes:20,overdue_minutes:30,can_release:true,mine:null,waiting:[],packing:[],coming:{count:0,items:[]}};
 function visibleText(node){

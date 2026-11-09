@@ -11,7 +11,7 @@ function fixture(){
  const document=dom(),content=document.createElement('section');content.setAttribute('id','content');document.body.append(content);
  document.addEventListener=()=>{};document.getElementById=()=>null;
  const nodes={'#content':content,'#nav':{},'#staffNav':{},'#identity':{innerHTML:''},'#accountMenu':{open:true,isConnected:true,querySelector:selector=>selector==='summary'?summary:panel},'#changePassword':{},'#howToUse':{}};
- const ctx=vm.createContext({workspacePageHeader,sessionLoadEpoch:0,message(){},view:'dashboard',listsLoading:null,selected:'selected',me:null,
+ const ctx=vm.createContext({setTimeout,clearTimeout,workspacePageHeader,sessionLoadEpoch:0,message(){},view:'dashboard',listsLoading:null,selected:'selected',me:null,
   client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}})}},loadMyStaffRow:async()=>({data:{user_id:'actor',role:'owner',active:true}}),
   loadEmployeeNames:async()=>{},loadLists:()=>Promise.resolve(true),render:async()=>{},employeeName:()=>`Amina <script> & "Admin"`,
   esc:value=>String(value).replace(/[&<>"']/g,char=>'&#'+char.charCodeAt(0)+';'),$:selector=>nodes[selector],document,

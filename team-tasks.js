@@ -5,8 +5,8 @@
 // or by the person doing it with their department head's approval (deadline-requests.js, migration 083).
 let teamTasks=[],teamTaskMoves=new Map(),teamTaskEvents=new Map(),teamTaskHistoryLoaded=new Set(),teamTaskRecordErrors=new Map(),teamTaskEpoch=0;
 let teamTaskSaveSequence=0;
-let teamTaskActor=null,teamTaskPageRequest=0,teamTaskDetailRequest=0,teamTaskSelectedId='',teamTaskPages={forMe:0,gave:0,results:0,finished:0},teamTaskExpanded=new Set(['forMe']);
-function clearTeamTasks(){teamTaskSaveSequence++;teamTaskEpoch++;teamTaskPageRequest++;teamTaskDetailRequest++;teamTaskActor=null;teamTaskSelectedId='';teamTaskPages={forMe:0,gave:0,results:0,finished:0};teamTaskExpanded=new Set(['forMe']);teamTasks=[];teamTaskMoves.clear();teamTaskEvents.clear();teamTaskHistoryLoaded.clear();teamTaskRecordErrors.clear();teamTaskMore.clear();clearWorkspaceDisclosureMotion();}
+let teamTaskActor=null,teamTaskPageRequest=0,teamTaskDetailRequest=0,teamTaskSelectedId='',teamTaskPages={forMe:0,gave:0,results:0,finished:0,inactive:0},teamTaskExpanded=new Set(['forMe']);
+function clearTeamTasks(){teamTaskSaveSequence++;teamTaskEpoch++;teamTaskPageRequest++;teamTaskDetailRequest++;teamTaskActor=null;teamTaskSelectedId='';teamTaskPages={forMe:0,gave:0,results:0,finished:0,inactive:0};teamTaskExpanded=new Set(['forMe']);teamTasks=[];teamTaskMoves.clear();teamTaskEvents.clear();teamTaskHistoryLoaded.clear();teamTaskRecordErrors.clear();teamTaskMore.clear();clearWorkspaceDisclosureMotion();}
 function syncTeamTaskActor(){if(teamTaskActor!==me){clearTeamTasks();teamTaskActor=me;}}
 const teamTaskMoveLimit=3;
 const teamTaskUrgency=[['do_now','Do now'],['urgent','Urgent'],['normal','Normal']];
@@ -50,14 +50,15 @@ function teamTaskCard(row){
  if(open&&(gave||owner))buttons.push(`<button type="button" data-team-task-edit="${esc(row.id)}">Edit</button>`,`<button type="button" class="danger" data-team-task-cancel="${esc(row.id)}">Cancel task</button>`);
  return `<article class="card team-task${overdue?' overdue':''}${open?'':' closed'}" data-team-task="${esc(row.id)}"><div class="heading"><div><span class="urgency-tag urgency-${esc(row.urgency)} chip chip--${teamTaskTone(row)}">${esc(teamTaskStatusLabel(row))}</span>${moved?` <span class="urgency-tag moved-tag chip chip--${statusTone('in_progress')}">Rescheduled ${moved} of ${teamTaskMoveLimit}</span>`:''}<h3>${esc(row.title)}</h3></div><small>${esc(row.task_number)}</small></div>${row.details?`<p>${esc(row.details)}</p>`:''}<p class="team-task-meta"><strong${overdue?' class="overdue"':''}>${overdue?'Late · was due ':'Due '}${esc(teamTaskDue(row))}</strong> · ${esc(who)}${open?'':` · ${row.status==='done'?'Done':'Cancelled'} ${esc(new Date(row.closed_at).toLocaleDateString())}`}</p>${!open&&row.close_note?`<p class="team-task-result"><small>Result</small>${esc(row.close_note)}</p>`:''}${open&&mine&&!gave&&moved>=teamTaskMoveLimit?`<p class="muted">Already moved ${teamTaskMoveLimit} times. Mark it done, or ask ${esc(employeeName(row.assigned_by))} to change it.</p>`:''}${teamTaskProgress(row)}${teamTaskAssignments(row)}${teamTaskHistory(teamTaskMoves.get(row.id)||[])}${recovery?`<p class="notice error" role="alert">${esc(recovery.text)}</p>`:''}${buttons.length?`<div class="actions">${buttons.map(button=>recovery?button.replace('<button','<button disabled'):button).join('')}</div>`:''}${recovery?.retry?`<button type="button" data-team-task-retry="${esc(row.id)}">Retry saved task</button>`:''}${teamTaskSelectedId===row.id?`<button type="button" data-team-task-collapse="${esc(row.id)}">Close details</button>`:''}</article>`;
 }
+function teamTaskGroupKeys(actor=me){return ['forMe','gave','results','finished',...(actor?.role==='owner'?['inactive']:[])];}
 async function loadTeamTasks(){
  const actor=me,epoch=teamTaskEpoch,request=++teamTaskPageRequest;
  const current=()=>me===actor&&epoch===teamTaskEpoch&&request===teamTaskPageRequest;
- let result;try{result=await client.rpc('team_task_page',{p_for_me_page:teamTaskPages.forMe,p_gave_page:teamTaskPages.gave,p_results_page:teamTaskPages.results,p_finished_page:teamTaskPages.finished});}catch(error){if(!current())return null;throw error;}
+ let result;try{result=await client.rpc('team_task_page',{p_for_me_page:teamTaskPages.forMe,p_gave_page:teamTaskPages.gave,p_results_page:teamTaskPages.results,p_finished_page:teamTaskPages.finished,...(actor.role==='owner'?{p_inactive_page:teamTaskPages.inactive}:{})});}catch(error){if(!current())return null;throw error;}
  if(!current())return null;
  if(result.error)throw Error(result.error.message);
  const data=result.data;
- if(!data?.groups||!['forMe','gave','results','finished'].every(key=>{const group=data.groups[key];return group&&Array.isArray(group.rows)&&group.rows.length<=teamTaskShown&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&Number.isSafeInteger(group.pages)&&group.pages>group.page;}))throw Error('The task page could not be confirmed. Refresh to retry.');
+ if(!data?.groups||!teamTaskGroupKeys().every(key=>{const group=data.groups[key];return group&&Array.isArray(group.rows)&&group.rows.length<=teamTaskShown&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&Number.isSafeInteger(group.pages)&&group.pages>group.page;}))throw Error('The task page could not be confirmed. Refresh to retry.');
  return data.groups;
 }
 function teamTaskGroups(rows,actor,now=Date.now()){
@@ -97,7 +98,7 @@ function bindTeamTaskDisclosures(root){
 }
 function renderTeamTaskGroups(){
  const group=(key,label)=>`<details class="team-task-group" data-team-task-group="${key}" ${teamTaskExpanded.has(key)?'open':''}><summary>${label} · ${teamTaskMore.get(key).total}</summary><div data-team-task-page="${key}">${teamTaskExpanded.has(key)?teamTaskPage(key):''}</div></details>`;
- $('#manualTasks').innerHTML=group('forMe','To do')+group('gave','Tasks I gave others');
+ $('#manualTasks').innerHTML=group('forMe','To do')+group('gave','Tasks I gave others')+(me.role==='owner'?group('inactive','Tasks for inactive staff'):'');
  $('#teamTaskFinished').innerHTML=group('results','Results of tasks I gave · last 7 days')+group('finished','Finished in the last 30 days');
  const actor=me,epoch=teamTaskEpoch;
  document.querySelectorAll('[data-team-task-group]').forEach(details=>{details.ontoggle=()=>{if(me!==actor||epoch!==teamTaskEpoch||!details.isConnected)return;const key=details.dataset.teamTaskGroup,target=details.querySelector('[data-team-task-page]');if(workspaceDisclosureOpen(details)){teamTaskExpanded.add(key);if(!target.innerHTML){target.innerHTML=teamTaskPage(key);bindTeamTaskDisclosures(target);if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes(target);}}else{teamTaskExpanded.delete(key);target.innerHTML='';}};bindWorkspaceDisclosure(details,details.querySelector('[data-team-task-page]'),{current:()=>me===actor&&epoch===teamTaskEpoch&&details.isConnected,onRequest:open=>{if(open)teamTaskExpanded.add(details.dataset.teamTaskGroup);else teamTaskExpanded.delete(details.dataset.teamTaskGroup);}});});
@@ -106,7 +107,7 @@ function renderTeamTaskGroups(){
  if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes();
 }
 function setTeamTaskGroups(groups){
- for(const key of ['forMe','gave','results','finished']){teamTaskMore.set(key,groups[key]);teamTaskPages[key]=groups[key].page;}
+ for(const key of teamTaskGroupKeys()){teamTaskMore.set(key,groups[key]);teamTaskPages[key]=groups[key].page;}
 }
 async function changeTeamTaskPage(button){
  if(teamTaskActor!==me||view!=='personal'||personalSection!=='task')return;
@@ -234,7 +235,7 @@ function teamTaskSavedRow(data,expected,read=false){
  return saved;
 }
 function reconcileSavedTeamTaskGroups(groups){
- if(!['forMe','gave','results','finished'].every(key=>{const group=groups[key];return group&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&group.pages===Math.max(1,Math.ceil(group.total/teamTaskShown))&&group.page<group.pages&&Array.isArray(group.rows)&&group.rows.length===Math.min(teamTaskShown,group.total-group.page*teamTaskShown)&&new Set(group.rows.map(row=>row.id)).size===group.rows.length&&group.rows.every(row=>['id','title','task_number','assignee_user_id','assigned_by'].every(field=>typeof row[field]==='string'&&row[field])&&Number.isFinite(Date.parse(row.due_at))&&teamTaskUrgency.some(([value])=>value===row.urgency)&&['open','done','cancelled'].includes(row.status));}))throw Error('The task register could not be confirmed.');
+ if(!teamTaskGroupKeys().every(key=>{const group=groups[key];return group&&Number.isSafeInteger(group.total)&&group.total>=0&&Number.isSafeInteger(group.page)&&group.page>=0&&group.pages===Math.max(1,Math.ceil(group.total/teamTaskShown))&&group.page<group.pages&&Array.isArray(group.rows)&&group.rows.length===Math.min(teamTaskShown,group.total-group.page*teamTaskShown)&&new Set(group.rows.map(row=>row.id)).size===group.rows.length&&group.rows.every(row=>['id','title','task_number','assignee_user_id','assigned_by'].every(field=>typeof row[field]==='string'&&row[field])&&Number.isFinite(Date.parse(row.due_at))&&teamTaskUrgency.some(([value])=>value===row.urgency)&&['open','done','cancelled'].includes(row.status));}))throw Error('The task register could not be confirmed.');
  const manual=$('#manualTasks'),finished=$('#teamTaskFinished'),before=new Map([...teamTaskMore.values()].flatMap(group=>group.rows.map(row=>[row.id,row]))),cards=new Map([...manual.querySelectorAll('[data-team-task]'),...finished.querySelectorAll('[data-team-task]')].map(card=>[card.dataset.teamTask,card])),keep=new Set();
  const cardFor=row=>{
   const full=row.id===teamTaskSelectedId&&teamTasks.find(task=>task.id===row.id),html=full?teamTaskCard(full):teamTaskSummaryCard(row);let card=cards.get(row.id);
@@ -242,7 +243,7 @@ function reconcileSavedTeamTaskGroups(groups){
   if(!card||previousHtml!==html){const template=document.createElement('template');template.innerHTML=html;const next=template.content.firstElementChild;for(const selector of ['.team-task-assignments','.team-task-moves','.team-task-progress details'])if(workspaceDisclosureOpen(card?.querySelector(selector))&&next.querySelector(selector))next.querySelector(selector).open=true;card?.replaceWith(next);card=next;card.teamTaskMarkup=html;if(typeof decorateTaskDeadlineNotes==='function')decorateTaskDeadlineNotes(card);}
   keep.add(card);return card;
  };
- for(const key of ['forMe','gave','results','finished']){
+ for(const key of teamTaskGroupKeys()){
   const state=groups[key],details=document.querySelector(`[data-team-task-group="${key}"]`),target=details.querySelector('[data-team-task-page]'),summary=details.querySelector('summary');summary.textContent=summary.textContent.replace(/ · \d+$/,'')+' · '+state.total;
   if(!workspaceDisclosureOpen(details))continue;
   let pager=target.querySelector('[data-team-task-more]')?.closest('.actions');
@@ -304,7 +305,7 @@ function openTeamTaskEditor(row){
  const current=()=>me===actor&&epoch===teamTaskEpoch&&view==='personal'&&personalSection==='task'&&target===document.querySelector('#manualTasks');
  const fields=`<label><span>What needs doing?</span><input name="title" required minlength="2" maxlength="200" value="${esc(row?.title||'')}" placeholder="For example: send the service report to Aga Khan"></label>
  ${row&&me.role!=='owner'?'<p class="muted">To change the deadline, close this editor and use Ask for more time.</p>':''}
- <label><span>Who does it?</span><select name="assignee" required>${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
+ <label><span>Who does it?</span><select name="assignee" required>${row&&!employees.some(e=>e.user_id===assignee)?'<option value="" selected>Choose an active employee</option>':''}${employees.map(e=>`<option value="${esc(e.user_id)}"${e.user_id===assignee?' selected':''}>${esc(employeeName(e.user_id))}${e.user_id===me.user_id?' (me)':''}</option>`).join('')}</select></label>
  <fieldset class="urgency-choice"><legend>How urgent?</legend>${teamTaskUrgency.map(([key,label])=>`<label class="urgency-${key}"><input type="radio" name="urgency" value="${key}" required${row?.urgency===key?' checked':''}> ${label}</label>`).join('')}</fieldset>
  <label><span>Due</span><input type="datetime-local" name="due" required ${row&&me.role!=='owner'?'readonly':''} value="${teamTaskLocalInput(row?new Date(row.due_at):teamTaskDefaultDue())}"></label>
  <label><span>Details · optional</span><textarea name="details" maxlength="4000">${esc(row?.details||'')}</textarea></label>`;
@@ -312,12 +313,14 @@ function openTeamTaskEditor(row){
   if(!current())throw Error('Login or task view changed. Reopen the task.');
   if(committed||posting)return;
   if(!values.urgency)throw Error('Choose how urgent it is.');
+  if(!employees.some(employee=>employee.user_id===values.assignee))throw Error('Choose an active employee.');
   const due=new Date(row&&me.role!=='owner'?row.due_at:values.due);if(!Number.isFinite(due.getTime()))throw Error('Choose the due date and time.');
-  let result;posting=true;try{result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:row&&me.role!=='owner'?row.due_at:due.toISOString(),p_assignee:values.assignee});}catch(error){if(current())throw error;return;}finally{posting=false;}
+  const dueAt=row&&(actor.role!=='owner'||values.due===teamTaskLocalInput(new Date(row.due_at)))?row.due_at:due.toISOString();
+  let result;posting=true;try{result=await client.rpc('save_team_task',{p_id:id,p_expected_version:row?.version||0,p_title:values.title,p_details:values.details||'',p_urgency:values.urgency,p_due_at:dueAt,p_assignee:values.assignee});}catch(error){if(current())throw error;return;}finally{posting=false;}
   if(!current())return;
   if(result.error)throw Error(result.error.message);committed=true;
   if(row&&values.assignee===row.assignee_user_id){if(await updateTeamTaskRecord(row,result.data,actor,epoch))message('Task updated.');return;}
-  await refreshSavedTeamTask(id,result.data,{id,version:(row?.version||0)+1,status:'open',assigned_by:row?.assigned_by||actor.user_id,assignee_user_id:values.assignee,title:values.title.replace(/^ +| +$/g,''),details:values.details||'',urgency:values.urgency,due_at:row&&actor.role!=='owner'?row.due_at:due.toISOString()},row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`,actor,epoch);
+  await refreshSavedTeamTask(id,result.data,{id,version:(row?.version||0)+1,status:'open',assigned_by:row?.assigned_by||actor.user_id,assignee_user_id:values.assignee,title:values.title.replace(/^ +| +$/g,''),details:values.details||'',urgency:values.urgency,due_at:dueAt},row?'Task updated.':`Task sent to ${employeeName(values.assignee)}.`,actor,epoch);
  });
 }
 // A result must say something: at least 3 real words, not "xxx", "ok" or "done".
