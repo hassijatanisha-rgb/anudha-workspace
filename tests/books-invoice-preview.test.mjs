@@ -66,6 +66,18 @@ test('saved-invoice read keeps recovery context until success; preview survives 
  const g=fixture(),wait=deferred();g.c.booksSelect=()=>wait.promise;let allowed=true;const pending=g.c.booksOpenSavedInvoice('invoice',g.data,()=>allowed);allowed=false;wait.resolve([g.invoice]);await pending;assert.equal(g.preview(),null);
 });
 
+test('first saved invoice prints its fresh pro forma number before the register map includes it',async()=>{
+ const f=fixture();f.data.proformaNumbers.clear();f.invoice.proforma_number='PF-2026-000010';await f.c.booksOpenSavedInvoice('invoice',f.data,()=>true);const dialog=f.preview();assert.match(dialog.textContent,/Pro forma: PF-2026-000010/);let printed=false;f.print(()=>{printed=true;assert.match(dialog.querySelector('.books-print').textContent,/Pro forma: PF-2026-000010/);});dialog.querySelector('#booksPrintNow').onclick();assert.equal(printed,true);assert.equal(f.data.proformaNumbers.size,0);
+});
+
+test('fresh pro forma number takes precedence over the register map and stays escaped',async()=>{
+ const f=fixture();f.invoice.proforma_number='PF-<img src=x onerror="alert(1)">&';await f.c.booksOpenSavedInvoice('invoice',f.data,()=>true);const dialog=f.preview();assert.ok(dialog.textContent.includes('Pro forma: '+f.invoice.proforma_number));assert.equal(dialog.querySelector('img'),null);assert.doesNotMatch(dialog.textContent,/Pro forma: PF-1/);
+});
+
+test('invoice preview retains the register pro forma number when the row has no number',()=>{
+ const f=fixture(),dialog=f.open();assert.match(dialog.textContent,/Pro forma: PF-1/);
+});
+
 test('print stylesheet permits exactly the active dialog host and removes sheet clipping at every width',()=>{
  const css=read('books.css');assert.match(css,/body\.books-printing>\*:not\(main\):not\(\.books-print-host\)/);assert.match(css,/body\.books-printing-sheet>main\{display:none!important\}/);const host=css.match(/body\.books-printing dialog\.books-print-host\{([^}]+)\}/)[1];for(const rule of ['display:block!important','position:static!important','height:auto!important','max-height:none!important','overflow:visible!important','transform:none!important','opacity:1!important'])assert.ok(host.includes(rule),rule);assert.match(css,/\.books-print-host \.books-print-active\{position:static\}/);assert.match(css,/\.books-print-host::backdrop\{display:none!important\}/);
 });
