@@ -140,12 +140,17 @@ async function workspaceRefreshRun(renderScreen,receiver,args){
  clearWorkspaceReadingPlace();
  const previousState=workspaceRefreshActive;
  const retain=workspaceRefreshReady?.actor===actor&&workspaceRefreshReady.scope===scope&&target.firstChild===workspaceRefreshReady.first;
- const state={target,actor,scope,retain,rendering:true,first:target.firstChild,focus:null,details:[],x:window.scrollX,y:window.scrollY,previousBusy:previousState?.target===target?previousState.previousBusy:target.getAttribute('aria-busy'),inertNodes:previousState?.target===target?previousState.inertNodes:[]};
+ const state={target,actor,scope,retain,rendering:true,first:target.firstChild,focus:null,editing:null,details:[],x:window.scrollX,y:window.scrollY,previousBusy:previousState?.target===target?previousState.previousBusy:target.getAttribute('aria-busy'),inertNodes:previousState?.target===target?previousState.inertNodes:[]};
  workspaceRefreshActive=state;
  const capture=()=>{
-  if(!retain||target.firstChild!==state.first)return;
+  if(!retain)return;
   const active=document.activeElement;
-  if(target.contains(active))state.focus=workspaceRefreshReference(active);else if(active!==document.body)state.focus=null;
+  if(target.firstChild!==state.first){if(active!==document.body){state.focus=null;state.editing=null;}return;}
+  if(target.contains(active)){
+   state.focus=workspaceRefreshReference(active);
+   // Inert blurs the search before async results arrive, so save its editing range now.
+   state.editing=typeof active.selectionStart==='number'&&typeof active.selectionEnd==='number'?{value:active.value,start:active.selectionStart,end:active.selectionEnd,direction:active.selectionDirection,horizontal:active.scrollLeft}:null;
+  }else if(active!==document.body){state.focus=null;state.editing=null;}
   state.details=[...target.querySelectorAll('details')].map(node=>({reference:workspaceRefreshReference(node),open:node.open}));
   state.x=window.scrollX;state.y=window.scrollY;state.place=workspaceReadingPlace(target);
  };
@@ -162,7 +167,13 @@ async function workspaceRefreshRun(renderScreen,receiver,args){
     if(retain){
      for(const item of state.details){const node=workspaceRefreshResolve(target,item.reference);if(node)node.open=item.open;}
      const active=document.activeElement,node=workspaceRefreshResolve(target,state.focus);
-     if(node&&!node.disabled&&(active===document.body||!active?.isConnected||target.contains(active)))node.focus({preventScroll:true});
+     if(node&&!node.disabled&&(active===document.body||!active?.isConnected||active===node)){
+      node.focus({preventScroll:true});
+      const editing=state.editing;
+      if(active!==node&&editing&&node.value===editing.value&&typeof node.selectionStart==='number'&&typeof node.selectionEnd==='number'&&typeof node.setSelectionRange==='function'){
+       node.setSelectionRange(editing.start,editing.end,editing.direction||'none');node.scrollLeft=editing.horizontal;
+      }
+     }
      workspaceRestoreReadingPlace(state);
      if(target.firstChild!==state.first){state.retainedFirst=target.firstChild;holdWorkspaceReadingPlace(state);}
     }

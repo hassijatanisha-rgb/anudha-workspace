@@ -12,7 +12,13 @@ function fixture(){
  const ctx=vm.createContext({document,window,MutationObserver:class{constructor(fn){this.notify=fn;observers.push(this);}observe(){this.connected=true;}disconnect(){this.connected=false;}},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),me:{user_id:'a'},view:'inventory',inventorySection:'stock'});vm.runInContext(source,ctx);
  const render=node=>{target.replaceChildren(node);document.activeElement=body;window.scrollY=0;};
  const button=id=>({tagName:'BUTTON',id,dataset:{},isConnected:true,focus(){document.activeElement=this;},closest(){return null;}});
- return {ctx,target,document,window,render,button,classes,observers,timers,windowListeners,run:fn=>ctx.workspaceRefreshRun(fn,null,[])};
+ const input=(id,type='search')=>{
+  let inert=false;const node={...button(id),tagName:'INPUT',type,value:'abcdef',selectionStart:type==='number'?null:0,selectionEnd:type==='number'?null:0,selectionDirection:'none',scrollLeft:0,selectionCalls:0,
+   focus(){if(inert)return;document.activeElement=this;listeners.get('focusin')?.();},
+   setSelectionRange(start,end,direction){assert.notEqual(this.type,'number');this.selectionStart=start;this.selectionEnd=end;this.selectionDirection=direction;this.selectionCalls++;}};
+  Object.defineProperty(node,'inert',{get:()=>inert,set:value=>{inert=value;if(value&&document.activeElement===node)document.activeElement=body;}});return node;
+ };
+ return {ctx,target,document,window,render,button,input,classes,observers,timers,windowListeners,run:fn=>ctx.workspaceRefreshRun(fn,null,[])};
 }
 test('same-screen refresh retains live DOM during fetch, then uses fresh markup and restores focus and scroll',async()=>{
  const f=fixture(),first=f.button('refresh');await f.run(()=>{f.ctx.workspaceLoading('Loading…');f.render(first);});
@@ -20,6 +26,44 @@ test('same-screen refresh retains live DOM during fetch, then uses fresh markup 
  const pending=f.run(async()=>{f.ctx.workspaceLoading('Loading…');await waiting.promise;f.render(next);});
  assert.equal(f.target.firstChild,first);assert.equal(f.target.attrs['aria-busy'],'true');assert.equal(f.classes.has('workspace-refreshing'),true);assert.equal(first.inert,true);
  waiting.resolve();await pending;assert.equal(f.target.firstChild,next);assert.equal(f.document.activeElement,next);assert.equal(f.window.scrollY,600);assert.equal(f.target.attrs['aria-busy'],undefined);
+});
+test('async refresh preserves text/search selection direction and horizontal scroll after inert blurs the field',async()=>{
+ for(const type of ['text','search']){
+  const f=fixture(),first=f.input('query',type);await f.run(()=>f.render(first));first.focus();first.setSelectionRange(2,5,'backward');first.scrollLeft=17;
+  const waiting=defer(),next=f.input('query',type),pending=f.run(async()=>{await waiting.promise;f.render(next);});
+  assert.equal(f.document.activeElement,f.document.body,'inert removes the active search before the response');waiting.resolve();await pending;
+  assert.equal(f.document.activeElement,next);assert.deepEqual([next.selectionStart,next.selectionEnd,next.selectionDirection,next.scrollLeft],[2,5,'backward',17]);
+ }
+});
+test('typing one character after each async refresh appends instead of reversing the query',async()=>{
+ const f=fixture();let input=f.input('query');input.value='';await f.run(()=>f.render(input));input.focus();
+ for(const character of 'hospital'){
+  input.value=input.value.slice(0,input.selectionStart)+character+input.value.slice(input.selectionEnd);input.setSelectionRange(input.selectionStart+1,input.selectionStart+1,'none');
+  const next=f.input('query');next.value=input.value;await f.run(async()=>{await Promise.resolve();f.render(next);});input=next;
+ }
+ assert.equal(input.value,'hospital');assert.equal(input.selectionStart,8);assert.equal(input.selectionEnd,8);
+});
+test('refresh resolves a search by data attribute and skips unsupported or changed input values',async()=>{
+ for(const mode of ['data','number','changed-type','changed-value']){
+  const f=fixture(),first=f.input(mode==='data'?'':'query',mode==='number'?'number':'search'),next=f.input(first.id,['number','changed-type'].includes(mode)?'number':'search');
+  if(mode==='data'){first.dataset={priceSearch:''};next.dataset={priceSearch:''};}
+  if(mode==='changed-value')next.value='new query';await f.run(()=>f.render(first));first.focus();if(mode!=='number')first.setSelectionRange(2,4,'backward');first.scrollLeft=17;
+  await f.run(async()=>{await Promise.resolve();f.render(next);});assert.equal(f.document.activeElement,next);
+  if(mode==='data')assert.deepEqual([next.selectionStart,next.selectionEnd,next.scrollLeft],[2,4,17]);else {assert.equal(next.selectionCalls,0);assert.equal(next.scrollLeft,0);}
+ }
+});
+test('refresh does not replace a newer focused selection or take focus from another field',async()=>{
+ for(const mode of ['selection','typed','inside','outside']){
+  const f=fixture(),first=f.input('query'),next=f.input('query'),other=f.input('other');await f.run(()=>f.render(first));first.focus();first.setSelectionRange(2,5,'backward');first.scrollLeft=17;
+  const pending=f.run(async()=>{
+   await Promise.resolve();f.render(next);
+   if(mode==='inside')f.target.children.push(other);
+   if(['inside','outside'].includes(mode))other.focus();else{next.focus();if(mode==='typed')next.value='new query';next.setSelectionRange(1,3,'forward');next.scrollLeft=9;}
+   await Promise.resolve();
+  });await pending;
+  if(['inside','outside'].includes(mode)){assert.equal(f.document.activeElement,other);assert.equal(next.selectionCalls,0);}
+  else {assert.equal(f.document.activeElement,next);assert.deepEqual([next.selectionStart,next.selectionEnd,next.selectionDirection,next.scrollLeft],[1,3,'forward',9]);}
+ }
 });
 test('section and actor changes show first-load state and never restore the prior page position',async()=>{
  for(const change of [f=>f.ctx.inventorySection='locations',f=>f.ctx.me={user_id:'b'}]){
