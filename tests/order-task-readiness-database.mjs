@@ -1,6 +1,5 @@
 // Real RPCs and RLS in disposable PostgreSQL; no live customer or stock changes.
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {createOrderFixture} from './helpers/order-database-fixture.mjs';
 const f=await createOrderFixture();
 const {db,id,OWNER,SALES,ACCOUNTS,PACKER,DRIVER,ENGINEER,OUTSIDER,ORG,CONTACT,MACHINE,REAGENT,dates,as,admin,one,load}=f;
@@ -38,10 +37,7 @@ try{
  const inaccessibleReview=await one('select * from hand_off_work($1,$2,$3,$4,$5,$6,$7,$8,$9)',[fresh(),'proforma',staleReviewer.id,staleReviewer.document_number,'Review the accepted order',SALES,null,'Synthetic old inaccessible reviewer',staleTask.id]);
  await as(OWNER);
  await db.query('select set_workflow_step_owner($1,1,$2,$3::uuid[])',['installation',OUTSIDER,[OUTSIDER]]);
- // The shared fixture intentionally omits this unrelated dashboard RPC; install its actual current definition.
- const automatic=readFileSync(new URL('../supabase/migrations/202610010051_automatic_handoffs.sql',import.meta.url),'utf8');
- const unownedDefinition=automatic.match(/create function public\.unowned_work\(\)[\s\S]*?\$\$;/)[0];
- await as('');await db.exec('reset role');await db.exec(unownedDefinition);await load('202610180109_order_task_readiness.sql');await db.exec('set role authenticated');await as(OWNER);
+ await as('');await db.exec('reset role');await load('202610180109_order_task_readiness.sql');await db.exec('set role authenticated');await as(OWNER);
  await check('Migration closes existing full-order tasks and preserves partial owner/history',async()=>{
   assert.equal(await openTask(full),undefined);assert.equal(await openTask(legacy),undefined);
   assert.equal((await openTask(partial)).id,originalTask.id);assert.equal(await unowned(full),false);assert.equal(await unowned(legacy),false);

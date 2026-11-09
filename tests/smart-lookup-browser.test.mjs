@@ -7,7 +7,7 @@ const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUT
 try{
  const page=await browser.newPage({viewport:{width:1000,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.route('**/*',route=>route.abort());
  await page.setContent('<main><h1>Product lookup check</h1><form id="productForm"><label><span>Product</span><input name="productChoice" list="products" placeholder="Start typing a product" required></label><datalist id="products" data-lookup-values="products"></datalist><button>Save</button><button type="reset">Reset</button></form><form id="ordinary"><label><span>Client</span><select name="client" data-lookup required><option value="">Choose client</option><option value="hospital">Hospital</option><option value="clinic">Clinic</option></select></label><label><span>Reference</span><input name="reference" list="references"></label><datalist id="references"><option value="REF-001">Order one</option></datalist></form></main>');
- for(const file of ['style.css','ui-polish.css'])await page.addStyleTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
+ for(const file of ['tokens.css','style.css','ui-polish.css'])await page.addStyleTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   window.fixtureProducts=[
    {id:'00000000-0000-4000-8000-000000000001',name:'CRP reagent',sku:'R-XL200',source:{company:'Acme',specification:'For XL-200 chemistry analyzer',category:'reagents'}},
@@ -26,7 +26,7 @@ try{
   const form=document.querySelector('#productForm');for(const type of ['input','change'])form.addEventListener(type,event=>{if(event.target.name==='productChoice')productEvents.push([type,event.target.value]);});
   form.addEventListener('submit',event=>{event.preventDefault();submitted++;});
  });
- await page.addScriptTag({content:readFileSync(new URL('../smart-lookup.js',import.meta.url),'utf8')});await page.evaluate(()=>lookupScan());
+ for(const file of ['ui-motion.js','smart-lookup.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});await page.evaluate(()=>lookupScan());
  const source=page.locator('#productForm [name=productChoice]'),input=page.locator('#productForm .lookup-input'),options=page.locator('#productForm .lookup-list li[data-i]');
  const machine=await page.evaluate(()=>inventoryProductChoice(fixtureProducts[1]));
  assert.equal(await source.isVisible(),false);assert.equal(await input.getAttribute('aria-label'),'Product');assert.equal(await input.getAttribute('name'),null);
@@ -55,7 +55,7 @@ try{
  await source.evaluate((el,value)=>el.defaultValue=value,machine);await input.fill('changed query');await input.press('Escape');await page.locator('#productForm [type=reset]').click();await page.waitForFunction(()=>document.querySelector('#productForm .lookup-input').value.startsWith('Chemistry analyzer'));
  assert.equal(await source.inputValue(),machine);assert.equal(await input.evaluate(el=>el.validationMessage),'');
  console.log('PASS: exact custom error forwarding, programmatic draft updates, disabled state and native form reset');
- await input.fill('DP100');await input.press('Enter');assert.match(await source.inputValue(),/DP100/);await page.waitForTimeout(80);assert.equal(await page.locator('#productForm .lookup-list').isVisible(),false);
+ await input.fill('DP100');await input.press('Enter');assert.match(await source.inputValue(),/DP100/);await page.locator('#productForm .lookup-list').waitFor({state:'hidden'});await page.waitForTimeout(80);assert.equal(await page.locator('#productForm .lookup-list').isVisible(),false);
  console.log('PASS: immediate Enter uses the current query and pending searches cannot reopen a completed selection');
 
  const clientInput=page.locator('#ordinary select').locator('..').locator('.lookup-input');await clientInput.fill('Clinic');await page.waitForTimeout(80);await clientInput.press('Enter');assert.equal(await page.locator('#ordinary select').inputValue(),'clinic');assert.equal(await clientInput.inputValue(),'Clinic');
