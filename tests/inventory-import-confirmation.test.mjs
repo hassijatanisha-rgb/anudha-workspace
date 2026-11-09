@@ -4,9 +4,9 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {dom} from './helpers/dom-identity.mjs';
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
-const deferred=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve}};
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject}};
 function fixture(count=501){
- const document=dom();document.body.innerHTML='<main id="content"><input id="inventoryProductImport" type="file"><button id="inventoryImportCommit">Import new product names only</button></main>';
+ const document=dom();document.body.innerHTML='<main id="content"><input id="inventoryProductImport" type="file"><div id="inventoryImportStatus" role="status"></div><button id="inventoryImportCommit">Import new product names only</button></main>';
  const input=document.querySelector('#inventoryProductImport');input.files=[];
  const calls=[],questions=[],messages=[],reloads=[],plan={newProducts:Array.from({length:count},(_,i)=>({id:'product-'+i,name:'Product '+i,sku:'',source:{source_rows:[i+1]}}))};
  const c=vm.createContext({document,$:selector=>document.querySelector(selector),me:{user_id:'owner',role:'owner'},view:'inventory',products:[],run:fn=>fn(),askConfirm:async options=>{questions.push(options);return true},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:args.p_products.length}}},load:async()=>reloads.push('load'),message:(...args)=>messages.push(args),seed:plan});
@@ -42,4 +42,31 @@ test('failed product batch retains the existing retry guidance and same product 
 
 test('these explicit confirmations use the shared question API rather than native confirmation boxes',()=>{
  for(const file of ['customer-returns.js','tally-stock-review.js','inventory-operations.js']){const source=read(file);assert.doesNotMatch(source,/(?<![\w])(?:window\.)?confirm\s*\(/);assert.match(source,/await askConfirm\(/);}
+});
+
+test('a rejected replacement file invalidates the old preview and cannot import its old products',async()=>{
+ for(const mode of ['json','identity','read','busy']){
+  const f=fixture(1);f.c.inventoryImportPlan=()=>{throw Error('Product identity needs review');};if(mode==='busy')f.c.run=()=>{};
+  f.input.files=[{name:'Replacement.json',text:async()=>{if(mode==='read')throw Error('File read failed');return mode==='json'?'{':'{}';}}];
+  const pending=f.input.onchange();assert.equal(f.get('inventoryImportPreview'),null);assert.equal(f.get('inventoryImportFileName'),'');assert.equal(f.button.disabled,true);
+  if(mode!=='busy')await assert.rejects(pending);assert.doesNotMatch(f.document.querySelector('#inventoryImportStatus').textContent,/Checking product identities/);await f.submit();assert.equal(f.calls.length,0);assert.equal(f.questions.length,0);
+ }
+});
+
+test('a late old file success or failure cannot replace the latest checked file or status',async()=>{
+ for(const fails of [false,true]){
+  const f=fixture(1),old=deferred();f.c.inventoryImportPlan=payload=>({newProducts:[payload]});f.c.paintInventoryStock=()=>{f.document.querySelector('#inventoryImportStatus').textContent='New file ready';};
+  f.input.files=[{name:'Old.json',text:()=>old.promise}];const first=f.input.onchange();f.input.files=[{name:'New.json',text:async()=>'{"name":"New"}'}];await f.input.onchange();
+  if(fails)old.reject(Error('Old read failed'));else old.resolve('{"name":"Old"}');await first;
+  assert.equal(f.get('inventoryImportFileName'),'New.json');assert.equal(f.get('inventoryImportPreview.newProducts[0].name'),'New');assert.equal(f.document.querySelector('#inventoryImportStatus').textContent,'New file ready');
+ }
+});
+
+test('replacement file approval remains bound to its selected file and session',async()=>{
+ for(const change of ['file','actor','route','input','root']){
+  const f=fixture(1),wait=deferred();f.c.inventoryImportPlan=payload=>({newProducts:[payload]});f.c.inventoryConfirmLeave=()=>wait.promise;let paints=0;f.c.paintInventoryStock=()=>paints++;
+  f.input.files=[{name:'Old.json',text:async()=>'{}'}];const pending=f.input.onchange();await new Promise(setImmediate);
+  if(change==='file')f.input.files=[{name:'New.json'}];if(change==='actor')f.c.me={...f.c.me};if(change==='route')f.c.view='sales';if(change==='input')f.input.remove();if(change==='root')f.document.querySelector('#content').remove();wait.resolve(true);await pending;
+  assert.equal(f.get('inventoryImportPreview'),null);assert.equal(paints,0);assert.equal(f.calls.length,0);
+ }
 });

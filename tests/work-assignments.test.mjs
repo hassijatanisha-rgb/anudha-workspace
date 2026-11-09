@@ -112,7 +112,7 @@ test('task layout loads handoffs in their own column and related notices below, 
  for(const role of ['owner','staff']){
   const nodes=new Map(),node=()=>({innerHTML:'',isConnected:true,querySelectorAll:()=>[],querySelector:()=>({})}),targets=[];
   for(const key of ['#content','#manualTasks','#teamTaskFinished','#orderSteps','#teamTaskRelated','#teamTaskRefresh','#teamTaskNew'])nodes.set(key,node());
-  const ctx=load({workspaceRefreshRetaining:()=>false,me:{user_id:'a',role},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),document:{querySelectorAll:()=>[]},client:{rpc:async()=>({data:{groups:Object.fromEntries(['forMe','gave','results','finished'].map(key=>[key,{rows:[],total:0,page:0,pages:1}]))}})},run:fn=>fn()});
+  const ctx=load({workspaceRefreshRetaining:()=>false,me:{user_id:'a',role},view:'personal',personalSection:'task',$:selector=>nodes.get(selector),document:{querySelectorAll:()=>[]},client:{rpc:async()=>({data:{groups:Object.fromEntries(['forMe','gave','results','finished','inactive'].map(key=>[key,{rows:[],total:0,page:0,pages:1}]))}})},run:fn=>fn()});
   vm.runInContext('function workspaceSkeleton(kind,label)'+readFileSync(new URL('../workspace-refresh.js',import.meta.url),'utf8').split('function workspaceSkeleton(kind,label)')[1].split('function workspaceLoading')[0],ctx);vm.runInContext(readFileSync(new URL('../team-tasks.js',import.meta.url),'utf8'),ctx);
   ctx.renderMyHandoffs=async target=>{targets.push(['handoffs',target]);return true;};ctx.renderWorkNotices=async target=>targets.push(['notices',target]);ctx.renderUnownedWork=async (...args)=>targets.push(['unowned',...args]);
   await ctx.teamTasksWorkspace();assert.match(nodes.get('#content').innerHTML,/team-task-columns/);
@@ -130,7 +130,7 @@ test('My tasks refresh retains the loaded shell and tasks while independent hand
  ctx.loadTeamTasks=()=>pending;ctx.renderMyHandoffs=async()=>{started.push('handoffs');return true;};ctx.renderWorkNotices=async()=>{};
  const refreshing=ctx.teamTasksWorkspace();
  assert.equal(nodes.get('#content').innerHTML,'Previous #content');assert.equal(nodes.get('#manualTasks').innerHTML,'Previous #manualTasks');assert.deepEqual(started,['handoffs']);
- release(Object.fromEntries(['forMe','gave','results','finished'].map(key=>[key,{rows:[],total:0,page:0,pages:1}])));await refreshing;
+ release(Object.fromEntries(['forMe','gave','results','finished','inactive'].map(key=>[key,{rows:[],total:0,page:0,pages:1}])));await refreshing;
  assert.match(nodes.get('#manualTasks').innerHTML,/No tasks in this group/);assert.equal(nodes.get('#content').innerHTML,'Previous #content');
 });
 

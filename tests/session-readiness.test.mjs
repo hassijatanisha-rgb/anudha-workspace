@@ -57,7 +57,7 @@ test('service rows reject excess input instead of truncating it',()=>{
 });
 
 function loginGate({mfa=false,password=true,setup=false}={}){
- const events=[],target={firstElementChild:{matches:()=>false}},c=vm.createContext({workspacePageHeader,me:null,view:'dashboard',$:()=>target,workspaceLoading(){},workspaceRefreshRetaining:()=>false,sessionLoadEpoch:0,message(){},client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}})}},twoStepNeeded:async()=>mfa,requirePasswordChange:()=>{events.push('password');return password;},twoStepSetupRequired:async()=>setup,showTwoStepPrompt:()=>events.push('mfa'),showTwoStepSetupRequired:()=>events.push('setup'),loadMyStaffRow:async()=>{events.push('business');throw Error('Business data reached');}});
+ const events=[],target={firstElementChild:{matches:()=>false}},c=vm.createContext({setTimeout,clearTimeout,workspacePageHeader,me:null,view:'dashboard',$:()=>target,workspaceLoading(){},workspaceRefreshRetaining:()=>false,sessionLoadEpoch:0,message(){},client:{auth:{getUser:async()=>({data:{user:{id:'actor'}}})}},twoStepNeeded:async()=>mfa,requirePasswordChange:()=>{events.push('password');return password;},twoStepSetupRequired:async()=>setup,showTwoStepPrompt:()=>events.push('mfa'),showTwoStepSetupRequired:()=>events.push('setup'),loadMyStaffRow:async()=>{events.push('business');throw Error('Business data reached');}});
  vm.runInContext(read('app.js').split('\n').find(line=>line.startsWith('async function load(){')),c);return {c,events};
 }
 test('existing MFA challenge precedes temporary-password replacement and all business reads',async()=>{
@@ -75,7 +75,7 @@ test('a service action opened by another session cannot write or replace the cur
  c.openServiceAction({id:'case',case_number:'S1',version:1},'start');const pending=submit({note:'Begin work'});c.clearServiceWorkflow();content.innerHTML='Signed out';wait.resolve({data:{status:'in_progress'}});await pending;assert.equal(content.innerHTML,'Signed out');
 });
 test('editing a task without deadline approval retains exact original timestamp',async()=>{
- let submit,args;const {c}=fixture(['team-tasks.js']);c.me={user_id:'giver',role:'staff'};c.view='personal';c.personalSection='task';c.employeeDirectory=new Map();c.employeeName=()=>'';c.actionForm=(title,fields,fn)=>{submit=fn;};c.message=()=>{};c.CSS={escape:String};c.document.querySelector=()=>null;
+ let submit,args;const {c}=fixture(['team-tasks.js']);c.me={user_id:'giver',role:'staff'};c.view='personal';c.personalSection='task';c.employeeDirectory=new Map([['giver',{user_id:'giver',active:true}]]);c.employeeName=()=>'';c.actionForm=(title,fields,fn)=>{submit=fn;};c.message=()=>{};c.CSS={escape:String};c.document.querySelector=()=>null;
  const due='2026-10-19T13:23:45.123456+00:00',row={id:'task',version:2,due_at:due,title:'Pack delivery',details:'',task_number:'TK-1',urgency:'normal',status:'open',reschedule_count:0,assignee_user_id:'giver',assigned_by:'giver'};
  c.client={rpc:async(name,a)=>{args=a;return {data:{...row,title:a.p_title,version:3}}}};
  c.openTeamTaskEditor(row);await submit({title:'Pack revised order',urgency:'normal',due:'2026-10-19T13:23',assignee:'giver'});assert.equal(args.p_due_at,due);

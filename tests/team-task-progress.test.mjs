@@ -104,3 +104,12 @@ test('task chips separate overdue or urgent work from completed and cancelled hi
   for(const html of [ctx.teamTaskCard(row),ctx.teamTaskSummaryCard(row)])assert.match(html,new RegExp('chip chip--'+tone+'"[^>]*>'+label+'<'),status+' '+urgency);
  }
 });
+
+test('recovering an inactive assignee requires a deliberate active choice and preserves the exact unchanged overdue timestamp',async()=>{
+ let form;const calls=[],pane={};const ctx=load({me:{user_id:'owner',role:'owner'},employeeDirectory:new Map([['inactive',{user_id:'inactive',active:false}],['worker',{user_id:'worker',active:true}]]),document:{querySelector:()=>pane},actionForm:(title,fields,submit)=>{form={title,fields,submit};},client:{rpc:async(name,args)=>{calls.push({name,args});return {error:{message:'fixture save boundary'}};}}});
+ const row=task({assignee_user_id:'inactive',due_at:'2026-10-01T09:10:45.123456+00:00'});ctx.openTeamTaskEditor(row);assert.match(form.fields,/<option value="" selected>Choose an active employee<\/option>/);assert.doesNotMatch(form.fields,/<option value="inactive"/);
+ const values={title:row.title,details:row.details,urgency:row.urgency,due:ctx.teamTaskLocalInput(new Date(row.due_at)),assignee:''};
+ await assert.rejects(form.submit(values),/Choose an active employee/);await assert.rejects(form.submit({...values,assignee:'inactive'}),/Choose an active employee/);assert.equal(calls.length,0);
+ await assert.rejects(form.submit({...values,assignee:'worker'}),/fixture save boundary/);assert.equal(calls[0].args.p_due_at,row.due_at);assert.equal(calls[0].args.p_assignee,'worker');
+ ctx.me={user_id:'owner',role:'owner'};await assert.rejects(form.submit({...values,assignee:'worker'}),/Login or task view changed/);assert.equal(calls.length,1);
+});
