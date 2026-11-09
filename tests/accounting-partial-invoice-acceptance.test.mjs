@@ -103,7 +103,9 @@ acceptance('Repeated product lines share stock when defaults and edited quantiti
 acceptance('An older quantity response cannot replace a different selected order',async t=>{
  const p=await fixture(t,{chosen:''});await p.evaluate(()=>window.delayQuantities=true);
  await p.locator('[name="proforma"]').selectOption('quote-a');await p.waitForFunction(()=>waiters['quote-a']);
- await p.locator('[name="proforma"]').selectOption('quote-b');await p.waitForFunction(()=>waiters['quote-b']);
+ assert.equal(await p.locator('[name="proforma"]').isDisabled(),true);
+ // Normal interaction is locked during loading; reproduce a programmatic selection race explicitly.
+ await p.locator('[name="proforma"]').evaluate(select=>{select.disabled=false;select.value='quote-b';select.dispatchEvent(new Event('change',{bubbles:true}));});await p.waitForFunction(()=>waiters['quote-b']);
  await p.evaluate(()=>waiters['quote-b']());await p.waitForSelector('[data-books-invoice-quantity="other"]');
  await p.evaluate(()=>waiters['quote-a']());
  assert.equal(await quantities(p).count(),1);assert.equal(await quantities(p).first().getAttribute('data-books-invoice-quantity'),'other');
@@ -178,7 +180,7 @@ acceptance('Voiding an invoice invalidates its pending balance so reopening Pend
  await p.addScriptTag({content:readFileSync(new URL('../pending-stock.js',import.meta.url),'utf8')});
  await p.evaluate(()=>{
   pendingLoaded=true;pendingAvailabilityDay=pendingToday();window.pendingReads=0;window.syncWorkspaceNavigation=()=>{};
-  loadPendingStock=async()=>{pendingReads++;pendingLoaded=true;return true;};renderPendingStock=()=>{};
+  window.workspaceLoading=()=>{};loadPendingPage=async()=>{pendingReads++;return true;};renderPendingStock=()=>{};
   booksVoidPrompt('invoice',{id:'invoice',invoice_number:'INV-TEST',organization_id:'customer'});
  });
  await p.locator('#booksVoidForm [name="reason"]').fill('Cancelled delivery');

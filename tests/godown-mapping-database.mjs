@@ -1,0 +1,51 @@
+// Disposable database only: real mapping/page migrations and current owner/MFA gates.
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(process.env.PGLITE_MODULE),db=new PGlite(),id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const read=file=>readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8');let checks=0;
+const check=async fn=>{await fn();checks++;};
+const loadFunction=async(file,name)=>{const sql=read(file).match(new RegExp(String.raw`create(?: or replace)? function public\.${name}\([\s\S]*?\bas\s+(\$[a-z_]*\$)[\s\S]*?\1;`,'i'));assert.ok(sql,name);await db.exec(sql[0]);};
+try{
+ await db.exec(`create role anon;create role authenticated;create schema auth;
+ create table auth.users(id uuid primary key,raw_app_meta_data jsonb default '{}');
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.actor',true),'')::uuid$$;
+ create function auth.jwt() returns jsonb language sql stable as $$select jsonb_build_object('aal',current_setting('test.aal',true),'amr',jsonb_build_array(jsonb_build_object('method','totp','timestamp',extract(epoch from now()-case when current_setting('test.expired',true)='yes' then interval '31 days' else interval '0 days' end)::bigint)))$$;
+ create table auth.mfa_factors(user_id uuid,status text);
+ create table staff(user_id uuid primary key,active boolean,role text,department text);
+ create table accounting_memberships(user_id uuid,active boolean);
+ create table products(id uuid primary key,name text,source jsonb,deleted_at timestamptz);
+ create table organizations(id uuid primary key);
+ insert into auth.users(id) values('${id(1)}'),('${id(2)}'),('${id(3)}');
+ insert into staff values('${id(1)}',true,'owner','management'),('${id(2)}',true,'staff','stores'),('${id(3)}',true,'owner','management');
+ insert into auth.mfa_factors values('${id(1)}','verified'),('${id(3)}','verified');
+ grant usage on schema auth to authenticated,anon;grant select on products to authenticated;
+ set test.aal='aal2';set test.expired='no';`);
+ for(const file of ['202609210001_inventory_foundation.sql','202609210002_product_inventory_classification.sql','202609230017_product_detail_review.sql','202609230018_tally_stock_review.sql','202610290147_tally_stock_review_page.sql'])await db.exec(read(file));
+ await loadFunction('202610140080_require_two_step.sql','two_step_required');
+ await loadFunction('202610160099_password_replacement.sql','password_change_satisfied');await loadFunction('202610160099_password_replacement.sql','mfa_satisfied');
+ for(const name of ['inventory_owner','inventory_active_staff'])await loadFunction('202610010058_two_step_sign_in.sql',name);
+ await db.exec(read('202611090164_godown_mapping_reviews.sql'));
+ await db.exec(`insert into inventory_locations(id,name,code,created_by) values('${id(10)}','City Printer','CP','${id(1)}');
+ insert into products values('${id(11)}','Fixture product','{"company":"Maker","specification":"Spec","sale_status":"active","batch_required":false,"expiry_required":false}',null);
+ insert into product_pack_definitions(id,product_id,version,base_unit,units_per_carton,reason,created_by) values('${id(12)}','${id(11)}',1,'unit',1,'Fixture only','${id(1)}');
+ insert into inventory_lots(id,product_id,location_id,pack_definition_id,loose_units) values('${id(13)}','${id(11)}','${id(10)}','${id(12)}',7);
+ insert into tally_stock_sources(id,source_file,source_row,godown,product_name,quantity,balance_date,raw,imported_by)
+ select 'source-'||n,'fixture',n,case n when 1 then 'CITY PRINTER' when 2 then 'CITY PRINTER 2' when 3 then ' CITY PRINTER ' when 4 then '' else 'Godown '||n end,'Fixture source',-4,'2026-09-22','{"private":"rates"}','${id(1)}' from generate_series(1,25)n;
+ insert into tally_stock_corrections(id,source_id,version,product_id,pieces,reason,created_by) values('${id(14)}','source-1',1,'${id(11)}',0,'Verified zero','${id(1)}');`);
+ const actor=async n=>db.exec(`reset role;set test.actor='${id(n)}';set role authenticated`);
+ const save=(version=0,request=id(20),godown='CITY PRINTER',location=id(10),reason='Verified location')=>db.query('select * from save_godown_mapping_review($1,$2,$3,$4,$5)',[request,godown,version,location,reason]);
+ const page=async(ready=0)=>(await db.query("select tally_stock_review_page('','',0,$1,'2026-11-09') data",[ready])).rows[0].data;
+ const allReady=async()=>[...(await page()).readiness.rows,...(await page(1)).readiness.rows];
+ await actor(1);
+ const before=(await page()).scope;
+ await check(async()=>{const got=await page();assert.equal(got.readiness.rows.length,20);assert.equal(got.readiness.total,25);assert.ok(got.readiness.rows.every(row=>row.mapping===null));const saved=(await save()).rows[0];assert.equal(saved.version,1);assert.equal((await save()).rows[0].id,saved.id);assert.equal(saved.created_by,id(1));assert.equal((await db.query('select count(*)::int n from godown_mapping_reviews')).rows[0].n,1);});
+ await check(async()=>{await assert.rejects(save(0,id(21)),/changed/);await assert.rejects(save(0,id(20),'CITY PRINTER',id(10),'Different evidence'),/conflict/);await assert.rejects(save(0,id(20),'CITY PRINTER 2'),/conflict/);await actor(3);await assert.rejects(save(),/conflict/);await actor(1);});
+ await check(async()=>{for(const args of [[0,id(22),'Unknown'],[1,id(22),'CITY PRINTER',id(999)],[null,id(22)],[2147483647,id(22)],[0,null],[0,id(22),null],[0,id(22),'\u00a0\t'],[0,id(22),'x'.repeat(2001)],[1,id(22),'CITY PRINTER',null,'\u00a0     '],[1,id(22),'CITY PRINTER',null,'x'.repeat(1001)]])await assert.rejects(save(...args));});
+ await check(async()=>{const rows=await allReady(),city=rows.find(row=>row.name==='CITY PRINTER');assert.deepEqual(city.mapping,{version:1,location_id:id(10),location_name:'City Printer',location_active:true});assert.equal(city.checked,1);assert.equal(city.negative,1);assert.equal(rows.find(row=>row.name==='CITY PRINTER 2').mapping,null);assert.equal(rows.find(row=>row.name===' CITY PRINTER ').mapping,null);assert.ok(!JSON.stringify(rows).includes('Verified location'));assert.deepEqual((await page()).scope,before);});
+ await check(async()=>{await db.exec(`reset role;update inventory_locations set active=false where id='${id(10)}'`);await actor(1);assert.equal((await save()).rows[0].version,1);await assert.rejects(save(1,id(22)),/active/);assert.equal((await allReady()).find(row=>row.name==='CITY PRINTER').mapping.location_active,false);assert.equal((await save(1,id(24),'CITY PRINTER',null,'Unresolved location')).rows[0].version,2);assert.equal((await allReady()).find(row=>row.name==='CITY PRINTER').mapping.location_id,null);});
+ await check(async()=>{await actor(2);assert.equal((await db.query('select * from godown_mapping_reviews')).rows.length,2);assert.equal((await page()).total,25);await assert.rejects(save(2,id(25),'CITY PRINTER',null),/Owner/);for(const sql of ['delete from godown_mapping_reviews',"update godown_mapping_reviews set reason='Changed evidence'",`insert into godown_mapping_reviews values('${id(25)}','CITY PRINTER',3,null,'Direct insert','${id(2)}',now())`])await assert.rejects(db.exec(sql),/permission/);await db.exec('reset role');for(const sql of ['delete from godown_mapping_reviews',"update godown_mapping_reviews set reason='Changed evidence'"])await assert.rejects(db.exec(sql),/immutable/);});
+ await check(async()=>{await actor(1);await db.exec("set test.aal='aal1'");await assert.rejects(save(2,id(25),'CITY PRINTER',null),/verified sign-in/);assert.equal((await db.query('select * from godown_mapping_reviews')).rows.length,0);await assert.rejects(page(),/Active staff/);await db.exec("set test.aal='aal2';set test.expired='yes'");await assert.rejects(save(2,id(25),'CITY PRINTER',null),/verified sign-in/);await db.exec(`reset role;set test.expired='no';update auth.users set raw_app_meta_data='{"must_change_password":true}' where id='${id(1)}'`);await actor(1);await assert.rejects(save(2,id(25),'CITY PRINTER',null),/verified sign-in/);await db.exec(`reset role;update auth.users set raw_app_meta_data='{}' where id='${id(1)}';update staff set active=false where user_id='${id(1)}'`);await actor(1);await assert.rejects(save(2,id(25),'CITY PRINTER',null),/Owner/);assert.equal((await db.query('select * from godown_mapping_reviews')).rows.length,0);});
+ await check(async()=>{await db.exec('reset role;set role anon');await assert.rejects(save(2,id(25),'CITY PRINTER',null),/permission/);await assert.rejects(db.query('select * from godown_mapping_reviews'),/permission/);await assert.rejects(page(),/permission/);await db.exec(`reset role;update staff set active=true where user_id='${id(1)}';create policy hide_mapping on godown_mapping_reviews as restrictive for select to authenticated using(false)`);await actor(1);assert.equal((await allReady()).find(row=>row.name==='CITY PRINTER').mapping,null);});
+ await check(async()=>{await db.exec('reset role');assert.equal((await db.query('select count(*)::int n from godown_mapping_reviews')).rows[0].n,2);assert.equal((await db.query('select sum(quantity)::int n from tally_stock_sources')).rows[0].n,-100);assert.equal((await db.query('select count(*)::int n from tally_stock_corrections')).rows[0].n,1);assert.equal((await db.query('select loose_units from inventory_lots')).rows[0].loose_units,7);assert.equal((await db.query('select count(*)::int n from inventory_movements')).rows[0].n,0);const meta=(await db.query("select prosecdef,provolatile,proconfig from pg_proc where proname='tally_stock_review_page'")).rows[0];assert.equal(meta.prosecdef,false);assert.equal(meta.provolatile,'s');assert.deepEqual(meta.proconfig,['search_path=public, pg_temp']);});
+ console.log(`PASS: ${checks} mapping database groups: current owner/MFA/password gates, exact labels, replay/content conflict, stale version, active-location checks, unresolved revisions, append-only RLS history, compact paged status and unchanged operational/source balances.`);
+}finally{await db.close();}

@@ -1,5 +1,7 @@
 // Actual migrations/RPCs in disposable PGlite; no production connection or records.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
 import {createOrderFixture} from './helpers/order-database-fixture.mjs';
 const migrations=['202610160096_financial_import.sql','202610180107_partial_order_invoices.sql','202610180108_invoice_quantity_delivery.sql','202610180109_order_task_readiness.sql','202610180110_return_credit_rounding.sql','202610190111_post_return_credits.sql','202610190112_opening_receivables.sql','202610200113_task_progress_history.sql','202610200114_travel_visit_planning.sql','202610200115_independent_service_intake.sql','202610200116_customer_contracts.sql','202610200117_proforma_commercial_terms.sql','202610200118_delivery_installation_choice.sql','202610200119_product_pricing_control.sql','202610200120_machine_serial_requirement.sql','202610200121_receiving_machine_serials.sql','202610200122_product_brochure_attachments.sql'];
 const f=await createOrderFixture({extraMigrations:migrations});
@@ -53,6 +55,10 @@ try{
  const afterMigration=await snapshot();
  for(const table of Object.keys(beforeMigration)){const rows=afterMigration[table].map(row=>{if(table!=='service_cases')return row;const {planned_delivery_line_id,planned_unit_number,delivery_ready,reused_case_id,...prior}=row;assert.equal(delivery_ready,true);assert.equal(planned_delivery_line_id,null);assert.equal(planned_unit_number,null);assert.equal(reused_case_id,null);return prior;});assert.deepEqual(rows,beforeMigration[table],`Migration preserves existing ${table}`);}
  console.log('PASS: migration preserves all existing workflow rows and history');checks++;
+ // Exercise the current accounting wrappers together with immediate packing/installation handoffs.
+ await db.exec('reset role');
+ for(const file of ['202610070073_receive_transfer_available_lot.sql','202611020156_accounting_posting_integrity.sql','202611020158_supplier_accounting.sql','202611020159_inventory_cost_accounting.sql','202611020160_customer_credit_settlement.sql'])await f.load(file);
+ await db.exec('set role authenticated');
  await scenario('Combined status migration exposes waiting identities and void-aware order quantities to permitted roles',async()=>{
   await as(PACKER);const board=(await one('select packing_queue_board() board')).board;assert.ok(Array.isArray(board.coming.items));
   const waiting=board.coming.items.find(item=>item.id===legacyWaiting.note.id);assert.equal(waiting.delivery_number,legacyWaiting.note.delivery_number);assert.equal(waiting.status,'tax_invoice_created');assert.equal(waiting.organization,'Fictional Clinic');assert.ok(waiting.owner_name);
@@ -195,11 +201,60 @@ try{
   assert.equal(a.length,2);assert.equal(b.length,2);assert.equal(new Set([...a,...b].map(c=>c.id)).size,4);assert.equal(new Set(a.map(c=>c.planned_delivery_line_id)).size,2);
   await as(ACCOUNTS);assert.equal((await one('select order_invoice_quantities($1) review',[pf.id])).review.lines[0].remaining_quantity,0);assert.equal((await one("select count(*)::int n from pending_stock_requests where proforma_id=$1 and status='waiting'",[pf.id])).n,0);
  });
+ await scenario('Current four-machine order completes 2 + 2 through role handoffs, signed installations and customer history',async()=>{
+  await admin('update inventory_lots set loose_units=2 where id=$1',[MACHINE_LOT]);
+  const pf=await order(),shipments=[],completed=[];
+  assert.equal((await admin('select count(*)::int n from acc_invoices where proforma_id=$1',[pf.id])).rows[0].n,0);
+  for(const [batch,serials] of [['first',['PLAN-A','PLAN-B']],['remainder',['FINAL-C','FINAL-D']]]){
+   if(batch==='remainder'){
+    await as(OWNER);const lot=await one('select * from inventory_lots where id=$1',[MACHINE_LOT]);
+    assert.equal(lot.loose_units,0);assert.equal(lot.reserved_units,0);
+    await db.query('select receive_serialized_inventory($1,$2,$3,$4,$5,$6,null,0,2,$7,$8::text[])',[MACHINE_LOT,lot.version,MACHINE,HUB,MACHINE_PACK,lot.batch_number,'Fictional remaining order stock received',serials]);
+   }
+   const p=await invoice(pf,[2]),plans=await cases(p.note);shipments.push(p.note.id);
+   assert.equal(plans.length,2);assert.ok(plans.every(c=>!c.delivery_ready&&c.asset_id===null));
+   assert.equal((await stock()).find(l=>l.id===MACHINE_LOT).reserved_units,2);
+   assert.deepEqual(await summary(pf),{ordered:4,invoiced:batch==='first'?2:4,pending:batch==='first'?2:0});
+   const row=await deliver(p.note,serials,{guardChecks:true});assert.equal(row.status,'delivered');
+   await as(DRIVER);await reject(()=>advance(row,'dispatch'),/next allowed/);
+   await as(OWNER);const ready=await cases(row);assert.deepEqual(ready.map(c=>c.id),plans.map(c=>c.id));
+   for(let c of ready){
+    assert.equal(c.delivery_ready,true);assert.ok(c.asset_id);
+    for(const action of ['assign','schedule','start','submit_report'])c=await progress(c,action);
+    const asset=await one('select * from equipment_assets where id=$1',[c.asset_id]);
+    await as(SALES);await reject(()=>complete(reportArgs(c,asset.serial_number)),/access/);
+    await as(ENGINEER);c=await complete(reportArgs(c,asset.serial_number));assert.equal(c.status,'completed');completed.push(c.id);
+    assert.equal((await one('select status from equipment_assets where id=$1',[c.asset_id])).status,'active');
+    const maintenance=await one('select * from service_cases where source_case_id=$1',[c.id]);
+    assert.equal(maintenance.status,'scheduled');assert.equal(maintenance.assigned_user_id,ENGINEER);
+    assert.equal((await one('select scheduled_for=service_add_months($2::date,6) correct_date from service_cases where id=$1',[maintenance.id,dates.today])).correct_date,true);
+   }
+  }
+  await as(ACCOUNTS);await reject(()=>invoice(pf,[1]),/remaining|balance/);
+  assert.equal((await one('select sum(total_minor)::bigint total from acc_invoices where proforma_id=$1 and voided_at is null',[pf.id])).total,pf.total_minor);
+  assert.equal((await one("select count(*)::int n from pending_stock_requests where proforma_id=$1 and status='waiting'",[pf.id])).n,0);
+  const balance=await admin('select entry_id from acc_journal_lines group by entry_id having sum(debit_minor)<>sum(credit_minor)');assert.deepEqual(balance.rows,[]);
+  assert.deepEqual((await stock()).find(l=>l.id===MACHINE_LOT).loose_units,0);assert.equal((await stock()).find(l=>l.id===MACHINE_LOT).reserved_units,0);
+  // Apply the production history read boundary omitted by the older shared fixture.
+  const policy=readFileSync(new URL('../supabase/migrations/202610050060_department_heads_and_access.sql',import.meta.url),'utf8').split('\n').find(line=>line.startsWith('alter policy inventory_issues_read '));
+  await db.exec('reset role');await db.exec(policy);await db.exec('set role authenticated');await as(SALES);
+  assert.equal((await one('select count(*)::int n from inventory_issues')).n,0);
+  await as(OWNER);const issues=(await db.query('select * from inventory_issues where organization_id=$1 and delivery_note_id=any($2::uuid[])',[ORG,shipments])).rows;
+  assert.equal(issues.length,2);assert.equal(issues.reduce((sum,row)=>sum+row.quantity,0),4);assert.equal(new Set(issues.map(row=>row.delivery_note_id)).size,2);
+  await as(ENGINEER);const history=(await db.query('select * from service_cases where organization_id=$1 and id=any($2::uuid[])',[ORG,completed])).rows;
+  assert.equal(history.length,4);assert.ok(history.every(row=>row.status==='completed'));assert.equal((await one('select count(*)::int n from service_reports where case_id=any($1::uuid[])',[completed])).n,4);
+  const context=vm.createContext({document:{addEventListener(){}},window:{addEventListener(){}},companyDate:()=>dates.today,esc:value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),inventoryProduct:()=>({name:'Fictional analyzer',category:'machines'}),catalogCategoryOf:product=>product.category,catalogLabel:category=>category,hasArea:()=>true});
+  vm.runInContext(readFileSync(new URL('../client-profile-pages.js',import.meta.url),'utf8')+';globalThis.seedHistory=(id,issues,cases)=>{branchHistoryCache.set(id,issues);branchActivityCache.set(id+":service",{rows:cases});};',context);
+  context.seedHistory(ORG,issues.map(row=>({...row,issued_on:new Date(row.issued_on).toISOString().slice(0,10)})),history);
+  const rendered=context.branchConsumerHistory({id:ORG,name:'Fictional clinic'});assert.match(rendered,/<small>machines<\/small><strong>4<\/strong>/);
+  for(const issue of issues)assert.ok(rendered.includes(issue.reference));
+  const serviceHistory=context.branchActivity({id:ORG},'service');for(const record of history){assert.ok(serviceHistory.includes(record.case_number));assert.ok(serviceHistory.includes(record.id));}
+ });
  await scenario('No eligible engineering default remains visible as unowned; helper and direct writes are closed',async()=>{
   await admin("update staff set access='{}' where user_id=$1",[ENGINEER]);const p=await invoice(await order([machine(1)]),[1]),c=(await cases(p.note))[0];await as(OWNER);
   assert.equal((await one("select count(*)::int n from unowned_work() where record_type='service' and record_id=$1",[c.id])).n,1);assert.equal((await one("select count(*)::int n from work_assignments where record_id=$1 and status='open'",[c.id])).n,0);
   await as(OUTSIDER);await reject(()=>db.query('select lock_service_delivery($1,false)',[c.id]),/permission denied/);await reject(()=>db.query('select create_installation_cases_for_delivery()'),/permission denied/);await reject(()=>db.query("update service_cases set delivery_ready=true where id=$1",[c.id]),/permission denied|row-level security/);
   await as(ENGINEER);assert.equal((await one('select count(*)::int n from acc_invoices')).n,0);
  });
- console.log(`PASS: ${checks} invoice immediate-handoff/status scenarios; real migrations through 124, fictional fixtures, single-session disposable PGlite. Cross-session concurrency and live transport are not exercised.`);
+ console.log(`PASS: ${checks} invoice immediate-handoff/status scenarios; actual order migrations through 124 plus current accounting/stock wrappers 156/158/159/160, fictional fixtures, single-session disposable PGlite. Cross-session concurrency and live transport are not exercised.`);
 }catch(error){console.error(error.message);if(error.where)console.error(error.where);process.exitCode=1;}finally{await db.close();}
