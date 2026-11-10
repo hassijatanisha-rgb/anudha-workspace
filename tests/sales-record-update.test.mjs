@@ -10,7 +10,7 @@ const tick=()=>new Promise(setImmediate);
 const proforma=(id='pf',status='draft')=>({id,status,version:1,revision:1,document_number:'PF-'+id,organization_id:'org',contact_id:'contact',currency:'TZS',total_minor:100,subtotal_minor:100,discount_minor:0,tax_minor:0,prepared_by:'actor',valid_until:'2026-11-10',notes:'',payment_terms:'Cash',delivery_period:'Agreed',commercial_kind:'sale',installation_required:false});
 const delivery=(id='dn',status='packing')=>({id,status,version:1,delivery_number:'DN-'+id,proforma_id:'pf',organization_id:'org',contact_id:'contact',customer_waiting:false,expected_delivery_date:'2026-10-30',accounts_reference:'Confirmed',tax_invoice_reference:'INV-1'});
 function fixture({kind='delivery',status=kind==='delivery'?'packing':'draft',historyFailure=false}={}){
- const cards=new Map(),calls=[],historyReads=[],messages=[],handoffs=[],body={isConnected:true},document={body,activeElement:body};let dialog=null,submit,historyResponse=null;
+ const cards=new Map(),calls=[],historyReads=[],messages=[],handoffs=[],body={isConnected:true},document={body,activeElement:body};let dialog=null,submit,historyResponse=null;const actionUi={submit:{textContent:"Save"}};
  const window={scrollX:12,scrollY:340,addEventListener(){},scrollTo({left,top}){this.scrollX=left;this.scrollY=top;}};
  const basic=(parent=null)=>({parent,dataset:{},disabled:false,textContent:'',get isConnected(){return this.parent?.isConnected||false;},setAttribute(key,value){this[key]=value;},addEventListener(name,fn){this[name]=fn;},focus(options){assert.deepEqual({...options},{preventScroll:true});document.activeElement=this;}});
  const dataOf=text=>Object.fromEntries([...text.matchAll(/data-([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key.replace(/-([a-z])/g,(_,c)=>c.toUpperCase()),value||'']));
@@ -31,7 +31,7 @@ function fixture({kind='delivery',status=kind==='delivery'?'packing':'draft',his
  const previous=kind==='delivery'?delivery('dn',status):proforma('pf',status),other=kind==='delivery'?delivery('other','ready'):proforma('other','sent');
  const ctx=vm.createContext({statusTone,document,window,CSS:{escape:String},Date,me:{user_id:'actor',role:'owner'},view:'sales',esc:value=>String(value??'').replaceAll('<','&lt;'),$:document.querySelector,
   orgIndex:new Map([['org',{id:'org',name:'Fictional clinic',location:'Dar'}]]),contacts:[{id:'contact',first_name:'Named',last_name:'Contact'}],products:[],inventoryLots:[],inventoryLoaded:true,employeeName:()=> 'Asha',deliveryCanFinishPacking:()=>true,
-  actionForm:(label,fields,fn)=>{submit=fn;},message:(text,error)=>messages.push({text,error}),run:fn=>fn(),confirm:()=>true,
+  actionForm:(label,fields,fn)=>{submit=fn;actionUi.label=label;actionUi.fields=fields;return {querySelector:selector=>selector==='[type="submit"]'?actionUi.submit:null};},message:(text,error)=>messages.push({text,error}),run:fn=>fn(),confirm:()=>true,
   clearServiceWorkflow(){},decorateWorkHandoffs:async root=>handoffs.push(root),decorateDeliverySerials:async()=>{throw Error('Unrelated serial reload');},loadInventoryOperations:async()=>{throw Error('Unexpected inventory reload');},
   client:{rpc:async(name,args)=>{calls.push({name,args});return {data:{...previous,version:2,status:kind==='delivery'?'ready':'sent'}};},from(table){
    assert.equal(table,'sales_delivery_events');const request={table},query={select(){return this;},in(column,ids){request.column=column;request.ids=[...ids];return this;},order(){return this;},range(start,end){request.range=[start,end];return this;},then(yes,no){historyReads.push(request);return (historyResponse||Promise.resolve(historyFailure?{error:{message:'Offline'}}:{data:[{id:'confirmed-event',delivery_note_id:'dn',to_status:'ready',created_at:'2026-10-29T10:00:00Z',actor_user_id:'actor'}]})).then(yes,no);}};return query;
@@ -43,7 +43,7 @@ function fixture({kind='delivery',status=kind==='delivery'?'packing':'draft',his
  const render=row=>kind==='delivery'?ctx.deliveryCard(row):ctx.proformaCard(row);
  for(const record of [previous,other]){const card=parse(render(record));card.connected=true;cards.set(record.id,card);ctx.bindSalesRecordCard(card);}
  const original=cards.get(previous.id),kept=cards.get(other.id);original.details[0].open=true;kept.details[0].open=true;
- return {ctx,get,previous,cards,original,kept,calls,historyReads,messages,handoffs,document,window,setHistory(value){historyResponse=value;},setDialog(value){dialog=value;},async action(action){const trigger=original.querySelector('[data-'+(kind==='delivery'?'delivery':'proforma')+'-action]');if(kind==='delivery')ctx.openDeliveryAction(previous,action,trigger);else ctx.openProformaAction(previous,action,trigger);return submit({reference:'Customer confirmation'});},submit:values=>submit(values)};
+ return {ctx,get,previous,cards,original,kept,calls,historyReads,messages,handoffs,document,window,actionUi,setHistory(value){historyResponse=value;},setDialog(value){dialog=value;},async action(action){const trigger=original.querySelector('[data-'+(kind==='delivery'?'delivery':'proforma')+'-action]');if(kind==='delivery')ctx.openDeliveryAction(previous,action,trigger);else ctx.openProformaAction(previous,action,trigger);return submit({reference:'Customer confirmation'});},submit:values=>submit(values)};
 }
 
 test('customer collection confirmation leaves the record untouched on Cancel',async()=>{
@@ -137,4 +137,43 @@ test('route and same-ID actor changes during scoped stock refresh leave replacem
  for(const change of [f=>{f.ctx.me={user_id:'actor',role:'owner'}},f=>{f.ctx.view='service'},f=>f.get('salesWorkspaceRequest++')]){
   const f=stockRefreshFixture('cancel','packing','cancelled'),wait=deferred();f.ctx.loadSerialSettings=()=>wait.promise;const saving=f.action('cancel');await tick();change(f);wait.resolve(true);await saving;assert.equal(f.cards.get('dn'),f.original);assert.equal(f.get('salesDeliveryNotes[0].version'),1);assert.equal(f.get('salesDeliveryLines[0].id'),'old-line');assert.equal(f.messages.length,0);
  }
+});
+
+
+test('accepted-order cancellation is owner-only, explicit and preserves documents and nearby card state',async()=>{
+ const f=fixture({kind:'proforma',status:'accepted'}),originalRevision=f.previous.revision;
+ assert.match(f.original.html,/data-proforma-action="cancel_order"/);
+ f.ctx.client.rpc=async(name,args)=>{f.calls.push({name,args});return {data:{...f.previous,status:'cancelled',version:2}};};
+ await f.action('cancel_order');
+ assert.equal(f.calls[0].name,'cancel_accepted_sales_order');
+ assert.deepEqual({...f.calls[0].args},{p_id:'pf',p_expected_version:1,p_reason:'Customer confirmation'});
+ assert.equal(f.actionUi.label,'Cancel accepted order');assert.equal(f.actionUi.submit.textContent,'Cancel order');
+ assert.match(f.actionUi.fields,/minlength="5" maxlength="300"/);assert.match(f.actionUi.fields,/Original documents and history stay available/);
+ assert.equal(f.get("salesProforma('pf').status"),'cancelled');assert.equal(f.get("salesProforma('pf').revision"),originalRevision);
+ assert.doesNotMatch(f.cards.get('pf').html,/data-proforma-action="cancel_order"/);
+ assert.equal(f.cards.get('other'),f.kept);assert.equal(f.window.scrollY,340);assert.equal(f.historyReads.length,0);
+ assert.match(f.messages.at(-1).text,/Pending stock requests and handoff tasks are closed/);
+});
+test('cancellation rejects nonowners, wrong state and invalid reason before writing',async()=>{
+ for(const role of ['staff','head']){
+  const f=fixture({kind:'proforma',status:'accepted'});f.ctx.me.role=role;
+  assert.doesNotMatch(f.ctx.proformaActions(f.previous),/cancel_order/);
+  await assert.rejects(f.action('cancel_order'),/Only the owner/);assert.equal(f.calls.length,0);
+ }
+ const draft=fixture({kind:'proforma'});await assert.rejects(draft.action('cancel_order'),/Only the owner/);assert.equal(draft.calls.length,0);
+ for(const reference of ['    ','four','x'.repeat(301)]){
+  const f=fixture({kind:'proforma',status:'accepted'});f.ctx.openProformaAction(f.previous,'cancel_order');
+  await assert.rejects(f.submit({reference}),/between 5 and 300/);assert.equal(f.calls.length,0);
+ }
+});
+test('rejected cancellation keeps the accepted order unchanged and exposes the server correction',async()=>{
+ const f=fixture({kind:'proforma',status:'accepted'});f.ctx.client.rpc=async()=>({error:Error('Reverse the linked invoices before cancelling this order.')});
+ await assert.rejects(f.action('cancel_order'),/Reverse the linked invoices/);
+ assert.equal(f.get("salesProforma('pf').status"),'accepted');assert.equal(f.cards.get('pf'),f.original);assert.equal(f.messages.length,0);
+});
+test('cancellation cannot patch a replacement login or navigation context',async()=>{
+ const f=fixture({kind:'proforma',status:'accepted'}),wait=deferred();f.ctx.client.rpc=()=>wait.promise;
+ const pending=f.action('cancel_order');f.ctx.me={user_id:'replacement',role:'owner'};
+ wait.resolve({data:{...f.previous,status:'cancelled',version:2}});await pending;
+ assert.equal(f.cards.get('pf'),f.original);assert.equal(f.get("salesProforma('pf').status"),'accepted');assert.equal(f.messages.length,0);
 });
