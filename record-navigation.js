@@ -1,5 +1,5 @@
 'use strict';
-const workspaceRecordKinds={client:['contacts',''],branch:['contacts',''],product:['inventory','catalog'],proforma:['sales','proformas'],invoice:['books','invoices']};
+const workspaceRecordKinds={client:['contacts',''],branch:['contacts',''],product:['inventory','catalog'],proforma:['sales','proformas'],invoice:['books','overview']};
 function workspaceRecordRoute(hash){
  const match=String(hash||'').match(/^#\/(client|branch|product|proforma|invoice)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
  return match?{kind:match[1].toLowerCase(),id:match[2].toLowerCase()}:null;
@@ -13,13 +13,14 @@ function workspaceRecordMatchesPage(route,button){
  const target=workspaceRecordKinds[route.kind];
  if(button.dataset.view!==target[0]||(button.dataset.workspaceSection||'')!==target[1])return false;
  if(route.kind==='proforma')return salesFocusedProforma===route.id&&(!salesEditing||(salesEditing===route.id&&proformaDraftMatchesRecord(route.id)));
+ if(route.kind==='invoice')return view==='books'&&booksSection==='invoices';
  return true;
 }
 function workspaceRecordFailure(kind,id,error,current){
  if(!current())return;
  const button=workspaceRecordButton(kind),title={product:'Product',proforma:'Pro forma',invoice:'Invoice',client:'Client',branch:'Branch'}[kind];
- $('#content').innerHTML=workspacePageHeader({title:title+' unavailable',back:'<button type="button" id="recordBack">← Back to register</button>'})+`<section class="card"><p role="alert">${esc(error.message||'This record could not be loaded.')}</p><button type="button" id="recordRetry">Retry loading record</button></section>`;
- $('#recordBack').onclick=()=>{if(current()&&workspaceRecordAllowed(button))return navigateWorkspace(button);};
+ $('#content').innerHTML=workspacePageHeader({title:title+' unavailable',back:`<button type="button" id="recordBack">← Back to ${kind==='invoice'?'Customer invoices':'register'}</button>`})+`<section class="card"><p role="alert">${esc(error.message||'This record could not be loaded.')}</p><button type="button" id="recordRetry">Retry loading record</button></section>`;
+ $('#recordBack').onclick=()=>{if(current()&&workspaceRecordAllowed(button))return kind==='invoice'?openAccountingSection('invoices'):navigateWorkspace(button);};
  const retry=$('#recordRetry');retry.onclick=()=>{if(current()&&retry.isConnected)return run(()=>openWorkspaceRecord(kind,id),{origin:retry,errorTarget:retry.parentElement});};
 }
 async function openWorkspaceRecord(kind,id,{context=workspaceNavigationContext(),replay=false}={}){

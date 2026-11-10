@@ -43,10 +43,10 @@ const howToTopics=[
   'Choose the client, the contact person and the items with their quantities and prices. Press **Save Pro forma invoice**.',
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
-  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Books.',
+  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Accounting.',
   'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Partially delivered, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
- {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
-  'After Sales presses **Submit to accounting**, open **Customer invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
+ {id:'books-invoice',role:'accounts',title:'Invoices in Accounting',screens:['books:overview','books:invoices'],steps:[
+  'After Sales presses **Submit to accounting**, open **Accounting**, then **Sales invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
   'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units, queues them for packing and creates requested machine installation plans. The remaining quantities appear automatically in **Pending stock orders**.',
   'The delivery note is created with those reserved units. Pack and deliver it, then return to the same Pro forma when more stock arrives to invoice the balance. Use **Print** next to each invoice for a copy.',
   'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
@@ -81,7 +81,7 @@ const howToTopics=[
   'Press **Upload / view documents** to keep a photo or scan of the signed note with the order.',
   'The invoice already created the requested machine installation plans. Signed delivery links the delivered machines and serials to those plans, or reuses an existing installation, and allows on-site work to start.']},
  {id:'pending',role:'sales',title:'Customer wants more than we have',screens:['pending'],steps:[
-  'For an accepted Pro forma, invoice the units available now in Books. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
+  'For an accepted Pro forma, invoice the units available now in Accounting. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
   'For a manual request, choose the client and product and type the quantity still needed, then press **Save pending order**.',
   'The list shows when the stock has arrived, so you can call the customer back.',
   'To buy it in, press **Order from supplier**. For linked order balances, press **Open order / invoice balance** and invoice from the original Pro forma. Manual requests can be marked fulfilled after delivery.']},
@@ -213,6 +213,7 @@ function guide(){
 }
 function howToGo(screen){
  const [target,section]=screen.split(':');
+ if(target==='books'||target==='accounting')return openAccountingSection(target==='accounting'?'forms':section||'overview',{context:workspaceNavigationContext()});
  const button=document.querySelector(section?`#nav [data-view="${target}"][data-workspace-section="${section}"]`:`#nav [data-view="${target}"]`)||document.querySelector(`#nav [data-view="${target}"]`);
  if(button)button.click();
 }

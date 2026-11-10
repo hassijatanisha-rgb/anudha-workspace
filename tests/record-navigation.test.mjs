@@ -36,6 +36,15 @@ test('client and branch reuse the original leave context once and return true on
  const f=fixture({dirty:true}),pending=f.ctx.openWorkspaceRecord('client',id);await flush();f.questions[0].resolve(false);assert.equal(await pending,false);assert.equal(f.loads.length,0);
 });
 
+test('legacy invoice records keep their exact URL through the single Accounting permission anchor',async()=>{
+ const f=fixture(),button=f.ctx.workspaceRecordButton('invoice');
+ assert.equal(button.dataset.view,'books');assert.equal(button.dataset.workspaceSection,'overview');assert.equal(f.document.querySelectorAll('#nav [data-view="books"]').length,1);
+ assert.equal(await f.ctx.openWorkspaceRecord('invoice',id),true);f.ctx.syncWorkspaceNavigation();
+ assert.equal(f.ctx.location.hash,`#/invoice/${id}`);assert.equal(button.getAttribute('aria-current'),'page');assert.deepEqual(f.loads,[['invoice',id,'books','invoices']]);
+ assert.equal(f.ctx.workspaceRecordMatchesPage({kind:'invoice',id},button),true);f.evaluate("view='accounting'");assert.equal(f.ctx.workspaceRecordMatchesPage({kind:'invoice',id},button),false);f.evaluate("view='books'");
+ button.hidden=true;assert.equal(await f.ctx.openWorkspaceRecord('invoice',other),false);assert.equal(f.loads.length,1);
+});
+
 test('hidden, detached and hidden-container destinations never grant record access',async()=>{
  for(const kind of ['product','proforma','client','branch','invoice','opening_balance'])for(const mode of ['hidden','detached','container']){
   const f=fixture(),button=f.ctx.workspaceRecordButton(kind==='opening_balance'?'invoice':kind);

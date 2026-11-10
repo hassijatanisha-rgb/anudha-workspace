@@ -99,7 +99,7 @@ const cases=[
  {name:'Pro formas',state:{view:'sales',salesSection:'proformas'},heading:/Pro formas/,selector:'[data-open-proforma]',rows:50,contains:/Fictional Sales Clinic/,roles:['owner','head','staff']},
  {name:'Delivery',state:{view:'sales',salesSection:'delivery'},heading:/Delivery/,selector:'[data-open-delivery]',rows:50,contains:/Fictional Delivery Clinic/,roles:['owner','head','staff']},
  {name:'Contracts',state:{view:'contracts'},heading:/Contracts/,selector:'[data-contract-card]',rows:30,contains:/Fictional Contract 29/,roles:['owner','head','staff']},
- {name:'Books overview',state:{view:'books',booksSection:'overview'},heading:/Accounts overview/,contains:/Fictional Invoice Customer 19/,roles:['owner','head','staff']},
+ {name:'Books overview',state:{view:'books',booksSection:'overview'},heading:/Accounting/,contains:/Fictional Invoice Customer 19/,roles:['owner','head','staff']},
  ...['receipts','journal'].map(section=>({name:'Books '+section,state:{view:'books',booksSection:section},heading:section==='receipts'?/Receipts/:/Journal entries/,selector:'[data-books-transaction]',rows:25,contains:section==='receipts'?/Fictional Receipt Customer/:/Fictional Journal Memo/,roles:['owner','head','staff']})),
  {name:'Books customer credits',state:{view:'books',booksSection:'credits'},heading:/Customer credits/,selector:'#creditCustomerSearch',rows:1,roles:['owner','head','staff']},
  {name:'Books suppliers',state:{view:'books',booksSection:'suppliers'},heading:/Supplier accounts/,selector:'#supplierBooksFilter',rows:1,contains:/No supplier bills for this selection/,roles:['owner','head','staff']},
@@ -107,7 +107,7 @@ const cases=[
  {name:'Books accounts',state:{view:'books',booksSection:'accounts'},heading:/Chart of accounts/,selector:'[data-books-account-row]',rows:50,contains:/Fictional Account 49/,roles:['owner','head','staff']},
  {name:'Books reports',state:{view:'books',booksSection:'reports'},heading:/Financial reports/,contains:/Fictional Account 49/,roles:['owner','head','staff']},
  {name:'Client accounts',state:{view:'contacts','location.hash':'#/clients'},heading:/Choose a client/,selector:'.profile-tile',rows:30,contains:/Fictional Client 029/,roles:['owner','head','staff']},
- {name:'Accounting forms',state:{view:'accounting'},heading:/Accounting/,selector:'[data-accounting-open]',rows:25,contains:/Fictional Accepted PF 24/,roles:['owner','head','staff']},
+ {name:'Accounting forms',state:{view:'accounting'},heading:/Company forms/,selector:'[data-accounting-open]',rows:25,contains:/Fictional Accepted PF 24/,roles:['owner','head','staff']},
  ...['import','opening'].map(section=>({name:'Books '+section,state:{view:'books',booksSection:section},heading:section==='import'?/Import Excel/:/Opening receivables/,selector:section==='import'?'#financialImportForm':'#openingForm',rows:1,roles:['owner','head','staff']})),
  {name:'Service forms',state:{view:'service',serviceSection:'forms'},heading:/Service forms/,contains:/Equipment handover and installation report/,roles:['owner','head','staff']},
  {name:'Stock count',state:{view:'stockcount',countTab:'count'},heading:/Stock count/,selector:'#countGodown',rows:1,contains:/Fictional Physical Count/,roles:['owner','head','staff']},
@@ -128,7 +128,8 @@ export async function openMainPageScenario(entry,role,beforeOpen){
  const f=mainPageFixture({role,department:role==='head'?'sales':'management',access:areas,accounting:entry.name.startsWith('Books')||entry.name==='Accounting forms'||role==='owner',rpcs,tables});
  beforeOpen?.(f);
  await f.open(entry.state);assertUsable(f,entry);
- const menu=[...f.document.querySelectorAll('#nav [data-view]')].find(button=>routeKey(button.dataset.view,button.dataset.workspaceSection)===routeKey(entry.state.view,entry.state[sectionKeys[entry.state.view]]));
+ const target=['books','accounting'].includes(entry.state.view)?routeKey('books','overview'):routeKey(entry.state.view,entry.state[sectionKeys[entry.state.view]]);
+ const menu=[...f.document.querySelectorAll('#nav [data-view]')].find(button=>routeKey(button.dataset.view,button.dataset.workspaceSection)===target);
  assert.ok(menu,'Navigation destination exists');
  if(entry.redirect){assert.equal(menu.hidden,true);assert.equal(f.evaluate('view'), 'personal');}
  else assert.equal(menu.hidden,false,'Tested role can actually reach this main navigation destination');

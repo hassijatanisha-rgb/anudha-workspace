@@ -105,7 +105,7 @@ acceptance('Sales and service attachment buttons route each saved record to its 
 });
 acceptance('Accounting attachment button stays disabled until draft save and then routes the saved ID',async t=>{
  const page=await fixture(t);
- for(const name of ['ui-page-header.js','company-forms.js','accounting-access.js','accounting-workspace.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
+ for(const name of ['ui-page-header.js','company-forms.js','accounting-access.js','accounting-shell.js','accounting-workspace.js'])await page.addScriptTag({content:readFileSync(new URL('../'+name,import.meta.url),'utf8')});
  await page.evaluate(async()=>{
   window.$=selector=>document.querySelector(selector);window.run=fn=>fn();window.organizations=[];window.contacts=[];window.opened=[];view='accounting';
   openDocumentAttachments=async(...args)=>opened.push(args);

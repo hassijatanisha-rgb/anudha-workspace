@@ -11,7 +11,8 @@ function fixture(){
 }
 test('Sidebar has six categories and preserves its permission and section targets',async()=>{
  const f=fixture(),nav=f.document.querySelector('#nav');assert.equal(nav.querySelectorAll('.nav-group').length,6);
- assert.equal(f.button('books','invoices').getAttribute('data-accounting-only'),'');assert.equal(f.button('books','invoices').hidden,true);assert.equal(f.button('staff').hidden,true);
+ assert.equal(f.button('books','overview').getAttribute('data-accounting-only'),'');assert.equal(f.button('books','overview').hidden,true);assert.equal(f.button('staff').hidden,true);
+ assert.equal(nav.querySelectorAll('[data-accounting-only]').length,1);assert.equal(f.button('accounting'),undefined);assert.equal(f.button('books','overview').textContent,'Accounting');
  for(const view of ['contacts','pending','leads'])assert.ok(f.button(view));
  await f.press('sales','proformas').promise;assert.equal(f.evaluate('salesSection'),'proformas');assert.equal(f.evaluate('salesEditing'),'');
  await f.press('service','schedule').promise;assert.equal(f.evaluate('serviceSection'),'schedule');

@@ -64,10 +64,10 @@ async function navResumePending(){
  if(!navReplayPending||typeof me==='undefined'||!me||(typeof busy!=='undefined'&&busy))return;
  const hash=navPendingHash,context=navPendingContext||(navPendingContext=workspaceNavigationContext());
  if(location.hash!==hash||context&&!context.current()){navReplayPending=false;navPendingHash='';navPendingContext=null;return;}
- const record=workspaceRecordRoute(hash),profile=!record&&/^#\/(clients|client|branch)\b/.test(hash),button=record?workspaceRecordButton(record.kind):profile?null:navButtonFor(hash);
+ const record=workspaceRecordRoute(hash),profile=!record&&/^#\/(clients|client|branch)\b/.test(hash),accounting=hash==='#/go/accounting'?'forms':/^#\/go\/books(?:\/([a-z-]+))?$/.exec(hash)?.[1]||(hash==='#/go/books'?'overview':null),button=record?workspaceRecordButton(record.kind):profile?null:accounting?navButtonFor('#/go/books/overview'):navButtonFor(hash);
  if(record?!workspaceRecordAllowed(button):!profile&&(!button||button.hidden))return;
  navReplayPending=false;navPendingHash='';navPendingContext=null;navReplaying=true;
- try{if(record)await run(()=>openWorkspaceRecord(record.kind,record.id,{replay:true,context}));else if(profile){const route=readProfileRoute();await run(()=>goProfile(route.kind,route.id,{context}));}else await navigateWorkspace(button,{replay:true,context});}
+ try{if(record)await run(()=>openWorkspaceRecord(record.kind,record.id,{replay:true,context}));else if(profile){const route=readProfileRoute();await run(()=>goProfile(route.kind,route.id,{context}));}else if(accounting)await openAccountingSection(accounting,{replay:true,context});else await navigateWorkspace(button,{replay:true,context});}
  finally{navReplaying=false;}
 }
 function navRecordPage(hash,{replace=false}={}){
@@ -87,7 +87,7 @@ function navRecordMenuPage(button){navRecordPage(navHash(button));}
 function navRecordOpenPage(button){
  if(!button||navReplaying||navReplayPending||/^#\/(clients|client|branch)\b/.test(location.hash))return;
  const record=workspaceRecordRoute(location.hash);if(record&&workspaceRecordMatchesPage(record,button))return;
- const hash=navHash(button);if(location.hash===hash)return;
+ const hash=button.dataset.view==='books'?(view==='accounting'?'#/go/accounting':`#/go/books/${booksSection}`):navHash(button);if(location.hash===hash)return;
  navRecordPage(hash,{replace:!/^#\/go\//.test(location.hash)});
 }
 async function navHistoryChanged(){

@@ -96,6 +96,7 @@ function navDropdownSetup(){
 function navDropdownSync(){
  document.querySelectorAll('#nav .nav-group').forEach(group=>{
   const wasHidden=group.hidden,allowed=[...group.querySelectorAll('[data-view]')].some(button=>!button.hidden);if(group.hidden===allowed)group.hidden=!allowed;
+  if(!group.querySelector('.nav-group-toggle'))return;
   const active=group.querySelector('[data-view].active:not([hidden])');
   if(!allowed)navGroupSet(group,false,{immediate:true});
   else if((active&&group.navActiveButton!==active)||(wasHidden&&navOpenGroups().has(group.getAttribute('aria-label'))))navGroupSet(group,true);

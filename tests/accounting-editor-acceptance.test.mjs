@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 const enabled=process.env.ACCOUNTING_BROWSER_QA==='1';
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const feedback=readFileSync(new URL('../action-feedback.js',import.meta.url),'utf8')+'\n'+app.split('\n').find(line=>line.startsWith('function message('))+'\n'+app.slice(app.indexOf('function friendlyError('),app.indexOf('let editSaving=false;'));
-const sources=[feedback,...['client-rules.js','ui-page-header.js','company-forms.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'))];
+const sources=[feedback,...['client-rules.js','ui-page-header.js','company-forms.js','accounting-shell.js','accounting-workspace.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'))];
 let browser;
 test.before(async()=>{
  if(!enabled)return;

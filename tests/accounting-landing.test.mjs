@@ -14,7 +14,7 @@ function fixture(){
  });
  Object.defineProperty(ctx,'organizations',{get(){throw Error('Landing accessed the full customer cache');}});
  vm.runInContext('function workspaceSkeleton(kind,label)'+read('workspace-refresh.js').split('function workspaceSkeleton(kind,label)')[1].split('function workspaceLoading')[0],ctx);
- for(const file of ['accounting-access.js','proforma-accounting-queue.js','accounting-workspace.js'])vm.runInContext(read(file),ctx);
+ for(const file of ['accounting-access.js','proforma-accounting-queue.js','accounting-shell.js','accounting-workspace.js'])vm.runInContext(read(file),ctx);
  return {ctx,calls,nodes,$};
 }
 test('accounting landing uses four permission-scoped requests and embedded names without shared lists',async()=>{
