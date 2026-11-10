@@ -11,7 +11,7 @@ function fixture(){
  const calls=[],nodes=new Map(),selections=new Map(),messages=[];let pending;
  const node=()=>({innerHTML:'',textContent:'',isConnected:true,disabled:false,dataset:{},querySelector:()=>null,focus(){this.focused=true;}});
  const ctx=vm.createContext({location:{hash:'#/go/books/invoices'},workspacePageHeader,statusTone,me:{user_id:'accountant'},view:'books',listsLoaded:false,listsLoading:null,organizations:[{id:'old'}],products:[{id:'shared-product'}],document:{querySelectorAll:s=>selections.get(s)||[]},$:id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);},workspaceLoading(){},syncWorkspaceNavigation(){},financialImportWorkspace(){},openingReceivablesWorkspace(){},message:(text,error)=>messages.push({text,error}),esc:v=>String(v??'').replaceAll('<','&lt;'),loadLists:async()=>{throw Error('No shared lists on register landing');},run:fn=>{pending=fn();return pending;},client:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='accounting_access'?true:snapshot(args.p_invoice_page,args.p_waiting_page)};},from(){throw Error('No table preload on register landing');}}});
- for(const file of ['sales-domain.js','accounting-access.js','record-navigation.js','accounting-ledger.js'])vm.runInContext(read(file),ctx);
+ for(const file of ['sales-domain.js','accounting-access.js','record-navigation.js','accounting-shell.js','accounting-ledger.js'])vm.runInContext(read(file),ctx);
  const get=code=>vm.runInContext(code,ctx);get("booksSection='invoices';booksData={invoices:[{id:'full-editor-record'}],accounts:[{id:'full-editor-account'}]}");
  return {ctx,calls,nodes,selections,messages,node,get,get pending(){return pending;}};
 }

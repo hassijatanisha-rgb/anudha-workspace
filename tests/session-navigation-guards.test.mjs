@@ -67,6 +67,7 @@ test('current accounting result reveals only allowed links and resumes the pendi
   const f=navFixture(),pending=f.c.showAccountingNavigation();assert.deepEqual(f.items.map(item=>item.hidden),[true,true]);assert.equal(f.queries[0].name,'accounting_access');f.queries[0].resolve({data:allowed});await pending;assert.deepEqual(f.items.map(item=>item.hidden),[!allowed,!allowed]);assert.equal(f.resumed.length,1);
  }
  const failed=navFixture(),pending=failed.c.showAccountingNavigation();failed.queries[0].reject(Error('Unavailable'));await pending;assert.deepEqual(failed.items.map(item=>item.hidden),[true,true]);assert.equal(failed.resumed.length,1);
+ const errored=navFixture(),checking=errored.c.showAccountingNavigation();errored.queries[0].resolve({data:true,error:{message:'Unavailable'}});await checking;assert.deepEqual(errored.items.map(item=>item.hidden),[true,true]);
 });
 const navChanges={
  'replacement staff actor':f=>{f.c.me={user_id:'staff',role:'staff'};},

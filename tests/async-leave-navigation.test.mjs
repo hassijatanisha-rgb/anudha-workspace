@@ -107,7 +107,7 @@ test('global Refresh keeps its captured origin and pending lock after the clean 
 test('Books section buttons await their exact current preview and keep it on Cancel',async()=>{
  const f=mainPageFixture({tables:{acc_settings:()=>[{version:2,locked_through:null}]}});await f.open({view:'books',booksSection:'import'});
  f.evaluate('financialImportState.preview={entries:[],rows:[],errors:[]}');const pending=deferred();f.ctx.askConfirm=()=>pending.promise;
- const button=f.document.querySelector('[data-books-section="overview"]'),opening=button.onclick();await flush();assert.equal(f.evaluate('booksSection'),'import');pending.resolve(false);await opening;
+ const button=f.document.querySelector('[data-accounting-section="overview"]'),opening=button.onclick();await flush();assert.equal(f.evaluate('booksSection'),'import');pending.resolve(false);await opening;
  assert.equal(f.evaluate('booksSection'),'import');assert.notEqual(f.evaluate('financialImportState.preview'),null);assert.equal(button.isConnected,true);
 });
 

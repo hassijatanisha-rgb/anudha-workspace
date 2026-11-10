@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 
 // Synthetic local browser only: every network request is blocked and RPCs use an in-memory fixture.
 const enabled=process.env.FINANCIAL_IMPORT_BROWSER_QA==='1';
-const sources=['ui-motion.js','ui-page-header.js','vendor/xlsx.full.min.js','sales-domain.js','accounting-access.js','accounting-ledger.js','financial-import.js','ui-dialogs.js','client-profile-pages.js','workspace-navigation.js','record-navigation.js','nav-history.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const sources=['ui-motion.js','ui-page-header.js','vendor/xlsx.full.min.js','sales-domain.js','accounting-access.js','accounting-shell.js','accounting-ledger.js','financial-import.js','ui-dialogs.js','action-feedback.js','client-profile-pages.js','workspace-navigation.js','record-navigation.js','nav-history.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -23,9 +23,10 @@ async function fixture(t){
  await page.setContent('<header>Fixture ERP</header><nav id="nav"></nav><main><p id="notice"></p><section id="content"><div id="booksBody"></div></section></main>');
  await page.addStyleTag({content:readFileSync(new URL('../tokens.css',import.meta.url),'utf8')});
  await page.evaluate(()=>{
-  window.sessionLoadEpoch=0;window.returnCreditPostingConfirmLeave=()=>true;window.salesConfirmLeave=async()=>true;window.openingReceivablesConfirmLeave=async()=>true;
-  window.render=async()=>{$('#content').innerHTML='<h1>Replacement '+view+' page</h1>';};
+  window.sessionLoadEpoch=0;window.returnCreditPostingConfirmLeave=()=>true;window.salesConfirmLeave=async()=>true;window.openingReceivablesConfirmLeave=async()=>true;window.inventoryConfirmLeave=async()=>true;window.confirmPurchasingLeave=async()=>true;
+  window.workspaceLoading=()=>{};window.render=async()=>{syncWorkspaceNavigation();if(view==='books')return booksWorkspace();$('#content').innerHTML='<h1>Replacement '+view+' page</h1>';};
   window.$=selector=>document.querySelector(selector);window.me={user_id:'fixture-accountant',role:'owner'};window.view='books';window.busy=false;
+  window.search='';window.filter='all';window.page=0;window.selected='';
   window.salesSection='proformas';window.serviceSection='installations';window.inventorySection='stock';window.personalSection='task';
   window.esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   window.message=text=>$('#notice').textContent=text;window.run=fn=>Promise.resolve().then(fn).catch(error=>message(error.message));window.calls=[];window.receipts=new Map();window.entries=new Map();window.posted=0;
@@ -47,7 +48,7 @@ async function fixture(t){
  await page.addScriptTag({content:leaveScopeSource});
  for(const source of sources)await page.addScriptTag({content:source});
  await page.evaluate(async()=>{
-  booksSection='import';await booksWorkspace();
+  booksSection='import';await showAccountingNavigation();await render();
  });
  return page;
 }
@@ -99,11 +100,11 @@ acceptance('sidebar navigation preserves a cancelled preview and clears an expli
 
 acceptance('Books section tabs retain a cancelled preview and block an unresolved import',async t=>{
  const page=await fixture(t);await upload(page);
- await page.locator('[data-books-section="overview"]').click();await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('dialog[open]'));
+ await page.locator('[data-accounting-section="overview"]').click();await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('dialog[open]'));
  assert.equal(await page.evaluate(()=>booksSection),'import');assert.equal(await page.locator('#financialImportCommit').isDisabled(),false);
  await page.evaluate(()=>{window.loseReply=true;window.unresolved=true;});await page.locator('#financialImportCommit').click();
  await page.waitForFunction(()=>document.querySelector('#financialImportCommit').textContent==='Retry and reconcile this import');
- await page.locator('[data-books-section="accounts"]').click();assert.equal(await page.evaluate(()=>booksSection),'import');assert.match(await page.locator('#notice').innerText(),/Confirm this import/);
+ await page.locator('[data-accounting-section="accounts"]').click();assert.equal(await page.evaluate(()=>booksSection),'import');assert.match(await page.locator('#notice').innerText(),/Confirm this import/);
 });
 
 acceptance('formula cells cannot post and imported display text cannot create markup',async t=>{

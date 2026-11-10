@@ -18,13 +18,13 @@ const workspaceGroups=[
   ['Service forms','service','forms']
  ]},
  {name:'Accounts',tone:'accounts',items:[
-  ['Accounting forms','accounting'],['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Customer credits','books','credits'],['Supplier accounts','books','suppliers'],['Stock accounting','books','valuation'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
+  ['Accounting','books','overview']
  ]},
  {name:'Admin',tone:'admin',items:[
   ['How to use','guide'],['Staff','staff'],['My settings','settings'],['Deleted items','recycle'],['Questions for the owner','approvals']
  ]}
 ];
-// Shown only once the signed-in person is known to be the owner (app.js load) or to have accounting access.
+// Owner-only destinations are separate from approved accounting membership.
 // Keys are a view, or view:section for one page of a view.
 const ownerOnlyViews=new Set(['staff','approvals','recycle','stockcount:review','inventory:review']);
 let accountingNavigationRequest=0;
@@ -32,7 +32,7 @@ async function showAccountingNavigation(){
  const actor=me,epoch=sessionLoadEpoch,request=++accountingNavigationRequest,nav=document.querySelector('#nav'),items=[...document.querySelectorAll('#nav [data-accounting-only]')];if(!actor||!nav?.isConnected||!items.length)return;
  const current=()=>me===actor&&sessionLoadEpoch===epoch&&accountingNavigationRequest===request&&document.querySelector('#nav')===nav&&nav.isConnected&&items.every(item=>item.isConnected&&nav.contains(item));
  items.forEach(item=>item.hidden=true);
- let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
+ let allowed=false;try{const result=await client.rpc('accounting_access');allowed=!result?.error&&result?.data===true}catch{allowed=false}
  if(!current())return;
  items.forEach(item=>item.hidden=!allowed);
  if(typeof navResumePending==='function')navResumePending();
@@ -49,15 +49,27 @@ async function confirmWorkspaceLeave(current=workspaceNavigationContext().curren
  }
  return current();
 }
-async function navigateWorkspace(button,{replay=false,context=null}={}){
+function openAccountingSection(section,{context=null,replay=false}={}){
+ if(section!=='forms'&&!booksSections.some(([key])=>key===section))return;
+ const button=document.querySelector('#nav [data-view="books"][data-workspace-section="overview"]');
+ if(button)return navigateWorkspace(button,{context,replay,accountingSection:section});
+}
+async function navigateWorkspace(button,{replay=false,context=null,accountingSection=null}={}){
  if(!me||context&&!context.current())return;
  context||=workspaceNavigationContext();
- if(!await confirmWorkspaceLeave(context.current)||!button.isConnected||button.hidden)return;
- if(busy){navWhileBusy={button,context,replay};actionFeedbackQueueNavigation(button);return;}
+ const financial=button.dataset.view==='books'||button.dataset.view==='accounting';
+ if(!await confirmWorkspaceLeave(context.current)||!button.isConnected||button.hidden||financial&&button.disabled)return;
+ if(busy){navWhileBusy={button,context,replay,accountingSection};actionFeedbackQueueNavigation(button);return;}
  return run(async()=>{
   if(!context.current()||!button.isConnected||button.hidden)return;
+  if(financial){
+   const feedback=actionFeedbackActive,current=()=>context.current()&&button.isConnected&&!button.hidden&&(!button.disabled||actionFeedbackActive===feedback&&feedback?.state?.node===button&&!feedback.state.disabled)&&!button.closest('#nav')?.hidden&&!button.closest('.nav-group')?.hidden;
+   if(!current())return;
+   try{await requireAccountingAccess(client,()=>me);}catch(error){if(current())throw error;return;}
+   if(!current())return;
+  }
   navRememberListPlace();
-  const target=button.dataset.view,section=button.dataset.workspaceSection,previousHash=location.hash,previousScope=workspaceRefreshScope();
+  const target=accountingSection==='forms'?'accounting':button.dataset.view,section=accountingSection||button.dataset.workspaceSection,previousHash=location.hash,previousScope=workspaceRefreshScope();
   if(button.closest('#nav')&&document.getElementById('workspaceMenuToggle'))navMobileSet(false,true);
   if(target==='contacts')return goProfile('clients');
   message('');
@@ -72,7 +84,7 @@ async function navigateWorkspace(button,{replay=false,context=null}={}){
   if(target==='books')openBooksSection(section);
   if(target==='requests')openRequestSection(section);
   if(target==='inventory')inventorySection=section||'stock';
-  if(!replay)navRecordMenuPage(button);
+  if(!replay){if(financial)navRecordPage(target==='accounting'?'#/go/accounting':`#/go/books/${section||'overview'}`);else navRecordMenuPage(button);}
   view=target;search='';page=0;
   if(target==='inventory'&&inventorySection==='stock'&&(previousHash!==location.hash||previousScope!==workspaceRefreshScope()))beginWorkspaceStockTransition();
   const rendered=navRenderListPlace(render);
@@ -87,7 +99,7 @@ function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'||target==='books'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}">${group.tone==='accounts'?'':`<h2>${group.name}</h2>`}${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'||target==='books'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
@@ -113,7 +125,7 @@ function syncWorkspaceNavigation(){
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
   const current=target==='sales'?salesSection:target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&typeof booksSection!=='undefined'?booksSection:null;
-  const active=target===view&&(!section||section===current);
+  const active=target==='books'?(view==='books'||view==='accounting'):target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
  });

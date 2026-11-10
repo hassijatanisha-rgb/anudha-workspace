@@ -6,7 +6,8 @@ async function booksAutomationWorkspace(actor,current){
  const [accounts,settings]=await Promise.all([booksSelectAll('acc_accounts','*',q=>q.order('code')),booksSelect('acc_settings','*')]);
  if(!current())return;
  booksData={accounts,settings:settings[0]||{version:1,locked_through:null},today:booksToday()};
- $('#content').innerHTML=`<section class="books">${workspacePageHeader({title,back:'<button type="button" id="booksAutomationBack">Accounts overview</button>'})}<p class="muted">${booksData.settings.locked_through?`Books locked through ${esc(booksData.settings.locked_through)}.`:'No lock date set.'}</p><div id="booksBody"></div></section>`;
+ $('#content').innerHTML=accountingShell(`<section class="books">${workspacePageHeader({title,back:'<button type="button" id="booksAutomationBack">Accounting overview</button>'})}<p class="muted acct-lock-status">${booksData.settings.locked_through?`Books locked through ${esc(booksData.settings.locked_through)}.`:'No lock date set.'}</p><div id="booksBody"></div></section>`,section);
+ bindAccountingShell(current);
  $('#booksAutomationBack').onclick=()=>run(async()=>{if(!current()||!booksPostingConfirmLeave(current))return;openBooksSection('overview');syncWorkspaceNavigation();await booksWorkspace();});
  await ({suppliers:supplierBooksWorkspace,credits:customerCreditWorkspace,valuation:inventoryCostWorkspace}[section])(actor,current);
 }

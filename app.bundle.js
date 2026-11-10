@@ -3983,7 +3983,7 @@ function proformaScreen(){
 }
 function haadiLots(productId){const hubIds=new Set(inventoryLocations.filter(row=>row.active&&row.is_dispatch_hub).map(row=>row.id));return inventoryLots.filter(row=>row.product_id===productId&&row.stock_status==='available'&&hubIds.has(row.location_id)&&row.loose_units-row.reserved_units>0)}
 function deliveryEditor(record){
- return `<section class="card document-editor"><div class="heading"><div><small>FROM ${esc(record.document_number)}</small><h2>Delivery for an existing invoice</h2></div><button type="button" id="closeDeliveryEditor">Close</button></div><form id="deliveryForm" data-id="${record.id}" data-version="${record.version}"><p data-delivery-errors class="error" role="alert"></p><p class="muted">All fields are required.</p><div class="grid"><label><span>Accounts approval reference</span><input name="accountsReference" required maxlength="120" placeholder="Approval email, voucher or reference"></label><label><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" min="${salesDate()}" value="${salesDate()}" required></label></div>${deliveryCollectionChoice()}<p class="muted">For a new invoice, use Books → Customer invoices → Review quantities. This form is for an existing invoice with units still awaiting delivery. Link that invoice next to reserve its exact units.</p><p class="muted">Your account must have delivery access. The employee who records this approval is saved in the permanent history.</p><button type="submit">Record Accounts approval</button></form></section>`;
+ return `<section class="card document-editor"><div class="heading"><div><small>FROM ${esc(record.document_number)}</small><h2>Delivery for an existing invoice</h2></div><button type="button" id="closeDeliveryEditor">Close</button></div><form id="deliveryForm" data-id="${record.id}" data-version="${record.version}"><p data-delivery-errors class="error" role="alert"></p><p class="muted">All fields are required.</p><div class="grid"><label><span>Accounts approval reference</span><input name="accountsReference" required maxlength="120" placeholder="Approval email, voucher or reference"></label><label><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" min="${salesDate()}" value="${salesDate()}" required></label></div>${deliveryCollectionChoice()}<p class="muted">For a new invoice, use Accounting → Sales invoices → Review quantities. This form is for an existing invoice with units still awaiting delivery. Link that invoice next to reserve its exact units.</p><p class="muted">Your account must have delivery access. The employee who records this approval is saved in the permanent history.</p><button type="submit">Record Accounts approval</button></form></section>`;
 }
 function packingFields(note){const reserved=deliveryLines(note.id);if(reserved.length)return `<p class="notice">Stock was reserved when the Tax Invoice was created. Confirm the team has started packing these reserved items.</p><ul>${reserved.map(line=>`<li>${esc(salesProduct(line.product_id).name)} · ${line.quantity} reserved</li>`).join('')}</ul>`;const record=salesProforma(note.proforma_id),rows=salesLines(record.id).map(line=>({line,remaining:remainingDeliveryQuantity(line,salesDeliveryLines,salesDeliveryNotes)})).filter(row=>row.remaining>0);return `<p>Select only the quantities being packed in this legacy delivery. Saving reserves those exact Haadi units so another order cannot use them.</p>${rows.map(({line,remaining})=>{const lots=haadiLots(line.product_id),key=line.id;return `<div class="delivery-pick"><label class="delivery-check"><input type="checkbox" name="include_${key}" ${lots.length?'':'disabled'}><span>${esc(salesProduct(line.product_id).name)} · ${remaining} ${esc(line.uom)} remaining</span></label><label><span>Haadi lot</span><select name="lot_${key}" ${lots.length?'':'disabled'}><option value="">Choose lot</option>${lots.map(lot=>inventoryOption(lot.id,`${lot.batch_number||'No batch'} · ${lot.loose_units-lot.reserved_units} available`)).join('')}</select></label><label><span>Quantity</span><input name="qty_${key}" type="number" min="1" max="${remaining}" value="${remaining}" ${lots.length?'':'disabled'}></label>${lots.length?'':'<p class="warning">No loose Haadi stock is available for this item.</p>'}</div>`}).join('')}`}
 function deliveryCanFinishPacking(note){return note.packer_user_id===me?.user_id||me?.role==='owner'||(me?.role==='head'&&me?.department==='stores')}
@@ -4000,7 +4000,7 @@ function deliverySummaryTile(note){
 }
 function deliveryListScreen(){
  const page=salesDeliveryPageData,awaiting=salesDeliveryFilter==='awaiting';
- return `${salesHeader({subtitle:awaiting?'Review the whole order or use an existing invoice with units still awaiting delivery.':'Open a delivery for its next action, items, documents and complete history.'})}<h2>${awaiting?'Orders with quantities still awaiting delivery':'Delivery register'}</h2><div class="tabs" role="group" aria-label="Show delivery records"><button type="button" id="deliveryNotesTab" class="${awaiting?'':'active'}" aria-pressed="${!awaiting}">Delivery notes · ${page.counts.notes}</button><button type="button" id="deliveryAwaitingTab" class="${awaiting?'active':''}" aria-pressed="${awaiting}">Orders awaiting delivery · ${page.counts.awaiting}</button></div>${page.rows.length?`<ul class="proforma-tiles">${awaiting?page.rows.map(record=>`<li><article class="card"><h3>${esc(record.document_number)}</h3><p>${esc(record.organization.name)}${record.organization.location?' · '+esc(record.organization.location):''}<br>${esc(record.contact_name)}</p><div class="actions"><button type="button" data-order-proforma="${esc(record.id)}">Review whole order</button><button type="button" data-create-delivery="${esc(record.id)}">Use existing invoice</button></div></article></li>`).join(''):page.rows.map(deliverySummaryTile).join('')}</ul>`:`<p class="empty">${awaiting?'No orders have unallocated quantities awaiting delivery.':'No delivery notes yet. Accept the Pro forma, then choose invoice quantities in Books. Posting creates its delivery note.'}</p>`}<div class="actions"><button type="button" id="deliveryPrev" ${page.page===0?'disabled':''}>Previous</button><span role="status">${page.total} ${awaiting?'orders':'delivery notes'} · Page ${page.page+1} of ${page.pages} · 50 per page</span><button type="button" id="deliveryNext" ${page.page+1>=page.pages?'disabled':''}>Next</button></div>`;
+ return `${salesHeader({subtitle:awaiting?'Review the whole order or use an existing invoice with units still awaiting delivery.':'Open a delivery for its next action, items, documents and complete history.'})}<h2>${awaiting?'Orders with quantities still awaiting delivery':'Delivery register'}</h2><div class="tabs" role="group" aria-label="Show delivery records"><button type="button" id="deliveryNotesTab" class="${awaiting?'':'active'}" aria-pressed="${!awaiting}">Delivery notes · ${page.counts.notes}</button><button type="button" id="deliveryAwaitingTab" class="${awaiting?'active':''}" aria-pressed="${awaiting}">Orders awaiting delivery · ${page.counts.awaiting}</button></div>${page.rows.length?`<ul class="proforma-tiles">${awaiting?page.rows.map(record=>`<li><article class="card"><h3>${esc(record.document_number)}</h3><p>${esc(record.organization.name)}${record.organization.location?' · '+esc(record.organization.location):''}<br>${esc(record.contact_name)}</p><div class="actions"><button type="button" data-order-proforma="${esc(record.id)}">Review whole order</button><button type="button" data-create-delivery="${esc(record.id)}">Use existing invoice</button></div></article></li>`).join(''):page.rows.map(deliverySummaryTile).join('')}</ul>`:`<p class="empty">${awaiting?'No orders have unallocated quantities awaiting delivery.':'No delivery notes yet. Accept the Pro forma, then choose invoice quantities in Accounting. Posting creates its delivery note.'}</p>`}<div class="actions"><button type="button" id="deliveryPrev" ${page.page===0?'disabled':''}>Previous</button><span role="status">${page.total} ${awaiting?'orders':'delivery notes'} · Page ${page.page+1} of ${page.pages} · 50 per page</span><button type="button" id="deliveryNext" ${page.page+1>=page.pages?'disabled':''}>Next</button></div>`;
 }
 function deliveryScreen(){
  if(salesDeliveryLanding())return deliveryListScreen();
@@ -4429,7 +4429,7 @@ function bindSalesDelivery(){
 function orderWorkflowHtml(record){
  const notes=rowsWhere(salesDeliveryNotes,'proforma_id',record.id),active=notes.filter(note=>note.status!=='cancelled');
  const fulfillment=salesFulfillment(record),summary=record.status!=='accepted'?salesStatus(record.status):fulfillment==='complete'?'All quantities delivered':fulfillment==='partial'?'Part delivered · balance outstanding':'Delivery outstanding';
- return `<section class="card no-print" data-order-workflow="${esc(record.id)}" aria-label="Whole order workflow"><div class="heading"><div><h2>Whole order · ${esc(record.document_number)}</h2><p>${esc(summary)}</p></div><button type="button" data-order-refresh>Refresh order</button></div><div class="details"><div><small>Pro forma</small>${esc(salesStatus(record.status))} · revision ${esc(record.revision)}</div><div><small>Prepared by</small>${esc(employeeName(record.prepared_by))}</div><div><small>Deliveries</small>${active.length} active / completed · ${notes.length-active.length} cancelled</div></div><h3>ERP invoice</h3><div data-order-invoices role="status">Checking accounting access…</div><h3>Packing and shipping</h3>${notes.length?notes.map(note=>`<div class="recycle-record"><span><strong>${esc(note.delivery_number)}</strong><small>${esc(salesStatus(note.status))}${note.packer_user_id?' · Packer: '+esc(employeeName(note.packer_user_id)):''}${note.tracking_reference?' · Tracking: '+esc(note.tracking_reference):''}</small></span>${typeof hasArea==='function'&&hasArea('deliveries')?`<button type="button" data-order-delivery="${esc(note.id)}">Open delivery</button>`:'<span>Delivery access required</span>'}</div>`).join(''):'<p>No delivery note yet; after customer acceptance, post selected quantities in Books to reserve stock, queue packing and create requested machine installation plans.</p>'}<h3>Service engineering</h3><div data-order-service role="status">Loading linked engineering cases…</div><details><summary>How this order moves</summary><p>Create and send the Pro forma → record customer acceptance → Accounts invoices selected quantities → stock reserved, packing queued and machine installation planned → pack → dispatch → signed delivery → on-site installation.</p><p>Use <strong>Assign to me</strong> on the record below to take responsibility for the current step. Packing and engineering assignment are recorded in their own steps.</p><p>Posting an invoice creates one installation plan per requested machine unit. Assign the engineer and work date before delivery. Signed delivery records the delivered machine and serial against that plan and enables on-site work; an existing open installation is reused when needed.</p></details></section>`;
+ return `<section class="card no-print" data-order-workflow="${esc(record.id)}" aria-label="Whole order workflow"><div class="heading"><div><h2>Whole order · ${esc(record.document_number)}</h2><p>${esc(summary)}</p></div><button type="button" data-order-refresh>Refresh order</button></div><div class="details"><div><small>Pro forma</small>${esc(salesStatus(record.status))} · revision ${esc(record.revision)}</div><div><small>Prepared by</small>${esc(employeeName(record.prepared_by))}</div><div><small>Deliveries</small>${active.length} active / completed · ${notes.length-active.length} cancelled</div></div><h3>ERP invoice</h3><div data-order-invoices role="status">Checking accounting access…</div><h3>Packing and shipping</h3>${notes.length?notes.map(note=>`<div class="recycle-record"><span><strong>${esc(note.delivery_number)}</strong><small>${esc(salesStatus(note.status))}${note.packer_user_id?' · Packer: '+esc(employeeName(note.packer_user_id)):''}${note.tracking_reference?' · Tracking: '+esc(note.tracking_reference):''}</small></span>${typeof hasArea==='function'&&hasArea('deliveries')?`<button type="button" data-order-delivery="${esc(note.id)}">Open delivery</button>`:'<span>Delivery access required</span>'}</div>`).join(''):'<p>No delivery note yet; after customer acceptance, post selected quantities in Accounting to reserve stock, queue packing and create requested machine installation plans.</p>'}<h3>Service engineering</h3><div data-order-service role="status">Loading linked engineering cases…</div><details><summary>How this order moves</summary><p>Create and send the Pro forma → record customer acceptance → Accounts invoices selected quantities → stock reserved, packing queued and machine installation planned → pack → dispatch → signed delivery → on-site installation.</p><p>Use <strong>Assign to me</strong> on the record below to take responsibility for the current step. Packing and engineering assignment are recorded in their own steps.</p><p>Posting an invoice creates one installation plan per requested machine unit. Assign the engineer and work date before delivery. Signed delivery records the delivered machine and serial against that plan and enables on-site work; an existing open installation is reused when needed.</p></details></section>`;
 }
 
 function orderQuantityHtml(order){
@@ -4466,7 +4466,7 @@ async function loadOrderWorkflow(panel){
    const permission=await client.rpc('accounting_access');
    if(!current())return;
    if(permission.error)throw Error('Accounting access could not be checked. Refresh to retry.');
-   if(permission.data!==true){invoices.textContent='Invoice details are available to approved accounting users in Books. The delivery shows its tax invoice reference.';return;}
+   if(permission.data!==true){invoices.textContent='Invoice details are available to approved accounting users in Accounting. The delivery shows its tax invoice reference.';return;}
    const rows=await orderWorkflowRows('acc_invoices','id,invoice_number,total_minor,currency,voided_at','proforma_id',[id],current);
    if(!current())return;
    const accepted=salesProformas.find(record=>record.id===id)?.status==='accepted';
@@ -9986,13 +9986,13 @@ const workspaceGroups=[
   ['Service forms','service','forms']
  ]},
  {name:'Accounts',tone:'accounts',items:[
-  ['Accounting forms','accounting'],['Books overview','books','overview'],['Customer invoices','books','invoices'],['Customer receipts','books','receipts'],['Customer credits','books','credits'],['Supplier accounts','books','suppliers'],['Stock accounting','books','valuation'],['Journal entries','books','journal'],['Chart of accounts','books','accounts'],['Financial reports','books','reports'],['Import Excel','books','import'],['Opening receivables','books','opening']
+  ['Accounting','books','overview']
  ]},
  {name:'Admin',tone:'admin',items:[
   ['How to use','guide'],['Staff','staff'],['My settings','settings'],['Deleted items','recycle'],['Questions for the owner','approvals']
  ]}
 ];
-// Shown only once the signed-in person is known to be the owner (app.js load) or to have accounting access.
+// Owner-only destinations are separate from approved accounting membership.
 // Keys are a view, or view:section for one page of a view.
 const ownerOnlyViews=new Set(['staff','approvals','recycle','stockcount:review','inventory:review']);
 let accountingNavigationRequest=0;
@@ -10000,7 +10000,7 @@ async function showAccountingNavigation(){
  const actor=me,epoch=sessionLoadEpoch,request=++accountingNavigationRequest,nav=document.querySelector('#nav'),items=[...document.querySelectorAll('#nav [data-accounting-only]')];if(!actor||!nav?.isConnected||!items.length)return;
  const current=()=>me===actor&&sessionLoadEpoch===epoch&&accountingNavigationRequest===request&&document.querySelector('#nav')===nav&&nav.isConnected&&items.every(item=>item.isConnected&&nav.contains(item));
  items.forEach(item=>item.hidden=true);
- let allowed=false;try{const result=await client.rpc('accounting_access');allowed=result?.data===true}catch{allowed=false}
+ let allowed=false;try{const result=await client.rpc('accounting_access');allowed=!result?.error&&result?.data===true}catch{allowed=false}
  if(!current())return;
  items.forEach(item=>item.hidden=!allowed);
  if(typeof navResumePending==='function')navResumePending();
@@ -10017,15 +10017,27 @@ async function confirmWorkspaceLeave(current=workspaceNavigationContext().curren
  }
  return current();
 }
-async function navigateWorkspace(button,{replay=false,context=null}={}){
+function openAccountingSection(section,{context=null,replay=false}={}){
+ if(section!=='forms'&&!booksSections.some(([key])=>key===section))return;
+ const button=document.querySelector('#nav [data-view="books"][data-workspace-section="overview"]');
+ if(button)return navigateWorkspace(button,{context,replay,accountingSection:section});
+}
+async function navigateWorkspace(button,{replay=false,context=null,accountingSection=null}={}){
  if(!me||context&&!context.current())return;
  context||=workspaceNavigationContext();
- if(!await confirmWorkspaceLeave(context.current)||!button.isConnected||button.hidden)return;
- if(busy){navWhileBusy={button,context,replay};actionFeedbackQueueNavigation(button);return;}
+ const financial=button.dataset.view==='books'||button.dataset.view==='accounting';
+ if(!await confirmWorkspaceLeave(context.current)||!button.isConnected||button.hidden||financial&&button.disabled)return;
+ if(busy){navWhileBusy={button,context,replay,accountingSection};actionFeedbackQueueNavigation(button);return;}
  return run(async()=>{
   if(!context.current()||!button.isConnected||button.hidden)return;
+  if(financial){
+   const feedback=actionFeedbackActive,current=()=>context.current()&&button.isConnected&&!button.hidden&&(!button.disabled||actionFeedbackActive===feedback&&feedback?.state?.node===button&&!feedback.state.disabled)&&!button.closest('#nav')?.hidden&&!button.closest('.nav-group')?.hidden;
+   if(!current())return;
+   try{await requireAccountingAccess(client,()=>me);}catch(error){if(current())throw error;return;}
+   if(!current())return;
+  }
   navRememberListPlace();
-  const target=button.dataset.view,section=button.dataset.workspaceSection,previousHash=location.hash,previousScope=workspaceRefreshScope();
+  const target=accountingSection==='forms'?'accounting':button.dataset.view,section=accountingSection||button.dataset.workspaceSection,previousHash=location.hash,previousScope=workspaceRefreshScope();
   if(button.closest('#nav')&&document.getElementById('workspaceMenuToggle'))navMobileSet(false,true);
   if(target==='contacts')return goProfile('clients');
   message('');
@@ -10040,7 +10052,7 @@ async function navigateWorkspace(button,{replay=false,context=null}={}){
   if(target==='books')openBooksSection(section);
   if(target==='requests')openRequestSection(section);
   if(target==='inventory')inventorySection=section||'stock';
-  if(!replay)navRecordMenuPage(button);
+  if(!replay){if(financial)navRecordPage(target==='accounting'?'#/go/accounting':`#/go/books/${section||'overview'}`);else navRecordMenuPage(button);}
   view=target;search='';page=0;
   if(target==='inventory'&&inventorySection==='stock'&&(previousHash!==location.hash||previousScope!==workspaceRefreshScope()))beginWorkspaceStockTransition();
   const rendered=navRenderListPlace(render);
@@ -10055,7 +10067,7 @@ function installWorkspaceNavigation(){
  const nav=document.querySelector('#nav');
  // The stock count screen is temporary; ERP_CONFIG.stockCountEnabled=false removes it from the menu.
  const shown=([,target])=>target!=='stockcount'||globalThis.ERP_CONFIG?.stockCountEnabled!==false;
- nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}"><h2>${group.name}</h2>${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'||target==='books'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
+ nav.innerHTML=workspaceGroups.map(group=>`<section class="nav-group nav-${group.tone}" aria-label="${group.name}">${group.tone==='accounts'?'':`<h2>${group.name}</h2>`}${group.items.filter(shown).map(([label,target,section])=>target?`<button type="button" data-view="${target}"${section?` data-workspace-section="${section}"`:''}${target==='staff'?' id="staffNav" hidden':''}${ownerOnlyViews.has(target)||ownerOnlyViews.has(`${target}:${section}`)?' data-owner-only hidden':''}${target==='accounting'||target==='books'?' data-accounting-only hidden':''}>${label}</button>`:`<div class="nav-unavailable">${label}<small>Not connected yet</small></div>`).join('')}</section>`).join('');
  nav.setAttribute('aria-label','Workspace sections');
  document.querySelector('main').before(nav);
  const header=document.querySelector('body>header');
@@ -10081,7 +10093,7 @@ function syncWorkspaceNavigation(){
  document.querySelectorAll('#nav [data-view]').forEach(button=>{
   const target=button.dataset.view,section=button.dataset.workspaceSection;
   const current=target==='sales'?salesSection:target==='service'?serviceSection:target==='inventory'?inventorySection:target==='personal'?personalSection:target==='leads'&&typeof leadSection!=='undefined'?leadSection:target==='purchasing'&&typeof purchaseSection!=='undefined'?purchaseSection:target==='stockcount'&&typeof countTab!=='undefined'?countTab:target==='requests'&&typeof requestSection!=='undefined'?requestSection:target==='packing'&&typeof packingSection!=='undefined'?packingSection:target==='books'&&(()=>{try{return typeof booksSection}catch{return 'undefined'}})()!=='undefined'?booksSection:null;
-  const active=target===view&&(!section||section===current);
+  const active=target==='books'?(view==='books'||view==='accounting'):target===view&&(!section||section===current);
   button.classList.toggle('active',active);
   if(active){button.setAttribute('aria-current','page');if(typeof navRecordOpenPage==='function')navRecordOpenPage(button);}else button.removeAttribute('aria-current');
  });
@@ -10216,6 +10228,33 @@ async function mountProformaAccountingQueue(target,actor){
  }
  await load();
 }
+;// accounting-shell.js
+'use strict';
+const accountingMenu=[
+ ['Workspace',[['overview','Overview']]],
+ ['Transactions',[['invoices','Sales invoices'],['receipts','Customer receipts'],['suppliers','Bills & supplier payments'],['credits','Customer credits'],['journal','Journal entries']]],
+ ['Accounts & reports',[['accounts','Chart of accounts'],['reports','Financial reports'],['valuation','Stock accounting']]],
+ ['Tools',[['import','Import Excel'],['opening','Opening receivables'],['forms','Company forms']]]
+];
+function accountingShell(content,section){
+ return `<div class="acct-shell"><aside class="acct-sidebar"><p class="acct-sidebar-title">Accounting</p><nav class="acct-module-nav" aria-label="Accounting sections">${accountingMenu.map(([group,items])=>`<div class="acct-nav-group"><p>${esc(group)}</p>${items.map(([key,label])=>`<button type="button" data-accounting-section="${key}"${key===section?' aria-current="page"':''}>${esc(label)}</button>`).join('')}</div>`).join('')}</nav></aside><div class="acct-main"><label class="acct-section-picker"><span>Accounting section</span><select data-accounting-picker>${accountingMenu.map(([group,items])=>`<optgroup label="${esc(group)}">${items.map(([key,label])=>`<option value="${key}"${key===section?' selected':''}>${esc(label)}</option>`).join('')}</optgroup>`).join('')}</select></label>${content}</div></div>`;
+}
+function bindAccountingShell(current){
+ document.querySelectorAll('[data-accounting-section]').forEach(button=>button.onclick=()=>{
+  if(!current()||!button.isConnected||button.disabled)return;
+  const context=workspaceNavigationContext();
+  return openAccountingSection(button.dataset.accountingSection,{context:{current:()=>current()&&button.isConnected&&context.current()}});
+ });
+ document.querySelectorAll('[data-accounting-picker]').forEach(select=>{
+  const selected=select.value;
+  select.onchange=()=>{
+   const section=select.value;select.value=selected;
+   if(!current()||!select.isConnected||select.disabled||section===selected)return;
+   const context=workspaceNavigationContext();
+   return openAccountingSection(section,{context:{current:()=>current()&&select.isConnected&&context.current()}});
+  };
+ });
+}
 ;// accounting-workspace.js
 'use strict';
 let accountingPage=0,accountingRequest=0;
@@ -10239,19 +10278,20 @@ async function accountingWorkspace(){
  if(!current())return;
  if(r.error)throw Error(`Accounting drafts could not load: ${r.error.message}`);
  const rows=r.data||[];
- $('#content').innerHTML=`${workspacePageHeader({title:'Accounting',subtitle:'Prepare, save and print company forms.'})}<section class="card"><h2>Create a draft</h2><div class="actions">${Object.entries(companyFormDefinitions()).map(([kind,d])=>`<button data-accounting-new="${kind}">${esc(d.title)}</button>`).join('')}</div></section><section class="card"><h2>Saved drafts</h2>${rows.map(row=>`<article class="contact"><strong>${esc(companyFormDefinition(row.kind).title)} · ${esc(row.body.number||'Number not assigned')}</strong><p>${esc(row.customer?.name||(row.organization_id?'Customer unavailable':'Customer not selected'))} · revision ${row.version}</p><button data-accounting-open="${row.id}">Open saved draft</button></article>`).join('')||'<p>No saved drafts on this page.</p>'}<div class="actions"><button id="accountingPrevious" ${accountingPage===0?'disabled':''}>Previous</button><span>Page ${accountingPage+1}</span><button id="accountingNext" ${rows.length<25?'disabled':''}>Next</button></div></section>`;
+ $('#content').innerHTML=accountingShell(`${workspacePageHeader({title:'Company forms',subtitle:'Prepare, save and print company forms. These drafts do not post to the ledger.'})}<section class="card"><h2>Create a draft</h2><div class="actions">${Object.entries(companyFormDefinitions()).map(([kind,d])=>`<button data-accounting-new="${kind}">${esc(d.title)}</button>`).join('')}</div></section><section class="card"><h2>Saved drafts</h2>${rows.map(row=>`<article class="contact"><strong>${esc(companyFormDefinition(row.kind).title)} · ${esc(row.body.number||'Number not assigned')}</strong><p>${esc(row.customer?.name||(row.organization_id?'Customer unavailable':'Customer not selected'))} · revision ${row.version}</p><button data-accounting-open="${row.id}">Open saved draft</button></article>`).join('')||'<p>No saved drafts on this page.</p>'}<div class="actions"><button id="accountingPrevious" ${accountingPage===0?'disabled':''}>Previous</button><span>Page ${accountingPage+1}</span><button id="accountingNext" ${rows.length<25?'disabled':''}>Next</button></div></section>`,'forms');
+ bindAccountingShell(current);
  document.querySelectorAll('[data-accounting-new]').forEach(b=>b.onclick=()=>run(()=>accountingEditor({id:crypto.randomUUID(),kind:b.dataset.accountingNew,version:0,body:{}},actor)));
  document.querySelectorAll('[data-accounting-open]').forEach(b=>b.onclick=()=>run(()=>accountingEditor(rows.find(r=>r.id===b.dataset.accountingOpen),actor)));
  $('#accountingPrevious').onclick=()=>run(()=>{accountingPage--;return accountingWorkspace()});$('#accountingNext').onclick=()=>run(()=>{accountingPage++;return accountingWorkspace()});
  const queue=document.createElement('section');queue.className='card';queue.id='proformaAccountingQueue';
- $('#content').querySelector('section').before(queue);
+ $('#content').querySelector('.acct-main section').before(queue);
  await mountProformaAccountingQueue(queue,actor);
 }
 async function accountingEditor(row,actor){
  const session=me;await requireAccountingAccess(client,()=>me);if(me!==session||me?.user_id!==actor||view!=='accounting')return;
  if(!listsLoaded){await (listsLoading||loadLists());if(me!==session||me?.user_id!==actor||view!=='accounting')return;if(!listsLoaded)throw Error('Customer records could not load. Reopen the draft.');}
  const partyLabel=row.kind==='purchase'?'supplier / branch':'customer / branch';
- $('#content').innerHTML=`${workspacePageHeader({title:companyFormDefinition(row.kind).title,back:'<button id="accountingBack">← Saved drafts</button>'})}<section class="card"><p id="accountingLinkHelp">Search, then choose a linked record. Searching keeps your current selection. Links do not change the names or other text entered on the form below.</p><label for="accountingCustomerSearch">Search ${partyLabel}</label><input id="accountingCustomerSearch" type="search" autocomplete="off" aria-controls="accountingCustomer" aria-describedby="accountingLinkHelp accountingCustomerResults"><label for="accountingCustomer"><span>Link ${partyLabel}</span><select id="accountingCustomer" aria-describedby="accountingCustomerResults"></select></label><p id="accountingCustomerResults" role="status" aria-atomic="true"></p><label for="accountingContactSearch">Search specific contact person</label><input id="accountingContactSearch" type="search" autocomplete="off" aria-controls="accountingContact" aria-describedby="accountingLinkHelp accountingContactResults"><label for="accountingContact"><span>Link specific contact person</span><select id="accountingContact" aria-describedby="accountingContactResults"></select></label><p id="accountingContactResults" role="status" aria-atomic="true"></p><button id="accountingSave" type="button">Save draft</button><p id="accountingSaveStatus" role="status"></p></section><section id="accountingForm"></section>`;
+ $('#content').innerHTML=accountingShell(`${workspacePageHeader({title:companyFormDefinition(row.kind).title,back:'<button id="accountingBack">← Saved drafts</button>'})}<section class="card"><p id="accountingLinkHelp">Search, then choose a linked record. Searching keeps your current selection. Links do not change the names or other text entered on the form below.</p><label for="accountingCustomerSearch">Search ${partyLabel}</label><input id="accountingCustomerSearch" type="search" autocomplete="off" aria-controls="accountingCustomer" aria-describedby="accountingLinkHelp accountingCustomerResults"><label for="accountingCustomer"><span>Link ${partyLabel}</span><select id="accountingCustomer" aria-describedby="accountingCustomerResults"></select></label><p id="accountingCustomerResults" role="status" aria-atomic="true"></p><label for="accountingContactSearch">Search specific contact person</label><input id="accountingContactSearch" type="search" autocomplete="off" aria-controls="accountingContact" aria-describedby="accountingLinkHelp accountingContactResults"><label for="accountingContact"><span>Link specific contact person</span><select id="accountingContact" aria-describedby="accountingContactResults"></select></label><p id="accountingContactResults" role="status" aria-atomic="true"></p><button id="accountingSave" type="button">Save draft</button><p id="accountingSaveStatus" role="status"></p></section><section id="accountingForm"></section>`,'forms');
  const target=$('#accountingForm');mountCompanyForm(target,row.kind,row.body);
  const status=$('#accountingSaveStatus');status.textContent=row.version?`Saved revision ${row.version}. Further edits are unsaved until you press Save draft.`:'New draft — not yet saved.';
  const attachments=document.createElement('button');attachments.type='button';attachments.textContent='Upload / view documents';attachments.disabled=!row.version;
@@ -10280,6 +10320,7 @@ async function accountingEditor(row,actor){
  $('#accountingBack').onclick=()=>run(async()=>{const context=workspaceNavigationContext();if(!await confirmWorkspaceLeave(context.current)||!context.current())return;return accountingWorkspace();});
  const saveButton=$('#accountingSave'),form=target.querySelector('form'),root=$('#content'),customer=$('#accountingCustomer'),contact=$('#accountingContact'),summary=form.querySelector('[data-company-form-error]'),links=saveButton.closest('section');
  const current=()=>me===session&&me?.user_id===actor&&view==='accounting'&&target.isConnected&&target.querySelector('form')===form&&$('#content')===root;
+ bindAccountingShell(current);
  const draftErrors=()=>{const errors=nativeFormErrors(form),organizationId=customer.value||null,contactId=contact.value||null;
   if(organizationId&&!organizations.some(org=>org.id===organizationId&&!org.deleted_at))errors.set(customer,'Choose an available customer or supplier branch, or clear the saved link');
   if(contactId&&(!organizationId||!contacts.some(person=>person.id===contactId&&person.organization_id===organizationId&&!person.deleted_at)))errors.set(contact,'Choose a contact belonging to the selected branch, or clear the saved contact link');
@@ -10448,10 +10489,9 @@ async function booksWorkspace(){
  if(!current())return;
  if(accountRegister){booksAccountPageData=data;booksAccountPage=data.page;}else if(ledgerRegister){booksLedgerPageData=data;booksLedgerPage=data.page;booksReport.accountId=data.account?.id||'';}else if(register){booksInvoicePageData=data;booksInvoicePage=data.invoicePage;booksWaitingPage=data.waitingPage;}else if(transactionRegister){booksTransactionPageData=data;booksTransactionPages[section]=data.page;}else booksData=data;
  const body=ledgerRegister?booksLedgerRegister:transactionRegister?booksTransactionRegister:{overview:booksOverview,invoices:register?booksInvoiceRegister:booksInvoices,receipts:booksReceipts,journal:booksJournal,accounts:booksAccounts,reports:booksReports,import:financialImportWorkspace,opening:(actor,current)=>openingReceivablesWorkspace(actor,current)}[booksSection]||booksOverview;
- $('#content').innerHTML=`<section class="books">${workspacePageHeader({title:booksSection==='overview'?'Accounts overview':booksSections.find(([key])=>key===booksSection)?.[1]||'Accounts',subtitle:booksSection==='overview'?'Balances, overdue invoices and TRA receipts.':'Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided.',back:!transactionRegister&&['receipts','journal'].includes(section)?'<button type="button" id="booksTransactionBack">Back to register</button>':''})}<p class="muted"><span id="booksLockStatus">${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</span></p>
- <details class="no-print"><summary>Other accounting tasks</summary><div class="tabs" role="group" aria-label="Books sections">${booksSections.map(([key,label])=>`<button type="button" data-books-section="${key}"${key===booksSection?' class="active" aria-pressed="true"':' aria-pressed="false"'}>${esc(label)}</button>`).join('')}</div></details>
- <div id="booksBody"></div></section>`;
- document.querySelectorAll('[data-books-section]').forEach(button=>button.onclick=()=>run(async()=>{const context=workspaceNavigationContext(),active=()=>current()&&context.current()&&button.isConnected;if(!active()||!await confirmWorkspaceLeave(active)||!active())return;openBooksSection(button.dataset.booksSection);syncWorkspaceNavigation();return booksWorkspace();}));
+ $('#content').innerHTML=accountingShell(`<section class="books">${workspacePageHeader({title:booksSection==='overview'?'Accounting':booksSections.find(([key])=>key===booksSection)?.[1]||'Accounting',subtitle:booksSection==='overview'?'Review balances, invoice requests and work needing attention.':'Double-entry books in TZS. Posted entries are never edited; mistakes are reversed or voided.',back:!transactionRegister&&['receipts','journal'].includes(section)?'<button type="button" id="booksTransactionBack">Back to register</button>':''})}<p class="muted acct-lock-status"><span id="booksLockStatus">${data.settings.locked_through?`Books locked through ${esc(data.settings.locked_through)}.`:'No lock date set.'}</span></p>
+ <div id="booksBody"></div></section>`,section);
+ bindAccountingShell(current);
  await body(actor,current);
 }
 function booksTransactionPageResult(data,section){
@@ -10487,15 +10527,16 @@ async function booksOverview(actor,current){
  if(!current())return;
  const money=Number(d.summary.money_minor),receivables=Number(d.summary.receivables_minor),vat=Number(d.summary.vat_minor),profit=Number(d.summary.profit_minor);
  const overdue=d.invoices.filter(i=>i.state.key==='overdue');
- $('#booksBody').innerHTML=`<p class="muted">Balances include all posted entries.</p><div class="books-metrics">
-  <div><small>Cash, bank and mobile money</small><strong>${booksMoney(money)}</strong></div>
-  <div><small>Customers owe</small><strong>${booksMoney(receivables)}</strong></div>
-  <div><small>VAT output payable</small><strong>${booksMoney(vat)}</strong></div>
-  <div><small>Profit this month</small><strong>${booksMoney(profit)}</strong></div></div>
- <section class="card"><h2>Waiting for invoice (${d.waitingCount})</h2><p class="muted">Accepted Pro formas with quantities still to invoice.</p>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th class="numeric-cell">Quote total</th><th>Actions</th></tr></thead><tbody>${d.toInvoice.map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td class="numeric-cell">${booksMoney(p.total_minor,p.currency)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Create invoice</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Every accepted Pro forma is fully invoiced.</p>'}${d.waitingCount>d.toInvoice.length?'<p class="muted">Showing the latest 20. Open Customer invoices for the full list.</p>':''}</section>
- <section class="card"><h2>Overdue invoices (${d.overdueCount})</h2>${overdue.length?booksInvoiceTable(overdue):'<p class="empty">No overdue invoices.</p>'}${d.overdueCount>overdue.length?'<p class="muted">Showing the latest 20. Open Customer invoices for the full list.</p>':''}</section>
- <section class="card"><h2>Unrecorded TRA receipts (<span id="booksTraCount" tabindex="-1">${d.unrecordedTraCount}</span>)</h2><div id="booksTraRows">${d.unrecordedTra.length?`<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="numeric-cell">Total</th><th>TRA receipt</th><th>Actions</th></tr></thead><tbody>${d.unrecordedTra.map(invoice=>`<tr data-books-tra-row="${esc(invoice.id)}"><td>${esc(invoice.invoice_number)}</td><td>${esc(invoice.invoice_date)}</td><td>${esc(booksCustomer(invoice.organization_id,d))}</td><td class="numeric-cell">${booksMoney(invoice.total_minor)}</td><td data-books-fiscal-cell="${esc(invoice.id)}"><span class="tag books-missing chip chip--${statusTone('waiting')}">Not recorded</span></td><td><button type="button" data-books-fiscal="${esc(invoice.id)}">Record TRA receipt</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">No unrecorded TRA receipts.</p>'}</div><p id="booksTraCountStatus" class="muted">${d.unrecordedTraCount>d.unrecordedTra.length?`Showing ${d.unrecordedTra.length} of ${d.unrecordedTraCount}. Open Customer invoices for the full list.`:''}</p></section>`;
- document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};return booksWorkspace();}));
+ $('#booksBody').innerHTML=`<div class="acct-dashboard-toolbar"><p class="muted">Balances include all posted entries. Profit is for ${esc(booksMonthStart(d.today))} to ${esc(d.today)}.</p><div class="actions"><button type="button" data-accounting-section="receipts">Customer receipts</button><button type="button" data-accounting-section="reports">Financial reports</button></div></div><div class="books-metrics acct-summary" role="group" aria-label="Accounting balances">
+  <div class="acct-metric"><small>Cash, bank and mobile money</small><strong>${booksMoney(money)}</strong></div>
+  <div class="acct-metric"><small>Customer receivables</small><strong>${booksMoney(receivables)}</strong></div>
+  <div class="acct-metric"><small>VAT output payable</small><strong>${booksMoney(vat)}</strong></div>
+  <div class="acct-metric"><small>Profit this month</small><strong>${booksMoney(profit)}</strong></div></div>
+ <section class="card acct-invoice-requests"><div class="heading"><div><h2>Invoice requests <span class="acct-count">${d.waitingCount}</span></h2><p class="muted">Accepted Pro formas with quantities still to invoice. Review quantities, stock and approval details before posting.</p></div><button type="button" data-accounting-section="invoices">Open customer invoices</button></div>${d.toInvoice.length?`<div class="table-wrap"><table><thead><tr><th>Pro forma</th><th>Customer</th><th>Accepted</th><th class="numeric-cell">Quote total</th><th>Next action</th></tr></thead><tbody>${d.toInvoice.map(p=>`<tr><td>${esc(p.document_number)}</td><td>${esc(booksCustomer(p.organization_id))}</td><td>${esc(String(p.accepted_at||'').slice(0,10))}</td><td class="numeric-cell">${booksMoney(p.total_minor,p.currency)}</td><td><button type="button" data-books-invoice-pf="${esc(p.id)}">Review quantities</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">No accepted Pro formas have quantities waiting for invoice.</p>'}${d.waitingCount>d.toInvoice.length?'<p class="muted">Showing the latest 20. Open Customer invoices for the full list.</p>':''}</section>
+ <section class="card acct-overdue-invoices"><div class="heading"><div><h2>Overdue invoices <span class="acct-count">${d.overdueCount}</span></h2><p class="muted">Review outstanding amounts and follow up on payment.</p></div><button type="button" data-accounting-section="receipts">Open customer receipts</button></div>${overdue.length?booksInvoiceTable(overdue):'<p class="empty">No overdue invoices.</p>'}${d.overdueCount>overdue.length?'<p class="muted">Showing the latest 20. Open Customer invoices for the full list.</p>':''}</section>
+ <section class="card acct-tra-receipts"><h2>Unrecorded TRA receipts <span class="acct-count" id="booksTraCount" tabindex="-1">${d.unrecordedTraCount}</span></h2><p class="muted">Record the receipt details issued by the TRA system against each invoice.</p><div id="booksTraRows">${d.unrecordedTra.length?`<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="numeric-cell">Total</th><th>TRA receipt</th><th>Actions</th></tr></thead><tbody>${d.unrecordedTra.map(invoice=>`<tr data-books-tra-row="${esc(invoice.id)}"><td>${esc(invoice.invoice_number)}</td><td>${esc(invoice.invoice_date)}</td><td>${esc(booksCustomer(invoice.organization_id,d))}</td><td class="numeric-cell">${booksMoney(invoice.total_minor)}</td><td data-books-fiscal-cell="${esc(invoice.id)}"><span class="tag books-missing chip chip--${statusTone('waiting')}">Not recorded</span></td><td><button type="button" data-books-fiscal="${esc(invoice.id)}">Record TRA receipt</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">No unrecorded TRA receipts.</p>'}</div><p id="booksTraCountStatus" class="muted">${d.unrecordedTraCount>d.unrecordedTra.length?`Showing ${d.unrecordedTra.length} of ${d.unrecordedTraCount}. Open Customer invoices for the full list.`:''}</p></section>`;
+ document.querySelectorAll('[data-books-invoice-pf]').forEach(b=>b.onclick=()=>run(()=>{if(!current()||!b.isConnected||booksData!==d)return;booksSection='invoices';booksDraft={proformaId:b.dataset.booksInvoicePf};syncWorkspaceNavigation();return booksWorkspace();}));
+ bindAccountingShell(current);
  wireBooksInvoiceActions();
 }
 function booksInvoiceTone(key){return statusTone(({void:'inactive',paid:'paid',overdue:'overdue',part:'waiting',open:'waiting'})[key]);}
@@ -11201,7 +11242,8 @@ async function booksAutomationWorkspace(actor,current){
  const [accounts,settings]=await Promise.all([booksSelectAll('acc_accounts','*',q=>q.order('code')),booksSelect('acc_settings','*')]);
  if(!current())return;
  booksData={accounts,settings:settings[0]||{version:1,locked_through:null},today:booksToday()};
- $('#content').innerHTML=`<section class="books">${workspacePageHeader({title,back:'<button type="button" id="booksAutomationBack">Accounts overview</button>'})}<p class="muted">${booksData.settings.locked_through?`Books locked through ${esc(booksData.settings.locked_through)}.`:'No lock date set.'}</p><div id="booksBody"></div></section>`;
+ $('#content').innerHTML=accountingShell(`<section class="books">${workspacePageHeader({title,back:'<button type="button" id="booksAutomationBack">Accounting overview</button>'})}<p class="muted acct-lock-status">${booksData.settings.locked_through?`Books locked through ${esc(booksData.settings.locked_through)}.`:'No lock date set.'}</p><div id="booksBody"></div></section>`,section);
+ bindAccountingShell(current);
  $('#booksAutomationBack').onclick=()=>run(async()=>{if(!current()||!booksPostingConfirmLeave(current))return;openBooksSection('overview');syncWorkspaceNavigation();await booksWorkspace();});
  await ({suppliers:supplierBooksWorkspace,credits:customerCreditWorkspace,valuation:inventoryCostWorkspace}[section])(actor,current);
 }
@@ -11605,11 +11647,11 @@ async function booksInvoiceRecordWorkspace(id){
  if(!actor?.user_id||view!=='books'||booksSection!=='invoices'||route?.kind!=='invoice'||route.id!==id||!root?.isConnected)return false;
  const epoch=++booksEpoch;booksClearInvoicePreview();booksInvoiceRecordData=null;
  const current=()=>me===actor&&sessionLoadEpoch===session&&booksEpoch===epoch&&view==='books'&&booksSection==='invoices'&&location.hash===hash&&root.isConnected&&$('#content')===root;
- const header=title=>workspacePageHeader({title,titleAttrs:'id="booksInvoiceRecordTitle" tabindex="-1"',back:'<a href="#/go/books/invoices" data-books-invoice-back>← Back to invoices</a>',breadcrumbs:`<a href="#/go/books/invoices" data-books-invoice-back>Customer invoices</a><a href="${esc(hash)}" aria-current="page">${esc(title)}</a>`,actions:'<span id="booksInvoiceRecordActions"></span>'});
- root.innerHTML=header('Invoice')+'<div class="books"><div id="booksBody">'+workspaceSkeleton('table','Loading invoice…')+'</div></div>';
+ const header=title=>workspacePageHeader({title,titleAttrs:'id="booksInvoiceRecordTitle" tabindex="-1"',back:'<a href="#/go/books/invoices" data-books-invoice-back>← Back to Customer invoices</a>',breadcrumbs:`<a href="#/go/books/invoices" data-books-invoice-back>Customer invoices</a><a href="${esc(hash)}" aria-current="page">${esc(title)}</a>`,actions:'<span id="booksInvoiceRecordActions"></span>'});
+ root.innerHTML=accountingShell(header('Invoice')+'<div class="books"><div id="booksBody">'+workspaceSkeleton('table','Loading invoice…')+'</div></div>','invoices');
  const body=$('#booksBody'),active=()=>current()&&body.isConnected&&$('#booksBody')===body;
- const bindBack=()=>root.querySelectorAll('[data-books-invoice-back]').forEach(link=>link.onclick=event=>{event.preventDefault();if(active())return navigateWorkspace(workspaceRecordButton('invoice'));});
- bindBack();
+ const bindBack=()=>root.querySelectorAll('[data-books-invoice-back]').forEach(link=>link.onclick=event=>{event.preventDefault();if(active())return openAccountingSection('invoices');});
+ bindBack();bindAccountingShell(active);
  try{
   const allowed=await requireAccountingAccess(client,()=>me);if(!active()||allowed!==actor.user_id)return false;
   const rows=await booksSelect('acc_invoice_balances','*',query=>query.eq('id',id).limit(2));if(!active())return false;
@@ -11624,7 +11666,7 @@ async function booksInvoiceRecordWorkspace(id){
   const data={invoices:[invoice],customerNames:new Map([[invoice.organization_id,customers[0]?.name||'Customer not available']]),taxIds:new Map(taxIds.map(row=>[row.organization_id,row])),proformaNumbers:new Map([[invoice.proforma_id,invoice.proforma_number||'']]),current:active};
   booksInvoiceRecordData=data;
   const opening=!!invoice.opening_import_id,title=(opening?'Opening balance ':'Invoice ')+invoice.invoice_number;
-  root.querySelector('#booksInvoiceRecordTitle').textContent=title;root.querySelector('[aria-current="page"]').textContent=title;
+  root.querySelector('#booksInvoiceRecordTitle').textContent=title;root.querySelector('.workspace-page-breadcrumbs [aria-current="page"]').textContent=title;
   body.innerHTML=`<section class="card"><div class="heading"><h2>${esc(booksCustomer(invoice.organization_id,data))}</h2><span class="tag books-${esc(invoice.state.key)} chip chip--${booksInvoiceTone(invoice.state.key)}">${esc(invoice.state.label)}</span></div>${opening?`<p class="notice">Opening balance · reference only. This is not a new tax invoice.</p><p>Reference: ${esc(invoice.opening_reference)} · Cutover: ${esc(invoice.opening_cutover_date)}</p>`:''}<dl><dt>Invoice date</dt><dd>${esc(invoice.invoice_date)}</dd><dt>Due date</dt><dd>${esc(invoice.due_date)}</dd><dt>Total</dt><dd>${booksMoney(invoice.total_minor)}</dd><dt>Balance due</dt><dd>${booksMoney(invoice.outstanding)}</dd><dt>Paid</dt><dd>${booksMoney(invoice.paid)}</dd><dt>Posted credits</dt><dd>${booksMoney(invoice.credited_minor)}</dd><dt>Customer credit</dt><dd>${booksMoney(invoice.customer_credit_minor)}</dd></dl>${opening?'':`<p>TRA receipt: ${esc(invoice.tra_receipt_number||'Not recorded')}</p>`}</section>${opening?'':`<section class="card"><h2>Invoice lines</h2><div class="table-wrap"><table><thead><tr><th>Item</th><th>Quantity</th><th class="numeric-cell">Unit price</th><th class="numeric-cell">Amount before VAT</th><th class="numeric-cell">VAT</th></tr></thead><tbody>${invoice.lines.map(line=>{const amounts=booksInvoiceLineAmounts(line);return `<tr><td>${esc(line.description)}</td><td>${esc(line.quantity)} ${esc(line.uom)}</td><td class="numeric-cell">${booksMoney(line.unit_price_minor)}</td><td class="numeric-cell">${booksMoney(amounts.net)}</td><td class="numeric-cell">${booksMoney(amounts.vat)}</td></tr>`;}).join('')}</tbody></table></div></section>`}`;
   root.querySelector('#booksInvoiceRecordActions').innerHTML=opening?'':'<button type="button" id="booksInvoiceRecordPreview" class="button-primary">Preview invoice</button>';
   const preview=root.querySelector('#booksInvoiceRecordPreview');if(preview)preview.onclick=()=>{if(active()&&booksInvoiceRecordData===data)booksPrintInvoice(invoice,data,{trigger:preview});};
@@ -13100,10 +13142,10 @@ const howToTopics=[
   'Choose the client, the contact person and the items with their quantities and prices. Press **Save Pro forma invoice**.',
   'Press **Print / PDF** to print it or save it as a PDF for the customer. You can still change a draft with **Edit draft**.',
   'After you send it, press **Record sent to client**. It is now locked so the customer and the ERP see the same copy.',
-  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Books.',
+  'When the customer accepts, press **Submit to accounting** and type their LPO or acceptance reference. Accounts then reviews the quantities to invoice in Accounting.',
   'Find any Pro forma under **Pro formas**. Each one has a coloured tag: Draft, Revised, Sent to customer, Waiting approval, Approved · in delivery, Partially delivered, Delivered or Cancelled / rejected. Press a tag button at the top to show only those, or search by PF number, client or LPO.']},
- {id:'books-invoice',role:'accounts',title:'Invoices in the Books',screens:['books:overview','books:invoices'],steps:[
-  'After Sales presses **Submit to accounting**, open **Customer invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
+ {id:'books-invoice',role:'accounts',title:'Invoices in Accounting',screens:['books:overview','books:invoices'],steps:[
+  'After Sales presses **Submit to accounting**, open **Accounting**, then **Sales invoices**, choose the Pro forma and review its quantities. For 4 machines with 2 in stock, enter 2 under **Invoice now**.',
   'Check the invoice and due dates, Accounts reference and expected delivery date. Posting invoices and reserves only your selected units, queues them for packing and creates requested machine installation plans. The remaining quantities appear automatically in **Pending stock orders**.',
   'The delivery note is created with those reserved units. Pack and deliver it, then return to the same Pro forma when more stock arrives to invoice the balance. Use **Print** next to each invoice for a copy.',
   'When the TRA receipt for an invoice is issued, press **Record TRA receipt** next to it and type the receipt number, verification code and the customer\'s TIN and VRN. The printed tax invoice then shows them.',
@@ -13138,7 +13180,7 @@ const howToTopics=[
   'Press **Upload / view documents** to keep a photo or scan of the signed note with the order.',
   'The invoice already created the requested machine installation plans. Signed delivery links the delivered machines and serials to those plans, or reuses an existing installation, and allows on-site work to start.']},
  {id:'pending',role:'sales',title:'Customer wants more than we have',screens:['pending'],steps:[
-  'For an accepted Pro forma, invoice the units available now in Books. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
+  'For an accepted Pro forma, invoice the units available now in Accounting. The unbilled balance appears automatically in **Pending stock orders**. For an inquiry without an accepted order, press **New pending order**.',
   'For a manual request, choose the client and product and type the quantity still needed, then press **Save pending order**.',
   'The list shows when the stock has arrived, so you can call the customer back.',
   'To buy it in, press **Order from supplier**. For linked order balances, press **Open order / invoice balance** and invoice from the original Pro forma. Manual requests can be marked fulfilled after delivery.']},
@@ -13270,6 +13312,7 @@ function guide(){
 }
 function howToGo(screen){
  const [target,section]=screen.split(':');
+ if(target==='books'||target==='accounting')return openAccountingSection(target==='accounting'?'forms':section||'overview',{context:workspaceNavigationContext()});
  const button=document.querySelector(section?`#nav [data-view="${target}"][data-workspace-section="${section}"]`:`#nav [data-view="${target}"]`)||document.querySelector(`#nav [data-view="${target}"]`);
  if(button)button.click();
 }
@@ -13487,7 +13530,7 @@ new MutationObserver(()=>{if(lookupQueued)return;lookupQueued=true;requestAnimat
 document.addEventListener('DOMContentLoaded',()=>lookupScan());
 ;// record-navigation.js
 'use strict';
-const workspaceRecordKinds={client:['contacts',''],branch:['contacts',''],product:['inventory','catalog'],proforma:['sales','proformas'],invoice:['books','invoices']};
+const workspaceRecordKinds={client:['contacts',''],branch:['contacts',''],product:['inventory','catalog'],proforma:['sales','proformas'],invoice:['books','overview']};
 function workspaceRecordRoute(hash){
  const match=String(hash||'').match(/^#\/(client|branch|product|proforma|invoice)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
  return match?{kind:match[1].toLowerCase(),id:match[2].toLowerCase()}:null;
@@ -13501,13 +13544,14 @@ function workspaceRecordMatchesPage(route,button){
  const target=workspaceRecordKinds[route.kind];
  if(button.dataset.view!==target[0]||(button.dataset.workspaceSection||'')!==target[1])return false;
  if(route.kind==='proforma')return salesFocusedProforma===route.id&&(!salesEditing||(salesEditing===route.id&&proformaDraftMatchesRecord(route.id)));
+ if(route.kind==='invoice')return view==='books'&&booksSection==='invoices';
  return true;
 }
 function workspaceRecordFailure(kind,id,error,current){
  if(!current())return;
  const button=workspaceRecordButton(kind),title={product:'Product',proforma:'Pro forma',invoice:'Invoice',client:'Client',branch:'Branch'}[kind];
- $('#content').innerHTML=workspacePageHeader({title:title+' unavailable',back:'<button type="button" id="recordBack">← Back to register</button>'})+`<section class="card"><p role="alert">${esc(error.message||'This record could not be loaded.')}</p><button type="button" id="recordRetry">Retry loading record</button></section>`;
- $('#recordBack').onclick=()=>{if(current()&&workspaceRecordAllowed(button))return navigateWorkspace(button);};
+ $('#content').innerHTML=workspacePageHeader({title:title+' unavailable',back:`<button type="button" id="recordBack">← Back to ${kind==='invoice'?'Customer invoices':'register'}</button>`})+`<section class="card"><p role="alert">${esc(error.message||'This record could not be loaded.')}</p><button type="button" id="recordRetry">Retry loading record</button></section>`;
+ $('#recordBack').onclick=()=>{if(current()&&workspaceRecordAllowed(button))return kind==='invoice'?openAccountingSection('invoices'):navigateWorkspace(button);};
  const retry=$('#recordRetry');retry.onclick=()=>{if(current()&&retry.isConnected)return run(()=>openWorkspaceRecord(kind,id),{origin:retry,errorTarget:retry.parentElement});};
 }
 async function openWorkspaceRecord(kind,id,{context=workspaceNavigationContext(),replay=false}={}){
@@ -13756,10 +13800,10 @@ async function navResumePending(){
  if(!navReplayPending||(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'||!me||((()=>{try{return typeof busy}catch{return 'undefined'}})()!=='undefined'&&busy))return;
  const hash=navPendingHash,context=navPendingContext||(navPendingContext=workspaceNavigationContext());
  if(location.hash!==hash||context&&!context.current()){navReplayPending=false;navPendingHash='';navPendingContext=null;return;}
- const record=workspaceRecordRoute(hash),profile=!record&&/^#\/(clients|client|branch)\b/.test(hash),button=record?workspaceRecordButton(record.kind):profile?null:navButtonFor(hash);
+ const record=workspaceRecordRoute(hash),profile=!record&&/^#\/(clients|client|branch)\b/.test(hash),accounting=hash==='#/go/accounting'?'forms':/^#\/go\/books(?:\/([a-z-]+))?$/.exec(hash)?.[1]||(hash==='#/go/books'?'overview':null),button=record?workspaceRecordButton(record.kind):profile?null:accounting?navButtonFor('#/go/books/overview'):navButtonFor(hash);
  if(record?!workspaceRecordAllowed(button):!profile&&(!button||button.hidden))return;
  navReplayPending=false;navPendingHash='';navPendingContext=null;navReplaying=true;
- try{if(record)await run(()=>openWorkspaceRecord(record.kind,record.id,{replay:true,context}));else if(profile){const route=readProfileRoute();await run(()=>goProfile(route.kind,route.id,{context}));}else await navigateWorkspace(button,{replay:true,context});}
+ try{if(record)await run(()=>openWorkspaceRecord(record.kind,record.id,{replay:true,context}));else if(profile){const route=readProfileRoute();await run(()=>goProfile(route.kind,route.id,{context}));}else if(accounting)await openAccountingSection(accounting,{replay:true,context});else await navigateWorkspace(button,{replay:true,context});}
  finally{navReplaying=false;}
 }
 function navRecordPage(hash,{replace=false}={}){
@@ -13779,7 +13823,7 @@ function navRecordMenuPage(button){navRecordPage(navHash(button));}
 function navRecordOpenPage(button){
  if(!button||navReplaying||navReplayPending||/^#\/(clients|client|branch)\b/.test(location.hash))return;
  const record=workspaceRecordRoute(location.hash);if(record&&workspaceRecordMatchesPage(record,button))return;
- const hash=navHash(button);if(location.hash===hash)return;
+ const hash=button.dataset.view==='books'?(view==='accounting'?'#/go/accounting':`#/go/books/${booksSection}`):navHash(button);if(location.hash===hash)return;
  navRecordPage(hash,{replace:!/^#\/go\//.test(location.hash)});
 }
 async function navHistoryChanged(){
@@ -13913,6 +13957,7 @@ function navDropdownSetup(){
 function navDropdownSync(){
  document.querySelectorAll('#nav .nav-group').forEach(group=>{
   const wasHidden=group.hidden,allowed=[...group.querySelectorAll('[data-view]')].some(button=>!button.hidden);if(group.hidden===allowed)group.hidden=!allowed;
+  if(!group.querySelector('.nav-group-toggle'))return;
   const active=group.querySelector('[data-view].active:not([hidden])');
   if(!allowed)navGroupSet(group,false,{immediate:true});
   else if((active&&group.navActiveButton!==active)||(wasHidden&&navOpenGroups().has(group.getAttribute('aria-label'))))navGroupSet(group,true);

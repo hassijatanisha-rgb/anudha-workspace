@@ -18,13 +18,13 @@ function fixture(){
   financialImportWorkspace(){},openingReceivablesWorkspace(){},loadLists:async()=>{throw Error('Overview must not hydrate client/product lists')},
   client:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='accounting_access'?true:snapshot()}},from(){throw Error('Unexpected table preload')}}
  });
- for(const name of ['sales-domain.js','accounting-access.js','record-navigation.js','accounting-ledger.js'])vm.runInContext(read(name),ctx);
+ for(const name of ['sales-domain.js','accounting-access.js','record-navigation.js','accounting-shell.js','accounting-ledger.js'])vm.runInContext(read(name),ctx);
  return {ctx,calls,nodes,set:code=>vm.runInContext(code,ctx),get:code=>vm.runInContext(code,ctx)};
 }
 test('Books overview uses two reads and full totals without shared list mutation or eager editor loads',async()=>{
  const f=fixture(),products=f.ctx.products;await f.ctx.booksWorkspace();
  assert.deepEqual(f.calls.map(r=>r.name),['accounting_access','acc_overview']);assert.equal(f.ctx.products,products);assert.equal(f.ctx.listsLoaded,false);
- const html=f.nodes.get('#booksBody').innerHTML;assert.match(html,/8537/);assert.match(html,/2100/);assert.match(html,/Showing the latest 20/);assert.match(html,/Current &lt;customer>/);assert.doesNotMatch(html,/Stale cached name|rehearsal|launch|training/i);assert.equal((html.match(/data-books-tra-row=/g)||[]).length,20);assert.match(html,/Showing 20 of 1002/);assert.match(html,/Unrecorded TRA receipts/);
+ const html=f.nodes.get('#booksBody').innerHTML;assert.match(html,/8537/);assert.match(html,/2100/);assert.match(html,/Showing the latest 20/);assert.match(html,/Current &lt;customer>/);assert.doesNotMatch(html,/Stale cached name|rehearsal|launch|training/i);assert.equal((html.match(/data-books-tra-row=/g)||[]).length,20);assert.match(html,/Showing 20 of 1002/);assert.match(html,/Unrecorded TRA receipts/);assert.match(html,/Invoice requests/);assert.match(html,/Review quantities/);assert.ok(html.includes(new Intl.NumberFormat('en-TZ',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(123.45)));assert.match(html,/Profit is for 2026-10-01 to 2026-10-29/);
  assert.equal(f.get("booksData.taxIds.get('customer').tin"),'123');assert.equal(f.get('booksData.invoices[0].outstanding'),600);
 });
 test('Books overview preserves accounting denial and rejects failed or incomplete financial data',async()=>{
@@ -81,6 +81,17 @@ async function ui({overlap=false,count=1}={}){
  await f.ctx.booksWorkspace();
  return {...f,document,data,row,messages,scrolls,node:selector=>document.querySelector(selector),write:fn=>write=fn,open(){document.querySelector('[data-books-tra-row] button').onclick();const form=document.querySelector('#booksFiscalForm');form.elements.receipt.value='TRA-123';form.elements.code.value='CODE';form.elements.tin.value='123456789';form.elements.vrn.value='VRN-1';return form;},submit(form){form.onsubmit({preventDefault(){}});return f.pending;}};
 }
+
+test('invoice request opens the existing quantity review with the selected accepted Pro forma',async()=>{
+ const f=await ui(),button=f.node('[data-books-invoice-pf]');let opened=0;f.ctx.booksWorkspace=async()=>{opened++;};
+ await button.onclick();assert.equal(opened,1);assert.equal(f.get('booksSection'),'invoices');assert.equal(f.get('booksDraft.proformaId'),'pf');
+});
+
+test('invoice request ignores stale sessions, routes, snapshots and detached controls',async()=>{
+ for(const change of [f=>{f.ctx.me={...f.ctx.me}},f=>{f.ctx.view='dashboard'},f=>f.set('booksEpoch++'),f=>f.set('booksData={...booksData}'),f=>f.node('[data-books-invoice-pf]').remove()]){
+  const f=await ui(),button=f.node('[data-books-invoice-pf]');f.ctx.booksWorkspace=()=>assert.fail('Stale request must not open');change(f);await button.onclick();assert.equal(f.get('booksDraft'),null);
+ }
+});
 
 test('actual overview Record TRA action uses the existing form and confirmed receipt removes only its queue row',async()=>{
  const f=await ui({overlap:true}),header=f.node('.workspace-page-header'),metrics=f.node('.books-metrics'),waiting=f.node('[data-books-invoice-pf]'),overdue=f.node('[data-books-fiscal-cell]'),form=f.open();form.elements.receipt.focus();

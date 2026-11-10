@@ -5,7 +5,7 @@ const flush=()=>new Promise(setImmediate);
 function fixture(hash='#/go/service/installations',options={}){
  const f=mainPageFixture(options),renders=[];f.ctx.location.hash=hash;f.ctx.render=async()=>{renders.push(f.evaluate('view'));};f.ctx.actor=f.actor;
  f.evaluate(`view='dashboard';navLastHash=${JSON.stringify(hash)};me=null;navReplay(${JSON.stringify(hash)},null)`);
- const buttons=[['service','installations'],['dashboard',''],['books','invoices']].map(([view,section])=>f.document.querySelectorAll('[data-view]').find(button=>button.dataset.view===view&&(button.dataset.workspaceSection||'')===section));
+ const buttons=[['service','installations'],['dashboard',''],['books','overview']].map(([view,section])=>f.document.querySelectorAll('[data-view]').find(button=>button.dataset.view===view&&(button.dataset.workspaceSection||'')===section));
  buttons[0].hidden=buttons[1].hidden=false;
  return {...f,renders,buttons};
 }
@@ -17,7 +17,7 @@ test('a deep link survives an unfinished bootstrap and resumes once busy is rele
  f.ctx.replayQueuedNavigation();await flush();assert.deepEqual(f.renders,['service']);
 });
 test('a deferred accounting deep link resumes when accounting access reveals its button',async()=>{
- const f=fixture('#/go/books/invoices');f.evaluate('me=actor');await f.ctx.navResumePending();assert.deepEqual(f.renders,[]);
+ const f=fixture('#/go/books/invoices');f.evaluate('me=actor');f.document.querySelector('#nav').hidden=false;await f.ctx.navResumePending();assert.deepEqual(f.renders,[]);
  await f.ctx.showAccountingNavigation();await flush();assert.deepEqual(f.renders,['books']);assert.equal(f.evaluate('booksSection'),'invoices');
 });
 test('an explicit queued menu choice takes precedence over the startup deep link',async()=>{
@@ -46,7 +46,10 @@ test('multiple pre-auth route changes coalesce to the final destination before a
 });
 
 test('pre-auth queued accounting destination still waits for access and pins the authenticated actor',async()=>{
- for(const changedActor of [false,true]){const f=fixture('#/go/dashboard',{accounting:false}),boot=beginBootstrap(f);f.ctx.location.hash='#/go/books/invoices';await f.ctx.navHistoryChanged();boot.finish();await boot.loading;await f.settle();assert.deepEqual(f.renders,['dashboard']);assert.equal(f.evaluate('navReplayPending'),true);assert.equal(f.buttons[2].hidden,true);if(changedActor)f.evaluate('me={...me}');f.buttons[2].hidden=false;await f.ctx.navResumePending();await flush();assert.deepEqual(f.renders,changedActor?['dashboard']:['dashboard','books']);assert.equal(f.evaluate('navReplayPending'),false);}
+ for(const changedActor of [false,true]){
+  let allowed=false;const f=fixture('#/go/dashboard',{rpcs:{accounting_access:()=>allowed}}),boot=beginBootstrap(f);f.ctx.location.hash='#/go/books/invoices';await f.ctx.navHistoryChanged();boot.finish();await boot.loading;await f.settle();assert.deepEqual(f.renders,['dashboard']);assert.equal(f.evaluate('navReplayPending'),true);assert.equal(f.buttons[2].hidden,true);
+  if(changedActor)f.evaluate('me={...me}');allowed=true;await f.ctx.showAccountingNavigation();await f.settle();assert.deepEqual(f.renders,changedActor?['dashboard']:['dashboard','books']);assert.equal(f.evaluate('navReplayPending'),false);
+ }
 });
 
 test('sign-out and session clearing discard pre-auth queued destinations before late bootstrap can replay',async()=>{

@@ -23,12 +23,12 @@ test('phone shortcuts use five permitted original destinations and never duplica
  assert.equal(shortcuts.length,5);assert.deepEqual(f.nav.querySelectorAll('[data-view]'),f.originalNodes);assert.equal(f.bar.querySelectorAll('[data-view]').length,0);
  const routed=[];f.ctx.navigateWorkspace=button=>routed.push(button);
  for(let index=0;index<5;index++){assert.ok(shortcuts[index].getAttribute('aria-label').includes(shortcuts[index].querySelector('.nav-label').textContent));assert.ok(shortcuts[index].getAttribute('aria-label').includes(originals[index].textContent));const pressed=f.click(shortcuts[index]);assert.equal(pressed.event.prevented,true);assert.equal(pressed.event.stopped,true);await pressed.promise;assert.equal(routed.at(-1),originals[index]);}
- assert.equal(f.original('books','invoices').hidden,true);assert.equal(f.original('staff').hidden,true);
+ assert.equal(f.original('books','overview').hidden,true);assert.equal(f.original('staff').hidden,true);
  originals[3].hidden=true;const stale=shortcuts[3];f.ctx.navDropdownSync();assert.equal(stale.isConnected,false);await f.click(stale).promise;assert.equal(routed.length,5);
 });
 test('permission changes hide empty groups, refill shortcuts and keep same surviving nodes',()=>{
  const f=fixture(),first=f.bar.firstElementChild,accounts=f.nav.querySelector('.nav-accounts');assert.equal(accounts.hidden,true);
- f.original('books','invoices').hidden=false;f.ctx.navDropdownSync();assert.equal(accounts.hidden,false);assert.equal(f.bar.firstElementChild,first);
+ f.original('books','overview').hidden=false;f.ctx.navDropdownSync();assert.equal(accounts.hidden,false);assert.equal(f.bar.firstElementChild,first);
  const service=f.original('service','installations');service.hidden=true;f.ctx.navDropdownSync();assert.equal(f.bar.querySelectorAll('button').length,6);assert.equal(f.bar.firstElementChild,first);
  f.nav.hidden=true;f.ctx.navDropdownSync();assert.equal(f.bar.hidden,true);assert.equal(f.panel.hidden,true);assert.equal(f.more.getAttribute('aria-expanded'),'false');
  f.nav.hidden=false;f.ctx.navDropdownSync();assert.equal(f.bar.hidden,false);assert.equal(f.panel.hidden,true,'phone menu remains closed after signing in');
@@ -98,18 +98,18 @@ test('Escape closes More when keyboard focus is on the bottom bar',async()=>{
  f.motions.at(-1).pending.resolve();await close;assert.equal(f.panel.hidden,true);assert.equal(f.document.activeElement,f.more);
 });
 
-test('role groups preserve all46 destinations and their permission attributes',()=>{
+test('role groups preserve permitted destinations with one Accounting button and no disclosure',()=>{
  const f=fixture(1200),groups=f.nav.querySelectorAll('.nav-group'),expected={
   Workspace:['dashboard','personal:task','reports','personal:note','personal:event','travel'],
   Sales:['contacts','leads:leads','requests:inquiries','requests:complaints','sales:proformas','contracts','prices'],
   Stores:['inventory:catalog','sales:delivery','packing:queue','packing:screen','pending','purchasing:orders','purchasing:suppliers','inventory:stock','inventory:transfers','inventory:locations','stockcount:count','stockcount:review','inventory:review'],
   Service:['service:installations','service:schedule','service:forms'],
-  Accounts:['accounting','books:overview','books:invoices','books:receipts','books:credits','books:suppliers','books:valuation','books:journal','books:accounts','books:reports','books:import','books:opening'],
+  Accounts:['books:overview'],
   Admin:['guide','staff','settings','recycle','approvals']
  };
- assert.deepEqual(groups.map(group=>group.getAttribute('aria-label')),Object.keys(expected));assert.equal(f.originalNodes.length,46);assert.deepEqual(f.nav.querySelectorAll('[data-view]'),f.originalNodes);
+ assert.deepEqual(groups.map(group=>group.getAttribute('aria-label')),Object.keys(expected));assert.equal(f.originalNodes.length,35);assert.deepEqual(f.nav.querySelectorAll('[data-view]'),f.originalNodes);
  const key=node=>node.dataset.view+(node.dataset.workspaceSection?':'+node.dataset.workspaceSection:'');
- for(const group of groups){const name=group.getAttribute('aria-label'),panel=group.querySelector('.nav-group-items'),toggle=group.querySelector('.nav-group-toggle');assert.deepEqual(panel.querySelectorAll('[data-view]').map(key),expected[name]);assert.equal(toggle.getAttribute('aria-controls'),panel.id);assert.equal(toggle.getAttribute('aria-label'),name);assert.equal(panel.hidden,name!=='Workspace');}
+ for(const group of groups){const name=group.getAttribute('aria-label'),panel=group.querySelector('.nav-group-items'),toggle=group.querySelector('.nav-group-toggle');assert.deepEqual(group.querySelectorAll('[data-view]').map(key),expected[name]);if(name==='Accounts'){assert.equal(panel,null);assert.equal(toggle,null);assert.equal(group.querySelectorAll('button').length,1);assert.equal(f.original('books','overview').getAttribute('aria-label'),'Accounting');continue;}assert.equal(toggle.getAttribute('aria-controls'),panel.id);assert.equal(toggle.getAttribute('aria-label'),name);assert.equal(panel.hidden,name!=='Workspace');}
  assert.deepEqual(f.originalNodes.filter(node=>node.hasAttribute('data-owner-only')).map(key).sort(),['staff','approvals','recycle','stockcount:review','inventory:review'].sort());
  assert.deepEqual(f.originalNodes.filter(node=>node.hasAttribute('data-accounting-only')).map(key),expected.Accounts);assert.equal(f.original('staff').id,'staffNav');
 });
@@ -136,9 +136,9 @@ test('new visible current pages autoexpand their group without restarting motion
  product.classList.remove('active');f.original('packing','queue').classList.add('active');f.ctx.navDropdownSync();assert.equal(panel.hidden,false);f.motions.at(-1).pending.resolve();await flush();
 });
 test('permission changes during opening cancel old motion and keep hidden groups and items unreachable',async()=>{
- const f=fixture(),group=f.nav.querySelector('.nav-accounts'),panel=group.querySelector('.nav-group-items'),invoice=f.original('books','invoices');invoice.hidden=false;invoice.removeAttribute('hidden');invoice.classList.add('active');f.ctx.navDropdownSync();const opening=f.motions.at(-1);assert.equal(group.hidden,false);assert.equal(panel.inert,false);
- invoice.hidden=true;invoice.setAttribute('hidden','');f.ctx.navDropdownSync();assert.equal(opening.cancelled,true);assert.equal(group.hidden,true);assert.equal(panel.hidden,true);assert.equal(panel.inert,true);await flush();assert.ok(group.querySelectorAll('[data-view]').every(button=>button.hidden));
- invoice.hidden=false;invoice.removeAttribute('hidden');f.ctx.navDropdownSync();assert.equal(group.hidden,false);assert.equal(panel.hidden,false);assert.equal(panel.inert,false);f.motions.at(-1).pending.resolve();await flush();
+ const f=fixture(),group=f.nav.querySelector('.nav-admin'),panel=group.querySelector('.nav-group-items'),staff=f.original('staff');group.querySelectorAll('[data-view]').forEach(button=>button.hidden=true);f.ctx.navDropdownSync();staff.hidden=false;staff.removeAttribute('hidden');staff.classList.add('active');f.ctx.navDropdownSync();const opening=f.motions.at(-1);assert.equal(group.hidden,false);assert.equal(panel.inert,false);
+ staff.hidden=true;staff.setAttribute('hidden','');f.ctx.navDropdownSync();assert.equal(opening.cancelled,true);assert.equal(group.hidden,true);assert.equal(panel.hidden,true);assert.equal(panel.inert,true);await flush();assert.ok(group.querySelectorAll('[data-view]').every(button=>button.hidden));
+ staff.hidden=false;staff.removeAttribute('hidden');f.ctx.navDropdownSync();assert.equal(group.hidden,false);assert.equal(panel.hidden,false);assert.equal(panel.inert,false);f.motions.at(-1).pending.resolve();await flush();
 });
 test('group motion never restores focus after the user moves elsewhere',async()=>{
  const f=fixture(),group=f.nav.querySelector('.nav-sales'),toggle=group.querySelector('.nav-group-toggle'),outside=f.document.createElement('input');f.document.body.append(outside);const open=f.click(toggle).promise;f.motions.at(-1).pending.resolve();await open;f.original('contacts').focus();const close=f.click(toggle).promise;assert.equal(f.document.activeElement,toggle);outside.focus();f.motions.at(-1).pending.resolve();await close;assert.equal(f.document.activeElement,outside);
@@ -146,12 +146,12 @@ test('group motion never restores focus after the user moves elsewhere',async()=
 
 test('renamed saved group preferences reopen only when the original permission gate allows them',async()=>{
  const f=fixture(1200,false,['Orders','Inventory','System','Accounts']);for(const name of ['sales','stores','admin'])assert.equal(f.nav.querySelector('.nav-'+name+' .nav-group-items').hidden,false);
- const group=f.nav.querySelector('.nav-accounts'),panel=group.querySelector('.nav-group-items');assert.equal(group.hidden,true);assert.equal(panel.hidden,true);const invoice=f.original('books','invoices');invoice.hidden=false;invoice.removeAttribute('hidden');f.ctx.navDropdownSync();assert.equal(panel.hidden,false);f.motions.at(-1).pending.resolve();await flush();
+ const group=f.nav.querySelector('.nav-accounts');assert.equal(group.hidden,true);assert.equal(group.querySelector('.nav-group-items'),null);const accounting=f.original('books','overview');accounting.hidden=false;accounting.removeAttribute('hidden');f.ctx.navDropdownSync();assert.equal(group.hidden,false);assert.equal(group.querySelector('.nav-group-toggle'),null);
  const pending=f.click(f.nav.querySelector('.nav-sales .nav-group-toggle')).promise;f.motions.at(-1).pending.resolve();await pending;assert.deepEqual(JSON.parse(f.ctx.localStorage.getItem('erp-nav-open')).sort(),['Accounts','Admin','Stores']);
 });
 
-test('steady hidden permission groups do not rewrite observed hidden attributes on every sync',()=>{
- const f=fixture(),panel=f.nav.querySelector('.nav-accounts .nav-group-items');let hidden=panel.hidden,writes=0;Object.defineProperty(panel,'hidden',{get:()=>hidden,set:value=>{hidden=value;writes++;}});f.ctx.navDropdownSync();f.ctx.navDropdownSync();assert.equal(writes,0);assert.equal(panel.hidden,true);assert.equal(panel.inert,true);
+test('steady hidden Accounting group does not rewrite observed hidden attributes on every sync',()=>{
+ const f=fixture(),group=f.nav.querySelector('.nav-accounts');let hidden=group.hidden,writes=0;Object.defineProperty(group,'hidden',{get:()=>hidden,set:value=>{hidden=value;writes++;}});f.ctx.navDropdownSync();f.ctx.navDropdownSync();assert.equal(writes,0);assert.equal(group.hidden,true);assert.equal(group.querySelector('.nav-group-items'),null);
 });
 
 test('opening More focuses the visible toggle of a deliberately collapsed active group',async()=>{

@@ -11,7 +11,7 @@ function fixture(files,view){
  const document=dom(),prototype=Object.getPrototypeOf(document.body);Object.defineProperty(prototype,'id',{get(){return this.attrs.id;},set(value){this.attrs.id=value;}});prototype.before=function(node){this.parentElement.insertBefore(node,this);};document.addEventListener=()=>{};
  document.body.innerHTML='<main id="content"></main>';const root=document.querySelector('#content'),actor={user_id:'owner',role:'owner'};
  const ctx=vm.createContext({location:{hash:'#/go/books/invoices'},workspacePageHeader,statusTone,document,window:{addEventListener(){}},me:actor,view,$:selector=>document.querySelector(selector),esc,client:{},listsLoaded:true,organizations:[],contacts:[],crypto:{randomUUID:()=> 'new-id'},workspaceLoading(){},run:fn=>fn(),requireAccountingAccess:async()=>actor.user_id,syncWorkspaceNavigation(){},renderSearchPreservingPosition:(input,render)=>render()});
- for(const file of ['record-navigation.js',...files])vm.runInContext(read(file),ctx);
+ for(const file of ['record-navigation.js','accounting-shell.js',...files])vm.runInContext(read(file),ctx);
  return {ctx,root,document,actor,set:code=>vm.runInContext(code,ctx),node:selector=>document.querySelector(selector)};
 }
 function header(f,title,back=false){
@@ -25,8 +25,8 @@ function books(section='overview',selected=''){
  for(const name of ['booksReceipts','booksJournal'])f.ctx[name]=(actor,current)=>{f.node('#booksBody').innerHTML='<p>Selected transaction</p>';f.ctx.booksTransactionBack(actor,current);};
  f.set(`booksSection=${JSON.stringify(section)};booksTransactionActor=me;booksTransactionSelected=${JSON.stringify(selected)};booksTransactionPages.receipts=2;booksTransactionPages.journal=3`);return f;
 }
-for(const [section,title] of [['overview','Accounts overview'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel'],['opening','Opening receivables']])test(`Books ${section} keeps one shared title, no landing Back, and the exact lock target below the header`,async()=>{
- const f=books(section);await f.ctx.booksWorkspace();const h=header(f,title),lock=f.node('#booksLockStatus');assert.ok(lock);assert.equal(h.contains(lock),false);assert.equal(lock.textContent,'Books locked through 2026-10-20 <checked>.');assert.equal(f.node('checked'),null);assert.ok(f.node('#booksBody'));assert.equal(h.querySelector('details'),null);assert.match(f.root.textContent,/Other accounting tasks/);
+for(const [section,title] of [['overview','Accounting'],['invoices','Customer invoices'],['receipts','Customer receipts'],['journal','Journal entries'],['accounts','Chart of accounts'],['reports','Financial reports'],['import','Import Excel'],['opening','Opening receivables']])test(`Books ${section} keeps one shared title, no landing Back, and the exact lock target below the header`,async()=>{
+ const f=books(section);await f.ctx.booksWorkspace();const h=header(f,title),lock=f.node('#booksLockStatus');assert.ok(lock);assert.equal(h.contains(lock),false);assert.equal(lock.textContent,'Books locked through 2026-10-20 <checked>.');assert.equal(f.node('checked'),null);assert.ok(f.node('#booksBody'));assert.equal(h.querySelector('details'),null);assert.ok(f.node('[data-accounting-section]'));assert.doesNotMatch(f.root.textContent,/Other accounting tasks/);
 });
 for(const section of ['receipts','journal'])test(`Books ${section} binds Back idempotently in the retained header and preserves page/focus return`,async()=>{
  const f=books(section,'selected');await f.ctx.booksWorkspace();const h=header(f,section==='receipts'?'Customer receipts':'Journal entries',true),back=f.node('#booksTransactionBack'),body=f.node('#booksBody');
@@ -40,7 +40,7 @@ test('Books Back cannot act after its actor or guarded page changes',async()=>{
 });
 test('accounting landing keeps creation choices below the shared header',async()=>{
  const f=fixture(['company-forms.js','accounting-workspace.js'],'accounting');f.ctx.client.from=()=>({select(){return this;},order(){return this;},range:async()=>({data:[]})});f.ctx.mountProformaAccountingQueue=async()=>{};
- await f.ctx.accountingWorkspace();const h=header(f,'Accounting');assert.equal(h.querySelector('[data-accounting-new]'),null);assert.equal(f.root.querySelectorAll('[data-accounting-new]').length,7);assert.ok(f.node('#accountingNext'));assert.ok(f.node('#proformaAccountingQueue'));
+ await f.ctx.accountingWorkspace();const h=header(f,'Company forms');assert.equal(h.querySelector('[data-accounting-new]'),null);assert.equal(f.root.querySelectorAll('[data-accounting-new]').length,7);assert.ok(f.node('#accountingNext'));assert.ok(f.node('#proformaAccountingQueue'));
 });
 test('accounting editor uses its real form title and keeps the guarded Back, form and Save targets',async()=>{
  const f=fixture(['company-forms.js','accounting-workspace.js'],'accounting');await f.ctx.accountingEditor({id:'draft',kind:'purchase',version:0,body:{}},'owner');const h=header(f,'Purchase Voucher / Supplier Invoice',true),back=f.node('#accountingBack'),form=f.node('#accountingForm');assert.equal(back.parentElement,h.querySelector('.workspace-page-back'));assert.ok(form.querySelector('form'));assert.ok(f.node('#accountingSave'));assert.equal(h.contains(f.node('#accountingSave')),false);
