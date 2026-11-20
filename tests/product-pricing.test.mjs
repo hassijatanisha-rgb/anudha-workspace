@@ -8,7 +8,7 @@ function load(extra={}){
  vm.runInContext(domain+'\n'+source+';Object.assign(globalThis,{pricingDiscount,pricingMinorText,pricingLineFields,pricingReadLine,pricingRefreshRow,pricingRefreshForm,pricingBindForm,pricingLoad,pricesWorkspace,clearProductPricing,setPrices:rows=>{productPricingActor=me;productSalePrices=new Map(rows.map(r=>[pricingKey(r.product_id,r.currency),r]));}})',ctx);return ctx;
 }
 function lineForm({price='100.00',percent='10',amount='',mode='percent',currency='TZS',kind='sale',quantity='2'}={}){
- const input=value=>({value,validity:'',setCustomValidity(value){this.validity=value;}}),nodes=new Map(Object.entries({productChoice:'machine',unitPrice:price,discount:percent,discountAmount:amount,discountMode:mode,quantity}).map(([name,value])=>[`[name="${name}"]`,input(value)]));
+ const input=value=>({value,validity:'',setCustomValidity(value){this.validity=value;}}),nodes=new Map(Object.entries({productChoice:'machine',tax:'0',unitPrice:price,discount:percent,discountAmount:amount,discountMode:mode,quantity}).map(([name,value])=>[`[name="${name}"]`,input(value)]));
  for(const selector of ['[data-discount-percent]','[data-discount-amount]','[data-pricing-feedback]'])nodes.set(selector,{});
  const listeners={},form={dataset:{},querySelector:selector=>selector==='[name="currency"]'?input(currency):selector==='[name="commercialKind"]'?input(kind):selector==='#pricingHelp'?{}:null,querySelectorAll:()=>[row],addEventListener:(event,fn)=>{listeners[event]=fn;}},row={querySelector:selector=>nodes.get(selector),closest:()=>form};
  return {row,form,nodes,listeners};
@@ -40,7 +40,7 @@ test('line fields keep a read-only unit price and a canonical discount percentag
  nodes.get('[name="discountAmount"]').value='0.01';ctx.setPrices([price(1000000)]);assert.throws(()=>ctx.pricingReadLine(row,{quantity:1,unitPriceMinor:1000000}),/cannot be represented/);
 });
 test('configured prices handle product, currency and placement without fabricating a missing price',()=>{
- const ctx=load();ctx.setPrices([price()]);const {row,form,nodes}=lineForm();ctx.pricingRefreshRow(row,form);assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.match(nodes.get('[data-pricing-feedback]').textContent,/Actual discount: TZS\s*20 \(10%\)/);
+ const ctx=load();ctx.setPrices([price()]);const {row,form,nodes}=lineForm();ctx.pricingRefreshRow(row,form);assert.equal(nodes.get('[name="unitPrice"]').value,'100.00');assert.match(nodes.get('[data-pricing-feedback]').textContent,/Actual discount: TZS\s*20\.00 \(10%\)/);
  const missing=lineForm({currency:'USD'});ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'');assert.match(missing.nodes.get('[data-pricing-feedback]').textContent,/No configured USD price/);assert.match(missing.nodes.get('[name="productChoice"]').validity,/No configured USD/);assert.equal(missing.nodes.get('[name="discount"]').validity,'');
  ctx.setPrices([price(0,'USD')]);ctx.pricingRefreshRow(missing.row,missing.form);assert.equal(missing.nodes.get('[name="unitPrice"]').value,'0.00');
  const placement=lineForm({kind:'placement'});ctx.pricingRefreshRow(placement.row,placement.form);assert.equal(placement.nodes.get('[name="unitPrice"]').value,'0.00');
@@ -65,4 +65,28 @@ test('price loading pages by product and currency and ignores late results after
 test('a price page finishing after navigation cannot overwrite the shared content area',async()=>{
  let resolve;const ctx=load({client:{rpc:()=>new Promise(r=>resolve=r)}}),target={innerHTML:'',isConnected:true};
  const pending=ctx.pricesWorkspace(target);ctx.view='contacts';target.innerHTML='Client page';resolve({data:{}});await pending;assert.equal(target.innerHTML,'Client page');
+});
+
+test('inclusive discount amounts agree with the displayed before-VAT discount for small and multi-unit lines',()=>{
+ const ctx=load();
+ for(const [quantity,gross] of [[3,7],[5,10000000],[9,143],[100,1]]){
+  const price=Math.round(gross*10000/11800),terms={taxBasisPoints:1800,grossUnitPriceMinor:gross};
+  for(const bp of [0,1,100,999,1000,2500,3333,5000,9999,10000]){
+   const original=ctx.pricingDiscount(quantity,price,'percent',String(bp/100),terms);
+   const byAmount=ctx.pricingDiscount(quantity,price,'amount',ctx.pricingMinorText(original.discountMinor),terms);
+   assert.equal(byAmount.discountMinor,original.discountMinor);
+   assert.equal(ctx.proformaLineTotal({quantity,unitPriceMinor:price,...terms,discountBasisPoints:bp}).total,quantity*gross-Math.round(quantity*gross*bp/10000));
+  }
+ }
+});
+test('a new central price or different currency preserves configured VAT and uses that currency’s central price',()=>{
+ const source={tax_basis_points:1800,import_price_basis:'gross',gross_price_minor:11800,currency:'TZS',import_net_price_minor:10000};
+ const ctx=load({inventoryProductFromChoice:()=>({id:'machine',source})});ctx.setPrices([price(11000),price(10000,'USD')]);
+ for(const [currency,minor] of [['TZS',11000],['USD',10000]]){
+  const {form,row}=lineForm({currency});ctx.pricingRefreshRow(row,form);
+  assert.deepEqual({...ctx.pricingReadLine(row,{quantity:2,unitPriceMinor:minor})},{unitPriceMinor:minor,taxBasisPoints:1800,discountBasisPoints:1000});
+ }
+ ctx.setPrices([price()]);source.gross_price_minor=999;
+ const {form,row,nodes}=lineForm();ctx.pricingRefreshRow(row,form);
+ assert.match(nodes.get('[name="productChoice"]').validity,/review the imported VAT-inclusive price/);
 });

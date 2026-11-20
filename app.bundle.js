@@ -2732,10 +2732,28 @@ function moneyExactDisplay(minor,currency='TZS'){
  const parts=new Intl.NumberFormat('en-TZ',{style:'currency',currency,currencyDisplay:currency==='TZS'?'code':'symbol',minimumFractionDigits:2,maximumFractionDigits:2}).formatToParts(absolute/100n);
  return (amount<0n?'-':'')+parts.map(part=>part.type==='fraction'?fraction:part.value).join('');
 }
+function proformaLineAmounts(line){
+ const quantity=BigInt(line.quantity),rate=BigInt(line.taxBasisPoints),discountRate=BigInt(line.discountBasisPoints);
+ const round=(amount,divisor)=>(amount+divisor/2n)/divisor;
+ let subtotal,net,tax;
+ if(line.grossUnitPriceMinor!=null){
+  // Discount the quoted VAT-inclusive amount first so the customer's total stays exact.
+  const inclusive=quantity*BigInt(line.grossUnitPriceMinor),total=inclusive-round(inclusive*discountRate,10000n);
+  subtotal=round(inclusive*10000n,10000n+rate);
+  net=round(total*10000n,10000n+rate);
+  tax=total-net;
+ }else{
+  subtotal=quantity*BigInt(line.unitPriceMinor);
+  net=subtotal-round(subtotal*discountRate,10000n);
+  tax=round(net*rate,10000n);
+ }
+ return {gross:subtotal,discount:subtotal-net,tax,total:net+tax};
+}
 function proformaLineTotal(line){
- const gross=line.quantity*line.unitPriceMinor,discount=Math.round(gross*line.discountBasisPoints/10000),tax=Math.round((gross-discount)*line.taxBasisPoints/10000);
- if(![gross,discount,tax,gross-discount+tax].every(Number.isSafeInteger))throw Error('Line total is too large.');
- return {gross,discount,tax,total:gross-discount+tax};
+ const {gross,discount,tax,total}=proformaLineAmounts(line);
+ const amounts={gross:Number(gross),discount:Number(discount),tax:Number(tax),total:Number(total)};
+ if(!Object.values(amounts).every(Number.isSafeInteger))throw Error('Line total is too large.');
+ return amounts;
 }
 function proformaNextActions(status){return ({draft:['send','cancel'],sent:['accept','revise','reject','cancel'],accepted:[],rejected:[],cancelled:[]})[status]||[]}
 function deliveryNextActions(status){return ({
@@ -3207,64 +3225,98 @@ async function pricingLoad(){
  }
  productSalePrices=new Map(rows.map(row=>[pricingKey(row.product_id,row.currency),row]));productPricingActor=actor;return rows;
 }
-function pricingDiscount(quantity,unitPriceMinor,mode,value){
+function pricingDiscount(quantity,unitPriceMinor,mode,value,{taxBasisPoints=0,grossUnitPriceMinor}={}){
  if(!Number.isSafeInteger(quantity)||quantity<1||!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw Error('Enter a valid quantity and configured unit price.');
- const gross=BigInt(quantity)*BigInt(unitPriceMinor);
- if(gross>9000000000000000n)throw Error('Line total is too large.');
- let basisPoints,requested;
+ const at=basisPoints=>proformaLineAmounts({quantity,unitPriceMinor,grossUnitPriceMinor,taxBasisPoints,discountBasisPoints:basisPoints});
+ const subtotal=Number(at(0).gross);
+ if(subtotal>9000000000000000)throw Error('Line total is too large.');
+ let basisPoints;
  if(mode==='amount'){
-  requested=BigInt(moneyMinor(value));if(requested>gross)throw Error('Discount amount cannot exceed the line subtotal.');
-  basisPoints=gross===0n?0n:(requested*10000n+gross/2n)/gross;
+  const requested=moneyMinor(value);
+  if(requested>subtotal)throw Error('Discount amount cannot exceed the line subtotal.');
+  basisPoints=subtotal===0?0:Number((BigInt(requested)*10000n+BigInt(subtotal)/2n)/BigInt(subtotal));
+  let actual=Number(at(basisPoints).discount);
+  // Rounding a VAT-inclusive total before extracting its net can shift the nearest step.
+  if(grossUnitPriceMinor!=null&&actual!==requested){
+   let low=0,high=10000;
+   while(low<high){const mid=Math.floor((low+high)/2);if(at(mid).discount<requested)low=mid+1;else high=mid;}
+   const under=Math.max(0,low-1);
+   basisPoints=requested-Number(at(under).discount)<Number(at(low).discount)-requested?under:low;
+   actual=Number(at(basisPoints).discount);
+  }
+  if(actual!==requested)throw Error(`This exact discount cannot be represented in 0.01% steps. The nearest percentage (${basisPoints/100}%) gives ${pricingMinorText(actual)}. Enter a percentage or a representable amount.`);
  }else{
-  basisPoints=BigInt(moneyMinor(value));if(basisPoints>10000n)throw Error('Discount must be between 0% and 100%.');
+  basisPoints=moneyMinor(value);if(basisPoints>10000)throw Error('Discount must be between 0% and 100%.');
  }
- const actual=(gross*basisPoints+5000n)/10000n;
- if(mode==='amount'&&actual!==requested)throw Error(`This exact discount cannot be represented in 0.01% steps. The nearest percentage (${Number(basisPoints)/100}%) gives ${pricingMinorText(actual)}. Enter a percentage or a representable amount.`);
- return {discountBasisPoints:Number(basisPoints),discountMinor:Number(actual),grossMinor:Number(gross)};
+ return {discountBasisPoints:basisPoints,discountMinor:Number(at(basisPoints).discount),grossMinor:subtotal};
 }
 function pricingLineFields(line={}){
  const price=line.unit_price_minor===undefined?'':pricingMinorText(line.unit_price_minor),discount=(line.discount_basis_points||0)/100;
- return `<label><span>Configured unit price</span><input name="unitPrice" inputmode="decimal" value="${esc(price)}" readonly required aria-describedby="pricingHelp"></label><label><span>Discount entry</span><select name="discountMode"><option value="percent">Percentage</option><option value="amount">Amount for this line</option></select></label><label data-discount-percent><span>Discount %</span><input name="discount" type="number" min="0" max="100" step="0.01" value="${esc(discount)}" required></label><label data-discount-amount hidden><span>Discount amount for this line</span><input name="discountAmount" inputmode="decimal" value="" disabled></label><small data-pricing-feedback role="status"></small>`;
+ return `<label><span>Unit price before VAT</span><input name="unitPrice" inputmode="decimal" value="${esc(price)}" readonly required aria-describedby="pricingHelp"></label><label><span>Discount entry</span><select name="discountMode"><option value="percent">Percentage</option><option value="amount">Amount for this line</option></select></label><label data-discount-percent><span>Discount %</span><input name="discount" type="number" min="0" max="100" step="0.01" value="${esc(discount)}" required></label><label data-discount-amount hidden><span>Discount amount for this line</span><input name="discountAmount" inputmode="decimal" value="" disabled></label><small data-pricing-feedback role="status"></small>`;
 }
-function pricingExpectedPrice(row,form){
+function pricingValidWorkbookGross(gross,unitPriceMinor){
+ return Number.isSafeInteger(gross)&&gross>=0&&gross<=9000000000000000
+  &&(BigInt(gross)*10000n+5900n)/11800n===BigInt(unitPriceMinor);
+}
+function pricingQuoteTerms(row,form){
  if(productPricingActor!==me)throw Error('Product prices are not loaded for this login. Refresh before quoting.');
  const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value);
  if(!product)throw Error('Choose the product from the search suggestions.');
- if(form.querySelector('[name="commercialKind"]')?.value==='placement')return 0;
+ if(form.querySelector('[name="commercialKind"]')?.value==='placement')return {unitPriceMinor:0};
  const currency=form.querySelector('[name="currency"]').value,price=productSalePrices.get(pricingKey(product.id,currency));
  if(!price)throw Error(`No configured ${currency} price for this product. Ask the owner or accounting to set its price.`);
- const value=Number(price.unit_price_minor);if(!Number.isSafeInteger(value)||value<0)throw Error('Configured price is invalid. Ask accounting to review it.');
- return value;
+ const unitPriceMinor=Number(price.unit_price_minor);if(!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw Error('Configured price is invalid. Ask accounting to review it.');
+ const source=product.source||{},rate=source.tax_basis_points;
+ const terms={unitPriceMinor};
+ if(typeof rate==='number'){
+  if(!Number.isInteger(rate)||rate<0||rate>10000)throw Error('Ask Accounts to review the configured VAT rate.');
+  terms.taxBasisPoints=rate;
+ }
+ if(rate===1800&&source.import_price_basis==='gross'&&['TZS','USD'].includes(currency)&&source.currency===currency&&source.import_net_price_minor===unitPriceMinor){
+  const gross=source.gross_price_minor;
+  if(!pricingValidWorkbookGross(gross,unitPriceMinor))throw Error('Ask Accounts to review the imported VAT-inclusive price.');
+  terms.grossUnitPriceMinor=gross;
+ }
+ return terms;
 }
 function pricingReadLine(row,{quantity,unitPriceMinor}){
- const expected=pricingExpectedPrice(row,row.closest('form'));
- if(unitPriceMinor!==expected)throw Error('The configured price changed. Refresh before saving the quote.');
+ const terms=pricingQuoteTerms(row,row.closest('form'));
+ if(unitPriceMinor!==terms.unitPriceMinor)throw Error('The configured price changed. Refresh before saving the quote.');
  const mode=row.querySelector('[name="discountMode"]').value,input=row.querySelector(mode==='amount'?'[name="discountAmount"]':'[name="discount"]');
- const discount=pricingDiscount(quantity,unitPriceMinor,mode,input.value);
+ const discount=pricingDiscount(quantity,unitPriceMinor,mode,input.value,terms);
  row.querySelector('[name="discount"]').value=String(discount.discountBasisPoints/100);
- return {unitPriceMinor,discountBasisPoints:discount.discountBasisPoints};
+ return {...terms,discountBasisPoints:discount.discountBasisPoints};
 }
 function pricingRefreshRow(row,form,{replacePrice=true}={}){
  const product=row.querySelector('[name="productChoice"]'),unit=row.querySelector('[name="unitPrice"]'),quantity=row.querySelector('[name="quantity"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
  row.querySelector('[data-discount-percent]').hidden=mode==='amount';row.querySelector('[data-discount-amount]').hidden=mode!=='amount';amount.disabled=mode!=='amount';percent.readOnly=mode==='amount';
  unit.readOnly=true;product.setCustomValidity('');unit.setCustomValidity('');quantity.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
  if(!Number.isSafeInteger(Number(quantity.value))||Number(quantity.value)<1)quantity.setCustomValidity('Every quantity must be a positive whole number.');
- let expected;
+ const tax=row.querySelector('[name="tax"]');
+ let terms;
  try{
-  expected=pricingExpectedPrice(row,form);
-  if(replacePrice)unit.value=pricingMinorText(expected);
-  else if(moneyMinor(unit.value)!==expected)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+  terms=pricingQuoteTerms(row,form);
+  if(replacePrice&&terms.taxBasisPoints===undefined&&tax.readOnly)tax.value='0';
+  tax.readOnly=terms.taxBasisPoints!==undefined;
+  if(replacePrice&&tax.readOnly)tax.value=String(terms.taxBasisPoints/100);
+  if(replacePrice)unit.value=pricingMinorText(terms.unitPriceMinor);
+  else if(moneyMinor(unit.value)!==terms.unitPriceMinor)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+  if(tax.readOnly&&(tax.value===''||Number(tax.value)!==terms.taxBasisPoints/100))throw Error('Saved VAT differs from the configured rate. Re-select the product to use its current VAT rate.');
  }catch(error){
-  if(replacePrice)unit.value='';
+  if(replacePrice){unit.value='';if(tax.readOnly)tax.value='0';tax.readOnly=false;}
   // A readonly price cannot receive native validation focus; its selected product can.
   product.setCustomValidity(error.message);feedback.textContent=error.message;return;
  }
  if(quantity.validationMessage){feedback.textContent=quantity.validationMessage;return;}
  try{
-  const discount=pricingDiscount(Number(quantity.value),expected,mode,mode==='amount'?amount.value:percent.value);
+  const discount=pricingDiscount(Number(quantity.value),terms.unitPriceMinor,mode,mode==='amount'?amount.value:percent.value,terms);
   if(mode==='amount')percent.value=String(discount.discountBasisPoints/100);
   const currency=form.querySelector('[name="currency"]').value;
-  feedback.textContent=`Actual discount: ${moneyDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
+  feedback.textContent=`Actual discount: ${moneyExactDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
+  if(tax.value.trim()!==''&&Number.isFinite(Number(tax.value))&&Number(tax.value)>=0&&Number(tax.value)<=100){
+   const totals=proformaLineTotal({...terms,quantity:Number(quantity.value),discountBasisPoints:discount.discountBasisPoints,taxBasisPoints:Math.round(Number(tax.value)*100)});
+   feedback.textContent+=` VAT ${moneyExactDisplay(totals.tax,currency)} · Line total ${moneyExactDisplay(totals.total,currency)}.`;
+  }
  }catch(error){
   const invalid=mode==='amount'?amount:percent;invalid.setCustomValidity(error.message);feedback.textContent=error.message;
  }
@@ -3292,11 +3344,11 @@ function pricingBindForm(form){
   if(['currency','commercialKind'].includes(event.target.name)){pricingRefreshForm(form);return;}
   const row=event.target.closest('[data-proforma-line]');if(!row)return;
   if(event.target.name==='discountMode'&&event.target.value==='amount'){
-   try{const value=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),moneyMinor(row.querySelector('[name="unitPrice"]').value),'percent',row.querySelector('[name="discount"]').value);row.querySelector('[name="discountAmount"]').value=pricingMinorText(value.discountMinor);}catch{}
+   try{const value=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),moneyMinor(row.querySelector('[name="unitPrice"]').value),'percent',row.querySelector('[name="discount"]').value,pricingQuoteTerms(row,form));row.querySelector('[name="discountAmount"]').value=pricingMinorText(value.discountMinor);}catch{}
   }
   if(['productChoice','discountMode'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:event.target.name==='productChoice'});
  });
- form.addEventListener('input',event=>{const row=event.target.closest('[data-proforma-line]');if(row&&['quantity','discount','discountAmount'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:false});});
+ form.addEventListener('input',event=>{const row=event.target.closest('[data-proforma-line]');if(row&&['quantity','discount','discountAmount','tax'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:false});});
 }
 function pricingInputMinor(value){
  const text=String(value??'').trim();if(!/^\d+(?:\.\d{1,2})?$/.test(text)||text.length>32)throw Error('Enter a valid amount with no more than two decimal places.');
@@ -3590,10 +3642,12 @@ function proformaDraftValid(draft,actor){
  const p=draft.pending,keys=['p_id','p_expected_version','p_organization_id','p_contact_id','p_currency','p_valid_until','p_delivery_period','p_payment_terms','p_notes','p_lines','p_commercial_kind','p_contract_id','p_installation_required','p_installation_charge_notes','p_internal_notes'];
  if(typeof p!=='object'||Object.keys(p).length!==keys.length||!keys.every(key=>Object.hasOwn(p,key))||p.p_id!==draft.id||p.p_expected_version!==draft.version||!identity(p.p_organization_id)||!identity(p.p_contact_id)||!['TZS','USD','EUR'].includes(p.p_currency)||!/^\d{4}-\d{2}-\d{2}$/.test(p.p_valid_until)||!['sale','placement'].includes(p.p_commercial_kind)||!(p.p_contract_id===null||identity(p.p_contract_id))||typeof p.p_installation_required!=='boolean')return false;
  if(![['p_delivery_period',300],['p_payment_terms',1000],['p_notes',4000],['p_installation_charge_notes',2000],['p_internal_notes',4000]].every(([key,max])=>typeof p[key]==='string'&&p[key].length<=max)||!Array.isArray(p.p_lines)||p.p_lines.length!==draft.lines.length)return false;
- if(!p.p_lines.every(line=>line&&Object.keys(line).length===7&&identity(line.productId)&&typeof line.description==='string'&&line.description.length<=4000&&typeof line.uom==='string'&&line.uom.length<=40&&Number.isSafeInteger(line.quantity)&&line.quantity>=1&&line.quantity<=1000000&&Number.isSafeInteger(line.unitPriceMinor)&&line.unitPriceMinor>=0&&line.unitPriceMinor<=9000000000000000&&['discountBasisPoints','taxBasisPoints'].every(key=>Number.isInteger(line[key])&&line[key]>=0&&line[key]<=10000)))return false;
+ if(!p.p_lines.every(line=>line&&Object.keys(line).length===(Object.hasOwn(line,'grossUnitPriceMinor')?8:7)&&identity(line.productId)&&typeof line.description==='string'&&line.description.length<=4000&&typeof line.uom==='string'&&line.uom.length<=40&&Number.isSafeInteger(line.quantity)&&line.quantity>=1&&line.quantity<=1000000&&Number.isSafeInteger(line.unitPriceMinor)&&line.unitPriceMinor>=0&&line.unitPriceMinor<=9000000000000000&&['discountBasisPoints','taxBasisPoints'].every(key=>Number.isInteger(line[key])&&line[key]>=0&&line[key]<=10000)))return false;
+ if(p.p_lines.some(line=>Object.hasOwn(line,'grossUnitPriceMinor')&&
+   (p.p_commercial_kind!=='sale'||!['TZS','USD'].includes(p.p_currency)||line.taxBasisPoints!==1800||!pricingValidWorkbookGross(line.grossUnitPriceMinor,line.unitPriceMinor))))return false;
  const fields={organizationId:'p_organization_id',contactId:'p_contact_id',currency:'p_currency',validUntil:'p_valid_until',deliveryPeriod:'p_delivery_period',paymentTerms:'p_payment_terms',notes:'p_notes',commercialKind:'p_commercial_kind',installationChargeNotes:'p_installation_charge_notes',internalNotes:'p_internal_notes'};
  if(!Object.entries(fields).every(([key,arg])=>draft.fields[key]===p[arg])||(draft.fields.contractId||null)!==p.p_contract_id||(draft.fields.installationRequired==='yes')!==p.p_installation_required)return false;
- try{return draft.lines.every((line,index)=>{const value=line.values,saved=p.p_lines[index],quantity=Number(value.quantity),price=moneyMinor(value.unitPrice),discount=pricingDiscount(quantity,price,value.discountMode,value.discountMode==='amount'?value.discountAmount:value.discount);return saved.productId===line.productId&&saved.description===value.description.trim()&&saved.uom===value.uom.trim()&&saved.quantity===quantity&&saved.unitPriceMinor===price&&saved.discountBasisPoints===discount.discountBasisPoints&&saved.taxBasisPoints===Math.round(Number(value.tax)*100);});}catch{return false;}
+ try{return draft.lines.every((line,index)=>{const value=line.values,saved=p.p_lines[index],quantity=Number(value.quantity),price=moneyMinor(value.unitPrice),discount=pricingDiscount(quantity,price,value.discountMode,value.discountMode==='amount'?value.discountAmount:value.discount,saved);return saved.productId===line.productId&&saved.description===value.description.trim()&&saved.uom===value.uom.trim()&&saved.quantity===quantity&&saved.unitPriceMinor===price&&saved.discountBasisPoints===discount.discountBasisPoints&&saved.taxBasisPoints===Math.round(Number(value.tax)*100);});}catch{return false;}
 }
 function proformaFreezePending(pending){pending.p_lines.forEach(Object.freeze);Object.freeze(pending.p_lines);return Object.freeze(pending);}
 function proformaDraftKey(actor){return proformaDraftPrefix+actor;}
@@ -3720,7 +3774,7 @@ async function restoreProformaDraft({current=()=>true}={}){
 function proformaPendingHeader(state,row){
  const p=state.pending;if(!p||!row||row.id!==p.p_id||row.version!==p.p_expected_version+1||row.revision!==state.revision+1||row.status!=='draft'||row.deleted_at)return false;
  if(typeof row.document_number!=='string'||!row.document_number||row.document_number.length>120||(p.p_expected_version===0&&row.prepared_by!==state.actor.user_id))return false;
- let subtotal=0n,discount=0n,tax=0n;for(const line of p.p_lines){const gross=BigInt(line.quantity)*BigInt(line.unitPriceMinor),reduction=(gross*BigInt(line.discountBasisPoints)+5000n)/10000n;subtotal+=gross;discount+=reduction;tax+=((gross-reduction)*BigInt(line.taxBasisPoints)+5000n)/10000n;}
+ let subtotal=0n,discount=0n,tax=0n;for(const line of p.p_lines){const amounts=proformaLineAmounts(line);subtotal+=amounts.gross;discount+=amounts.discount;tax+=amounts.tax;}
  if(!Object.entries({subtotal_minor:subtotal,discount_minor:discount,tax_minor:tax,total_minor:subtotal-discount+tax}).every(([key,value])=>Number.isSafeInteger(Number(row[key]))&&BigInt(row[key])===value))return false;
  const pairs={organization_id:p.p_organization_id,contact_id:p.p_contact_id,currency:p.p_currency,valid_until:p.p_valid_until,delivery_period:p.p_delivery_period.trim(),payment_terms:p.p_payment_terms.trim(),notes:p.p_notes.trim(),commercial_kind:p.p_commercial_kind,contract_id:p.p_commercial_kind==='placement'?p.p_contract_id:null,installation_required:p.p_installation_required,installation_charge_notes:p.p_installation_charge_notes.trim(),internal_notes:p.p_internal_notes.trim()};
  return Object.entries(pairs).every(([key,value])=>row[key]===value);
@@ -3909,7 +3963,7 @@ function salesDocumentSnapshot(record){return salesRevisionSnapshots.get(record.
 function salesDocumentLines(record){
  const snapshot=salesDocumentSnapshot(record);
  if(!snapshot)return record.status==='draft'?salesLines(record.id):[];
- return (snapshot.lines||[]).map(line=>({product_id:line.productId,product_name:line.productName||'Historical product name not recorded',description:line.description,quantity:line.quantity,uom:line.uom,unit_price_minor:line.unitPriceMinor,discount_basis_points:line.discountBasisPoints,tax_basis_points:line.taxBasisPoints}));
+ return (snapshot.lines||[]).map(line=>({product_id:line.productId,product_name:line.productName||'Historical product name not recorded',description:line.description,quantity:line.quantity,uom:line.uom,unit_price_minor:line.unitPriceMinor,gross_unit_price_minor:line.grossUnitPriceMinor,discount_basis_points:line.discountBasisPoints,tax_basis_points:line.taxBasisPoints}));
 }
 function salesHeader({title,subtitle='',back='',actions=''}={}){const proforma=salesSection==='proformas'&&salesFocusedProforma&&!salesEditing;return workspacePageHeader({breadcrumbs:proforma?`<a href="#/go/sales/proformas">Pro formas</a><a href="#/proforma/${esc(salesFocusedProforma)}" aria-current="page">${esc(title||'Pro forma')}</a>`:'',title:title||(salesSection==='delivery'?'Delivery progress':salesEditing==='new'?'Create Pro forma':'Pro formas'),subtitle,back:back||(salesSection==='proformas'&&salesFocusedProforma&&!salesEditing?'<button type="button" data-proforma-back>← All Pro formas</button>':''),actions:`<button id="salesRefresh" type="button">Refresh list</button>${actions}`})}
 function salesUnavailable(){return `${salesHeader()}<section class="card"><h2>Pro formas could not be loaded</h2><p class="warning">Press Refresh list. If it keeps happening, tell the owner. Nothing was changed.</p><p class="muted">${esc(salesLoadError)}</p></section>`}
@@ -3919,7 +3973,7 @@ function salesOrganizationOptions(selected=''){return ((()=>{try{return typeof l
 function salesContactOptions(organizationId,selected=''){return contacts.filter(row=>row.organization_id===organizationId&&row.status!=='incorrect').sort((a,b)=>(a.first_name+' '+a.last_name).localeCompare(b.first_name+' '+b.last_name)).map(row=>inventoryOption(row.id,salesContactName(row.id),row.id===selected)).join('')}
 // Labels must come from the reviewed product, the same one inventoryProductFromChoice matches against.
 function salesProductChoices(){if((()=>{try{return typeof lookupRowSources}catch{return 'undefined'}})()!=='undefined'&&typeof inventoryProductValues==='function')return '';return (typeof inventorySelectableProducts==='function'?inventorySelectableProducts():products.filter(p=>!p.deleted_at).map(p=>typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(p):p).sort((a,b)=>a.name.localeCompare(b.name))).map(product=>`<option value="${esc(inventoryProductChoice(product))}"></option>`).join('')}
-function salesLineRow(line={}){const product=salesProduct(line.product_id),choice=line.product_id?inventoryProductChoice(product.id&&typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product):'';return `<div class="document-line" data-proforma-line><label><span>Product</span><input name="productChoice" list="salesProductChoices" value="${esc(choice)}" placeholder="Start typing a product" required autocomplete="off"></label><label><span>Customer-facing description · required, editable</span><input name="description" value="${esc(line.description||'')}" required maxlength="4000"></label><label><span>Quantity</span><input name="quantity" type="number" min="1" step="1" value="${line.quantity||1}" required></label><label><span>Unit</span><input name="uom" value="${esc(line.uom||'unit')}" required maxlength="40"></label>${pricingLineFields(line)}<label><span>Tax %</span><input name="tax" type="number" min="0" max="100" step="0.01" value="${line.tax_basis_points===undefined?0:line.tax_basis_points/100}" required></label><button type="button" class="danger" data-remove-sales-line>Remove item</button></div>`}
+function salesLineRow(line={}){const product=salesProduct(line.product_id),choice=line.product_id?inventoryProductChoice(product.id&&typeof reviewedCatalogProduct==='function'?reviewedCatalogProduct(product):product):'';return `<div class="document-line" data-proforma-line><label><span>Product</span><input name="productChoice" list="salesProductChoices" value="${esc(choice)}" placeholder="Start typing a product" required autocomplete="off"></label><label><span>Customer-facing description · required, editable</span><input name="description" value="${esc(line.description||'')}" required maxlength="4000"></label><label><span>Quantity</span><input name="quantity" type="number" min="1" step="1" value="${line.quantity||1}" required></label><label><span>Unit</span><input name="uom" value="${esc(line.uom||'unit')}" required maxlength="40"></label>${pricingLineFields(line)}<label><span>VAT %</span><input name="tax" type="number" min="0" max="100" step="0.01" value="${line.tax_basis_points===undefined?0:line.tax_basis_points/100}" required></label><button type="button" class="danger" data-remove-sales-line>Remove item</button></div>`}
 function salesPrefillLineDescription(row){
  const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value),description=row.querySelector('[name="description"]');
  if(!product||!description)return;
@@ -3946,9 +4000,9 @@ function proformaEditor(){
  const record=salesEditing==='new'?null:salesProforma(salesEditing),lines=record?salesLines(record.id):[{}],prefill=record?null:salesPrefill,organizationId=record?.organization_id||prefill?.organizationId||'',contactId=record?.contact_id||prefill?.contactId||'';
  return `<section class="card document-editor"><div class="heading"><div><small>${record?'REVISION '+record.revision:'NEW DOCUMENT'}</small><h2>${record?'Edit '+esc(record.document_number):'New Pro forma invoice'}</h2></div><button type="button" id="closeSalesEditor">Close</button></div><form id="proformaForm" data-id="${record?.id||''}" data-version="${record?.version||0}"><p data-proforma-errors class="error" role="alert"></p><section class="proforma-section" aria-labelledby="proformaClientHeading"><h3 id="proformaClientHeading">Client and terms</h3><div class="grid"><label><span>Client branch</span><select name="organizationId" required data-lookup-rows="organizations"><option value="">Choose client / branch</option>${salesOrganizationOptions(organizationId)}</select></label><label><span>Named contact</span><select name="contactId" required><option value="">Choose the branch first</option>${salesContactOptions(organizationId,contactId)}</select></label><label><span>Currency</span><select name="currency"><option ${record?.currency==='TZS'?'selected':''}>TZS</option><option ${record?.currency==='USD'?'selected':''}>USD</option><option ${record?.currency==='EUR'?'selected':''}>EUR</option></select></label><label><span>Valid until</span><input name="validUntil" type="date" min="${salesDate()}" value="${record?.valid_until||salesDate(15)}" required></label><label><span>Delivery period</span><input name="deliveryPeriod" value="${esc(record?.delivery_period||'As agreed after acceptance')}" required maxlength="300"></label><label><span>Payment terms</span><input name="paymentTerms" value="${esc(record?.payment_terms||'Payment before delivery')}" required maxlength="1000"></label><label class="wide"><span>Customer-facing notes · printed on quotation</span><textarea name="notes" maxlength="4000">${esc(record?.notes||'')}</textarea></label></div></section><section class="proforma-section" aria-labelledby="proformaCommercialHeading"><h3 id="proformaCommercialHeading">Commercial terms</h3>${proformaCommercialFields(record,organizationId)}</section><section class="proforma-section" aria-labelledby="proformaItemsHeading"><h3 id="proformaItemsHeading">Items</h3><datalist id="salesProductChoices" data-lookup-values="products">${salesProductChoices()}</datalist><div id="proformaLines">${lines.map(salesLineRow).join('')}</div><div class="actions"><button type="button" id="addSalesLine">+ Add item</button></div></section><div data-proforma-save-feedback class="no-print"><p data-proforma-storage-warning class="notice" hidden></p></div><footer data-proforma-footer class="proforma-save-bar no-print"><p data-proforma-draft-status></p><button type="submit">${record?'Save new revision':'Save Pro forma invoice'}</button></footer></form></section>`;
 }
-function proformaTable(record){const lines=salesDocumentLines(record);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th class="numeric-cell">Qty</th><th class="numeric-cell">Unit price</th><th class="numeric-cell">Disc.</th><th class="numeric-cell">Tax</th><th class="numeric-cell">Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(line.product_name||salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td class="numeric-cell">${line.quantity}</td><td class="numeric-cell">${esc(moneyDisplay(Number(line.unit_price_minor),record.currency))}</td><td class="numeric-cell">${line.discount_basis_points/100}%</td><td class="numeric-cell">${line.tax_basis_points/100}%</td><td class="numeric-cell">${esc(moneyDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
+function proformaTable(record){const lines=salesDocumentLines(record);return `<div class="table-wrap"><table><thead><tr><th>Item</th><th class="numeric-cell">Qty</th><th class="numeric-cell">Unit price before VAT</th><th class="numeric-cell">Disc.</th><th class="numeric-cell">VAT</th><th class="numeric-cell">Total</th></tr></thead><tbody>${lines.map(line=>{const totals=proformaLineTotal({quantity:line.quantity,unitPriceMinor:Number(line.unit_price_minor),grossUnitPriceMinor:line.gross_unit_price_minor,discountBasisPoints:line.discount_basis_points,taxBasisPoints:line.tax_basis_points});return `<tr><td><strong>${esc(line.product_name||salesProduct(line.product_id).name)}</strong><small>${esc(line.description)} · ${esc(line.uom)}</small></td><td class="numeric-cell">${line.quantity}</td><td class="numeric-cell">${esc(moneyExactDisplay(line.unit_price_minor,record.currency))}</td><td class="numeric-cell">${line.discount_basis_points/100}%</td><td class="numeric-cell">${line.tax_basis_points/100}%</td><td class="numeric-cell">${esc(moneyExactDisplay(totals.total,record.currency))}</td></tr>`}).join('')}</tbody></table></div>`}
 function proformaActions(record){const actions=proformaNextActions(record.status),buttons=[];if(record.status==='accepted'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-proforma-action="cancel_order" data-id="${esc(record.id)}">Cancel order</button>`);if(record.status==='draft')buttons.push(`<button data-edit-proforma="${record.id}">Edit draft</button>`);if(record.status==='draft'&&!record.deleted_at&&me?.role==='owner')buttons.push(`<button type="button" class="danger" data-archive-business="proforma" data-id="${record.id}">Delete draft</button>`);for(const action of actions){const labels={send:'Record sent to client',accept:'Submit to accounting',revise:'Return for revision',reject:'Record rejected',cancel:'Cancel'};buttons.push(`<button data-proforma-action="${action}" data-id="${record.id}" class="${['reject','cancel'].includes(action)?'danger':''}">${labels[action]}</button>`)}buttons.push(`<button data-print-document="${record.id}">Print / PDF</button>`);if(typeof quotationDocumentsButton==='function')buttons.push(quotationDocumentsButton(record));return buttons.join('')}
-function proformaCard(record){const snapshot=salesDocumentSnapshot(record),organization=snapshot?{name:snapshot.organizationName||'Historical client name not recorded',location:snapshot.organizationLocation||''}:record.status==='draft'?salesOrganization(record.organization_id):{name:'Saved revision unavailable',location:''},contactName=snapshot?(snapshot.contactName||'Historical contact name not recorded'):record.status==='draft'?salesContactName(record.contact_id):'Saved revision unavailable',note=latestDelivery(record.id);if(snapshot)record={...record,currency:snapshot.currency,valid_until:snapshot.validUntil,delivery_period:snapshot.deliveryPeriod,payment_terms:snapshot.paymentTerms,notes:snapshot.notes,commercial_kind:snapshot.commercialKind||'sale',contract_id:snapshot.contractId||null,installation_required:snapshot.installationRequired??true,installation_charge_notes:snapshot.installationChargeNotes||'',subtotal_minor:snapshot.subtotalMinor,discount_minor:snapshot.discountMinor,tax_minor:snapshot.taxMinor,total_minor:snapshot.totalMinor};return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(contactName)}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaCommercialSummary(record)}${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyDisplay(Number(record.subtotal_minor),record.currency))}</strong></span><span>Discount <strong>${esc(moneyDisplay(Number(record.discount_minor),record.currency))}</strong></span><span>Tax <strong>${esc(moneyDisplay(Number(record.tax_minor),record.currency))}</strong></span><span>Total <strong>${esc(moneyDisplay(Number(record.total_minor),record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
+function proformaCard(record){const snapshot=salesDocumentSnapshot(record),organization=snapshot?{name:snapshot.organizationName||'Historical client name not recorded',location:snapshot.organizationLocation||''}:record.status==='draft'?salesOrganization(record.organization_id):{name:'Saved revision unavailable',location:''},contactName=snapshot?(snapshot.contactName||'Historical contact name not recorded'):record.status==='draft'?salesContactName(record.contact_id):'Saved revision unavailable',note=latestDelivery(record.id);if(snapshot)record={...record,currency:snapshot.currency,valid_until:snapshot.validUntil,delivery_period:snapshot.deliveryPeriod,payment_terms:snapshot.paymentTerms,notes:snapshot.notes,commercial_kind:snapshot.commercialKind||'sale',contract_id:snapshot.contractId||null,installation_required:snapshot.installationRequired??true,installation_charge_notes:snapshot.installationChargeNotes||'',subtotal_minor:snapshot.subtotalMinor,discount_minor:snapshot.discountMinor,tax_minor:snapshot.taxMinor,total_minor:snapshot.totalMinor};return `<article class="card document-card" data-document-card="${record.id}">${companyFormBrand()}<h2>PRO FORMA INVOICE</h2><div class="heading"><div><h2>${esc(record.document_number)}</h2><p>${esc(organization.name)} · ${esc(organization.location||'Location not supplied')}<br>Contact: ${esc(contactName)}</p></div><div>${proformaTagHtml(record)}<small>Revision ${record.revision}</small></div></div><div class="no-print">${workflowProgress(record,note)}${typeof orderLiveHtml==='function'?orderLiveHtml(record):''}</div>${proformaCommercialSummary(record)}${proformaTable(record)}<div class="document-totals"><span>Subtotal <strong>${esc(moneyExactDisplay(record.subtotal_minor,record.currency))}</strong></span><span>Discount <strong>${esc(moneyExactDisplay(record.discount_minor,record.currency))}</strong></span><span>VAT <strong>${esc(moneyExactDisplay(record.tax_minor,record.currency))}</strong></span><span>Total <strong>${esc(moneyExactDisplay(record.total_minor,record.currency))}</strong></span></div><div class="details"><div><small>Valid until</small>${esc(record.valid_until)}</div><div><small>Delivery period</small>${esc(record.delivery_period)}</div><div><small>Payment terms</small>${esc(record.payment_terms)}</div><div><small>Customer acceptance / LPO</small>${esc(record.acceptance_reference||'Not accepted yet')}</div><div><small>Prepared by</small>${esc(record.prepared_by?(typeof employeeName==='function'?employeeName(record.prepared_by):record.prepared_by):'Not recorded')}</div></div>${record.notes?`<p>${esc(record.notes)}</p>`:''}${companyProformaReferenceTerms()}<p>E. &amp; O.E. · Pro forma only — not a tax invoice or proof of payment.</p><div class="no-print">${note?deliveryHistory(note):''}</div><div class="actions no-print">${proformaActions(record)}</div></article>`}
 // One tag per Pro forma, from where it is now: its own status, then the delivery started from it.
 const proformaTagKinds=[['draft','Draft'],['revised','Revised'],['sent','Sent to customer'],['waiting','Waiting approval'],['delivery','Approved · in delivery'],['partial','Partially delivered'],['done','Delivered'],['closed','Cancelled / rejected']];
 function proformaTag(record){
@@ -4089,7 +4143,7 @@ async function salesDeliveryWorkspace(force=false,navigation=workspaceNavigation
  }
  $('#content').innerHTML=salesSection==='delivery'?deliveryScreen():salesSection==='documents'?officialDocumentsScreen():proformaScreen();bindSalesDelivery();
 }
-function readProformaLines(form){return [...form.querySelectorAll('[data-proforma-line]')].map(row=>{const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value);if(!product)throw Error('Choose every product from the search suggestions.');const quantity=Number(row.querySelector('[name="quantity"]').value),discount=Number(row.querySelector('[name="discount"]').value),tax=Number(row.querySelector('[name="tax"]').value);if(!Number.isSafeInteger(quantity)||quantity<1)throw Error('Every quantity must be a positive whole number.');if(!Number.isFinite(discount)||discount<0||discount>100||!Number.isFinite(tax)||tax<0||tax>100)throw Error('Discount and tax must be between 0% and 100%.');return {productId:product.id,description:row.querySelector('[name="description"]').value.trim(),quantity,uom:row.querySelector('[name="uom"]').value.trim(),...pricingReadLine(row,{quantity,unitPriceMinor:moneyMinor(row.querySelector('[name="unitPrice"]').value)}),taxBasisPoints:Math.round(tax*100)}})}
+function readProformaLines(form){return [...form.querySelectorAll('[data-proforma-line]')].map(row=>{const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value);if(!product)throw Error('Choose every product from the search suggestions.');const quantity=Number(row.querySelector('[name="quantity"]').value),discount=Number(row.querySelector('[name="discount"]').value),tax=Number(row.querySelector('[name="tax"]').value);if(!Number.isSafeInteger(quantity)||quantity<1)throw Error('Every quantity must be a positive whole number.');if(!Number.isFinite(discount)||discount<0||discount>100||!Number.isFinite(tax)||tax<0||tax>100)throw Error('Discount and tax must be between 0% and 100%.');return {productId:product.id,description:row.querySelector('[name="description"]').value.trim(),quantity,uom:row.querySelector('[name="uom"]').value.trim(),taxBasisPoints:Math.round(tax*100),...pricingReadLine(row,{quantity,unitPriceMinor:moneyMinor(row.querySelector('[name="unitPrice"]').value)})}})}
 const proformaValidationContexts=new WeakMap();
 function proformaFieldErrors(form){
  for(const row of form.querySelectorAll('[data-proforma-line]'))pricingRefreshRow(row,form,{replacePrice:false});
@@ -7060,10 +7114,12 @@ let tallyExportPending=null;
 function tallyXmlEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
 function tallyMinorText(minor){const sign=minor<0?'-':'',abs=Math.abs(Math.round(minor));return `${sign}${Math.floor(abs/100)}.${String(abs%100).padStart(2,'0')}`;}
 function tallyDateText(iso){return String(iso).slice(0,10).replace(/-/g,'');}
-// Same arithmetic as save_sales_proforma: gross, rounded discount, then VAT on the discounted amount, per line.
 function tallyLineAmounts(line){
- const gross=Number(line.quantity)*Number(line.unit_price_minor),discount=Math.round(gross*Number(line.discount_basis_points||0)/10000),net=gross-discount;
- return {gross,discount,net,tax:Math.round(net*Number(line.tax_basis_points||0)/10000)};
+ const {gross,discount,tax}=proformaLineTotal({
+  quantity:line.quantity,unitPriceMinor:line.unit_price_minor,grossUnitPriceMinor:line.gross_unit_price_minor,
+  discountBasisPoints:line.discount_basis_points||0,taxBasisPoints:line.tax_basis_points||0
+ });
+ return {gross,discount,net:gross-discount,tax};
 }
 // The original Tally stock item name, when the product came from a Tally export.
 function tallyDefaultItemName(product,saved){

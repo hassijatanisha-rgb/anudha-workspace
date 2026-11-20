@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
-function load(){const ctx=vm.createContext({Math,Number,String,Map,Set,Error});vm.runInContext(read('tally-export.js'),ctx);return ctx;}
+function load(){const ctx=vm.createContext({Math,Number,String,Map,Set,Error});for(const file of ['sales-domain.js','tally-export.js'])vm.runInContext(read(file),ctx);return ctx;}
 const lines=[{product_id:'p1',quantity:10,uom:'pcs',unit_price_minor:100000,discount_basis_points:500,tax_basis_points:1800},{product_id:'p2',quantity:3,uom:'box',unit_price_minor:33333,discount_basis_points:0,tax_basis_points:0}];
 const items=new Map([['p1',{item_name:'Blood Bag 450ml & "Twin"',unit:'PCS'}],['p2',{item_name:'Cannula <22G>',unit:'BOX'}]]);
 const settings={company_name:'Anudha Ltd',voucher_type:'Sales Order',sales_ledger:'Sales',vat_ledger:'Output VAT 18%'};
@@ -12,6 +12,21 @@ const proforma={document_number:'PF-2026-000012',currency:'TZS',total_minor:1220
 test('line amounts use the same rounding as the Pro forma',()=>{
  const c=load();assert.deepEqual({...c.tallyLineAmounts(lines[0])},{gross:1000000,discount:50000,net:950000,tax:171000});
  assert.equal(c.tallyMinorText(1220999),'12209.99');assert.equal(c.tallyMinorText(-5),'-0.05');assert.equal(c.tallyMinorText(100),'1.00');
+});
+test('workbook-gross sales orders post the saved discount and VAT even when the displayed unit price rounds up',()=>{
+ const c=load();vm.runInContext(read('product-pricing.js'),c);
+ const terms={grossUnitPriceMinor:10000,taxBasisPoints:1800};
+ for(const [mode,value] of [['percent','5'],['amount','12.71']]){
+  const {discountBasisPoints}=c.pricingDiscount(3,8475,mode,value,terms);
+  const line={...lines[0],quantity:3,unit_price_minor:8475,gross_unit_price_minor:10000,discount_basis_points:discountBasisPoints};
+  assert.deepEqual({...c.tallyLineAmounts(line)},{gross:25424,discount:1271,net:24153,tax:4347});
+  const xml=c.buildTallySalesOrderXml({proforma:{...proforma,total_minor:28500},lines:[line],ledgerName:'Fixture Hospital',items,settings,date:'2026-10-01'});
+  assert.match(xml,/<RATE>84\.75\/PCS<\/RATE><DISCOUNT>5\.00<\/DISCOUNT><AMOUNT>241\.53<\/AMOUNT>/);
+  assert.match(xml,/<ORDERDUEDATE>20261001<\/ORDERDUEDATE><AMOUNT>241\.53<\/AMOUNT>/);
+  assert.match(xml,/<LEDGERNAME>Sales<\/LEDGERNAME><ISDEEMEDPOSITIVE>No<\/ISDEEMEDPOSITIVE><AMOUNT>241\.53<\/AMOUNT>/);
+  assert.match(xml,/<ISPARTYLEDGER>Yes<\/ISPARTYLEDGER><AMOUNT>-285\.00<\/AMOUNT>/);
+  assert.match(xml,/<LEDGERNAME>Output VAT 18%<\/LEDGERNAME><ISDEEMEDPOSITIVE>No<\/ISDEEMEDPOSITIVE><AMOUNT>43\.47<\/AMOUNT>/);
+ }
 });
 test('the voucher balances: party debit equals sales plus VAT, and matches the Pro forma total',()=>{
  const c=load(),xml=c.buildTallySalesOrderXml({proforma,lines,ledgerName:'Fixture Hospital',items,settings,date:'2026-10-01'});

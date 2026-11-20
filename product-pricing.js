@@ -16,64 +16,98 @@ async function pricingLoad(){
  }
  productSalePrices=new Map(rows.map(row=>[pricingKey(row.product_id,row.currency),row]));productPricingActor=actor;return rows;
 }
-function pricingDiscount(quantity,unitPriceMinor,mode,value){
+function pricingDiscount(quantity,unitPriceMinor,mode,value,{taxBasisPoints=0,grossUnitPriceMinor}={}){
  if(!Number.isSafeInteger(quantity)||quantity<1||!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw Error('Enter a valid quantity and configured unit price.');
- const gross=BigInt(quantity)*BigInt(unitPriceMinor);
- if(gross>9000000000000000n)throw Error('Line total is too large.');
- let basisPoints,requested;
+ const at=basisPoints=>proformaLineAmounts({quantity,unitPriceMinor,grossUnitPriceMinor,taxBasisPoints,discountBasisPoints:basisPoints});
+ const subtotal=Number(at(0).gross);
+ if(subtotal>9000000000000000)throw Error('Line total is too large.');
+ let basisPoints;
  if(mode==='amount'){
-  requested=BigInt(moneyMinor(value));if(requested>gross)throw Error('Discount amount cannot exceed the line subtotal.');
-  basisPoints=gross===0n?0n:(requested*10000n+gross/2n)/gross;
+  const requested=moneyMinor(value);
+  if(requested>subtotal)throw Error('Discount amount cannot exceed the line subtotal.');
+  basisPoints=subtotal===0?0:Number((BigInt(requested)*10000n+BigInt(subtotal)/2n)/BigInt(subtotal));
+  let actual=Number(at(basisPoints).discount);
+  // Rounding a VAT-inclusive total before extracting its net can shift the nearest step.
+  if(grossUnitPriceMinor!=null&&actual!==requested){
+   let low=0,high=10000;
+   while(low<high){const mid=Math.floor((low+high)/2);if(at(mid).discount<requested)low=mid+1;else high=mid;}
+   const under=Math.max(0,low-1);
+   basisPoints=requested-Number(at(under).discount)<Number(at(low).discount)-requested?under:low;
+   actual=Number(at(basisPoints).discount);
+  }
+  if(actual!==requested)throw Error(`This exact discount cannot be represented in 0.01% steps. The nearest percentage (${basisPoints/100}%) gives ${pricingMinorText(actual)}. Enter a percentage or a representable amount.`);
  }else{
-  basisPoints=BigInt(moneyMinor(value));if(basisPoints>10000n)throw Error('Discount must be between 0% and 100%.');
+  basisPoints=moneyMinor(value);if(basisPoints>10000)throw Error('Discount must be between 0% and 100%.');
  }
- const actual=(gross*basisPoints+5000n)/10000n;
- if(mode==='amount'&&actual!==requested)throw Error(`This exact discount cannot be represented in 0.01% steps. The nearest percentage (${Number(basisPoints)/100}%) gives ${pricingMinorText(actual)}. Enter a percentage or a representable amount.`);
- return {discountBasisPoints:Number(basisPoints),discountMinor:Number(actual),grossMinor:Number(gross)};
+ return {discountBasisPoints:basisPoints,discountMinor:Number(at(basisPoints).discount),grossMinor:subtotal};
 }
 function pricingLineFields(line={}){
  const price=line.unit_price_minor===undefined?'':pricingMinorText(line.unit_price_minor),discount=(line.discount_basis_points||0)/100;
- return `<label><span>Configured unit price</span><input name="unitPrice" inputmode="decimal" value="${esc(price)}" readonly required aria-describedby="pricingHelp"></label><label><span>Discount entry</span><select name="discountMode"><option value="percent">Percentage</option><option value="amount">Amount for this line</option></select></label><label data-discount-percent><span>Discount %</span><input name="discount" type="number" min="0" max="100" step="0.01" value="${esc(discount)}" required></label><label data-discount-amount hidden><span>Discount amount for this line</span><input name="discountAmount" inputmode="decimal" value="" disabled></label><small data-pricing-feedback role="status"></small>`;
+ return `<label><span>Unit price before VAT</span><input name="unitPrice" inputmode="decimal" value="${esc(price)}" readonly required aria-describedby="pricingHelp"></label><label><span>Discount entry</span><select name="discountMode"><option value="percent">Percentage</option><option value="amount">Amount for this line</option></select></label><label data-discount-percent><span>Discount %</span><input name="discount" type="number" min="0" max="100" step="0.01" value="${esc(discount)}" required></label><label data-discount-amount hidden><span>Discount amount for this line</span><input name="discountAmount" inputmode="decimal" value="" disabled></label><small data-pricing-feedback role="status"></small>`;
 }
-function pricingExpectedPrice(row,form){
+function pricingValidWorkbookGross(gross,unitPriceMinor){
+ return Number.isSafeInteger(gross)&&gross>=0&&gross<=9000000000000000
+  &&(BigInt(gross)*10000n+5900n)/11800n===BigInt(unitPriceMinor);
+}
+function pricingQuoteTerms(row,form){
  if(productPricingActor!==me)throw Error('Product prices are not loaded for this login. Refresh before quoting.');
  const product=inventoryProductFromChoice(row.querySelector('[name="productChoice"]').value);
  if(!product)throw Error('Choose the product from the search suggestions.');
- if(form.querySelector('[name="commercialKind"]')?.value==='placement')return 0;
+ if(form.querySelector('[name="commercialKind"]')?.value==='placement')return {unitPriceMinor:0};
  const currency=form.querySelector('[name="currency"]').value,price=productSalePrices.get(pricingKey(product.id,currency));
  if(!price)throw Error(`No configured ${currency} price for this product. Ask the owner or accounting to set its price.`);
- const value=Number(price.unit_price_minor);if(!Number.isSafeInteger(value)||value<0)throw Error('Configured price is invalid. Ask accounting to review it.');
- return value;
+ const unitPriceMinor=Number(price.unit_price_minor);if(!Number.isSafeInteger(unitPriceMinor)||unitPriceMinor<0)throw Error('Configured price is invalid. Ask accounting to review it.');
+ const source=product.source||{},rate=source.tax_basis_points;
+ const terms={unitPriceMinor};
+ if(typeof rate==='number'){
+  if(!Number.isInteger(rate)||rate<0||rate>10000)throw Error('Ask Accounts to review the configured VAT rate.');
+  terms.taxBasisPoints=rate;
+ }
+ if(rate===1800&&source.import_price_basis==='gross'&&['TZS','USD'].includes(currency)&&source.currency===currency&&source.import_net_price_minor===unitPriceMinor){
+  const gross=source.gross_price_minor;
+  if(!pricingValidWorkbookGross(gross,unitPriceMinor))throw Error('Ask Accounts to review the imported VAT-inclusive price.');
+  terms.grossUnitPriceMinor=gross;
+ }
+ return terms;
 }
 function pricingReadLine(row,{quantity,unitPriceMinor}){
- const expected=pricingExpectedPrice(row,row.closest('form'));
- if(unitPriceMinor!==expected)throw Error('The configured price changed. Refresh before saving the quote.');
+ const terms=pricingQuoteTerms(row,row.closest('form'));
+ if(unitPriceMinor!==terms.unitPriceMinor)throw Error('The configured price changed. Refresh before saving the quote.');
  const mode=row.querySelector('[name="discountMode"]').value,input=row.querySelector(mode==='amount'?'[name="discountAmount"]':'[name="discount"]');
- const discount=pricingDiscount(quantity,unitPriceMinor,mode,input.value);
+ const discount=pricingDiscount(quantity,unitPriceMinor,mode,input.value,terms);
  row.querySelector('[name="discount"]').value=String(discount.discountBasisPoints/100);
- return {unitPriceMinor,discountBasisPoints:discount.discountBasisPoints};
+ return {...terms,discountBasisPoints:discount.discountBasisPoints};
 }
 function pricingRefreshRow(row,form,{replacePrice=true}={}){
  const product=row.querySelector('[name="productChoice"]'),unit=row.querySelector('[name="unitPrice"]'),quantity=row.querySelector('[name="quantity"]'),percent=row.querySelector('[name="discount"]'),amount=row.querySelector('[name="discountAmount"]'),mode=row.querySelector('[name="discountMode"]').value,feedback=row.querySelector('[data-pricing-feedback]');
  row.querySelector('[data-discount-percent]').hidden=mode==='amount';row.querySelector('[data-discount-amount]').hidden=mode!=='amount';amount.disabled=mode!=='amount';percent.readOnly=mode==='amount';
  unit.readOnly=true;product.setCustomValidity('');unit.setCustomValidity('');quantity.setCustomValidity('');percent.setCustomValidity('');amount.setCustomValidity('');
  if(!Number.isSafeInteger(Number(quantity.value))||Number(quantity.value)<1)quantity.setCustomValidity('Every quantity must be a positive whole number.');
- let expected;
+ const tax=row.querySelector('[name="tax"]');
+ let terms;
  try{
-  expected=pricingExpectedPrice(row,form);
-  if(replacePrice)unit.value=pricingMinorText(expected);
-  else if(moneyMinor(unit.value)!==expected)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+  terms=pricingQuoteTerms(row,form);
+  if(replacePrice&&terms.taxBasisPoints===undefined&&tax.readOnly)tax.value='0';
+  tax.readOnly=terms.taxBasisPoints!==undefined;
+  if(replacePrice&&tax.readOnly)tax.value=String(terms.taxBasisPoints/100);
+  if(replacePrice)unit.value=pricingMinorText(terms.unitPriceMinor);
+  else if(moneyMinor(unit.value)!==terms.unitPriceMinor)throw Error('Saved unit price differs from the configured price. Re-select the product to use its current price.');
+  if(tax.readOnly&&(tax.value===''||Number(tax.value)!==terms.taxBasisPoints/100))throw Error('Saved VAT differs from the configured rate. Re-select the product to use its current VAT rate.');
  }catch(error){
-  if(replacePrice)unit.value='';
+  if(replacePrice){unit.value='';if(tax.readOnly)tax.value='0';tax.readOnly=false;}
   // A readonly price cannot receive native validation focus; its selected product can.
   product.setCustomValidity(error.message);feedback.textContent=error.message;return;
  }
  if(quantity.validationMessage){feedback.textContent=quantity.validationMessage;return;}
  try{
-  const discount=pricingDiscount(Number(quantity.value),expected,mode,mode==='amount'?amount.value:percent.value);
+  const discount=pricingDiscount(Number(quantity.value),terms.unitPriceMinor,mode,mode==='amount'?amount.value:percent.value,terms);
   if(mode==='amount')percent.value=String(discount.discountBasisPoints/100);
   const currency=form.querySelector('[name="currency"]').value;
-  feedback.textContent=`Actual discount: ${moneyDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
+  feedback.textContent=`Actual discount: ${moneyExactDisplay(discount.discountMinor,currency)} (${discount.discountBasisPoints/100}%). ${discount.discountBasisPoints>1000?'Owner approval required.':discount.discountBasisPoints>0?'Department head or owner approval required.':'No discount.'}`;
+  if(tax.value.trim()!==''&&Number.isFinite(Number(tax.value))&&Number(tax.value)>=0&&Number(tax.value)<=100){
+   const totals=proformaLineTotal({...terms,quantity:Number(quantity.value),discountBasisPoints:discount.discountBasisPoints,taxBasisPoints:Math.round(Number(tax.value)*100)});
+   feedback.textContent+=` VAT ${moneyExactDisplay(totals.tax,currency)} · Line total ${moneyExactDisplay(totals.total,currency)}.`;
+  }
  }catch(error){
   const invalid=mode==='amount'?amount:percent;invalid.setCustomValidity(error.message);feedback.textContent=error.message;
  }
@@ -101,11 +135,11 @@ function pricingBindForm(form){
   if(['currency','commercialKind'].includes(event.target.name)){pricingRefreshForm(form);return;}
   const row=event.target.closest('[data-proforma-line]');if(!row)return;
   if(event.target.name==='discountMode'&&event.target.value==='amount'){
-   try{const value=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),moneyMinor(row.querySelector('[name="unitPrice"]').value),'percent',row.querySelector('[name="discount"]').value);row.querySelector('[name="discountAmount"]').value=pricingMinorText(value.discountMinor);}catch{}
+   try{const value=pricingDiscount(Number(row.querySelector('[name="quantity"]').value),moneyMinor(row.querySelector('[name="unitPrice"]').value),'percent',row.querySelector('[name="discount"]').value,pricingQuoteTerms(row,form));row.querySelector('[name="discountAmount"]').value=pricingMinorText(value.discountMinor);}catch{}
   }
   if(['productChoice','discountMode'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:event.target.name==='productChoice'});
  });
- form.addEventListener('input',event=>{const row=event.target.closest('[data-proforma-line]');if(row&&['quantity','discount','discountAmount'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:false});});
+ form.addEventListener('input',event=>{const row=event.target.closest('[data-proforma-line]');if(row&&['quantity','discount','discountAmount','tax'].includes(event.target.name))pricingRefreshRow(row,form,{replacePrice:false});});
 }
 function pricingInputMinor(value){
  const text=String(value??'').trim();if(!/^\d+(?:\.\d{1,2})?$/.test(text)||text.length>32)throw Error('Enter a valid amount with no more than two decimal places.');

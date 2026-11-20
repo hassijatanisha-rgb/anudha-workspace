@@ -66,7 +66,7 @@ try{
  for(const file of ['ui-page-header.js','sales-domain.js','product-pricing.js'])await page.addScriptTag({content:readFileSync(new URL('../'+file,import.meta.url),'utf8')});
  await page.evaluate(()=>{
   productPricingActor=me;productSalePrices=new Map([[pricingKey(fixtureProducts[1].id,'TZS'),{unit_price_minor:10000}]]);
-  const form=document.createElement('form');form.id='pricingForm';form.innerHTML='<div id="pricingHelp"></div><select name="currency"><option>TZS</option></select><div data-proforma-line><label><span>Quoted product</span><input name="productChoice" list="pricingProducts" required></label><input name="quantity" type="number" value="1" required>'+pricingLineFields()+'</div><datalist id="pricingProducts" data-lookup-values="products"></datalist><button>Save quote</button>';
+  const form=document.createElement('form');form.id='pricingForm';form.innerHTML='<div id="pricingHelp"></div><select name="currency"><option>TZS</option></select><div data-proforma-line><label><span>Quoted product</span><input name="productChoice" list="pricingProducts" required></label><input name="quantity" type="number" value="1" required>'+pricingLineFields()+'<input name="tax" type="number" value="0"></div><datalist id="pricingProducts" data-lookup-values="products"></datalist><button>Save quote</button>';
   document.querySelector('main').append(form);pricingBindForm(form);lookupScan();
  });
  const quoteInput=page.locator('#pricingForm .lookup-input');await quoteInput.fill('CRP');await page.waitForTimeout(80);await quoteInput.press('Enter');
