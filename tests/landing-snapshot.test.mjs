@@ -62,7 +62,7 @@ test('representative role exports preserve every original navigation visibility 
 
 test('the authored shell scripts initialize exported permissions at phone, rail and wide widths without app globals',async()=>{
  const entry=cases.find(row=>row.name==='Stock'),sources=await Promise.all(shellScripts.map(url=>readFile(new URL('../'+url.slice('/source/'.length),import.meta.url),'utf8')));
- for(const role of entry.roles)for(const width of [360,768,1280]){
+ for(const role of entry.roles)for(const width of [360,768,1024,1280]){
   const f=await openMainPageScenario(entry,role,fixture=>installLandingValueReflection(fixture.document)),document=f.document,body=serializeLandingNode(document.body);
   // Reparse the exported markup to discard original app handlers before loading
   // only the declared real shell scripts in a fresh, disconnected JS context.
@@ -73,11 +73,11 @@ test('the authored shell scripts initialize exported permissions at phone, rail 
   for(let n=0;n<sources.length;n++)vm.runInContext(sources[n],ctx,{filename:shellScripts[n]});
   vm.runInContext(shellBootstrapSource,ctx,{filename:shellBootstrapScript});document.body.emit('DOMContentLoaded');await Promise.resolve();
   const nav=document.querySelector('#nav'),bar=document.querySelector('#workspaceShortcuts'),panel=document.querySelector('#workspaceMenuPanel');
-  assert.equal(nav.dataset.dropdown,'1');assert.equal(nav.dataset.shellMode,width===360?'phone':width===768?'rail':'wide');assert.ok(bar);assert.equal(bar.querySelectorAll('button').length,6);assert.equal(bar.querySelectorAll('[data-view]').length,0);assert.equal(panel.hidden,width===360);
+  assert.equal(nav.dataset.dropdown,'1');assert.equal(nav.dataset.shellMode,width<=800?'phone':width===1024?'rail':'wide');assert.ok(bar);assert.equal(bar.querySelectorAll('button').length,4);assert.equal(bar.querySelectorAll('[data-view]').length,0);assert.equal(panel.hidden,width<=800);
   assert.equal(document.documentElement.dataset.landingShellReady,'true');assert.equal(typeof ctx.installWorkspaceHeaderScroll,'function');assert.equal(document.documentElement.hasAttribute('data-workspace-primary'),false,'Stock has no promoted primary action');
   for(const row of original){assert.ok(row.button.isConnected);assert.equal(row.button.hidden,row.hidden);assert.equal(row.button.disabled,row.disabled);}
   const permittedNames=original.filter(row=>!row.hidden).map(row=>row.button.textContent);
-  for(const shortcut of bar.querySelectorAll('button').slice(0,5)){const name=shortcut.getAttribute('aria-label');assert.ok(name.includes(shortcut.textContent));assert.ok(permittedNames.some(label=>name.includes(label)));}
+  for(const shortcut of bar.querySelectorAll('button').filter(button=>button.id!=='workspaceMenuToggle')){const name=shortcut.getAttribute('aria-label');assert.ok(name.includes(shortcut.textContent));assert.ok(permittedNames.some(label=>name.includes(label)));}
   assert.ok(document.querySelector('#howToUse .nav-label'));assert.equal(document.querySelector('#howToUse').getAttribute('aria-label'),'How to use');
   for(const global of ['client','me','run','navigateWorkspace','load','render','fetch','supabase'])assert.equal(vm.runInContext(`typeof ${global}`,ctx),'undefined',global+' is not installed in the export');
  }

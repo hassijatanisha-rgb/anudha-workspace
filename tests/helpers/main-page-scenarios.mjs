@@ -95,7 +95,7 @@ const cases=[
  ...['transfers','locations'].map(section=>({name:'Inventory '+section,state:{view:'inventory',inventorySection:section},heading:section==='transfers'?/Move stock/:/Godowns/,contains:/Fictional Godown/,roles:['owner','head','staff']})),
  {name:'Packing',state:{view:'packing',packingSection:'queue'},heading:/Packing/,contains:/Fictional Packing Clinic/,roles:['owner','head','staff']},
  ...['work','activity'].map(tab=>({name:'Reports '+tab,state:{view:'reports',reportTab:tab},heading:/Reports/,contains:/Fictional Current Employee/,roles:['owner','head','staff']})),
- ...['note','event'].map(section=>({name:'Personal '+section,state:{view:'personal',personalSection:section},heading:section==='note'?/My notes/:/My calendar/,selector:'[data-personal-entry]',rows:1,contains:/Fictional Personal Entry/,roles:['owner','head','staff']})),
+ ...['note','event'].map(section=>({name:'Personal '+section,state:{view:'personal',personalSection:section},heading:section==='note'?/^Notes/:/My calendar/,selector:'[data-personal-entry]',rows:1,contains:/Fictional Personal Entry/,roles:['owner','head','staff']})),
  {name:'Pro formas',state:{view:'sales',salesSection:'proformas'},heading:/Pro formas/,selector:'[data-open-proforma]',rows:50,contains:/Fictional Sales Clinic/,roles:['owner','head','staff']},
  {name:'Delivery',state:{view:'sales',salesSection:'delivery'},heading:/Delivery/,selector:'[data-open-delivery]',rows:50,contains:/Fictional Delivery Clinic/,roles:['owner','head','staff']},
  {name:'Contracts',state:{view:'contracts'},heading:/Contracts/,selector:'[data-contract-card]',rows:30,contains:/Fictional Contract 29/,roles:['owner','head','staff']},

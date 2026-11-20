@@ -1,11 +1,13 @@
 'use strict';
 
-const catalogCategories=[['review','Needs review'],['all','All products'],['machines','Machines'],['furniture','Furniture'],['reagents','Reagents'],['consumables','Consumables'],['spares','Spares'],['non_stock','Service / non-stock'],['unclassified','Not sorted yet']];
-let catalogCategory='review',catalogSearch='',catalogMachineId='',catalogSort='name',catalogPage=0,catalogColour='';
+const catalogCategories=[['all','All products'],['review','Needs review'],['machines','Machines'],['furniture','Furniture'],['reagents','Reagents'],['consumables','Consumables'],['spares','Spares'],['non_stock','Service / non-stock'],['unclassified','Unclassified']];
+const catalogSorts=[['name','Product name'],['company','Manufacturer'],['issues','Most issues first']];
+const catalogColours=[['red','Red'],['yellow','Yellow'],['ok','No colour']];
+let catalogCategory='all',catalogSearch='',catalogMachineId='',catalogSort='name',catalogPage=0,catalogColour='';
 let catalogRequest=0,catalogSession=0,catalogResult=null,catalogDetailRows=new Map(),catalogMachineProduct=null,catalogSelectedProduct='',catalogMachineChoices=[];
 function catalogListLocation(){if(workspaceRecordRoute(location.hash)?.kind==='product')navRecordPage('#/go/inventory/catalog');}
 function catalogIsActive(){return (typeof view==='undefined'||view==='inventory')&&(typeof inventorySection==='undefined'||inventorySection==='catalog')}
-function clearCatalogInventory(){catalogSession++;catalogRequest++;catalogResult=null;catalogDetailRows.clear();catalogMachineProduct=null;catalogSelectedProduct='';catalogMachineChoices=[];catalogPage=0;catalogMachineId='';catalogSearch='';catalogCategory='review';catalogColour='';catalogSort='name';}
+function clearCatalogInventory(){catalogSession++;catalogRequest++;catalogResult=null;catalogDetailRows.clear();catalogMachineProduct=null;catalogSelectedProduct='';catalogMachineChoices=[];catalogPage=0;catalogMachineId='';catalogSearch='';catalogCategory='all';catalogColour='';catalogSort='name';}
 function catalogRows(){
  if(catalogIsActive()&&catalogResult){const rows=new Map(catalogResult.rows.map(p=>[p.id,p]));for(const [id,p] of catalogDetailRows)rows.set(id,p);return [...rows.values()];}
  return products.filter(p=>!p.deleted_at).map(reviewedCatalogProduct);
@@ -86,7 +88,7 @@ function catalogProduct(p,rows){
 }
 function catalogHeader(product=null){
  if(product)return workspacePageHeader({title:product.name||'Product name missing',subtitle:[product.source?.company,product.source?.specification||product.source?.model].filter(Boolean).join(' · '),back:'<button type="button" id="workbenchBack">← Back to products</button>',breadcrumbs:`<a href="#/go/inventory/catalog">Products</a><a href="#/product/${esc(product.id)}" aria-current="page">${esc(product.name||'Product name missing')}</a>`,actions:'<button id="refresh" type="button">Refresh data</button>'});
- return workspacePageHeader({title:'Products',subtitle:'Find a product, or correct its name, company or details.',back:catalogMachineId?'<button type="button" data-catalog-back>← Back to catalog</button>':'',actions:'<button id="refresh" type="button">Refresh data</button>'+(canEditRecords()?'<button id="newProduct" type="button" class="button-primary">Add product</button>':'')});
+ return workspacePageHeader({title:'Products',titleAttrs:'class="catalog-title"',back:catalogMachineId?'<button type="button" data-catalog-back>← Back to catalog</button>':'',actions:'<button id="refresh" type="button">Refresh data</button>'+(canEditRecords()?'<button id="newProduct" type="button" class="button-primary">Add product</button>':'')});
 }
 function catalogUpdateHeader(product=null){
  const header=$('#content .workspace-page-header'),template=document.createElement('template');
@@ -100,13 +102,32 @@ function catalogUpdateHeader(product=null){
  header.dataset.catalogProduct=product?.id||'';
  return header;
 }
+function catalogCountLabel(label,count){
+ return count===undefined?label:`${label} (${count.toLocaleString()})`;
+}
+function catalogFilterSummary(){
+ const sort=catalogSorts.find(([id])=>id===catalogSort),colour=catalogColours.find(([id])=>id===catalogColour);
+ return [colour?.[1],catalogSort!=='name'&&sort?`Sort by ${sort[1].toLowerCase()}`:''].filter(Boolean).join(' · ');
+}
 function catalogRender(data){
- const metrics=data?.metrics,counts=data?.category_counts||{},colours=data?.colour_counts||{};
- const mappingAction=canEditRecords()?'<details><summary>Import and mapping tools</summary><button type="button" data-product-mapping-preview>Check stock mapping file</button><label class="file-button"><span>Apply product list file</span><input type="file" id="productListFile" accept=".json,application/json"></label></details>':'';
- $('#content').innerHTML=catalogHeader()+recordsLockedNote()+mappingAction+(metrics?'<div class="cleanup-metrics"><div><small>Products</small><strong data-catalog-metric="products">'+metrics.products+'</strong></div><div><small>Need review</small><strong data-catalog-metric="review">'+metrics.review+'</strong></div><div><small>Active for sale</small><strong data-catalog-metric="active">'+metrics.active+'</strong></div><div><small>Manufacturers</small><strong data-catalog-metric="manufacturers">'+metrics.manufacturers+'</strong></div></div>':workspaceSkeleton('metrics',''))+
+ const counts=data?.category_counts,colours=data?.colour_counts,editable=canEditRecords();
+ const moreOpen=$('#catalogMoreFilters')?.open,overviewOpen=$('#catalogOverview')?.open,activeId=document.activeElement?.id;
+ const metrics=data?'<dl class="catalog-totals">'+[['products','Products'],['review','Need review'],['active','Active for sale'],['manufacturers','Manufacturers']].map(([key,label])=>`<div><dt>${label}</dt><dd data-catalog-metric="${key}">${esc(data.metrics[key])}</dd></div>`).join('')+'</dl>':workspaceSkeleton('metrics','');
+ const mappingAction=editable?'<div class="actions"><button type="button" data-product-mapping-preview>Check stock mapping file</button><label class="file-button"><span>Apply product list file</span><input type="file" id="productListFile" accept=".json,application/json"></label></div>':'';
+ $('#content').innerHTML=catalogHeader()+
  (catalogMachineId?`<section class="card"><h2>Products compatible with ${esc(catalogMachineProduct?.name||'this machine')}</h2><button type="button" data-workbench-detail="${esc(catalogMachineId)}">Machine details</button></section>`:'')+
- `<section class="cleanup-controls"><div class="tabs" role="group" aria-label="Product categories">${catalogCategories.map(([category,label])=>`<button type="button" data-catalog-category="${category}" class="${category===catalogCategory?'active':''}" aria-pressed="${category===catalogCategory}">${label}${data?` <small data-catalog-count="${category}">${counts[category]||0}</small>`:''}</button>`).join('')}</div><div class="cleanup-search"><label><span>Search products</span><input id="catalogSearch" type="search" maxlength="2000" value="${esc(catalogSearch)}" placeholder="Name, manufacturer, model or stock code"></label><label><span>Sort by</span><select id="catalogSort"><option value="name" ${catalogSort==='name'?'selected':''}>Product name</option><option value="company" ${catalogSort==='company'?'selected':''}>Manufacturer</option><option value="issues" ${catalogSort==='issues'?'selected':''}>Most issues first</option></select></label><label><span>Colour</span><select id="catalogColour"><option value="">All colours</option>${[['red','Red'],['yellow','Yellow'],['ok','No colour']].map(([value,label])=>`<option value="${value}" data-catalog-colour="${value}" ${catalogColour===value?'selected':''}>${label}${data?' · '+(colours[value]||0):''}</option>`).join('')}</select></label></div><p id="catalogStatus" role="status">${data?`<strong>${data.total}</strong> matching product${data.total===1?'':'s'} · ${counts[catalogCategory]||0} in ${esc(catalogLabel(catalogCategory).toLowerCase())}`:'Loading products…'}</p></section><div id="catalogSaveNotice" role="status"></div><div id="catalogDetail"></div><div id="catalogResults" aria-busy="${!data}">${data?productWorkbenchTable(data.rows):workspaceSkeleton('catalog-table','')}</div>`+
+ `<section class="catalog-filters" aria-label="Product filters">
+ <div class="catalog-fields"><label><span>Search products</span><input id="catalogSearch" type="search" maxlength="2000" value="${esc(catalogSearch)}" placeholder="Name, maker, model or stock code"></label>
+ <label><span>Category</span><select id="catalogCategory">${catalogCategories.map(([id,label])=>`<option value="${id}" data-catalog-category="${id}" ${id===catalogCategory?'selected':''}>${esc(catalogCountLabel(label,counts?(counts[id]||0):undefined))}</option>`).join('')}</select></label></div>
+ <details id="catalogMoreFilters"${moreOpen?' open':''}><summary id="catalogMoreSummary">More filters <small id="catalogFilterSummary">${esc(catalogFilterSummary())}</small></summary>
+ <div class="catalog-fields"><label><span>Sort by</span><select id="catalogSort">${catalogSorts.map(([id,label])=>`<option value="${id}" ${id===catalogSort?'selected':''}>${label}</option>`).join('')}</select></label>
+ <label><span>Review colour</span><select id="catalogColour"><option value="">All colours</option>${catalogColours.map(([id,label])=>`<option value="${id}" data-catalog-colour="${id}" ${id===catalogColour?'selected':''}>${esc(catalogCountLabel(label,colours?(colours[id]||0):undefined))}</option>`).join('')}</select></label></div></details>
+ </section>
+ <div class="catalog-results-head"><p id="catalogStatus" role="status">${data?`<strong>${data.total}</strong> matching product${data.total===1?'':'s'}`:'Loading products…'}</p>
+ <details id="catalogOverview"${overviewOpen?' open':''}><summary id="catalogOverviewSummary">${editable?'Totals &amp; import tools':'Catalog totals'}</summary>${metrics}${mappingAction}</details></div>
+ ${recordsLockedNote()}<div id="catalogSaveNotice" role="status"></div><div id="catalogDetail"></div><div id="catalogResults" aria-busy="${!data}">${data?productWorkbenchTable(data.rows):workspaceSkeleton('catalog-table','')}</div>`+
  `<div id="catalogPaging" class="actions"><button id="catalogPrev" ${!data||data.page===0?'disabled':''}>Previous</button><span id="catalogPageStatus" tabindex="-1">Page ${data?data.page+1:1} of ${data?.pages||1} · 25 products per page</span><button id="catalogNext" ${!data||data.page+1>=data.pages?'disabled':''}>Next</button></div>`;
+ if(['catalogCategory','catalogSort','catalogColour','catalogMoreSummary','catalogOverviewSummary'].includes(activeId))$('#'+activeId).focus({preventScroll:true});
  const previous=$('#catalogPrev'),next=$('#catalogNext');
  if(previous)previous.onclick=()=>run(()=>{catalogPage--;catalogListLocation();return catalogInventory()});
  if(next)next.onclick=()=>run(()=>{catalogPage++;catalogListLocation();return catalogInventory()});
@@ -114,8 +135,10 @@ function catalogRender(data){
   catalogSearch=e.target.value;catalogPage=0;catalogRequest++;catalogListLocation();
   renderSearchPreservingPosition(e.target,catalogInventory,250);
  });
- $('#catalogSort').onchange=e=>{catalogSort=e.target.value;catalogPage=0;catalogListLocation();catalogInventory()};
- $('#catalogColour').onchange=e=>{catalogColour=e.target.value;catalogPage=0;catalogListLocation();catalogInventory()};
+ const applyFilters=()=>{catalogPage=0;catalogListLocation();$('#catalogFilterSummary').textContent=catalogFilterSummary();return catalogInventory()};
+ $('#catalogCategory').onchange=e=>{if(!catalogCategories.some(([id])=>id===e.target.value))return;catalogCategory=e.target.value;return applyFilters()};
+ $('#catalogSort').onchange=e=>{catalogSort=e.target.value;return applyFilters()};
+ $('#catalogColour').onchange=e=>{catalogColour=e.target.value;return applyFilters()};
  const listFile=$('#productListFile');if(listFile)listFile.onchange=()=>{const file=listFile.files[0];if(!file)return;run(async()=>{const total=await applyProductListFile(file);inventoryLoaded=false;await load();message(productListSummary(total));});};
  document.querySelectorAll('[data-catalog-row]').forEach(row=>row.catalogRowHtml=row.outerHTML);
  catalogSelectedProduct='';
@@ -179,9 +202,9 @@ function catalogReconcilePage(data){
  target.querySelectorAll('[data-catalog-row]').forEach(row=>{if(!row.catalogRowHtml)row.catalogRowHtml=row.outerHTML});
  target.setAttribute('aria-busy','false');
  document.querySelectorAll('[data-catalog-metric]').forEach(node=>node.textContent=data.metrics[node.dataset.catalogMetric]);
- document.querySelectorAll('[data-catalog-count]').forEach(node=>node.textContent=data.category_counts[node.dataset.catalogCount]||0);
- document.querySelectorAll('[data-catalog-colour]').forEach(node=>node.textContent=({red:'Red',yellow:'Yellow',ok:'No colour'}[node.dataset.catalogColour])+' · '+(data.colour_counts[node.dataset.catalogColour]||0));
- $('#catalogStatus').textContent=`${data.total} matching product${data.total===1?'':'s'} · ${data.category_counts[catalogCategory]||0} in ${catalogLabel(catalogCategory).toLowerCase()}`;
+ document.querySelectorAll('[data-catalog-category]').forEach(node=>{const id=node.dataset.catalogCategory;node.textContent=catalogCountLabel(catalogLabel(id),data.category_counts[id]||0)});
+ for(const [id,label] of catalogColours)$(`[data-catalog-colour="${id}"]`).textContent=catalogCountLabel(label,data.colour_counts[id]||0);
+ $('#catalogStatus').textContent=`${data.total} matching product${data.total===1?'':'s'}`;
  $('#catalogPrev').disabled=data.page===0;$('#catalogNext').disabled=data.page+1>=data.pages;
  $('#catalogPageStatus').textContent=`Page ${data.page+1} of ${data.pages} · 25 products per page`;
  catalogResult=data;catalogPage=data.page;
@@ -267,7 +290,6 @@ async function catalogInventory(){
 }
 document.addEventListener('click',e=>{
  const button=e.target.closest('button');if(!button||!button.closest('#content'))return;
- if(button.hasAttribute('data-catalog-category'))return run(()=>{const category=button.dataset.catalogCategory;if(!catalogCategories.some(([id])=>id===category))return;catalogCategory=category;catalogPage=0;catalogListLocation();return catalogInventory()});
- else if(button.hasAttribute('data-catalog-machine'))run(async()=>{const actor=me,id=button.dataset.catalogMachine,request=++catalogRequest;await loadCatalogProduct(id);if(me!==actor||request!==catalogRequest||!catalogIsActive())return;catalogMachineProduct=catalogDetailRows.get(id);catalogMachineId=id;catalogCategory='all';catalogSearch='';catalogColour='';catalogPage=0;catalogListLocation();await catalogInventory()});
+ if(button.hasAttribute('data-catalog-machine'))run(async()=>{const actor=me,id=button.dataset.catalogMachine,request=++catalogRequest;await loadCatalogProduct(id);if(me!==actor||request!==catalogRequest||!catalogIsActive())return;catalogMachineProduct=catalogDetailRows.get(id);catalogMachineId=id;catalogCategory='all';catalogSearch='';catalogColour='';catalogPage=0;catalogListLocation();await catalogInventory()});
  else if(button.hasAttribute('data-catalog-back'))return run(()=>{catalogMachineId='';catalogMachineProduct=null;catalogPage=0;catalogListLocation();return catalogInventory()});
 });

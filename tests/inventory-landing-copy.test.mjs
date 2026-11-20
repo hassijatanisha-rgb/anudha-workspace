@@ -39,13 +39,13 @@ test('Quarantined and expired stock remains visible outside guidance and errors 
 
 for(const role of ['owner','staff'])test(`Products keeps one Add product action and collapses import targets for ${role} with Records access`,async()=>{
  const f=mainPageFixture({role,access:['records'],rpcs:{catalog_page:catalog}});await f.open({view:'inventory',inventorySection:'catalog'});
- const page=content(f),hero=page.querySelector('.workspace-page-header'),tools=page.querySelector('details'),add=hero.querySelector('#newProduct');
- assert.equal(tools.open,false);assert.equal(tools.querySelector('summary').textContent,'Import and mapping tools');
+ const page=content(f),hero=page.querySelector('.workspace-page-header'),tools=page.querySelector('#catalogOverview'),add=hero.querySelector('#newProduct');
+ assert.equal(tools.open,false);assert.equal(tools.querySelector('summary').textContent,'Totals & import tools');
  assert.equal(add.classList.contains('button-primary'),true);assert.equal(add.closest('details'),null);assert.equal(hero.querySelectorAll('.button-primary').length,1);assert.match(visibleText(hero),/Add product/);
  assert.doesNotMatch(visibleText(hero),/Check stock mapping file|Apply product list file/);
  assert.ok(tools.querySelector('[data-product-mapping-preview]'));const file=tools.querySelector('#productListFile');assert.equal(file.getAttribute('accept'),'.json,application/json');assert.equal(typeof file.onchange,'function');
  tools.open=true;assert.match(visibleText(tools),/Check stock mapping file/);assert.match(visibleText(tools),/Apply product list file/);
- assert.ok(page.querySelector('#catalogSearch'));assert.ok(page.querySelectorAll('[role="group"]').some(node=>node.getAttribute('aria-label')==='Product categories'));assert.equal(page.querySelectorAll('[data-catalog-row]').length,25);assert.match(page.querySelector('#catalogPageStatus').textContent,/25 products per page/);
+ assert.ok(page.querySelector('#catalogSearch'));assert.equal(page.querySelector('#catalogCategory').closest('label').querySelector('span').textContent,'Category');assert.equal(page.querySelectorAll('[data-catalog-row]').length,25);assert.match(page.querySelector('#catalogPageStatus').textContent,/25 products per page/);
  for(const row of page.querySelectorAll('[data-catalog-row]')){assert.equal(row.querySelectorAll('button').length,1);assert.equal(row.querySelector('button').textContent,'Open product');}
  assert.equal(f.calls.filter(call=>call.name==='catalog_page').length,1);
 });
@@ -54,4 +54,37 @@ test('Products keeps its existing Records-access restrictions while search and O
  const f=mainPageFixture({role:'staff',rpcs:{catalog_page:catalog}});await f.open({view:'inventory',inventorySection:'catalog'});
  const page=content(f);assert.equal(page.querySelector('#newProduct'),null);assert.equal(page.querySelector('#productListFile'),null);assert.equal(page.querySelector('[data-product-mapping-preview]'),null);
  assert.match(visibleText(page),/Clients & items data access/);assert.ok(page.querySelector('#catalogSearch'));assert.equal(page.querySelectorAll('[data-workbench-detail]').length,25);
+});
+
+test('Category, review colour and sort send the selected filters and retain keyboard focus on refresh',async()=>{
+ const f=mainPageFixture({role:'staff',rpcs:{catalog_page:catalog}});
+ await f.open({view:'inventory',inventorySection:'catalog'});
+ const page=content(f),control=id=>page.querySelector('#'+id),category=control('catalogCategory');
+ assert.equal(category.tag,'select');
+ assert.deepEqual(category.querySelectorAll('option').map(option=>option.value),['all','review','machines','furniture','reagents','consumables','spares','non_stock','unclassified']);
+ assert.equal(category.querySelector('[selected]').textContent,'All products (105)');
+ assert.equal(category.querySelector('[value="review"]').textContent,'Needs review (105)');
+ assert.equal(category.querySelector('[value="unclassified"]').textContent,'Unclassified (0)');
+ assert.equal(control('catalogMoreFilters').open,false);
+ assert.ok(control('catalogMoreFilters').contains(control('catalogColour')));
+ assert.ok(control('catalogMoreFilters').contains(control('catalogSort')));
+ const change=async(id,value)=>{
+  const select=control(id);select.focus();select.value=value;
+  await select.onchange({target:select});
+  assert.equal(f.document.activeElement,control(id));
+  assert.equal(control(id).querySelector('[selected]').value,value);
+ };
+ f.evaluate("catalogPage=3;catalogSearch='maker'");
+ await change('catalogCategory','review');
+ assert.equal(f.calls.at(-1).args.p_category,'review');
+ assert.equal(f.calls.at(-1).args.p_query,'maker');
+ assert.equal(f.calls.at(-1).args.p_page,0);
+ control('catalogMoreFilters').open=true;
+ await change('catalogColour','yellow');
+ await change('catalogSort','company');
+ assert.equal(f.calls.at(-1).args.p_colour,'yellow');
+ assert.equal(f.calls.at(-1).args.p_sort,'company');
+ assert.equal(control('catalogMoreFilters').open,true);
+ control('catalogMoreFilters').open=false;
+ assert.match(visibleText(control('catalogMoreFilters')),/Yellow · Sort by manufacturer/);
 });
