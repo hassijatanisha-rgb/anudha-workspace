@@ -102,3 +102,42 @@ for(const mode of ['attempt','inactive'])test(`abandoned restoration cannot appl
  const restoring=g.ctx.restoreProformaDraft();await tick();assert.equal(typeof resolve,'function');if(mode==='attempt')g.ctx.workspaceLeaveSequence++;else g.actor.active=false;resolve({data:[{product_id:'product',currency:'TZS',unit_price_minor:10000}]});assert.equal(await restoring,false);assert.equal(g.get('proformaDraftRestore'),null);assert.doesNotMatch(g.document.body.textContent,/Do not publish a canceled draft/);
  g.actor.active=true;g.read=read;await g.ctx.salesDeliveryWorkspace();assert.equal(g.field('notes').value,'');assert.ok(g.storage.rows.size);assert.equal(g.calls.length,0);
 });
+
+test('configured and exempt items keep distinct VAT through editing, save recovery and revision display',async()=>{
+ const f=draftFixture(),taxed=f.ctx.products[0],exempt={id:'exempt',name:'Second reagent',source:{tax_basis_points:0}};
+ taxed.source={tax_basis_points:1800,import_price_basis:'gross',currency:'TZS',import_net_price_minor:8474576,gross_price_minor:10000000};
+ f.ctx.products.push(exempt);f.get("productSalePrices.set('product:TZS',{unit_price_minor:8474576});productSalePrices.set('exempt:TZS',{unit_price_minor:10000});");
+ const select=(row,product)=>{const choice=f.field('productChoice',row);choice.value=f.ctx.inventoryProductChoice(product);f.fire(choice,'change');};
+ const first=f.form().querySelector('[data-proforma-line]');select(first,taxed);
+ assert.equal(f.field('tax',first).value,'18');assert.equal(f.field('tax',first).readOnly,true);assert.equal(f.field('unitPrice',first).value,'84745.76');
+ assert.match(first.querySelector('[data-pricing-feedback]').textContent,/Line total TZS\s100,000\.00/);
+ f.field('quantity',first).value='5';f.fire(f.field('quantity',first),'input');
+ assert.match(first.querySelector('[data-pricing-feedback]').textContent,/VAT TZS\s76,271\.19 · Line total TZS\s500,000\.00/);
+ f.fire(f.form().querySelector('#addSalesLine'),'click');
+ const second=f.form().querySelectorAll('[data-proforma-line]')[1];select(second,taxed);select(second,exempt);
+ assert.equal(f.field('tax',second).value,'0');assert.equal(f.field('tax',second).readOnly,true);
+ assert.equal(f.field('tax',first).value,'18');
+ f.write=async()=>{throw Error('Connection lost');};await assert.rejects(f.submit(),/Connection lost/);
+ const payload=f.calls[0].args;
+ assert.deepEqual(payload.p_lines.map(line=>[line.productId,line.taxBasisPoints,line.grossUnitPriceMinor]),[['product',1800,10000000],['exempt',0,undefined]]);
+ const g=draftFixture({storage:f.storage,mount:false});g.ctx.products[0].source=taxed.source;g.ctx.products.push(exempt);
+ await g.ctx.restoreProformaDraft();assert.equal(g.field('tax').value,'18');assert.deepEqual(plain(g.state().pending),payload);
+ const header={...receipt(payload),subtotal_minor:42382881,discount_minor:0,tax_minor:7627119,total_minor:50010000};
+ const revision=revisionReceipt(payload);g.server=[header];g.revisions=[revision];await g.ctx.checkProformaSave(g.state());
+ assert.equal(g.state().pending,null);assert.equal(g.calls.length,0);
+ g.ctx.savedRevision=revision;g.ctx.savedHeader=header;g.get("salesRevisionSnapshots.set(savedHeader.id+':1',savedRevision.snapshot)");
+ delete g.ctx.products[0].source;
+ assert.match(g.ctx.proformaTable(header),/TZS\s500,000\.00/);
+});
+
+test('legacy manual VAT remains editable and a changed configured rate requires reselection',async()=>{
+ const f=draftFixture(),row=f.form().querySelector('[data-proforma-line]'),refresh=()=>f.fire(f.field('productChoice'),'change');
+ f.field('tax').value='7.5';refresh();assert.equal(f.field('tax').readOnly,false);assert.equal(f.field('tax').value,'7.5');
+ f.ctx.products[0].source={tax_basis_points:1800};await f.submit();
+ assert.equal(f.calls.length,0);assert.match(f.field('productChoice').validationMessage,/Saved VAT differs/);assert.equal(f.field('tax').value,'7.5');
+ refresh();assert.equal(f.field('tax').value,'18');assert.equal(f.field('tax').readOnly,true);
+ f.field('commercialKind').value='placement';f.fire(f.field('commercialKind'),'change');
+ assert.equal(f.field('unitPrice').value,'0.00');assert.equal(f.field('tax').value,'0');assert.match(row.querySelector('[data-pricing-feedback]').textContent,/Line total TZS\s0.00/);
+ f.field('commercialKind').value='sale';f.fire(f.field('commercialKind'),'change');assert.equal(f.field('tax').value,'18');
+ f.ctx.products[0].source.tax_basis_points=null;refresh();assert.equal(f.field('tax').value,'0');assert.equal(f.field('tax').readOnly,false);
+});

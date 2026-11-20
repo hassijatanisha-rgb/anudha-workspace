@@ -19,10 +19,28 @@ function moneyExactDisplay(minor,currency='TZS'){
  const parts=new Intl.NumberFormat('en-TZ',{style:'currency',currency,currencyDisplay:currency==='TZS'?'code':'symbol',minimumFractionDigits:2,maximumFractionDigits:2}).formatToParts(absolute/100n);
  return (amount<0n?'-':'')+parts.map(part=>part.type==='fraction'?fraction:part.value).join('');
 }
+function proformaLineAmounts(line){
+ const quantity=BigInt(line.quantity),rate=BigInt(line.taxBasisPoints),discountRate=BigInt(line.discountBasisPoints);
+ const round=(amount,divisor)=>(amount+divisor/2n)/divisor;
+ let subtotal,net,tax;
+ if(line.grossUnitPriceMinor!=null){
+  // Discount the quoted VAT-inclusive amount first so the customer's total stays exact.
+  const inclusive=quantity*BigInt(line.grossUnitPriceMinor),total=inclusive-round(inclusive*discountRate,10000n);
+  subtotal=round(inclusive*10000n,10000n+rate);
+  net=round(total*10000n,10000n+rate);
+  tax=total-net;
+ }else{
+  subtotal=quantity*BigInt(line.unitPriceMinor);
+  net=subtotal-round(subtotal*discountRate,10000n);
+  tax=round(net*rate,10000n);
+ }
+ return {gross:subtotal,discount:subtotal-net,tax,total:net+tax};
+}
 function proformaLineTotal(line){
- const gross=line.quantity*line.unitPriceMinor,discount=Math.round(gross*line.discountBasisPoints/10000),tax=Math.round((gross-discount)*line.taxBasisPoints/10000);
- if(![gross,discount,tax,gross-discount+tax].every(Number.isSafeInteger))throw Error('Line total is too large.');
- return {gross,discount,tax,total:gross-discount+tax};
+ const {gross,discount,tax,total}=proformaLineAmounts(line);
+ const amounts={gross:Number(gross),discount:Number(discount),tax:Number(tax),total:Number(total)};
+ if(!Object.values(amounts).every(Number.isSafeInteger))throw Error('Line total is too large.');
+ return amounts;
 }
 function proformaNextActions(status){return ({draft:['send','cancel'],sent:['accept','revise','reject','cancel'],accepted:[],rejected:[],cancelled:[]})[status]||[]}
 function deliveryNextActions(status){return ({

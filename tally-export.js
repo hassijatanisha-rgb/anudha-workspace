@@ -7,10 +7,12 @@ let tallyExportPending=null;
 function tallyXmlEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
 function tallyMinorText(minor){const sign=minor<0?'-':'',abs=Math.abs(Math.round(minor));return `${sign}${Math.floor(abs/100)}.${String(abs%100).padStart(2,'0')}`;}
 function tallyDateText(iso){return String(iso).slice(0,10).replace(/-/g,'');}
-// Same arithmetic as save_sales_proforma: gross, rounded discount, then VAT on the discounted amount, per line.
 function tallyLineAmounts(line){
- const gross=Number(line.quantity)*Number(line.unit_price_minor),discount=Math.round(gross*Number(line.discount_basis_points||0)/10000),net=gross-discount;
- return {gross,discount,net,tax:Math.round(net*Number(line.tax_basis_points||0)/10000)};
+ const {gross,discount,tax}=proformaLineTotal({
+  quantity:line.quantity,unitPriceMinor:line.unit_price_minor,grossUnitPriceMinor:line.gross_unit_price_minor,
+  discountBasisPoints:line.discount_basis_points||0,taxBasisPoints:line.tax_basis_points||0
+ });
+ return {gross,discount,net:gross-discount,tax};
 }
 // The original Tally stock item name, when the product came from a Tally export.
 function tallyDefaultItemName(product,saved){
