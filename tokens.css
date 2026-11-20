@@ -1,3 +1,8 @@
+/* The staff typeface is served locally, including on restricted office networks. */
+@font-face{
+ font-family:'DM Sans';font-style:normal;font-weight:100 1000;font-display:swap;
+ src:url('assets/dm-sans-latin.woff2') format('woff2');
+}
 /* Shared visual values. Screen styles consume these roles; financial print values stay light. */
 :root{
  font:100%/1.5 system-ui,sans-serif;
@@ -16,7 +21,9 @@
  --skeleton-fill:var(--line);--skeleton-edge:var(--line);
  --print-paper:#ffffff;--print-ink:#1b2a24;--print-line:#dce3de;--print-brand:#176149;
 
- --font-ui:system-ui,sans-serif;--font-print:Arial,sans-serif;
+ --font-ui:'DM Sans',system-ui,sans-serif;--font-print:Arial,sans-serif;
+ --area-products:var(--brand);--area-products-bg:var(--success-bg);
+ --area-notes:#634892;--area-notes-bg:#f0eafa;
  --t-display:2rem;--lh-display:1.1;--w-display:700;--ls-display:-.02em;
  --t-title:1.375rem;--lh-title:1.2;--w-title:650;--ls-title:-.01em;
  --t-headline:1.0625rem;--lh-headline:1.3;--w-headline:600;
@@ -33,7 +40,7 @@
  --m-spin:750ms;--m-skeleton:1000ms;--feedback-life:4000ms;
  --ease-linear:linear;--ease-in:cubic-bezier(.2,.8,.2,1);--ease-out:cubic-bezier(.8,0,.8,.2);
  --control-h:2.75rem;--control-compact:2.25rem;--control-phone:3.25rem;
- --header-height:3.5rem;--header-phone-height:3.25rem;--sidebar-width:15.625rem;--sidebar-compact-width:4.5rem;--shortcut-height:4.5rem;
+ --header-height:3.5rem;--header-phone-height:3.25rem;--sidebar-width:15.625rem;--sidebar-compact-width:min(12rem,24vw);--shortcut-height:4.5rem;
  --dialog-sm:25rem;--dialog-md:35rem;--dialog-lg:55rem;
  --focus-width:.125rem;--focus-offset:.125rem;--status-rail:.1875rem;
  --icon-search:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%234f5f57' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E");
@@ -42,6 +49,7 @@
 /* System preference remains live; an explicit light choice always wins. */
 @media(prefers-color-scheme:dark){
  :root:not([data-theme="light"]){
+ --area-notes:#d8c5fb;--area-notes-bg:#302640;
  color-scheme:dark;--logo-surface:var(--print-paper);
  --skeleton-fill:var(--ink-3);--skeleton-edge:var(--line);
  --canvas:#0f1513;--surface:#17201c;--surface-2:#1f2a25;--line:#2c3832;
@@ -58,6 +66,7 @@
 
 /* The stores display stays dark independently of the chosen screen theme. */
 :root[data-theme="dark"],body.packing-tv{
+ --area-notes:#d8c5fb;--area-notes-bg:#302640;
  color-scheme:dark;--logo-surface:var(--print-paper);
  --skeleton-fill:var(--ink-3);--skeleton-edge:var(--line);
  --canvas:#0f1513;--surface:#17201c;--surface-2:#1f2a25;--line:#2c3832;
@@ -72,9 +81,11 @@
 }
 
 @media(prefers-contrast:more){
+ :root,:root[data-theme],body.packing-tv{--area-products:var(--ink);--area-notes:var(--ink);}
  :root,:root[data-theme],body.packing-tv{--line:var(--ink-3);--ink-2:var(--ink);--skeleton-fill:var(--ink-3);--skeleton-edge:var(--ink);}
 }
 @media(forced-colors:active){
+ :root,:root[data-theme],body.packing-tv{--area-products:CanvasText;--area-products-bg:Canvas;--area-notes:CanvasText;--area-notes-bg:Canvas;}
  :root,:root[data-theme],body.packing-tv{--canvas:Canvas;--surface:Canvas;--surface-2:Canvas;--ink:CanvasText;--ink-2:CanvasText;--ink-3:CanvasText;--line:CanvasText;--skeleton-fill:GrayText;--skeleton-edge:CanvasText;--brand:Highlight;--brand-strong:Highlight;--on-brand:HighlightText;--success:CanvasText;--warning:CanvasText;--danger:CanvasText;--info:CanvasText;--success-bg:Canvas;--warning-bg:Canvas;--danger-bg:Canvas;--info-bg:Canvas;--neutral-bg:Canvas;}
 }
 @media print{

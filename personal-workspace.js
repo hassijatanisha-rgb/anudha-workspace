@@ -2,7 +2,7 @@
 let personalSection='event',personalPage=0,personalRows=[],personalEpoch=0;
 let personalMonth=new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0');
 function clearPersonalWorkspace(){personalEpoch++;personalRows=[];personalPage=0;}
-const personalLabels={event:'My calendar',task:'My tasks',note:'My notes & reminders'};
+const personalLabels={event:'My calendar',task:'My tasks',note:'Notes'};
 function personalLocalInput(value){if(!value)return '';const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
 function personalDisplayDate(value){return value?new Date(value).toLocaleString():'No date set'}
 function personalMonthGrid(rows){
@@ -10,7 +10,15 @@ function personalMonthGrid(rows){
 }
 function personalCard(row){
  const editable=row.visibility==='company'?me.role==='owner':row.owner_id===me.user_id;
- return `<article data-personal-entry="${esc(row.id)}" class="card personal-entry ${row.visibility==='company'?'company-event':'personal-event'}"><small>${row.visibility==='company'?'Company event / meeting':row.kind==='task'?'Reminder':row.kind==='note'?'Note':'Personal · only you'}${row.priority==='urgent'?' · URGENT':''}</small><h2>${esc(row.title)}</h2><p>${esc(row.body||'')}</p>${row.starts_at?`<p>${esc(personalDisplayDate(row.starts_at))}${row.ends_at?' — '+esc(personalDisplayDate(row.ends_at)):''}</p>`:''}${row.remind_at?`<p>Remind me: ${esc(personalDisplayDate(row.remind_at))}</p>`:''}${row.kind==='task'?`<span class="tag">${row.completed?'Done':'Not done yet'}</span>`:''}${editable?`<button type="button" data-personal-edit="${esc(row.id)}">Edit</button>`:''}</article>`;
+ if(row.kind==='note'||row.kind==='task'){
+  const reminder=row.kind==='task',time=reminder?(row.remind_at||row.starts_at):row.updated_at;
+  const metadata=[reminder?'Reminder':'Note',row.priority==='urgent'?'Urgent':'',reminder&&row.completed?'Done':'',time?(reminder?'':'Updated ')+personalDisplayDate(time):''].filter(Boolean);
+  const dates=[];
+  if(row.starts_at&&(row.ends_at||row.remind_at&&Date.parse(row.starts_at)!==Date.parse(row.remind_at)))dates.push(personalDisplayDate(row.starts_at)+(row.ends_at?' — '+personalDisplayDate(row.ends_at):''));
+  if(!reminder&&row.remind_at)dates.push('Remind me '+personalDisplayDate(row.remind_at));
+  return `<details data-personal-entry="${esc(row.id)}" class="personal-note-row"><summary><span><strong>${esc(row.title)}</strong><small>${esc(metadata.join(' · '))}</small></span></summary><div class="personal-note-detail">${row.body?`<p>${esc(row.body)}</p>`:''}${dates.map(date=>`<p>${esc(date)}</p>`).join('')}${editable?`<button type="button" data-personal-edit="${esc(row.id)}">Edit ${reminder?'reminder':'note'}</button>`:''}</div></details>`;
+ }
+ return `<article data-personal-entry="${esc(row.id)}" class="card personal-entry ${row.visibility==='company'?'company-event':'personal-event'}"><small>${row.visibility==='company'?'Company event / meeting':'Personal · only you'}${row.priority==='urgent'?' · URGENT':''}</small><h2>${esc(row.title)}</h2><p>${esc(row.body||'')}</p>${row.starts_at?`<p>${esc(personalDisplayDate(row.starts_at))}${row.ends_at?' — '+esc(personalDisplayDate(row.ends_at)):''}</p>`:''}${row.remind_at?`<p>Remind me: ${esc(personalDisplayDate(row.remind_at))}</p>`:''}${editable?`<button type="button" data-personal-edit="${esc(row.id)}">Edit</button>`:''}</article>`;
 }
 function readPersonalPage(kind,month,page){
  let query=client.from('workspace_entries').select('*').is('deleted_at',null);
@@ -30,8 +38,12 @@ async function personalWorkspace(){
  if(epoch!==personalEpoch||view!=='personal'||me!==actor)return;
  if(result.error){target.innerHTML=`${workspacePageHeader({title:personalLabels[kind]})}<p role="alert">This workspace could not be loaded. ${esc(result.error.message)}</p><button id="personalRetry">Retry</button>`;$('#personalRetry').onclick=()=>run(personalWorkspace);return;}
  personalRows=result.data||[];
- const rows=kind==='note'?personalTaskOrder(personalRows):personalRows;
- target.innerHTML=`<section>${workspacePageHeader({title:personalLabels[kind],subtitle:kind==='event'?'Company events and your personal calendar.':'Your private notes and reminders.',actions:kind==='note'?'<button id="personalNew">New reminder</button><button id="personalNewNote" class="primary-action">New note</button>':'<button id="personalNew" class="primary-action">Add event</button>'})}<div id="personalDue">${personalDueHtml(rows)}</div><div id="personalSaveStatus"></div><button id="personalRefresh">Refresh</button><div id="personalEntries">${personalEntriesHtml(rows,kind)}</div><div class="actions"><button id="personalPrevious" ${personalPage===0?'disabled':''}>Previous</button><span id="personalPageStatus" tabindex="-1">Page ${personalPage+1}</span><button id="personalNext" ${rows.length<100?'disabled':''}>Next</button></div></section>`;
+ const notes=kind==='note',rows=notes?personalTaskOrder(personalRows):personalRows;
+ const header=workspacePageHeader({title:personalLabels[kind],titleAttrs:notes?'id="personalNotesTitle"':'',subtitle:notes?'Private notes and reminders.':'Company events and your personal calendar.',actions:notes?'<button type="button" id="personalNewNote" class="primary-action">New note</button>':'<button id="personalNew" class="primary-action">Add event</button>'});
+ const refresh='<button type="button" id="personalRefresh">Refresh</button>';
+ const tools=notes?`<details class="personal-note-tools"><summary>More actions</summary><div class="actions"><button type="button" id="personalNew">New reminder</button>${refresh}</div></details>`:refresh;
+ target.innerHTML=`<section${notes?' class="personal-notes"':''}>${header}<div id="personalDue">${personalDueHtml(rows,kind)}</div><div id="personalSaveStatus"></div>${tools}<div id="personalEntries">${personalEntriesHtml(rows,kind)}</div><div id="personalPaging" class="actions"${notes&&personalPage===0&&rows.length<100?' hidden':''}><button id="personalPrevious" ${personalPage===0?'disabled':''}>Previous</button><span id="personalPageStatus" tabindex="-1">Page ${personalPage+1}</span><button id="personalNext" ${rows.length<100?'disabled':''}>Next</button></div></section>`;
+ if(notes)$('#personalNotesTitle').insertAdjacentHTML('beforeend','<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a2 2 0 0 1 2 2v10l-6 6H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM20 15h-4a2 2 0 0 0-2 2v4M8 8h8M8 12h5"/></svg>');
  $('#personalNew').onclick=()=>personalEditor(null,epoch,actor,kind==='note'?'task':'event');
  $('#personalNewNote')?.addEventListener('click',()=>personalEditor(null,epoch,actor,'note'));
  if(kind==='event'){
@@ -43,10 +55,14 @@ async function personalWorkspace(){
  $('#personalNext').onclick=()=>{personalPage++;run(personalWorkspace)};
  bindPersonalEntries(target,epoch,actor);
 }
-function personalEntriesHtml(rows,kind){return rows.map(personalCard).join('')||`<p class="muted">${kind==='note'?'No notes or reminders yet.':'Nothing in this month.'}</p>`;}
-function personalDueHtml(rows){const due=personalDueReminders(rows);return due.length?`<section class="card" role="status"><h2>Reminders due</h2>${due.map(row=>`<p>${esc(row.title)} · ${esc(personalDisplayDate(row.remind_at))}</p>`).join('')}</section>`:'';}
+function personalEntriesHtml(rows,kind){return rows.map(personalCard).join('')||(kind==='note'?'<p class="personal-note-empty">No notes or reminders yet.</p>':'<p class="muted">Nothing in this month.</p>');}
+function personalDueHtml(rows,kind){
+ const due=personalDueReminders(rows);if(!due.length)return '';
+ if(kind==='note')return `<details class="personal-note-due"><summary>${due.length} reminder${due.length===1?'':'s'} due</summary><ul>${due.map(row=>`<li>${esc(row.title)} · ${esc(personalDisplayDate(row.remind_at))}</li>`).join('')}</ul></details>`;
+ return `<section class="card" role="status"><h2>Reminders due</h2>${due.map(row=>`<p>${esc(row.title)} · ${esc(personalDisplayDate(row.remind_at))}</p>`).join('')}</section>`;
+}
 function bindPersonalEntries(target,epoch,actor){
- target.querySelectorAll('[data-personal-entry]').forEach(row=>row.personalMarkup=row.outerHTML);
+ target.querySelectorAll('[data-personal-entry]').forEach(row=>row.personalMarkup??=row.outerHTML);
  target.querySelectorAll('[data-personal-edit]').forEach(button=>button.onclick=()=>{if(me===actor&&epoch===personalEpoch&&button.isConnected&&!button.disabled)personalEditor(personalRows.find(row=>row.id===button.dataset.personalEdit),epoch,actor);});
 }
 async function refreshSavedPersonalPage(current,kind,month,page,epoch,actor){
@@ -61,18 +77,29 @@ async function refreshSavedPersonalPage(current,kind,month,page,epoch,actor){
    if(!Array.isArray(result.data)||result.data.length>100||result.data.some(row=>!row?.id||!Number.isSafeInteger(row.version)||typeof row.title!=='string'||!['note','task','event'].includes(row.kind)))throw Error('The saved entries could not be verified.');
    personalRows=result.data;const rows=kind==='note'?personalTaskOrder(personalRows):personalRows,entries=$('#personalEntries'),template=document.createElement('template');template.innerHTML=personalEntriesHtml(rows,kind);
    const old=new Map([...entries.querySelectorAll('[data-personal-entry]')].map(row=>[row.dataset.personalEntry,row]));
-   const next=[...template.content.children].map(row=>{const previous=old.get(row.dataset.personalEntry);return previous?.personalMarkup===row.outerHTML?previous:row;});
+   const next=[...template.content.children].map(row=>{
+    const previous=old.get(row.dataset.personalEntry);row.personalMarkup=row.outerHTML;
+    if(previous?.personalMarkup===row.personalMarkup)return previous;
+    if(kind==='note'&&previous?.open)row.open=true;
+    return row;
+   });
    const focused=document.activeElement,entry=focused?.closest('[data-personal-entry]'),scroll={left:window.scrollX,top:window.scrollY};
    for(const row of [...entries.children])if(!next.includes(row))row.remove();
    let cursor=entries.firstElementChild;for(const row of next){if(row===cursor)cursor=cursor.nextElementSibling;else entries.insertBefore(row,cursor);}
-   template.innerHTML=personalDueHtml(rows);if($('#personalDue').innerHTML!==template.innerHTML)$('#personalDue').replaceChildren(...template.content.children);
+   template.innerHTML=personalDueHtml(rows,kind);
+   if(kind==='note'&&$('#personalDue').firstElementChild?.open&&template.content.firstElementChild)template.content.firstElementChild.open=true;
+   if($('#personalDue').innerHTML!==template.innerHTML)$('#personalDue').replaceChildren(...template.content.children);
    if(kind==='event'){
     template.innerHTML=personalMonthGrid(rows);const calendar=target.querySelector('.personal-calendar');
     for(const day of template.content.querySelectorAll('[data-personal-day]')){const previous=calendar.querySelector(`[data-personal-day="${day.dataset.personalDay}"]`);if(previous&&previous.outerHTML!==day.outerHTML)previous.replaceWith(day);}
    }
    $('#personalPrevious').disabled=page===0;$('#personalNext').disabled=rows.length<100;
+   if(kind==='note')$('#personalPaging').hidden=page===0&&rows.length<100;
    controls().forEach(button=>button.disabled=false);bindPersonalEntries(target,epoch,actor);notice.replaceChildren();
-   if(entry&&!focused.isConnected){const replacement=[...target.querySelectorAll('[data-personal-edit]')].find(button=>button.dataset.personalEdit===entry.dataset.personalEntry);(replacement||$('#personalPageStatus'))?.focus({preventScroll:true});}
+   if(entry&&!focused.isConnected){
+    const replacement=next.find(row=>row.dataset.personalEntry===entry.dataset.personalEntry);
+    (replacement?.querySelector(focused.matches('summary')?'summary':'[data-personal-edit]')||($('#personalPaging').hidden?$('#personalNewNote'):$('#personalPageStatus')))?.focus({preventScroll:true});
+   }
    window.scrollTo(scroll);message('Saved.');
   }catch(error){
    if(!active())return;

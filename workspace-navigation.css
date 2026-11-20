@@ -1,4 +1,4 @@
-/* The original menu remains authoritative in the sidebar, icon rail and phone More panel. */
+/* The original menu remains authoritative in the sidebar, compact sidebar and phone menu. */
 body>header{position:sticky;top:0;z-index:30;min-height:var(--header-height);padding:var(--space-1) var(--space-5)}
 body>header .brand-logo{width:7.7rem;height:auto;max-width:30vw}
 #nav:not([hidden]){position:fixed;inset:var(--workspace-header-height,var(--header-height)) auto 0 0;width:var(--sidebar-width);display:block;overflow-y:auto;overscroll-behavior:contain;padding:var(--space-4) var(--space-3) var(--space-6);background:var(--surface-2);color:var(--ink);border-right:1px solid var(--line);z-index:25;scrollbar-color:var(--ink-2) var(--surface-2)}
@@ -22,19 +22,18 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
 .nav-unavailable small{display:block}
 #workspaceShortcuts{display:none}
 #workspaceMenuPanel:has(#nav[hidden]),body:has(#nav[hidden]) #workspaceShortcuts{display:none}
-@media(min-width:600.01px) and (max-width:1199.99px){
+@media(min-width:800.01px) and (max-width:1199.99px){
  #nav:not([hidden]){width:var(--sidebar-compact-width);padding:var(--space-3) var(--space-2)}
  body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-compact-width)}
- #nav .nav-group{margin-bottom:var(--space-4)}
- #nav .nav-group button{justify-content:center;padding:var(--space-3) var(--space-2)}
- #nav .nav-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ #nav .nav-group button{gap:var(--space-2);padding:var(--space-2)}
  #nav .nav-group-toggle>.nav-icon{display:block}
- #nav .nav-group-toggle::after{display:none}
 }
 @media(max-width:600px){
  body>header{min-height:var(--header-phone-height);padding:0 var(--space-3)}
  body>header .brand-logo{width:5.5rem;max-width:28vw}
  body>header .brand>span:last-child{display:none}
+}
+@media(max-width:800px){
  #workspaceShortcuts:not([hidden]){position:fixed;left:0;right:0;bottom:0;z-index:35;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(var(--control-h) + var(--space-2))),1fr));gap:var(--space-2);padding:var(--space-1) var(--space-1) max(var(--space-1),env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
  #workspaceShortcuts>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);min-width:44px;min-height:52px;padding:0;margin:0;border:0;border-radius:var(--r-sm);background:transparent;color:var(--ink-2);font-size:var(--t-caption);line-height:var(--lh-caption);font-weight:var(--w-caption);letter-spacing:var(--ls-caption);white-space:normal;overflow-wrap:normal}
  #workspaceShortcuts .nav-icon{width:20px;height:20px}
@@ -42,7 +41,18 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
  #workspaceShortcuts>button[aria-current="page"],#workspaceShortcuts>button[aria-expanded="true"]{color:var(--brand-strong);background:var(--surface-2)}
  #workspaceMenuPanel{position:fixed;left:var(--space-3);right:var(--space-3);bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--space-2));z-index:34;max-height:calc(100dvh - var(--workspace-header-height,var(--header-phone-height)) - var(--workspace-shortcut-height,var(--shortcut-height)) - var(--space-5));overflow:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--e-3)}
  #workspaceMenuPanel #nav:not([hidden]){position:static;inset:auto;width:auto;max-height:none;overflow:visible;padding:var(--space-3);border:0;background:transparent}
- #nav .nav-group{margin-bottom:var(--space-3)}
+ #workspaceMenuPanel #nav .nav-group{margin:0}
+ #workspaceMenuPanel #nav .nav-group+.nav-group:not([hidden]){border-top:1px solid var(--line)}
+ #workspaceMenuPanel #nav .nav-group-toggle,#workspaceMenuPanel #nav .nav-accounts>button{min-height:var(--control-phone);margin:0;padding:var(--space-2);color:var(--ink);font-size:var(--t-body);line-height:var(--lh-body);font-weight:var(--w-headline);letter-spacing:0;text-transform:none}
+ #workspaceMenuPanel #nav .nav-group-toggle>.nav-icon,#workspaceMenuPanel #nav .nav-accounts>button>.nav-icon{display:block;width:2rem;height:2rem;padding:var(--space-1);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2)}
+ #workspaceMenuPanel #nav .nav-workspace .nav-group-toggle>.nav-icon{background:var(--area-notes-bg);color:var(--area-notes)}
+ #workspaceMenuPanel #nav .nav-sales .nav-group-toggle>.nav-icon{background:var(--info-bg);color:var(--info)}
+ #workspaceMenuPanel #nav .nav-stores .nav-group-toggle>.nav-icon{background:var(--area-products-bg);color:var(--area-products)}
+ #workspaceMenuPanel #nav .nav-service .nav-group-toggle>.nav-icon{background:var(--warning-bg);color:var(--warning)}
+ #workspaceMenuPanel #nav .nav-group-toggle[aria-description]{color:var(--brand-strong);text-decoration:underline;text-underline-offset:.2em}
+ #workspaceMenuPanel #nav .nav-group-items{padding:0 0 var(--space-2) var(--space-4)}
+ #workspaceMenuPanel #nav .nav-group-items button{min-height:var(--control-h);margin:0;padding:var(--space-2)}
+ #workspaceMenuPanel #nav .nav-group-items .active{background:var(--surface-2)}
  body:has(#nav:not([hidden]))>main{margin-left:0;padding:var(--space-5) var(--space-4) calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--space-5))}
 }
 @media(prefers-reduced-motion:reduce){#nav .nav-group-toggle::after{transition:none}}

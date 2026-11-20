@@ -4,7 +4,9 @@ import {readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const enabled=process.env.PERSONAL_BROWSER_QA==='1';
-const sources=['personal-workspace-domain.js','personal-workspace.js','action-forms.js'].map(name=>readFileSync(new URL('../'+name,import.meta.url),'utf8'));
+const read=name=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
+const sources=['client-rules.js','ui-page-header.js','ui-dialogs.js','action-feedback.js','personal-workspace-domain.js','personal-workspace.js','action-forms.js'].map(read);
+sources.push(read('app.js').split('\n').find(line=>line.startsWith('async function run(fn)')));
 let browser;
 test.before(async()=>{
  if(!enabled)return;
@@ -14,15 +16,16 @@ test.before(async()=>{
 test.after(async()=>{await browser?.close()});
 const acceptance=(name,fn)=>test(name,{skip:!enabled&&'Set PERSONAL_BROWSER_QA=1 with local Playwright and Chrome'},fn);
 async function fixture(t,kind='event',role='staff'){
- const page=await browser.newPage({timezoneId:'UTC'});t.after(()=>page.close());page.setDefaultTimeout(3000);
+ const page=await browser.newPage({timezoneId:'UTC',viewport:{width:390,height:844}});t.after(()=>page.close());page.setDefaultTimeout(3000);
  await page.route('**/*',route=>route.abort());
- await page.setContent('<section id="content"></section><div id="notice"></div>');
- await page.addStyleTag({content:readFileSync(new URL('../personal-workspace.css',import.meta.url),'utf8')});
+ await page.setContent('<main><section id="content"></section><div id="notice"></div></main>');
+ await page.addStyleTag({content:['tokens.css','style.css','legacy-brand.css','personal-workspace.css','ui-polish.css'].map(read).join('\n')});
  await page.evaluate(({role})=>{
   window.me={user_id:'actor',role};window.view='personal';window.$=s=>document.querySelector(s);
   window.esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   crypto.randomUUID=()=> '00000000-0000-0000-0000-000000000001';
-  window.run=fn=>fn();window.message=s=>$('#notice').textContent=s;
+  window.busy=false;window.workspaceLoading=()=>{};window.replayQueuedNavigation=()=>{};window.friendlyError=error=>error.message;
+  window.message=(text,error)=>{if(!actionFeedbackMessage(text,error))$('#notice').textContent=text;};
   window.rows=[];window.calls=[];window.loads=0;
   window.client={from:()=>{
    let kind;const query={};
@@ -42,6 +45,7 @@ async function fixture(t,kind='event',role='staff'){
  return page;
 }
 async function fillEntry(page,kind){
+ if(kind==='task')await page.getByText('More actions',{exact:true}).click();
  await page.locator(kind==='note'?'#personalNewNote':'#personalNew').click();
  await page.locator('[name="title"]').fill('Fixture '+kind);
  await page.locator('[name="body"]').fill('Private detail');
@@ -49,6 +53,27 @@ async function fillEntry(page,kind){
  if(kind==='event')await page.locator('[name="ends"]').fill('2026-09-25T11:00');
  if(kind==='task'){await page.locator('[name="reminder"]').fill('2026-09-25T09:00');await page.locator('[name="urgent"]').check();}
 }
+acceptance('Notes keeps the primary action visible and details keyboard-accessible from phone to desktop',async t=>{
+ const p=await fixture(t,'note');
+ assert.equal(await p.getByRole('heading',{name:'Notes',exact:true}).count(),1);
+ assert.equal(await p.getByText('No notes or reminders yet.').isVisible(),true);
+ assert.equal(await p.locator('#personalPaging').isVisible(),false);
+ assert.equal(await p.locator('#personalNew').isVisible(),false);
+ await p.getByRole('button',{name:'New note'}).click();
+ assert.equal(await p.locator('[name="title"]').inputValue(),'');
+ await p.locator('#actionCancel').click();
+ await p.waitForFunction(()=>document.activeElement.id==='personalNewNote');
+ await p.evaluate(async()=>{rows=[{id:'long',kind:'note',owner_id:'actor',visibility:'personal',title:'LongTitle'.repeat(23),body:'Private <details>',version:1}];await personalWorkspace();});
+ for(const width of [320,390,768,1280]){
+  await p.setViewportSize({width,height:844});
+  await p.evaluate(()=>document.documentElement.style.fontSize='150%');
+  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const summary=p.locator('.personal-note-row>summary');await summary.focus();await summary.press('Space');
+  assert.equal(await p.getByText('Private <details>',{exact:true}).isVisible(),true);
+  assert.equal(await p.getByRole('button',{name:'Edit note'}).isVisible(),true);
+  await summary.press('Enter');assert.equal(await p.locator('[data-personal-edit]').isVisible(),false);
+ }
+});
 for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, edit and save use actual form values and original revision`,async t=>{
  const p=await fixture(t,kind);await fillEntry(p,kind);
  assert.equal(await p.locator('#actionFields [name*="contact"]').count(),0);
@@ -61,7 +86,9 @@ for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, e
  assert.equal(call.args.p_starts_at,kind==='note'?null:kind==='task'?'2026-09-25T09:00:00.000Z':'2026-09-25T10:00:00.000Z');
  assert.equal(call.args.p_body,'Private detail');assert.equal(call.args.p_priority,kind==='task'?'urgent':'normal');
  assert.ok(await p.evaluate(()=>loads>=2));
- assert.equal(await p.locator('.personal-entry h2').textContent(),'Fixture '+kind);
+ const title=p.locator(kind==='event'?'.personal-entry h2':'.personal-note-row summary strong');
+ assert.equal(await title.textContent(),'Fixture '+kind);
+ if(kind!=='event'){assert.equal(await p.locator('[data-personal-edit]').isVisible(),false);await p.locator('.personal-note-row summary').press('Enter');}
  await p.locator('[data-personal-edit]').click();
  assert.equal(await p.locator('[name="body"]').inputValue(),'Private detail');
  await p.locator('[name="title"]').fill('Updated '+kind);
@@ -70,12 +97,13 @@ for(const kind of ['event','task','note'])acceptance(`${kind}: create, reload, e
  await p.waitForFunction(()=>calls.length===2&&!document.querySelector('#actionEditor').open);
  assert.equal(await p.evaluate(()=>calls[1].args.p_expected_version),1);
  assert.equal(await p.evaluate(()=>calls[1].args.p_completed),kind==='task');
- assert.equal(await p.locator('.personal-entry h2').textContent(),'Updated '+kind);
+ assert.equal(await title.textContent(),'Updated '+kind);
+ if(kind!=='event'){assert.equal(await p.locator('.personal-note-row').evaluate(node=>node.open),true);await p.waitForFunction(()=>document.activeElement.matches('[data-personal-edit]'));}
 });
 acceptance('Company events render green and personal entries white; staff cannot edit shared events',async t=>{
  const p=await fixture(t);
  await p.evaluate(async()=>{rows=[{id:'shared',kind:'event',visibility:'company',owner_id:'owner',title:'Meeting',starts_at:'2026-09-25T10:00:00Z'},{id:'own',kind:'event',visibility:'personal',owner_id:'actor',title:'Private',starts_at:'2026-09-25T11:00:00Z'}];await personalWorkspace()});
- assert.equal(await p.locator('.personal-entry.company-event').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(228, 242, 220)');
+ assert.equal(await p.locator('.personal-entry.company-event').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(227, 244, 234)');
  assert.equal(await p.locator('.personal-entry.personal-event').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
  assert.equal(await p.locator('.company-event [data-personal-edit]').count(),0);
  await p.locator('#personalNew').click();assert.equal(await p.locator('[name="visibility"]').count(),0);
@@ -96,6 +124,8 @@ acceptance('Server save and list errors appear visibly, preserving rejected form
  assert.equal(await p.locator('[name="body"]').inputValue(),'Private detail');
  assert.equal(await p.locator('#actionEditor').evaluate(el=>el.open),true);
  await p.locator('#actionCancel').click();
+ await p.getByRole('button',{name:'Discard changes'}).click();
+ await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
  await p.evaluate(async()=>{window.loadError='Fixture database unavailable';await personalWorkspace()});
  assert.match(await p.locator('#content [role="alert"]').textContent(),/Fixture database unavailable/);
 });
@@ -106,7 +136,7 @@ acceptance('Actor and navigation changes during save cannot refresh or notify re
   await p.waitForFunction(()=>typeof releaseSave==='function');
   const loads=await p.evaluate(()=>window.loads);
   await p.evaluate(changed=>{if(changed==='actor')me={user_id:'other',role:'staff'};else view='sales';$('#content').textContent='Replacement page';releaseSave()},changed);
-  await p.waitForFunction(()=>!document.querySelector('#actionEditor').open);
+  await p.waitForFunction(()=>!window.busy);
   assert.equal(await p.locator('#content').innerText(),'Replacement page');
   assert.equal(await p.locator('#notice').innerText(),'');assert.equal(await p.evaluate(()=>window.loads),loads);
  }

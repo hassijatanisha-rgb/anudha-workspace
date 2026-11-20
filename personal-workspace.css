@@ -11,3 +11,31 @@
 .calendar-day .company-event{background:var(--success-bg);border-left:3px solid var(--success)}
 .calendar-day .personal-event{background:var(--surface);border:1px solid var(--line)}
 #content:has(.personal-calendar){overflow-x:auto}
+
+.personal-notes{max-width:56rem;margin-inline:auto}
+#personalNotesTitle{display:flex;align-items:center;gap:var(--space-3)}
+#personalNotesTitle svg{order:-1;flex:none;width:var(--control-h);height:var(--control-h);padding:var(--space-2);border-radius:var(--r-md);color:var(--area-notes);background:var(--area-notes-bg)}
+.personal-notes .workspace-page-heading p{margin-top:var(--space-2)}
+.personal-notes #personalEntries{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.personal-note-row+.personal-note-row{border-top:1px solid var(--line)}
+.personal-note-row>summary{padding:var(--space-4) var(--space-5);color:var(--ink)}
+.personal-note-row>summary>span{min-width:0;overflow-wrap:anywhere}
+.personal-note-row strong{display:block;font-size:var(--t-headline);font-weight:var(--w-title);line-height:var(--lh-headline)}
+.personal-note-row small{display:block;margin-top:var(--space-1);color:var(--ink-2);font-size:var(--t-callout);font-weight:var(--w-callout);line-height:var(--lh-callout)}
+.personal-note-detail{padding:0 var(--space-5) var(--space-4)}
+.personal-note-detail p{margin:0 0 var(--space-3);white-space:pre-wrap;overflow-wrap:anywhere}
+.personal-note-tools{margin:0 0 var(--space-2)}
+.personal-note-tools>summary{width:fit-content;max-width:100%;color:var(--ink-2);font-size:var(--t-callout);font-weight:var(--w-headline)}
+.personal-note-tools>.actions{margin:0 0 var(--space-3)}
+.personal-note-due{padding-inline:var(--space-4);border-inline-start:var(--status-rail) solid var(--warning);background:var(--warning-bg);border-radius:var(--r-sm)}
+.personal-note-due summary{color:var(--warning)}
+.personal-note-due ul{margin:0;padding:0 0 var(--space-3) var(--space-5);overflow-wrap:anywhere}
+.personal-note-empty{margin:0;padding:var(--space-6) var(--space-5);font-weight:var(--w-headline);color:var(--ink-2)}
+.personal-notes summary:focus-visible{outline:var(--focus-width) solid var(--brand);outline-offset:calc(-1 * var(--focus-width));border-radius:var(--r-sm)}
+.personal-notes #personalPaging[hidden]{display:none}
+@media(max-width:600px){
+ .personal-notes .workspace-page-actions{width:auto;justify-content:flex-start}
+ .personal-notes .workspace-page-heading{flex:1 1 auto}
+ .personal-note-row>summary{padding-inline:var(--space-4)}
+ .personal-note-detail{padding-inline:var(--space-4)}
+}

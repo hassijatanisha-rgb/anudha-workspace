@@ -12,4 +12,4 @@
 .workspace-search-option{display:grid;width:100%;min-height:var(--control-h);gap:var(--space-1);padding:var(--space-3);margin-bottom:var(--space-2);text-align:left;white-space:normal;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink)}
 .workspace-search-option[aria-selected="true"]{border-color:var(--brand);background:var(--surface-2)}
 .workspace-search-option span{font-size:var(--t-caption);line-height:var(--lh-caption);color:var(--ink-2)}
-@media(max-width:600px){.workspace-search-trigger{width:var(--control-h);padding:var(--space-2);justify-content:center;flex:none}.workspace-search-trigger>span,.workspace-search-trigger kbd{display:none}}
+@media(max-width:800px){.workspace-search-trigger{width:var(--control-h);padding:var(--space-2);justify-content:center;flex:none}.workspace-search-trigger>span,.workspace-search-trigger kbd{display:none}}

@@ -93,6 +93,7 @@ test('search selection/focus stays on its original node during a save reconcilia
 });
 test('server membership/order/counts reconcile without losing selected off-filter detail or equal row nodes',async()=>{
  const f=fixture(),other=f.row('two');f.c.catalogShowDetail(f.one);const editor=await f.open('review');f.c.resultRows=[f.two,product('three')];await editor.submit();assert.equal(f.row('one'),null);assert.equal(f.row('two'),other);assert.deepEqual(f.node('catalogResults').querySelectorAll('[data-catalog-row]').map(row=>row.dataset.catalogRow),['two','three']);assert.equal(f.get('catalogSelectedProduct'),'one');assert.match(f.node('catalogDetail').textContent,/Corrected <name>/);assert.match(f.node('catalogStatus').textContent,/2 matching/);assert.equal(f.document.querySelector('[data-catalog-metric="products"]').textContent,'52');
+ assert.equal(f.document.querySelector('[data-catalog-category="reagents"]').textContent,'Reagents (2)');assert.equal(f.document.querySelector('[data-catalog-colour="ok"]').textContent,'No colour (2)');
 });
 test('failed detail verification disables stale mutations and Retry only rereads, never repeats the confirmed write',async()=>{
  const f=fixture();f.c.catalogShowDetail(f.one);const editor=await f.open('review'),original=f.c.client.rpc;let fails=true;

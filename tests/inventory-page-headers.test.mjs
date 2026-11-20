@@ -34,7 +34,7 @@ test('Catalog landing keeps Refresh then the sole primary Add product, with impo
  const header=f.content.querySelector('.workspace-page-header'),actions=header.querySelector('.workspace-page-actions');
  assert.equal(f.content.querySelectorAll('h1').length,1);assert.equal(f.content.querySelector('h1').textContent,'Products');assert.equal(f.content.querySelector('[data-catalog-back]'),null);
  assert.deepEqual(actions.querySelectorAll('button').map(node=>node.id),['refresh','newProduct']);assert.equal(actions.querySelectorAll('.button-primary').length,1);assert.equal(actions.children.at(-1).id,'newProduct');
- const tools=f.content.querySelector('details');assert.match(tools.textContent,/Import and mapping tools/);assert.equal(header.contains(tools),false);assert.ok(f.content.children.indexOf(tools)>f.content.children.indexOf(header));
+ const tools=f.content.querySelector('#catalogOverview');assert.match(tools.textContent,/Totals & import tools/);assert.equal(header.contains(tools),false);assert.ok(f.content.children.indexOf(tools.parentElement)>f.content.children.indexOf(header));
  for(const id of ['productListFile','catalogSearch','catalogSort','catalogColour','catalogResults','catalogDetail','catalogSaveNotice','catalogPrev','catalogNext'])assert.ok(f.content.querySelector('#'+id),id);
 });
 test('Catalog read-only landing keeps Refresh and the lock note without editor/import controls',()=>{
