@@ -5,6 +5,17 @@ import {draftFixture,receipt,revisionReceipt,storageFixture,actorId,recordId,pla
 const pending=async options=>{const f=draftFixture(options);f.field('notes').value='Retain <customer terms>';f.field('internalNotes').value='Private planning';f.write=async()=>{throw Error('Connection lost');};await assert.rejects(f.submit(),/Connection lost/);return f;};
 const reload=async f=>{const next=draftFixture({storage:f.storage,mount:false});assert.equal(await next.ctx.restoreProformaDraft(),true);return next;};
 
+test('first reload after the business reset discards old drafts and pending retries while preserving sign-in',async()=>{
+ const before=await pending(),storage=storageFixture();
+ storage.setItem('anudha:proforma-draft:1:'+actorId,before.storage.getItem(before.ctx.proformaDraftKey(actorId)));
+ storage.setItem('anudha:proforma-draft:1:another-user','old draft');
+ storage.setItem('sb-auth-token','signed in');
+ const after=draftFixture({storage,mount:false});
+ assert.equal(await after.ctx.restoreProformaDraft(),false);
+ assert.deepEqual([...storage.rows],[['sb-auth-token','signed in']]);
+ assert.equal(after.calls.length,0);
+});
+
 test('ordinary draft reload restores typed values and selected IDs without writing or accepting old prices',async()=>{
  const f=draftFixture();f.field('notes').value='<script>retained literally</script>';f.field('quantity').value='7';f.field('discountMode').value='amount';f.field('discountAmount').value='7.00';f.fire(f.field('discountAmount'),'input');f.flush();
  const stored=[...f.storage.rows.values()][0];assert.ok(stored);assert.doesNotMatch(stored,/access_token|customer directory/);

@@ -3572,7 +3572,11 @@ function clearSalesDelivery(){
 }
 function salesEditorState(form){return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(input=>input.name).map(input=>[input.name,input.value,input.checked]));}
 function salesEditorChanged(form){return !!form&&form.dataset.initialState!==undefined&&salesEditorState(form)!==form.dataset.initialState;}
-const proformaDraftPrefix='anudha:proforma-draft:1:',proformaDraftLimit=2*1024*1024;
+const proformaDraftPrefix='anudha:proforma-draft:2:',proformaDraftLimit=2*1024*1024;
+function removeProformaDraftKeys(prefix){
+ try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(prefix))sessionStorage.removeItem(key);}}catch{}
+}
+removeProformaDraftKeys('anudha:proforma-draft:1:');
 const proformaDraftHeaders={organizationId:128,contactId:128,currency:3,validUntil:10,deliveryPeriod:300,paymentTerms:1000,notes:4000,commercialKind:9,contractId:128,installationRequired:3,installationChargeNotes:2000,internalNotes:4000};
 const proformaDraftLineFields={productChoice:8192,description:4000,quantity:40,uom:40,unitPrice:40,discountMode:7,discount:40,discountAmount:40,tax:40};
 const proformaDraftContexts=new WeakMap();
@@ -3654,7 +3658,7 @@ function clearProformaDraftStorage(){
  proformaDraftRestoreRequest++;proformaDraftRestore=null;
  if(proformaDraftActive?.timer)clearTimeout(proformaDraftActive.timer);
  proformaDraftActive=null;
- try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(proformaDraftPrefix))sessionStorage.removeItem(key);}}catch{}
+ removeProformaDraftKeys(proformaDraftPrefix);
 }
 function proformaDraftStatus(state){
  if(!state.current())return;
@@ -13979,15 +13983,20 @@ document.addEventListener('DOMContentLoaded',navDropdownSetup);
 // rows changed since (migration 089) instead of downloading all ~34,000 again. The server stays the source of truth:
 // every load still fetches the changes, a copy older than 7 days is replaced in full, and the copy is wiped whenever
 // the sign-in page is shown (sign-out, closed tab on a shared computer) or another person signs in.
-const listCacheName='anudha-lists',listCacheSchema=1,listCacheMaxAge=7*86400000,listCacheOverlap=5*60000;
+const listCacheName='anudha-lists',listCacheSchema=2,listCacheMaxAge=7*86400000,listCacheOverlap=5*60000;
 function listCacheOpen(){
  return new Promise((resolve,reject)=>{
   if(typeof indexedDB==='undefined')return reject(Error('No browser storage'));
-  const request=indexedDB.open(listCacheName,1);
-  request.onupgradeneeded=()=>request.result.createObjectStore('lists');
+  const request=indexedDB.open(listCacheName,listCacheSchema);
+  request.onupgradeneeded=event=>{
+   if(event.oldVersion===0)request.result.createObjectStore('lists');
+   else request.transaction.objectStore('lists').clear();
+  };
   request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
  });
 }
+// Upgrade even on pages without list pickers. Old tabs opening version 1 can no longer repopulate the store.
+listCacheOpen().then(db=>db.close()).catch(()=>{});
 async function listCacheRun(mode,fn){
  const db=await listCacheOpen();
  try{return await new Promise((resolve,reject)=>{const tx=db.transaction('lists',mode),store=tx.objectStore('lists');let result;const request=fn(store);if(request)request.onsuccess=()=>{result=request.result};tx.oncomplete=()=>resolve(result);tx.onerror=tx.onabort=()=>reject(tx.error);});}

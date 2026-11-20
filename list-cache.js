@@ -3,15 +3,20 @@
 // rows changed since (migration 089) instead of downloading all ~34,000 again. The server stays the source of truth:
 // every load still fetches the changes, a copy older than 7 days is replaced in full, and the copy is wiped whenever
 // the sign-in page is shown (sign-out, closed tab on a shared computer) or another person signs in.
-const listCacheName='anudha-lists',listCacheSchema=1,listCacheMaxAge=7*86400000,listCacheOverlap=5*60000;
+const listCacheName='anudha-lists',listCacheSchema=2,listCacheMaxAge=7*86400000,listCacheOverlap=5*60000;
 function listCacheOpen(){
  return new Promise((resolve,reject)=>{
   if(typeof indexedDB==='undefined')return reject(Error('No browser storage'));
-  const request=indexedDB.open(listCacheName,1);
-  request.onupgradeneeded=()=>request.result.createObjectStore('lists');
+  const request=indexedDB.open(listCacheName,listCacheSchema);
+  request.onupgradeneeded=event=>{
+   if(event.oldVersion===0)request.result.createObjectStore('lists');
+   else request.transaction.objectStore('lists').clear();
+  };
   request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
  });
 }
+// Upgrade even on pages without list pickers. Old tabs opening version 1 can no longer repopulate the store.
+listCacheOpen().then(db=>db.close()).catch(()=>{});
 async function listCacheRun(mode,fn){
  const db=await listCacheOpen();
  try{return await new Promise((resolve,reject)=>{const tx=db.transaction('lists',mode),store=tx.objectStore('lists');let result;const request=fn(store);if(request)request.onsuccess=()=>{result=request.result};tx.oncomplete=()=>resolve(result);tx.onerror=tx.onabort=()=>reject(tx.error);});}

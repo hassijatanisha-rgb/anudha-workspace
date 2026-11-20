@@ -5,6 +5,15 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const fetchSrc=app.slice(app.indexOf('const listColumns='),app.indexOf('function loadLists()'));
+test('the business reset opens a newer database and clears the old lists in the upgrade transaction',async()=>{
+ const rows=new Map([['lists',{products:[{id:'old-product'}]}]]);
+ const request={result:{close(){}},transaction:{objectStore(name){assert.equal(name,'lists');return rows;}}};
+ const indexedDB={open(name,version){assert.equal(name,'anudha-lists');assert.equal(version,2);return request;}};
+ vm.runInNewContext(readFileSync(new URL('../list-cache.js',import.meta.url),'utf8'),{indexedDB});
+ request.onupgradeneeded({oldVersion:1});
+ request.onsuccess();
+ assert.equal(rows.size,0);
+});
 // Runs list-cache.js and fetchLists with a fake server: tables hold rows; each call records its filter.
 function load(tables,{cached=null,missingColumn=false,otherError=false,now=Date.now()}={}){
  const calls=[];

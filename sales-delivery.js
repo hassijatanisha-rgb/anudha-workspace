@@ -20,7 +20,11 @@ function clearSalesDelivery(){
 }
 function salesEditorState(form){return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(input=>input.name).map(input=>[input.name,input.value,input.checked]));}
 function salesEditorChanged(form){return !!form&&form.dataset.initialState!==undefined&&salesEditorState(form)!==form.dataset.initialState;}
-const proformaDraftPrefix='anudha:proforma-draft:1:',proformaDraftLimit=2*1024*1024;
+const proformaDraftPrefix='anudha:proforma-draft:2:',proformaDraftLimit=2*1024*1024;
+function removeProformaDraftKeys(prefix){
+ try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(prefix))sessionStorage.removeItem(key);}}catch{}
+}
+removeProformaDraftKeys('anudha:proforma-draft:1:');
 const proformaDraftHeaders={organizationId:128,contactId:128,currency:3,validUntil:10,deliveryPeriod:300,paymentTerms:1000,notes:4000,commercialKind:9,contractId:128,installationRequired:3,installationChargeNotes:2000,internalNotes:4000};
 const proformaDraftLineFields={productChoice:8192,description:4000,quantity:40,uom:40,unitPrice:40,discountMode:7,discount:40,discountAmount:40,tax:40};
 const proformaDraftContexts=new WeakMap();
@@ -102,7 +106,7 @@ function clearProformaDraftStorage(){
  proformaDraftRestoreRequest++;proformaDraftRestore=null;
  if(proformaDraftActive?.timer)clearTimeout(proformaDraftActive.timer);
  proformaDraftActive=null;
- try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(proformaDraftPrefix))sessionStorage.removeItem(key);}}catch{}
+ removeProformaDraftKeys(proformaDraftPrefix);
 }
 function proformaDraftStatus(state){
  if(!state.current())return;
