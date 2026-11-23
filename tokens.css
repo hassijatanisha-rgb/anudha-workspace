@@ -40,7 +40,7 @@
  --m-spin:750ms;--m-skeleton:1000ms;--feedback-life:4000ms;
  --ease-linear:linear;--ease-in:cubic-bezier(.2,.8,.2,1);--ease-out:cubic-bezier(.8,0,.8,.2);
  --control-h:2.75rem;--control-compact:2.25rem;--control-phone:3.25rem;
- --header-height:3.5rem;--header-phone-height:3.25rem;--sidebar-width:15.625rem;--sidebar-compact-width:min(12rem,24vw);--shortcut-height:4.5rem;
+ --header-height:3.5rem;--header-phone-height:3.25rem;--sidebar-width:min(15.625rem,24vw);--sidebar-compact-width:min(12rem,24vw);--shortcut-height:4.5rem;
  --dialog-sm:25rem;--dialog-md:35rem;--dialog-lg:55rem;
  --focus-width:.125rem;--focus-offset:.125rem;--status-rail:.1875rem;
  --icon-search:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%234f5f57' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E");

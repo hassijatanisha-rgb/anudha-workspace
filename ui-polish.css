@@ -955,8 +955,8 @@ dialog.product-review-editor .product-review-footer>p{margin:0 auto 0 0;min-widt
 
 /* Only the existing, eligible landing action moves above the phone shortcuts. */
 @media screen and (max-width:600px){
- html[data-workspace-primary]{scroll-padding-bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--workspace-primary-height,var(--control-phone)) + var(--space-5))}
- html[data-workspace-primary] body:has(#nav:not([hidden]))>main{padding-bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--workspace-primary-height,var(--control-phone)) + var(--space-5))}
+ html[data-workspace-primary]:not(:has(#newProduct[data-workspace-primary])){scroll-padding-bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--workspace-primary-height,var(--control-phone)) + var(--space-5))}
+ html[data-workspace-primary]:not(:has(#newProduct[data-workspace-primary])) body:has(#nav:not([hidden]))>main{padding-bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--workspace-primary-height,var(--control-phone)) + var(--space-5))}
  .workspace-page-actions>[data-workspace-primary]{position:fixed;z-index:4;left:16px;right:16px;bottom:calc(var(--workspace-shortcut-height,var(--shortcut-height)) + var(--space-2));width:auto;min-height:52px;margin:0;padding:var(--space-1) var(--space-4);white-space:normal;overflow-wrap:anywhere;box-shadow:var(--e-2)}
  body:has(#nav[data-mobile-open="true"]) .workspace-page-actions>[data-workspace-primary],body:has(dialog[open]) .workspace-page-actions>[data-workspace-primary],body:not(:has(#nav:not([hidden]))) .workspace-page-actions>[data-workspace-primary]{visibility:hidden;pointer-events:none}
  .workspace-page-actions:has(>[data-workspace-primary]:only-child){display:contents}
@@ -1134,10 +1134,13 @@ main :is(#catalogMoreFilters,#catalogOverview)>summary{width:fit-content;max-wid
 #catalogPaging{margin-top:var(--space-4)}
 @media(max-width:600px){
  .workspace-page-header:has(.catalog-title){position:static;margin-bottom:var(--space-3)}
+ .workspace-page-heading .catalog-title{font-size:var(--t-title);line-height:var(--lh-title)}
  .workspace-page-toolbar:has(.catalog-title)>.workspace-page-heading{flex:1 1 auto}
  .workspace-page-toolbar:has(.catalog-title)>.workspace-page-actions{width:auto;max-width:100%}
- .workspace-page-actions>#newProduct[data-workspace-primary]{inset-inline:auto var(--space-4);width:auto;max-width:calc(100% - var(--space-6));min-height:var(--control-h);padding:var(--space-2) var(--space-4);display:inline-flex;align-items:center;gap:var(--space-2);border-radius:var(--r-md)}
- #newProduct[data-workspace-primary]::before{content:"+" / "";font-size:var(--t-headline);line-height:var(--lh-headline)}
+ .workspace-page-actions>#newProduct{position:static;max-width:100%;min-height:var(--control-h);padding:var(--space-2) var(--space-3);display:inline-flex;align-items:center;gap:var(--space-2);box-shadow:var(--e-0)}
+ #newProduct::before{content:"+" / "";font-size:var(--t-headline);line-height:var(--lh-headline)}
+ .workspace-page-toolbar:has(.catalog-title) #refresh{display:grid;place-items:center;flex:none;width:var(--control-h);padding:0;font-size:0}
+ .workspace-page-toolbar:has(.catalog-title) #refresh::before{content:"";width:var(--t-headline);aspect-ratio:1;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 7v5h-5M20 12a8 8 0 1 0-2.3 5.7'/%3E%3C/svg%3E") center/contain no-repeat}
  #catalogResults .table-wrap{background:var(--surface);border:1px solid var(--line)}
  #catalogResults .product-quality-table tbody{gap:0}
  #catalogResults .product-quality-table tbody tr{position:relative;grid-template-columns:minmax(0,1fr) var(--space-5);align-items:center;gap:var(--space-1) var(--space-2);padding:var(--space-3) var(--space-4);border:0;border-radius:0}
@@ -1168,4 +1171,31 @@ main :is(#catalogMoreFilters,#catalogOverview)>summary{width:fit-content;max-wid
  #catalogMoreFilters[open]{flex:1 1 100%;padding-bottom:0}
  #catalogMoreFilters[open]>summary{margin-inline-start:auto}
 }
-@media(forced-colors:active){.catalog-title::after{forced-color-adjust:none;background:CanvasText}}
+@media(forced-colors:active){.catalog-title::after{forced-color-adjust:none;background:CanvasText}.workspace-page-toolbar:has(.catalog-title) #refresh::before{forced-color-adjust:none;background:ButtonText}}
+
+@media screen and (min-width:800.01px){
+ .packing-page{max-width:none}
+ .packing-take{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-5)}
+ .packing-take .packing-big{width:auto;min-height:var(--control-h);font-size:var(--t-headline)}
+ .packing-take .muted{flex:1 1 16rem;margin:0}
+ .packing-lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:var(--space-5);align-items:start}
+ .packing-lanes>div,.packing-lanes>section{min-width:0;border-top:1px solid var(--line);padding-top:var(--space-4);overflow-wrap:anywhere}
+ .packing-lanes h2{margin-top:0}
+ .price-register-panel>.grid{display:flex;flex-wrap:wrap;align-items:end}
+ .price-register-panel>.grid>label{flex:1 1 9rem;min-width:0}
+ .price-register-panel>.grid>label:first-child{flex:2 1 16rem}
+ #inventoryStockSaved~.inventory-metrics{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:var(--space-3)}
+ #inventoryStockSaved~.inventory-metrics>div{padding:var(--space-4)}
+ .inventory-stock-filters{grid-template-columns:minmax(0,2fr) minmax(0,1.5fr) minmax(0,1fr)}
+ .inventory-stock-table{min-width:42rem}
+ .inventory-stock-table td:first-child{min-width:9rem}
+ .inventory-stock-table th,.inventory-stock-table .tag{white-space:normal}
+ .inventory-stock-table .tag{overflow-wrap:normal}
+ .purchasing-workspace .proforma-tiles{grid-template-columns:repeat(auto-fill,minmax(min(100%,16.25rem),1fr))}
+ .purchasing-workspace .card .tag{white-space:normal}
+ #catalogResults .product-quality-table th{white-space:normal}
+ #catalogResults .product-quality-table th:last-child{text-align:right}
+ #catalogResults .phone-card-actions{width:1%;white-space:nowrap}
+ #catalogResults .phone-card-actions .actions{justify-content:flex-end}
+ #catalogResults .phone-card-actions button{color:var(--brand-strong);white-space:nowrap}
+}
