@@ -7436,13 +7436,20 @@ function settingsProfileRow(row,actor){
  if(!row||row.user_id!==actor.user_id||!Number.isInteger(row.name_version)||row.name_version<0||!['display_name','phone','contact_email'].every(key=>typeof row[key]==='string'||row[key]===null)||typeof row.role!=='string'||typeof row.department!=='string')throw Error('The server did not return your profile. Reload and try again.');
  return row;
 }
+let settingsProfileDraft=null;
+const settingsProfileFields=['display_name','phone','contact_email'];
+function settingsProfileExpected(profile){
+ return {display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+}
 function settingsProfileForm(profile){
  return `<form id="settingsProfileForm"><p data-profile-validation class="error" role="alert"></p><div class="grid"><label class="wide"><span>Full name</span><input name="display_name" autocomplete="name" required maxlength="120" value="${esc(profile.display_name)}"></label><label><span>Phone with country code (optional)</span><input name="phone" type="tel" autocomplete="tel" maxlength="24" placeholder="+255712345678" value="${esc(profile.phone)}"><small>Include the country code.</small></label><label><span>Contact email (optional)</span><input name="contact_email" type="email" autocomplete="email" maxlength="254" aria-describedby="settingsContactEmailHelp" value="${esc(profile.contact_email)}"></label></div><p id="settingsContactEmailHelp" class="muted">Use a personal or shared contact email, or leave it empty; your sign-in stays the same.</p><div class="details"><div><small>Role</small><strong data-profile-role>${esc(roleLabels[profile.role]||profile.role)}</strong></div><div><small>Department</small><strong data-profile-department>${esc(profile.department?departmentLabel(profile.department):'Not assigned')}</strong></div></div><p class="muted">Your administrator assigns your role and department.</p><div class="actions"><button type="submit">Save profile</button><button type="button" data-profile-reload hidden>Reload saved details</button></div><p data-profile-status role="status" aria-live="polite"></p><p data-profile-error class="error" role="alert"></p><p data-profile-reload-help class="muted" hidden>Reloading replaces your unsaved edits with the saved profile.</p></form>`;
 }
 async function loadSettingsProfile(section){
- const actor=me,epoch=sessionLoadEpoch,request=(section.settingsProfileRequest||0)+1;section.settingsProfileRequest=request;let form=null;
- const current=()=>me===actor&&sessionLoadEpoch===epoch&&view==='settings'&&section.isConnected&&section.settingsProfileRequest===request&&(!form||form.isConnected&&section.querySelector('form')===form);
+ const actor=me,epoch=sessionLoadEpoch,session=actionFeedbackEpoch,request=(section.settingsProfileRequest||0)+1;section.settingsProfileRequest=request;let form=null;
+ const current=()=>me===actor&&sessionLoadEpoch===epoch&&actionFeedbackEpoch===session&&view==='settings'&&section.isConnected&&section.settingsProfileRequest===request&&(!form||form.isConnected&&section.querySelector('form')===form);
  if(!actor||!current())return;
+ // Loading another page refreshes the staff row and load epoch. The sign-in epoch survives navigation.
+ if(settingsProfileDraft&&(settingsProfileDraft.userId!==actor.user_id||settingsProfileDraft.session!==session))settingsProfileDraft=null;
  section.innerHTML=workspaceSkeleton('profile','Loading your profile…');
  try{
   const result=await client.rpc('get_my_staff_profile');if(!current())return;
@@ -7451,6 +7458,21 @@ async function loadSettingsProfile(section){
   section.innerHTML=settingsProfileForm(profile);
   form=section.querySelector('form');const status=form.querySelector('[data-profile-status]'),error=form.querySelector('[data-profile-error]'),summary=form.querySelector('[data-profile-validation]'),reload=form.querySelector('[data-profile-reload]'),reloadHelp=form.querySelector('[data-profile-reload-help]');
   let saving=false,validationSubmitted=false;
+  let expected=settingsProfileExpected(profile);
+  if(settingsProfileDraft){
+   const draft=settingsProfileDraft,changed=Object.keys(expected).some(key=>expected[key]!==draft.expected[key]);
+   expected=draft.expected;
+   for(const key of settingsProfileFields)form.elements[key].value=draft.values[key];
+   const details=section.closest('details');if(details)details.open=true;
+   status.textContent=changed?'Your unsaved edits are restored. The saved profile has changed. Reload saved details to use the current version.':'Your unsaved profile edits are restored.';
+   reload.hidden=false;reloadHelp.hidden=false;
+  }
+  const remember=()=>{
+   if(saving||!current())return;
+   const values=Object.fromEntries(settingsProfileFields.map(key=>[key,form.elements[key].value]));
+   settingsProfileDraft=settingsProfileFields.some(key=>values[key]!==String(expected[key]??''))?{userId:actor.user_id,session,expected,values}:null;
+  };
+  form.addEventListener('input',remember);form.addEventListener('change',remember);
   const phoneValue=value=>value.trim().replace(/[\s()-]/g,'');
   const fieldProblem=control=>{
    const native=nativeFieldError(control);if(control===form.elements.display_name&&!control.value.trim()&&!control.validity.customError)return 'Enter your full name.';
@@ -7461,24 +7483,27 @@ async function loadSettingsProfile(section){
   const collectErrors=()=>{const errors=nativeFormErrors(form);for(const control of [form.elements.display_name,form.elements.phone]){const problem=fieldProblem(control);if(problem)errors.set(control,problem);}return errors;};
   form.noValidate=true;
   form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
-  reload.onclick=()=>{if(current()&&!saving)return run(()=>loadSettingsProfile(section),{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
+  reload.onclick=()=>{if(current()&&!saving)return run(()=>{settingsProfileDraft=null;return loadSettingsProfile(section);},{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
   form.onsubmit=async event=>{
    event.preventDefault();if(saving||!current())return;
    const button=form.querySelector('[type="submit"]');if(busy){actionFeedbackRefuse(button,error);return;}
+   remember();
    const errors=collectErrors();validationSubmitted=errors.size>0;summary.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
    const values={display_name:form.elements.display_name.value.trim(),phone:phoneValue(form.elements.phone.value),contact_email:form.elements.contact_email.value.trim().toLowerCase()};
    error.textContent='';status.textContent='';
    actionFeedbackShow(actionFeedbackReference(button),'');
-   const expected={display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+   const submitted=settingsProfileDraft;
    saving=true;const controls=[...form.querySelectorAll('input,button')];controls.forEach(control=>control.disabled=true);status.textContent='Saving profile…';
    return run(async()=>{
    try{
-    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});if(!current())return;
+    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});
     if(result.error)throw Error(result.error.message||'Your profile could not be saved.');
     const saved=settingsProfileRow(result.data,actor);
     if(saved.name_version<profile.name_version||saved.display_name!==values.display_name||(saved.phone||'')!==values.phone||(saved.contact_email||'')!==values.contact_email)throw Error('The server did not confirm these profile details. Reload to check the saved profile.');
-    profile=saved;
-    for(const key of ['display_name','phone','contact_email'])form.elements[key].value=saved[key]||'';
+    if(settingsProfileDraft===submitted&&actionFeedbackEpoch===session&&me?.user_id===actor.user_id)settingsProfileDraft=null;
+    if(!current())return;
+    profile=saved;expected=settingsProfileExpected(saved);
+    for(const key of settingsProfileFields)form.elements[key].value=saved[key]||'';
     form.querySelector('[data-profile-role]').textContent=roleLabels[saved.role]||saved.role;
     form.querySelector('[data-profile-department]').textContent=saved.department?departmentLabel(saved.department):'Not assigned';
     employeeDirectory.set(actor.user_id,{...employeeDirectory.get(actor.user_id),user_id:actor.user_id,display_name:saved.display_name,name_version:saved.name_version});
@@ -7498,13 +7523,36 @@ async function loadSettingsProfile(section){
 function settingsWorkspace(){
  syncWorkspaceNavigation();
  const size=readTextSize();
- $('#content').innerHTML=`<section class="settings-workspace">${workspacePageHeader({title:'My settings'})}<section class="card"><h2>My account</h2><div id="settingsProfile"></div><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Appearance</h2><div class="text-size-options" role="radiogroup" aria-label="Appearance">${Object.entries(workspaceThemes).map(([key,label])=>`<label><input type="radio" name="workspaceTheme" value="${key}" ${key===workspaceTheme?'checked':''}> <span>${label}</span></label>`).join('')}</div><p class="muted" id="settingsThemeStatus">System follows this device’s appearance.</p></section><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>Language</h2><p>English is available; Kiswahili, Chinese and Hindi are not available yet.</p></section><section class="card"><h2>In-app updates</h2><p>Use the bell or My tasks for assigned work and order updates; the bell checks on navigation, every two minutes, or with Refresh updates.</p></section><section class="card"><h2>Connections to other systems</h2><details><summary>View connection details</summary><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></details></section>${me?.role==='owner'?`<div id="settingsOwnerTools"><section class="card"><h2>Discount approval</h2><div id="settingsDiscountPolicy"></div></section>${booksCutoverChecklist()}</div>`:''}</section>`;
- document.querySelectorAll('[name="workspaceTheme"]').forEach(input=>input.onchange=()=>{const saved=saveWorkspaceTheme(input.value);const status=$('#settingsThemeStatus');status.textContent=saved?(input.value==='system'?'System follows this device’s appearance.':workspaceThemes[input.value]+' appearance is saved on this device.'):'Appearance changed for this visit. This browser could not save the preference.';message(saved?'Appearance updated.':'Appearance updated for this visit.');});
+ const themeDescription=theme=>theme==='system'?'Follows this device’s appearance.':workspaceThemes[theme]+' appearance on this device.';
+ $('#content').innerHTML=`<section class="settings-workspace">
+  ${workspacePageHeader({title:'My settings'})}
+  <div class="settings-columns">
+   <div class="settings-group">
+    <section class="card"><h2>My account</h2>
+     <details class="settings-disclosure"><summary>Edit personal details</summary><div id="settingsProfile"></div></details>
+     <div class="actions"><button type="button" id="settingsPassword">Change password</button></div>
+    </section>
+    <div id="settingsSecurity"></div>
+   </div>
+   <div class="settings-group">
+    <section class="card"><h2>Display</h2>
+     <fieldset class="settings-choice"><legend>Appearance</legend><div class="text-size-options">${Object.entries(workspaceThemes).map(([key,label])=>`<label><input type="radio" name="workspaceTheme" value="${key}" ${key===workspaceTheme?'checked':''}><span>${label}</span></label>`).join('')}</div></fieldset>
+     <p class="muted" id="settingsThemeStatus" role="status">${themeDescription(workspaceTheme)}</p>
+     <fieldset class="settings-choice"><legend>Text size</legend><div class="text-size-options">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}><span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></fieldset>
+    </section>
+    <details class="card settings-disclosure"><summary>Workspace information</summary><h3>Language</h3><p>English</p><h3>Notifications</h3><p>Open the bell for updates or My tasks for work assigned to you.</p><h3>External connections</h3>
+     <ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul>
+    </details>
+   </div>
+  </div>
+  ${me?.role==='owner'?`<div id="settingsOwnerTools"><section class="card"><h2>Discount approval</h2><div id="settingsDiscountPolicy"></div></section>${booksCutoverChecklist()}</div>`:''}
+ </section>`;
+ document.querySelectorAll('[name="workspaceTheme"]').forEach(input=>input.onchange=()=>{const saved=saveWorkspaceTheme(input.value);const status=$('#settingsThemeStatus');status.textContent=saved?themeDescription(input.value):'Appearance changed for this visit. This browser could not save the preference.';message(saved?'Appearance updated.':'Appearance updated for this visit.');});
  document.querySelectorAll('[name="textSize"]').forEach(input=>input.onchange=()=>{saveTextSize(input.value);message(`Text size set to ${textSizes[input.value].label.toLowerCase()} on this device.`);});
  $('#settingsPassword').onclick=()=>run(async()=>openChangePassword());
  loadSettingsProfile($('#settingsProfile'));
  if(me?.role==='owner')loadSettingsDiscountPolicy($('#settingsDiscountPolicy'));
- if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('.settings-workspace')).catch(()=>{});
+ if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('#settingsSecurity')).catch(()=>{});
 }
 applyTextSize();
 applyWorkspaceTheme();
@@ -9777,7 +9825,7 @@ function showWorkspaceDialog(dialog,{trigger=document.activeElement,size='medium
  const previous=workspaceDialogMotion.get(dialog),wasOpen=dialog.open;
  const rendered=wasOpen?getComputedStyle(dialog):null;
  const start=rendered?{opacity:rendered.opacity,transform:rendered.transform}:{opacity:0,transform:workspaceDialogHiddenTransform(dialog)};
- previous?.cancel();
+ workspaceDialogDrags.get(dialog)?.exit?.interrupt();previous?.cancel();
  if(workspaceDialogExitInert.has(dialog)){dialog.inert=workspaceDialogExitInert.get(dialog);workspaceDialogExitInert.delete(dialog);}
  if(!wasOpen)workspaceDialogTriggers.set(dialog,trigger?.closest?.('#accountMenu')?.querySelector('summary')||trigger);
  workspaceDialogVersions.set(dialog,(workspaceDialogVersions.get(dialog)||0)+1);
@@ -9796,15 +9844,29 @@ function showWorkspaceDialog(dialog,{trigger=document.activeElement,size='medium
 }
 async function closeWorkspaceDialog(dialog){
  if(!dialog.open)return true;
- const rendered=getComputedStyle(dialog),start={opacity:rendered.opacity,transform:rendered.transform};
- workspaceDialogMotion.get(dialog)?.cancel();dialog.classList.add('dialog-leaving');
+ const drag=workspaceDialogDrags.get(dialog);
+ const rendered=getComputedStyle(dialog),start={opacity:rendered.opacity,transform:rendered.transform},lastFocus=document.activeElement;
+ drag?.exit?.interrupt();workspaceDialogMotion.get(dialog)?.cancel();dialog.classList.add('dialog-leaving');
  if(!workspaceDialogExitInert.has(dialog))workspaceDialogExitInert.set(dialog,!!dialog.inert);
  dialog.inert=true;
  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
- const animation=dialog.animate(reduced?[{opacity:start.opacity},{opacity:0}]:[start,{opacity:0,transform:workspaceDialogHiddenTransform(dialog)}],{duration:workspaceDialogDuration(dialog,!reduced&&!matchMedia('(max-width:600px)').matches&&dialog.dataset.dialogPlacement==='side'?'--m-base':'--m-fade'),easing:getComputedStyle(dialog).getPropertyValue('--ease-out')});
- workspaceDialogMotion.set(dialog,animation);
- try{await animation.finished;}catch{if(workspaceDialogMotion.get(dialog)===animation){dialog.inert=workspaceDialogExitInert.get(dialog);workspaceDialogExitInert.delete(dialog);dialog.classList.remove('dialog-leaving');}return false;}
- if(workspaceDialogMotion.get(dialog)!==animation)return false;
+ if(drag?.release){
+  // Only a clean, gesture-requested cancellation reaches here synchronously. Confirmed saves use the normal locked exit.
+  const outcome=await drag.waitForExit(drag.release);
+  if(!outcome||workspaceDialogMotion.get(dialog)!==outcome.animation)return false;
+  if(!outcome.close){
+   dialog.inert=workspaceDialogExitInert.get(dialog);workspaceDialogExitInert.delete(dialog);dialog.classList.remove('dialog-leaving');
+   if(document.activeElement===document.body||document.activeElement===dialog){
+    (dialog.contains(lastFocus)&&!lastFocus.disabled?lastFocus:dialog).focus({preventScroll:true});
+   }
+   return false;
+  }
+ }else{
+  const animation=dialog.animate(reduced?[{opacity:start.opacity},{opacity:0}]:[start,{opacity:0,transform:workspaceDialogHiddenTransform(dialog)}],{duration:workspaceDialogDuration(dialog,!reduced&&!matchMedia('(max-width:600px)').matches&&dialog.dataset.dialogPlacement==='side'?'--m-base':'--m-fade'),easing:getComputedStyle(dialog).getPropertyValue('--ease-out')});
+  workspaceDialogMotion.set(dialog,animation);
+  try{await animation.finished;}catch{if(workspaceDialogMotion.get(dialog)===animation){dialog.inert=workspaceDialogExitInert.get(dialog);workspaceDialogExitInert.delete(dialog);dialog.classList.remove('dialog-leaving');}return false;}
+  if(workspaceDialogMotion.get(dialog)!==animation)return false;
+ }
  dialog.close();dialog.classList.remove('dialog-leaving');workspaceDialogMotion.delete(dialog);
  dialog.inert=workspaceDialogExitInert.get(dialog);workspaceDialogExitInert.delete(dialog);
  const trigger=workspaceDialogTriggers.get(dialog);workspaceDialogTriggers.delete(dialog);
@@ -9813,41 +9875,114 @@ async function closeWorkspaceDialog(dialog){
 }
 function clearWorkspaceQuestions(){for(const question of [...workspaceQuestions])question.cancel();}
 function workspaceFormSnapshot(form){return JSON.stringify([...new FormData(form)].map(([name,value])=>[name,typeof value==='string'?value:[value.name,value.size,value.lastModified]]));}
+function workspaceSheetSpring(dialog,release,closing){
+ const response=workspaceDialogDuration(dialog,'--m-slow'),dampingRatio=1,frequency=2*Math.PI/response;
+ const stiffness=frequency*frequency,friction=2*dampingRatio*frequency,step=4;
+ const target=closing?release.height:0,opacityTarget=closing?0:1,frames=[];
+ const lower=Math.min(release.offset,-release.height/8),upper=Math.max(release.offset,release.height);
+ let offset=release.offset,velocity=release.velocity,opacity=release.opacity;
+ // Integrate in milliseconds. Stop at subpixel rest; the cap also bounds work on extreme input.
+ for(let time=0;time<1000;time+=step){
+  frames.push({transform:`translateY(${offset}px)`,opacity});
+  if(Math.abs(offset-target)<.25&&Math.abs(velocity)<.005&&Math.abs(opacity-opacityTarget)<.005)break;
+  const acceleration=stiffness*(target-offset)-friction*velocity;
+  velocity+=acceleration*step;
+  offset+=velocity*step;
+  if(offset<lower||offset>upper){offset=Math.max(lower,Math.min(upper,offset));velocity=0;}
+  const elapsed=time+step;
+  opacity=opacityTarget+(release.opacity-opacityTarget)*(1+frequency*elapsed)*Math.exp(-frequency*elapsed);
+ }
+ frames.push({transform:`translateY(${target}px)`,opacity:opacityTarget});
+ return dialog.animate(frames,{duration:(frames.length-1)*step,easing:'linear'});
+}
 function bindWorkspaceDialogDrag(dialog,dismiss,canDrag=()=>true){
  const existing=workspaceDialogDrags.get(dialog);
  if(existing){existing.dismiss=dismiss;existing.canDrag=canDrag;return;}
  const handle=document.createElement('div');handle.className='dialog-drag-handle';handle.setAttribute('aria-hidden','true');dialog.insertBefore(handle,dialog.firstElementChild);
- const state={dismiss,canDrag,gesture:null};workspaceDialogDrags.set(dialog,state);
- const current=gesture=>dialog.open&&!dialog.inert&&dialog.isConnected&&state.canDrag()&&gesture.actor===((()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'?null:me)&&gesture.version===workspaceDialogVersions.get(dialog);
+ const state={dismiss,canDrag,gesture:null,release:null,exit:null};workspaceDialogDrags.set(dialog,state);
+ const current=gesture=>dialog.open&&dialog.isConnected&&(state.exit||(!dialog.inert&&state.canDrag()))&&gesture.actor===((()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'?null:me)&&gesture.version===workspaceDialogVersions.get(dialog);
  const reset=()=>{dialog.style.removeProperty('transform');dialog.style.removeProperty('opacity');};
+ const settle=(release,close)=>{
+  const animation=matchMedia('(prefers-reduced-motion: reduce)').matches
+   ?dialog.animate([{opacity:release.opacity},{opacity:close?0:1}],{duration:workspaceDialogDuration(dialog,'--m-fade'),easing:getComputedStyle(dialog).getPropertyValue('--ease-out')})
+   :workspaceSheetSpring(dialog,release,close);
+  workspaceDialogMotion.set(dialog,animation);return animation;
+ };
+ const track=(gesture,event)=>{
+  const delta=event.clientY-gesture.y,raw=gesture.rawStart+delta;
+  // Above the resting edge the sheet approaches a quarter of its height with increasing resistance.
+  gesture.distance=delta;gesture.offset=raw<0?raw/(1-raw/gesture.limit):raw;
+  gesture.opacity=Math.min(1,Math.max(.4,gesture.baseOpacity-(gesture.offset-gesture.baseOffset)/gesture.height));
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)dialog.style.transform=`translateY(${gesture.offset}px)`;
+  dialog.style.opacity=String(gesture.opacity);
+  const time=event.timeStamp;
+  gesture.samples=gesture.samples.filter(sample=>time-sample.time<=100).slice(-11);
+  gesture.samples.push({time,offset:gesture.offset});
+ };
  const end=(event,cancelled=false)=>{
   const gesture=state.gesture;if(!gesture||gesture.id!==event.pointerId)return;state.gesture=null;
   if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
-  const rendered=getComputedStyle(dialog),start={opacity:rendered.opacity,transform:rendered.transform};reset();
-  if(!current(gesture))return;
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const animation=dialog.animate(reduced?[{opacity:start.opacity},{opacity:1}]:[start,{opacity:1,transform:'none'}],{duration:workspaceDialogDuration(dialog,reduced?'--m-fade':'--m-base'),easing:rendered.getPropertyValue('--ease-out')});
-  workspaceDialogMotion.set(dialog,animation);animation.finished.catch(()=>{});
-  if(!cancelled&&gesture.distance>=Math.min(80,dialog.getBoundingClientRect().height/4))state.dismiss();
+  if(!current(gesture)){state.exit?.interrupt();reset();return;}
+  if(!cancelled&&Number.isFinite(event.clientY))track(gesture,event);
+  const first=gesture.samples[0],last=gesture.samples.at(-1);
+  const elapsed=last.time-first.time;
+  const velocity=!cancelled&&elapsed>=8?Math.max(-3,Math.min(3,(last.offset-first.offset)/elapsed)):0;
+  const release={height:gesture.height,offset:gesture.offset,opacity:gesture.opacity,velocity,actor:gesture.actor,version:gesture.version};
+  // A deceleration rate of .998 per millisecond yields about 499ms of projected travel.
+  const projected=release.offset+velocity*499;
+  const close=!cancelled&&Math.abs(gesture.distance)>=10&&projected>=release.height/2;
+  if(state.exit){state.exit.settle(release,close);reset();return;}
+  if(close){
+   // Only an immediate guarded dismissal inherits momentum. While a discard question is open the sheet returns to rest.
+   state.release=release;
+   try{state.dismiss();}finally{state.release=null;}
+  }
+  if(dialog.open&&!dialog.inert)settle(release,false).finished.catch(()=>{});
+  reset();
  };
- handle.addEventListener('pointerdown',event=>{
-  if(event.button!==0||event.isPrimary===false||!matchMedia('(max-width:600px)').matches||!dialog.open||dialog.inert||!state.canDrag())return;
+ const begin=(event,regrab=false)=>{
+  if(event.button!==0||event.isPrimary===false||state.gesture||!matchMedia('(max-width:600px)').matches||!dialog.open||(!regrab&&(dialog.inert||!state.canDrag())))return;
   event.preventDefault();
   const rendered=getComputedStyle(dialog),baseOffset=new DOMMatrixReadOnly(rendered.transform==='none'?undefined:rendered.transform).m42,baseOpacity=Number(rendered.opacity);
+  const height=Math.max(1,dialog.getBoundingClientRect().height),limit=height/4;
+  const rawStart=baseOffset<0?baseOffset/Math.max(.01,1+baseOffset/limit):baseOffset;
   workspaceDialogMotion.get(dialog)?.cancel();
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches)dialog.style.transform=`translateY(${baseOffset}px)`;
   dialog.style.opacity=String(baseOpacity);
-  state.gesture={id:event.pointerId,y:event.clientY,offset:baseOffset,distance:0,baseOffset,baseOpacity,actor:(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'?null:me,version:workspaceDialogVersions.get(dialog)};handle.setPointerCapture(event.pointerId);
+  state.gesture={id:event.pointerId,y:event.clientY,height,limit,rawStart,offset:baseOffset,distance:0,baseOffset,opacity:baseOpacity,baseOpacity,samples:[{time:event.timeStamp,offset:baseOffset}],actor:(()=>{try{return typeof me}catch{return 'undefined'}})()==='undefined'?null:me,version:workspaceDialogVersions.get(dialog)};handle.setPointerCapture(event.pointerId);
+ };
+ // Inert native modals retarget a press to the document root. Only their moving handle may capture it.
+ state.waitForExit=release=>new Promise(resolve=>{
+  const finish=outcome=>{
+   if(state.exit!==flight)return;
+   document.removeEventListener('pointerdown',regrab,true);state.exit=null;
+   if(state.gesture&&handle.hasPointerCapture(state.gesture.id))handle.releasePointerCapture(state.gesture.id);
+   state.gesture=null;reset();resolve(outcome);
+  };
+  const regrab=event=>{
+   if(!current(release)){flight.interrupt();return;}
+   if(event.target!==document.documentElement||event.defaultPrevented||event.isTrusted===false||!matchMedia('(max-width:600px)').matches||event.button!==0||event.isPrimary===false||state.gesture)return;
+   // A root-retargeted event cannot identify which pane won hit testing beneath a stack of inert modals.
+   if(document.querySelectorAll('dialog[open]').length!==1)return;
+   const box=handle.getBoundingClientRect();
+   if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)return;
+   flight.animation=null;begin(event,true);
+  };
+  const flight={animation:null,interrupt:()=>finish(null),settle:(next,close)=>{
+   dialog.classList[close?'add':'remove']('dialog-leaving');
+   const animation=settle(next,close);flight.animation=animation;
+   animation.finished.then(()=>{if(flight.animation===animation)finish(current(release)?{animation,close}:null);},()=>{if(flight.animation===animation)finish(current(release)?{animation,close:false}:null);});
+  }};
+  state.exit=flight;document.addEventListener('pointerdown',regrab,true);flight.settle(release,true);
  });
+ handle.addEventListener('pointerdown',event=>begin(event));
  handle.addEventListener('pointermove',event=>{
   const gesture=state.gesture;if(!gesture||gesture.id!==event.pointerId)return;
   if(!current(gesture)){end(event,true);return;}
-  const delta=event.clientY-gesture.y;gesture.distance=Math.max(0,delta);gesture.offset=Math.max(0,gesture.baseOffset+delta);
-  if(!matchMedia('(prefers-reduced-motion: reduce)').matches)dialog.style.transform=`translateY(${gesture.offset}px)`;
-  dialog.style.opacity=String(Math.min(1,Math.max(.4,gesture.baseOpacity-delta/Math.max(1,dialog.getBoundingClientRect().height))));
+  track(gesture,event);
  });
  handle.addEventListener('pointerup',event=>end(event));handle.addEventListener('pointercancel',event=>end(event,true));handle.addEventListener('lostpointercapture',event=>end(event,true));
- dialog.addEventListener('close',()=>{state.gesture=null;reset();});
+ dialog.addEventListener('close',()=>{state.exit?.interrupt();state.gesture=null;reset();});
 }
 function bindWorkspaceDialogDismiss(dialog,{isBusy=()=>false,isDirty=()=>false}={}){
  let pending=false;
@@ -9940,8 +10075,14 @@ function clearActionFeedback(session=false){
  if(session){actionFeedbackEpoch++;actionFeedbackEvent=null;actionFeedbackOpeners=new WeakMap();if((()=>{try{return typeof navWhileBusy}catch{return 'undefined'}})()!=='undefined')navWhileBusy=null;}
 }
 function actionFeedbackPlace(entry){
- const anchor=actionFeedbackResolve(entry.reference);
- if(entry.target?.isConnected){if(entry.node.parentElement!==entry.target)entry.target.replaceChildren(entry.node);return;}
+ const anchor=actionFeedbackResolve(entry.reference),target=entry.target?.isConnected?entry.target:null;
+ // Let the enclosing live region speak. A detached target falls back to a standalone announcement.
+ if(target?.closest('[role="alert"],[role="status"],[aria-live="polite"],[aria-live="assertive"]')){
+  entry.node.removeAttribute('role');entry.node.removeAttribute('aria-live');entry.node.removeAttribute('aria-atomic');
+ }else if(!entry.node.getAttribute('role')){
+  entry.node.setAttribute('role',entry.kind==='error'?'alert':'status');entry.node.setAttribute('aria-live','polite');entry.node.setAttribute('aria-atomic','true');
+ }
+ if(target){if(entry.node.parentElement!==target)target.replaceChildren(entry.node);return;}
  if(anchor){
   const actions=anchor.closest('.actions');
   if(!entry.node.isConnected){
@@ -9971,7 +10112,7 @@ function actionFeedbackShow(reference,text,kind='success',target=null){
  const node=document.createElement('span'),entry={node,reference,kind,target,timer:null,scope:typeof workspaceRefreshScope==='function'?workspaceRefreshScope():null};
  node.className='action-feedback action-feedback-'+kind;
  if(kind==='busy'&&reference?.node.matches('button,input[type="submit"],input[type="button"]'))node.classList.add('action-feedback-sr-only');
- node.setAttribute('role',kind==='error'?'alert':'status');node.setAttribute('aria-live','polite');node.setAttribute('aria-atomic','true');node.textContent=text;
+ node.textContent=text;
  if(kind==='error'){
   const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='action-feedback-dismiss';dismiss.setAttribute('aria-label','Dismiss error');dismiss.title='Dismiss error';
   dismiss.addEventListener('click',()=>actionFeedbackDismiss(entry));node.append(dismiss);
@@ -11672,7 +11813,7 @@ async function inventoryCostWorkspace(actor,current,selection={tab:'valuation'})
  const lotLabel=lot=>`${lot.product_name} · ${lot.location_name} · ${lot.batch_number||'No batch'} · ${lot.stock_status}`;
  const evidence='<label><span>Evidence / reason · required</span><textarea name="evidence" required minlength="5" maxlength="500"></textarea></label>';
  const quantity='<label><span>Quantity in base units · required</span><input name="quantity" type="number" min="1" max="1000000" step="1" required></label>';
- const table=(head,body)=>`<div class="table-wrap"><table><thead><tr>${head.map(([text,money])=>`<th${money?' class="numeric-cell"':''}>${esc(text)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`;
+ const table=(head,body)=>`<div class="table-wrap" tabindex="0" role="region" aria-labelledby="inventoryCostTableTitle"><table><thead><tr>${head.map(([text,money])=>`<th${money?' class="numeric-cell"':''}>${esc(text)}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table></div>`;
  const load=async()=>{
   const result=await booksRpc('inventory_cost_status',{});if(!active())return;
   if(typeof result?.enabled!=='boolean'||['products','lots','receipts','purchase_order_lines','cost_layers','opening_gl_batches','locations','pack_definitions'].some(key=>!Array.isArray(result[key])))throw Error('The stock accounting details were incomplete.');
@@ -11684,9 +11825,9 @@ async function inventoryCostWorkspace(actor,current,selection={tab:'valuation'})
   root.innerHTML=`<section class="card"><div class="heading"><h2>Stock accounting</h2><button type="button" data-cost-receive>Receive purchase</button></div><p>${data.enabled?`${data.policy==='fifo'?'FIFO':'Weighted average'} · opening cutover ${esc(data.cutover_date)}. Cost of sales posts with the invoice; dispatch does not post it again. Stock costs must be posted in date order.`:'Cost accounting is inactive. Verify opening quantities and acquisition costs before activating it.'}</p><div class="tabs" role="group" aria-label="Stock accounting views">${Object.entries(tabs).map(([key,title])=>`<button type="button" data-cost-tab="${key}" aria-pressed="${selection.tab===key}">${title}</button>`).join('')}</div></section><section class="card" id="inventoryCostRows"></section>`;
   root.querySelectorAll('[data-cost-tab]').forEach(button=>button.onclick=()=>{if(active()){selection.tab=button.dataset.costTab;render();}});
   root.querySelector('[data-cost-receive]').onclick=()=>{if(active())receiveForm();};const content=$('#inventoryCostRows');
-  if(selection.tab==='valuation')content.innerHTML=`<div class="heading"><h2>Current valuation</h2><button type="button" data-cost-refresh>Refresh</button></div><p>All posted stock-cost events · inventory ${booksMoney(data.inventory_value_minor)} · general ledger ${booksMoney(data.gl_inventory_minor)}.</p><p class="${data.difference_minor==='0'?'muted':'error'}">${data.difference_minor==='0'?'Stock valuation matches the general ledger.':`Difference ${booksMoney(data.difference_minor)}. Reconcile before relying on this valuation.`}</p>${table([['Product'],['Physical units'],['Financial units'],['Invoiced, not dispatched'],['Uncosted receipts'],['Value',1]],data.products.map(row=>`<tr><td>${esc(row.product_name)}<small>${Number(row.quarantine_quantity)||0} in quarantine · ${Number(row.in_transit_quantity)||0} in transit</small></td><td>${esc(row.physical_quantity)}</td><td>${esc(row.financial_quantity)}</td><td>${esc(row.invoiced_undispatched_quantity)}</td><td>${esc(row.uncosted_quantity||0)}</td><td class="numeric-cell">${booksMoney(row.inventory_value_minor)}</td></tr>`))}<p class="muted">Physical stock includes units already invoiced but awaiting dispatch. Received stock must have its supplier bill costed before it can support another invoice.</p>`;
-  if(selection.tab==='receipts')content.innerHTML=`<h2>Supplier stock receipts</h2>${data.receipts.length?table([['Receipt'],['Supplier / product'],['Date'],['Quantity'],['Cost',1]],data.receipts.map(row=>`<tr><td>${esc(row.reference)}</td><td>${esc(row.supplier_name)}<small>${esc(row.product_name)}</small></td><td>${esc(row.received_on)}</td><td>${esc(row.quantity)}</td><td class="numeric-cell">${row.bill_id?booksMoney(row.total_cost_minor):'Awaiting supplier bill'}</td></tr>`)):'<p class="empty">No supplier stock receipts.</p>'}<button type="button" data-cost-bills>Open supplier bills</button>`;
-  if(selection.tab==='adjustments')content.innerHTML=`<h2>Stock corrections</h2><p>Use a verified acquisition cost for found stock. Value corrections change remaining inventory value without changing its physical quantity.</p><div class="actions"><button type="button" data-cost-gain ${data.enabled?'':'disabled'}>Record found stock</button><button type="button" data-cost-value ${data.enabled&&data.cost_layers.length?'':'disabled'}>Correct stock value</button></div><p class="muted">Record shortages through Stock count. Return purchased goods from their original supplier bill. Machine identity corrections need the serial-number review in Inventory.</p>${(data.value_corrections||[]).length?table([['Date'],['Evidence'],['Value change',1]],data.value_corrections.map(row=>`<tr><td>${esc(row.correction_date)}</td><td>${esc(row.evidence)}</td><td class="numeric-cell">${booksMoney(row.amount_minor)}</td></tr>`)):''}`;
+  if(selection.tab==='valuation')content.innerHTML=`<div class="heading"><h2 id="inventoryCostTableTitle">Current valuation</h2><button type="button" data-cost-refresh>Refresh</button></div><p>All posted stock-cost events · inventory ${booksMoney(data.inventory_value_minor)} · general ledger ${booksMoney(data.gl_inventory_minor)}.</p><p class="${data.difference_minor==='0'?'muted':'error'}">${data.difference_minor==='0'?'Stock valuation matches the general ledger.':`Difference ${booksMoney(data.difference_minor)}. Reconcile before relying on this valuation.`}</p>${table([['Product'],['Physical units'],['Financial units'],['Invoiced, not dispatched'],['Uncosted receipts'],['Value',1]],data.products.map(row=>`<tr><td>${esc(row.product_name)}<small>${Number(row.quarantine_quantity)||0} in quarantine · ${Number(row.in_transit_quantity)||0} in transit</small></td><td>${esc(row.physical_quantity)}</td><td>${esc(row.financial_quantity)}</td><td>${esc(row.invoiced_undispatched_quantity)}</td><td>${esc(row.uncosted_quantity||0)}</td><td class="numeric-cell">${booksMoney(row.inventory_value_minor)}</td></tr>`))}<p class="muted">Physical stock includes units already invoiced but awaiting dispatch. Received stock must have its supplier bill costed before it can support another invoice.</p>`;
+  if(selection.tab==='receipts')content.innerHTML=`<h2 id="inventoryCostTableTitle">Supplier stock receipts</h2>${data.receipts.length?table([['Receipt'],['Supplier / product'],['Date'],['Quantity'],['Cost',1]],data.receipts.map(row=>`<tr><td>${esc(row.reference)}</td><td>${esc(row.supplier_name)}<small>${esc(row.product_name)}</small></td><td>${esc(row.received_on)}</td><td>${esc(row.quantity)}</td><td class="numeric-cell">${row.bill_id?booksMoney(row.total_cost_minor):'Awaiting supplier bill'}</td></tr>`)):'<p class="empty">No supplier stock receipts.</p>'}<button type="button" data-cost-bills>Open supplier bills</button>`;
+  if(selection.tab==='adjustments')content.innerHTML=`<h2 id="inventoryCostTableTitle">Stock corrections</h2><p>Use a verified acquisition cost for found stock. Value corrections change remaining inventory value without changing its physical quantity.</p><div class="actions"><button type="button" data-cost-gain ${data.enabled?'':'disabled'}>Record found stock</button><button type="button" data-cost-value ${data.enabled&&data.cost_layers.length?'':'disabled'}>Correct stock value</button></div><p class="muted">Record shortages through Stock count. Return purchased goods from their original supplier bill. Machine identity corrections need the serial-number review in Inventory.</p>${(data.value_corrections||[]).length?table([['Date'],['Evidence'],['Value change',1]],data.value_corrections.map(row=>`<tr><td>${esc(row.correction_date)}</td><td>${esc(row.evidence)}</td><td class="numeric-cell">${booksMoney(row.amount_minor)}</td></tr>`)):''}`;
   if(selection.tab==='opening')content.innerHTML=`<h2>Opening stock valuation</h2>${data.enabled?`<p>${data.policy==='fifo'?'FIFO':'Weighted average'} was activated through ${esc(data.cutover_date)}. Its policy and original schedule are retained. Use dated corrections for subsequent changes.</p><p>${esc(data.activation?.reference||'')}</p>`:'<p>Activate before new operations, using yesterday as cutover. Finish deliveries, transfers and returns first. Today must have no stock movements or new invoices. Every positive lot, including quarantine, must have verified quantity and acquisition cost matching the imported opening Inventory balance exactly.</p><p>The owner must approve the costing policy and evidence. Selling prices and provisional stock quantities cannot establish acquisition cost.</p><button type="button" data-cost-activate>Prepare opening stock</button>'}`;
   content.querySelector('[data-cost-refresh]')?.addEventListener('click',event=>run(load,{origin:event.currentTarget,busyLabel:'Refreshing valuation…'}));
   content.querySelector('[data-cost-bills]')?.addEventListener('click',()=>run(async()=>{if(active()){openBooksSection('suppliers');syncWorkspaceNavigation();await booksWorkspace();}}));

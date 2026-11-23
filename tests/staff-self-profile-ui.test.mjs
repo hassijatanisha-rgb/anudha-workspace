@@ -12,10 +12,10 @@ const initial={user_id:'staff',display_name:'Original Name',name_version:2,phone
 function fixture({get=async()=>({data:{...initial}}),save=async(_name,args)=>({data:{...initial,...args.p_values,name_version:3}})}={}){
  const document=dom();installNativeFormControls(document);document.documentElement={style:{},dataset:{}};
  const prototype=Object.getPrototypeOf(document.body),matches=prototype.matches;prototype.matches=function(selector){return selector.split(',').some(part=>matches.call(this,part.trim()));};
- document.body.innerHTML='<div id="identity"><span class="identity-name">Original Name</span></div><details id="accountMenu"><summary>Account</summary></details><section id="settingsProfile"></section>';
+ document.body.innerHTML='<div id="identity"><span class="identity-name">Original Name</span></div><details id="accountMenu"><summary>Account</summary></details><details><summary>Edit personal details</summary><section id="settingsProfile"></section></details>';
  const section=document.querySelector('#settingsProfile'),header=document.querySelector('.identity-name'),summary=document.querySelector('summary'),calls=[];
  const directory=new Map([['staff',{user_id:'staff',display_name:'Original Name',name_version:2}],['other',{user_id:'other',display_name:'Other person',name_version:4}]]);
- const ctx=vm.createContext({workspacePageHeader,busy:false,sessionLoadEpoch:1,run:fn=>fn(),actionFeedbackShow(){},actionFeedbackReference:node=>node,message(){},me:{user_id:'staff',role:'staff',access:['stock']},view:'settings',employeeDirectory:directory,
+ const ctx=vm.createContext({workspacePageHeader,busy:false,sessionLoadEpoch:1,actionFeedbackEpoch:1,run:fn=>fn(),actionFeedbackShow(){},actionFeedbackReference:node=>node,message(){},me:{user_id:'staff',role:'staff',access:['stock']},view:'settings',employeeDirectory:directory,
   document,window:{},localStorage:{getItem:()=>null},
   esc:value=>String(value??'').replace(/[&<>"']/g,char=>'&#'+char.charCodeAt(0)+';'),roleLabels:{staff:'Staff',owner:'Owner',head:'Department head'},departmentLabel:value=>({sales:'Sales',service:'Service'})[value]||'No department',
   $:selector=>selector==='#identity .identity-name'?header:selector==='#accountMenu > summary'?summary:document.querySelector(selector),
@@ -126,7 +126,7 @@ test('a reused section invalidates the old save and its blur/submit closures wit
   const wait=deferred(),f=fixture({save:()=>wait.promise});await f.start();f.fill();const oldForm=f.form,saving=f.send();await f.start();const current=f.form;
   oldForm.elements.phone.value='bad';dispatchFocusout(oldForm.elements.phone);await oldForm.onsubmit({preventDefault(){}});
   if(reject)wait.reject(Error('Old failure'));else wait.resolve({data:{...initial,display_name:'New Name',name_version:3,phone:'+255712345678'}});await saving;
-  assert.notEqual(current,oldForm);assert.equal(f.form,current);assert.equal(f.elements.display_name.value,'Original Name');assert.equal(f.header.textContent,'Original Name');assert.equal(f.directory.get('staff').display_name,'Original Name');assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.error.textContent,'');assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,1);
+  assert.notEqual(current,oldForm);assert.equal(f.form,current);assert.equal(f.elements.display_name.value,'New Name');assert.equal(f.header.textContent,'Original Name');assert.equal(f.directory.get('staff').display_name,'Original Name');assert.equal(f.form.querySelectorAll('.field-error').length,0);assert.equal(f.error.textContent,'');assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,1);
  }
 });
 test('same-actor session epoch changes suppress old read, save and validation callbacks',async()=>{
@@ -148,4 +148,54 @@ test('self profile: action blur retains corrected error layout until the first s
 test('self profile: deferred action blur still rejects invalid submit and ordinary field blur clears correction',async()=>{
  const f=fixture();await f.start();const form=f.form,control=f.elements.display_name,button=form.querySelector('[type="submit"]');control.value=' ';dispatchFocusout(control,button);assert.equal(form.querySelectorAll('.field-error').length,0);await f.send();assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,0);assert.equal(f.validation.textContent,'1 field needs attention');assert.equal(f.document.activeElement,control);
  const error=form.querySelector('.field-error'),external=f.document.createElement('button');f.document.body.append(external);control.value='New Name';dispatchFocusout(control,external);assert.equal(form.querySelector('.field-error'),error);assert.equal(f.validation.textContent,'1 field needs attention');const next=f.elements.phone;next.focus();dispatchFocusout(control,next);assert.equal(form.querySelectorAll('.field-error').length,0);assert.equal(f.validation.textContent,'');assert.equal(f.document.activeElement,next);assert.equal(f.calls.filter(call=>call.name==='save_my_staff_profile').length,0);
+});
+
+async function revisitProfile(f){
+ f.ctx.view='personal';f.ctx.sessionLoadEpoch++;f.section.replaceChildren();
+ f.ctx.view='settings';f.ctx.sessionLoadEpoch++;f.ctx.me={...f.ctx.me};
+ f.section.closest('details').open=false;await f.start();
+}
+test('profile edits survive navigation, restore with disclosure and clear after a verified save',async()=>{
+ let stored={...initial};
+ const f=fixture({get:async()=>({data:{...stored}}),save:async(_name,args)=>({data:stored={...stored,...args.p_values,name_version:3}})});
+ await f.start();f.fill('Travel Desk','+255 (712) 345-678','TEAM@example.com');f.form.emit('input');
+ await revisitProfile(f);
+ assert.equal(f.section.closest('details').open,true);assert.match(f.status.textContent,/unsaved profile edits are restored/i);
+ assert.deepEqual([f.elements.display_name.value,f.elements.phone.value,f.elements.contact_email.value],['Travel Desk','+255 (712) 345-678','TEAM@example.com']);
+ await f.send();assert.equal(f.status.textContent,'Profile saved.');await revisitProfile(f);
+ assert.equal(f.status.textContent,'');assert.equal(f.section.closest('details').open,false);
+ assert.equal(f.elements.phone.value,'+255712345678');assert.equal(f.elements.contact_email.value,'team@example.com');
+});
+test('recovery keeps the original concurrency snapshot after someone else changes the saved profile',async()=>{
+ const newer={...initial,contact_email:'other-update@example.com'};
+ let stored={...initial},sent;
+ const f=fixture({get:async()=>({data:{...stored}}),save:async(_name,args)=>{sent=plain(args);return {error:{message:'Your profile changed; refresh before saving'}};}});
+ await f.start();f.fill('My draft','+255712345678','mine@example.com');f.form.emit('input');stored=newer;
+ await revisitProfile(f);assert.match(f.status.textContent,/saved profile has changed/i);assert.equal(f.reload.hidden,false);
+ await f.send();assert.deepEqual(sent.p_expected_values,{display_name:initial.display_name,name_version:initial.name_version,phone:null,contact_email:initial.contact_email});
+ await revisitProfile(f);assert.equal(f.elements.display_name.value,'My draft');assert.equal(f.elements.contact_email.value,'mine@example.com');
+ await f.reload.onclick();assert.equal(f.elements.contact_email.value,'other-update@example.com');assert.equal(f.status.textContent,'');
+ await revisitProfile(f);assert.equal(f.section.closest('details').open,false);assert.equal(f.elements.display_name.value,initial.display_name);
+});
+test('a replacement sign-in or different user cannot recover an earlier profile draft',async()=>{
+ for(const replacement of ['new sign-in','different person']){
+  let stored={...initial};const f=fixture({get:async()=>({data:{...stored}})});await f.start();
+  f.elements.phone.value='+255999123456';f.form.emit('change');
+  if(replacement==='new sign-in')f.ctx.actionFeedbackEpoch++;
+  else{f.ctx.me={...f.ctx.me,user_id:'new-person'};stored={...initial,user_id:'new-person'};}
+  await revisitProfile(f);assert.equal(f.elements.phone.value,'');assert.equal(f.status.textContent,'');
+  assert.equal(f.section.closest('details').open,false);
+ }
+});
+test('a late confirmed save clears only the submitted draft and leaves newer edits recoverable',async()=>{
+ for(const editAgain of [false,true]){
+  const wait=deferred();let stored={...initial};
+  const f=fixture({get:async()=>({data:{...stored}}),save:()=>wait.promise});await f.start();f.fill();f.form.emit('input');
+  const saving=f.send();await revisitProfile(f);
+  if(editAgain){f.elements.display_name.value='Later edit';f.form.emit('input');}
+  stored={...initial,display_name:'New Name',name_version:3,phone:'+255712345678',contact_email:'shared@example.com'};
+  wait.resolve({data:stored});await saving;await revisitProfile(f);
+  assert.equal(f.elements.display_name.value,editAgain?'Later edit':'New Name');
+  assert.equal(f.section.closest('details').open,editAgain);assert.equal(f.reload.hidden,!editAgain);
+ }
 });

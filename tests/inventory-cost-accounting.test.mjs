@@ -122,3 +122,15 @@ test('inventory text is escaped and changed sessions or detached forms cannot co
  const g=await fixture('gain');await g.valid();g.c.me={user_id:'other'};await g.submit();assert.equal(g.writes().length,0);
  const h=await fixture('value');await h.valid();const wait=deferred();h.write=()=>wait.promise;const pending=h.submit();h.form.remove();const {name,args}=h.writes()[0];wait.resolve({data:h.saved(name,args)});await pending;assert.equal(h.form.nextElementSibling,null);
 });
+test('stock accounting tables are keyboard-focusable and named by their visible heading',async()=>{
+ const f=await fixture('register');
+ f.data.receipts=[{reference:'RC-1',supplier_name:'Vendor',product_name:'Reagent',received_on:day,quantity:4}];
+ f.data.value_corrections=[{correction_date:day,evidence:'Invoice checked',amount_minor:'100'}];
+ for(const [tab,title] of [['valuation','Current valuation'],['receipts','Supplier stock receipts'],['adjustments','Stock corrections']]){
+  await f.click('[data-cost-tab="'+tab+'"]');
+  const region=f.node('#inventoryCostRows [role="region"]');
+  assert.ok(region?.querySelector('table'));
+  assert.equal(region.getAttribute('tabindex'),'0');
+  assert.equal(f.node('#'+region.getAttribute('aria-labelledby')).textContent,title);
+ }
+});

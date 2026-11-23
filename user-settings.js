@@ -21,13 +21,20 @@ function settingsProfileRow(row,actor){
  if(!row||row.user_id!==actor.user_id||!Number.isInteger(row.name_version)||row.name_version<0||!['display_name','phone','contact_email'].every(key=>typeof row[key]==='string'||row[key]===null)||typeof row.role!=='string'||typeof row.department!=='string')throw Error('The server did not return your profile. Reload and try again.');
  return row;
 }
+let settingsProfileDraft=null;
+const settingsProfileFields=['display_name','phone','contact_email'];
+function settingsProfileExpected(profile){
+ return {display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+}
 function settingsProfileForm(profile){
  return `<form id="settingsProfileForm"><p data-profile-validation class="error" role="alert"></p><div class="grid"><label class="wide"><span>Full name</span><input name="display_name" autocomplete="name" required maxlength="120" value="${esc(profile.display_name)}"></label><label><span>Phone with country code (optional)</span><input name="phone" type="tel" autocomplete="tel" maxlength="24" placeholder="+255712345678" value="${esc(profile.phone)}"><small>Include the country code.</small></label><label><span>Contact email (optional)</span><input name="contact_email" type="email" autocomplete="email" maxlength="254" aria-describedby="settingsContactEmailHelp" value="${esc(profile.contact_email)}"></label></div><p id="settingsContactEmailHelp" class="muted">Use a personal or shared contact email, or leave it empty; your sign-in stays the same.</p><div class="details"><div><small>Role</small><strong data-profile-role>${esc(roleLabels[profile.role]||profile.role)}</strong></div><div><small>Department</small><strong data-profile-department>${esc(profile.department?departmentLabel(profile.department):'Not assigned')}</strong></div></div><p class="muted">Your administrator assigns your role and department.</p><div class="actions"><button type="submit">Save profile</button><button type="button" data-profile-reload hidden>Reload saved details</button></div><p data-profile-status role="status" aria-live="polite"></p><p data-profile-error class="error" role="alert"></p><p data-profile-reload-help class="muted" hidden>Reloading replaces your unsaved edits with the saved profile.</p></form>`;
 }
 async function loadSettingsProfile(section){
- const actor=me,epoch=sessionLoadEpoch,request=(section.settingsProfileRequest||0)+1;section.settingsProfileRequest=request;let form=null;
- const current=()=>me===actor&&sessionLoadEpoch===epoch&&view==='settings'&&section.isConnected&&section.settingsProfileRequest===request&&(!form||form.isConnected&&section.querySelector('form')===form);
+ const actor=me,epoch=sessionLoadEpoch,session=actionFeedbackEpoch,request=(section.settingsProfileRequest||0)+1;section.settingsProfileRequest=request;let form=null;
+ const current=()=>me===actor&&sessionLoadEpoch===epoch&&actionFeedbackEpoch===session&&view==='settings'&&section.isConnected&&section.settingsProfileRequest===request&&(!form||form.isConnected&&section.querySelector('form')===form);
  if(!actor||!current())return;
+ // Loading another page refreshes the staff row and load epoch. The sign-in epoch survives navigation.
+ if(settingsProfileDraft&&(settingsProfileDraft.userId!==actor.user_id||settingsProfileDraft.session!==session))settingsProfileDraft=null;
  section.innerHTML=workspaceSkeleton('profile','Loading your profile…');
  try{
   const result=await client.rpc('get_my_staff_profile');if(!current())return;
@@ -36,6 +43,21 @@ async function loadSettingsProfile(section){
   section.innerHTML=settingsProfileForm(profile);
   form=section.querySelector('form');const status=form.querySelector('[data-profile-status]'),error=form.querySelector('[data-profile-error]'),summary=form.querySelector('[data-profile-validation]'),reload=form.querySelector('[data-profile-reload]'),reloadHelp=form.querySelector('[data-profile-reload-help]');
   let saving=false,validationSubmitted=false;
+  let expected=settingsProfileExpected(profile);
+  if(settingsProfileDraft){
+   const draft=settingsProfileDraft,changed=Object.keys(expected).some(key=>expected[key]!==draft.expected[key]);
+   expected=draft.expected;
+   for(const key of settingsProfileFields)form.elements[key].value=draft.values[key];
+   const details=section.closest('details');if(details)details.open=true;
+   status.textContent=changed?'Your unsaved edits are restored. The saved profile has changed. Reload saved details to use the current version.':'Your unsaved profile edits are restored.';
+   reload.hidden=false;reloadHelp.hidden=false;
+  }
+  const remember=()=>{
+   if(saving||!current())return;
+   const values=Object.fromEntries(settingsProfileFields.map(key=>[key,form.elements[key].value]));
+   settingsProfileDraft=settingsProfileFields.some(key=>values[key]!==String(expected[key]??''))?{userId:actor.user_id,session,expected,values}:null;
+  };
+  form.addEventListener('input',remember);form.addEventListener('change',remember);
   const phoneValue=value=>value.trim().replace(/[\s()-]/g,'');
   const fieldProblem=control=>{
    const native=nativeFieldError(control);if(control===form.elements.display_name&&!control.value.trim()&&!control.validity.customError)return 'Enter your full name.';
@@ -46,24 +68,27 @@ async function loadSettingsProfile(section){
   const collectErrors=()=>{const errors=nativeFormErrors(form);for(const control of [form.elements.display_name,form.elements.phone]){const problem=fieldProblem(control);if(problem)errors.set(control,problem);}return errors;};
   form.noValidate=true;
   form.addEventListener('focusout',event=>{const control=event.target;if(saving||!current()||!form.contains(control)||!control.matches('input,select,textarea')||fieldBlurToAction(event))return;showFieldError(control,fieldProblem(control));if(validationSubmitted)summary.textContent=fieldErrorSummary(form.querySelectorAll('.field-error').length);});
-  reload.onclick=()=>{if(current()&&!saving)return run(()=>loadSettingsProfile(section),{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
+  reload.onclick=()=>{if(current()&&!saving)return run(()=>{settingsProfileDraft=null;return loadSettingsProfile(section);},{origin:reload,errorTarget:error,busyLabel:'Reloading profile…'})};
   form.onsubmit=async event=>{
    event.preventDefault();if(saving||!current())return;
    const button=form.querySelector('[type="submit"]');if(busy){actionFeedbackRefuse(button,error);return;}
+   remember();
    const errors=collectErrors();validationSubmitted=errors.size>0;summary.textContent=fieldErrorSummary(errors.size);showFieldErrors(form,errors);if(errors.size)return;
    const values={display_name:form.elements.display_name.value.trim(),phone:phoneValue(form.elements.phone.value),contact_email:form.elements.contact_email.value.trim().toLowerCase()};
    error.textContent='';status.textContent='';
    actionFeedbackShow(actionFeedbackReference(button),'');
-   const expected={display_name:profile.display_name,name_version:profile.name_version,phone:profile.phone,contact_email:profile.contact_email};
+   const submitted=settingsProfileDraft;
    saving=true;const controls=[...form.querySelectorAll('input,button')];controls.forEach(control=>control.disabled=true);status.textContent='Saving profile…';
    return run(async()=>{
    try{
-    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});if(!current())return;
+    const result=await client.rpc('save_my_staff_profile',{p_expected_values:expected,p_values:values});
     if(result.error)throw Error(result.error.message||'Your profile could not be saved.');
     const saved=settingsProfileRow(result.data,actor);
     if(saved.name_version<profile.name_version||saved.display_name!==values.display_name||(saved.phone||'')!==values.phone||(saved.contact_email||'')!==values.contact_email)throw Error('The server did not confirm these profile details. Reload to check the saved profile.');
-    profile=saved;
-    for(const key of ['display_name','phone','contact_email'])form.elements[key].value=saved[key]||'';
+    if(settingsProfileDraft===submitted&&actionFeedbackEpoch===session&&me?.user_id===actor.user_id)settingsProfileDraft=null;
+    if(!current())return;
+    profile=saved;expected=settingsProfileExpected(saved);
+    for(const key of settingsProfileFields)form.elements[key].value=saved[key]||'';
     form.querySelector('[data-profile-role]').textContent=roleLabels[saved.role]||saved.role;
     form.querySelector('[data-profile-department]').textContent=saved.department?departmentLabel(saved.department):'Not assigned';
     employeeDirectory.set(actor.user_id,{...employeeDirectory.get(actor.user_id),user_id:actor.user_id,display_name:saved.display_name,name_version:saved.name_version});
@@ -83,13 +108,36 @@ async function loadSettingsProfile(section){
 function settingsWorkspace(){
  syncWorkspaceNavigation();
  const size=readTextSize();
- $('#content').innerHTML=`<section class="settings-workspace">${workspacePageHeader({title:'My settings'})}<section class="card"><h2>My account</h2><div id="settingsProfile"></div><button type="button" id="settingsPassword">Change password</button></section><section class="card"><h2>Appearance</h2><div class="text-size-options" role="radiogroup" aria-label="Appearance">${Object.entries(workspaceThemes).map(([key,label])=>`<label><input type="radio" name="workspaceTheme" value="${key}" ${key===workspaceTheme?'checked':''}> <span>${label}</span></label>`).join('')}</div><p class="muted" id="settingsThemeStatus">System follows this device’s appearance.</p></section><section class="card"><h2>Text size</h2><p class="muted">Makes every page easier to read on this computer or phone.</p><div class="text-size-options" role="radiogroup" aria-label="Text size">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}> <span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></section><section class="card"><h2>Language</h2><p>English is available; Kiswahili, Chinese and Hindi are not available yet.</p></section><section class="card"><h2>In-app updates</h2><p>Use the bell or My tasks for assigned work and order updates; the bell checks on navigation, every two minutes, or with Refresh updates.</p></section><section class="card"><h2>Connections to other systems</h2><details><summary>View connection details</summary><ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul></details></section>${me?.role==='owner'?`<div id="settingsOwnerTools"><section class="card"><h2>Discount approval</h2><div id="settingsDiscountPolicy"></div></section>${booksCutoverChecklist()}</div>`:''}</section>`;
- document.querySelectorAll('[name="workspaceTheme"]').forEach(input=>input.onchange=()=>{const saved=saveWorkspaceTheme(input.value);const status=$('#settingsThemeStatus');status.textContent=saved?(input.value==='system'?'System follows this device’s appearance.':workspaceThemes[input.value]+' appearance is saved on this device.'):'Appearance changed for this visit. This browser could not save the preference.';message(saved?'Appearance updated.':'Appearance updated for this visit.');});
+ const themeDescription=theme=>theme==='system'?'Follows this device’s appearance.':workspaceThemes[theme]+' appearance on this device.';
+ $('#content').innerHTML=`<section class="settings-workspace">
+  ${workspacePageHeader({title:'My settings'})}
+  <div class="settings-columns">
+   <div class="settings-group">
+    <section class="card"><h2>My account</h2>
+     <details class="settings-disclosure"><summary>Edit personal details</summary><div id="settingsProfile"></div></details>
+     <div class="actions"><button type="button" id="settingsPassword">Change password</button></div>
+    </section>
+    <div id="settingsSecurity"></div>
+   </div>
+   <div class="settings-group">
+    <section class="card"><h2>Display</h2>
+     <fieldset class="settings-choice"><legend>Appearance</legend><div class="text-size-options">${Object.entries(workspaceThemes).map(([key,label])=>`<label><input type="radio" name="workspaceTheme" value="${key}" ${key===workspaceTheme?'checked':''}><span>${label}</span></label>`).join('')}</div></fieldset>
+     <p class="muted" id="settingsThemeStatus" role="status">${themeDescription(workspaceTheme)}</p>
+     <fieldset class="settings-choice"><legend>Text size</legend><div class="text-size-options">${Object.entries(textSizes).map(([key,option])=>`<label><input type="radio" name="textSize" value="${key}" ${key===size?'checked':''}><span class="text-size-sample text-size-${key}">${option.label}</span></label>`).join('')}</div></fieldset>
+    </section>
+    <details class="card settings-disclosure"><summary>Workspace information</summary><h3>Language</h3><p>English</p><h3>Notifications</h3><p>Open the bell for updates or My tasks for work assigned to you.</p><h3>External connections</h3>
+     <ul class="connection-list">${externalConnections.map(c=>`<li><strong>${esc(c.name)}</strong> <span class="tag">${esc(c.status)}</span><br><small>${esc(c.detail)}</small></li>`).join('')}</ul>
+    </details>
+   </div>
+  </div>
+  ${me?.role==='owner'?`<div id="settingsOwnerTools"><section class="card"><h2>Discount approval</h2><div id="settingsDiscountPolicy"></div></section>${booksCutoverChecklist()}</div>`:''}
+ </section>`;
+ document.querySelectorAll('[name="workspaceTheme"]').forEach(input=>input.onchange=()=>{const saved=saveWorkspaceTheme(input.value);const status=$('#settingsThemeStatus');status.textContent=saved?themeDescription(input.value):'Appearance changed for this visit. This browser could not save the preference.';message(saved?'Appearance updated.':'Appearance updated for this visit.');});
  document.querySelectorAll('[name="textSize"]').forEach(input=>input.onchange=()=>{saveTextSize(input.value);message(`Text size set to ${textSizes[input.value].label.toLowerCase()} on this device.`);});
  $('#settingsPassword').onclick=()=>run(async()=>openChangePassword());
  loadSettingsProfile($('#settingsProfile'));
  if(me?.role==='owner')loadSettingsDiscountPolicy($('#settingsDiscountPolicy'));
- if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('.settings-workspace')).catch(()=>{});
+ if(typeof renderTwoStepSettings==='function')renderTwoStepSettings($('#settingsSecurity')).catch(()=>{});
 }
 applyTextSize();
 applyWorkspaceTheme();

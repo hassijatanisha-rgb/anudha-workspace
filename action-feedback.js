@@ -40,8 +40,14 @@ function clearActionFeedback(session=false){
  if(session){actionFeedbackEpoch++;actionFeedbackEvent=null;actionFeedbackOpeners=new WeakMap();if(typeof navWhileBusy!=='undefined')navWhileBusy=null;}
 }
 function actionFeedbackPlace(entry){
- const anchor=actionFeedbackResolve(entry.reference);
- if(entry.target?.isConnected){if(entry.node.parentElement!==entry.target)entry.target.replaceChildren(entry.node);return;}
+ const anchor=actionFeedbackResolve(entry.reference),target=entry.target?.isConnected?entry.target:null;
+ // Let the enclosing live region speak. A detached target falls back to a standalone announcement.
+ if(target?.closest('[role="alert"],[role="status"],[aria-live="polite"],[aria-live="assertive"]')){
+  entry.node.removeAttribute('role');entry.node.removeAttribute('aria-live');entry.node.removeAttribute('aria-atomic');
+ }else if(!entry.node.getAttribute('role')){
+  entry.node.setAttribute('role',entry.kind==='error'?'alert':'status');entry.node.setAttribute('aria-live','polite');entry.node.setAttribute('aria-atomic','true');
+ }
+ if(target){if(entry.node.parentElement!==target)target.replaceChildren(entry.node);return;}
  if(anchor){
   const actions=anchor.closest('.actions');
   if(!entry.node.isConnected){
@@ -71,7 +77,7 @@ function actionFeedbackShow(reference,text,kind='success',target=null){
  const node=document.createElement('span'),entry={node,reference,kind,target,timer:null,scope:typeof workspaceRefreshScope==='function'?workspaceRefreshScope():null};
  node.className='action-feedback action-feedback-'+kind;
  if(kind==='busy'&&reference?.node.matches('button,input[type="submit"],input[type="button"]'))node.classList.add('action-feedback-sr-only');
- node.setAttribute('role',kind==='error'?'alert':'status');node.setAttribute('aria-live','polite');node.setAttribute('aria-atomic','true');node.textContent=text;
+ node.textContent=text;
  if(kind==='error'){
   const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='action-feedback-dismiss';dismiss.setAttribute('aria-label','Dismiss error');dismiss.title='Dismiss error';
   dismiss.addEventListener('click',()=>actionFeedbackDismiss(entry));node.append(dismiss);
