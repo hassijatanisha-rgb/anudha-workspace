@@ -30,6 +30,17 @@ test('only owner Settings renders the policy and cutover tools, with exactly one
  for(const role of ['head','staff']){const other=fixture(role);await other.start();assert.equal(other.node('#settingsOwnerTools'),null);assert.equal(other.calls.length,0);other.c.openDiscountLimit();assert.equal(other.forms.length,0);}
 });
 
+test('Settings restores the selected appearance description and opens personal details on request',async()=>{
+ const f=fixture('staff');
+ f.c.saveWorkspaceTheme('dark');
+ await f.start();
+ assert.equal(f.node('#settingsThemeStatus').textContent,'Dark appearance on this device.');
+ assert.ok(f.node('[name="workspaceTheme"][value="dark"][checked]'));
+ assert.equal(f.node('#settingsProfile').closest('details').open,false);
+ assert.equal(f.node('#settingsPassword').closest('details'),null);
+ assert.equal(f.node('.connection-list').closest('details').open,false);
+});
+
 test('failed or malformed policy reads expose only read-only recovery and never a cached editor',async()=>{
  for(const response of [{error:{message:'Denied <img>'}},{data:null},{data:{id:true,version:0,head_limit_basis_points:null}},{data:{id:true,version:3,head_limit_basis_points:0}}]){
   const f=fixture();f.setRead(()=>response);await f.start();assert.equal(f.node('[data-discount-limit]'),null);assert.ok(f.node('#settingsDiscountPolicy [role="alert"]'));assert.equal(f.node('img'),null);f.c.openDiscountLimit();assert.equal(f.forms.length,0);

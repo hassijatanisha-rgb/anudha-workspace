@@ -76,7 +76,7 @@ test('shell styles keep flexible compact headers, the brand rail, phone safe are
  assert.match(css,/grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,calc\(var\(--control-h\) \+ var\(--space-2\)\)\),1fr\)\)/);assert.match(css,/env\(safe-area-inset-bottom\)/);assert.match(css,/#workspaceMenuPanel #nav:not\(\[hidden\]\)/);assert.match(css,/workspace-shortcut-height/);
  assert.doesNotMatch(polish,/#nav\[data-mobile-open="false"\]/);assert.doesNotMatch(polish,/min-height:4\.75rem/);assert.match(polish,/#identity>#howToUse>\.nav-label\{[^}]*clip-path:inset\(50%\)/);
  // Match the legacy :last-child rule's specificity; normal 44px controls fit the 52px minimum without forced extra height.
- assert.match(css,/grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,calc\(var\(--control-h\) \+ var\(--space-2\)\)\),1fr\)\);gap:var\(--space-2\)/);assert.match(css,/body>header \.brand>span:last-child\{display:none\}/);assert.match(polish,/body>header\{min-height:52px;[^}]*padding:0 var\(--space-2\)/);
+ assert.match(css,/grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,calc\(var\(--control-h\) \+ var\(--space-2\)\)\),1fr\)\);gap:var\(--space-2\)/);assert.match(css,/body>header \.brand>span:last-child\{display:none\}/);assert.match(polish,/body>header\{[^}]*min-height:52px;[^}]*padding:0 var\(--space-2\)/);
  // Resolve only this exact selector's equal-specificity padding cascade in authored stylesheet order.
  const index=readFileSync(new URL('../index.src.html',import.meta.url),'utf8'),paths=[...index.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)].map(match=>match[1]);
  const padding=paths.flatMap(path=>parseCss(readFileSync(new URL('../'+path,import.meta.url),'utf8')).declarations).filter(row=>row.selector==='body:has(#nav:not([hidden]))>main'&&['padding','padding-bottom'].includes(row.property));
@@ -189,17 +189,17 @@ test('phone icon geometry stays fixed while relative shortcut tracks accommodate
  const polish=parseCss(readFileSync(new URL('../ui-polish.css',import.meta.url),'utf8')).declarations,nav=parseCss(readFileSync(new URL('../workspace-navigation.css',import.meta.url),'utf8')).declarations,tokens=new Map(parseCss(readFileSync(new URL('../tokens.css',import.meta.url),'utf8')).declarations.filter(row=>row.selector===':root').map(row=>[row.property,row.value]));
  const mobile=rows=>rows.filter(row=>row.media.some(media=>/max-width:(600|800)px/.test(media))),values=(rows,selector)=>new Map(mobile(rows).filter(row=>row.selector===selector).map(row=>[row.property,row.value]));
  const header=values(polish,'body>header'),identity=values(polish,'#identity'),brand=values(polish,'body>header .brand-logo'),controls=values(polish,'#identity>#workspaceSearch,#identity>#howToUse,#identity>.bell>.bell-button,#identity .account-menu>summary');
- assert.equal(header.get('min-height'),'52px');assert.equal(header.get('flex-wrap'),'nowrap');assert.equal(header.get('padding'),'0 var(--space-2)');assert.equal(identity.get('flex-wrap'),'nowrap');
+ assert.equal(header.get('min-height'),'52px');assert.equal(header.get('display'),'grid');assert.equal(header.get('grid-template-columns'),'minmax(0,1fr) auto');assert.equal(header.get('padding'),'0 var(--space-2)');assert.equal(identity.get('flex-wrap'),'nowrap');
  for(const property of ['width','min-width','height','min-height'])assert.equal(controls.get(property),'44px');assert.equal(controls.get('padding'),'0');
  const icons=values(polish,'#identity>#workspaceSearch>.workspace-search-icon,#identity>#howToUse>.nav-icon,#identity>.bell>.bell-button>svg'),accountIcon=values(polish,'#identity .account-menu .identity-icon'),barIcon=values(nav,'#workspaceShortcuts .nav-icon');
  for(const icon of [icons,accountIcon,barIcon])for(const property of ['width','height'])assert.equal(icon.get(property),'20px');
- assert.equal(brand.get('width'),'88px');assert.equal(brand.get('max-width'),'24vw');
+ assert.equal(brand.get('width'),'88px');assert.equal(brand.get('min-width'),'0');assert.equal(brand.get('max-width'),'100%');
  const bar=values(nav,'#workspaceShortcuts:not([hidden])'),button=values(nav,'#workspaceShortcuts>button'),label=values(nav,'#workspaceShortcuts .nav-label');
  assert.equal(bar.get('grid-template-columns'),'repeat(auto-fit,minmax(min(100%,calc(var(--control-h) + var(--space-2))),1fr))');assert.equal(bar.get('gap'),'var(--space-2)');assert.equal(button.get('font-size'),'var(--t-caption)');assert.equal(button.get('min-width'),'44px');assert.equal(button.get('min-height'),'52px');assert.equal(button.get('padding'),'0');assert.equal(button.get('overflow-wrap'),'normal');assert.equal(label.get('overflow-wrap'),'normal');assert.equal(label.get('word-break'),'normal');
  const rem=(name,rootSize)=>{assert.match(tokens.get(name),/^[.\d]+rem$/);return parseFloat(tokens.get(name))*rootSize;};
  for(const [rootSize,columns] of [[16,4],[32,3]]){
   const width=360,gap=rem('--space-2',rootSize),track=rem('--control-h',rootSize)+gap,barPadding=2*rem('--space-1',rootSize),available=width-barPadding;
   assert.equal(Math.min(4,Math.floor((available+gap)/(track+gap))),columns,rootSize+'px root preserves all four controls in usable rows');assert.ok(track>=44);assert.ok(gap>=8);
-  const headerPadding=2*gap,brandWidth=Math.min(88,width*.24),headerContents=brandWidth+4*44+4*gap;assert.ok(headerContents<=width-headerPadding,rootSize+'px root keeps the four icon controls in one header row');
+  const availableForBrand=width-2*gap-4*44-4*gap;assert.ok(availableForBrand>=44,rootSize+'px root leaves space for the brand beside the four icon controls');
  }
 });

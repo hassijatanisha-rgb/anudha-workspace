@@ -211,6 +211,20 @@ test('replacing a shared target error removes its old registered entry',()=>{
  const error=f.feedback()[0];error.querySelector('button').emit('click');f.advance(150);f.ctx.actionFeedbackReanchor();assert.equal(status.textContent,'');
 });
 
+test('existing live targets announce once and detached targets retain a standalone announcement',()=>{
+ for(const [attribute,value] of [['role','alert'],['role','status'],['aria-live','polite']]){
+  const f=fixture(),origin=f.button(),announcer=new Element('div'),target=new Element('p');
+  announcer.setAttribute(attribute,value);f.content.append(announcer);announcer.append(target);
+  const {node}=f.ctx.actionFeedbackShow(f.ctx.actionFeedbackReference(origin),'Check this value.','error',target);
+  assert.equal(target.textContent,'Check this value.');assert.equal(node.getAttribute('role'),null);
+  assert.equal(node.getAttribute('aria-live'),null);assert.equal(node.getAttribute('aria-atomic'),null);
+  assert.equal(node.querySelector('button').getAttribute('aria-label'),'Dismiss error');
+  announcer.remove();f.ctx.actionFeedbackReanchor();
+  assert.equal(node.isConnected,true);assert.equal(node.getAttribute('role'),'alert');
+  assert.equal(node.getAttribute('aria-live'),'polite');assert.equal(node.getAttribute('aria-atomic'),'true');
+ }
+});
+
 test('shared modal preserves fields and stays open on failure or a busy refusal',async()=>{
  const f=fixture();vm.runInContext(source('action-forms.js'),f.ctx);const opener=f.button('Edit');f.capture('click',opener);let calls=0;
  const form=f.ctx.actionForm('Edit','',()=>{calls++;throw Error('Choose a valid account.')});form.values={name:'Entered name'};const save=form.querySelector('[type="submit"]'),error=form.querySelector('#actionError'),dialog=form.closest('dialog');

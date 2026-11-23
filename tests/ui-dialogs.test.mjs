@@ -19,6 +19,9 @@ function fixture({reduced=false,phone=false}={}){
   node.fire=(type,extra={})=>{const event={target:node,preventDefault(){this.prevented=true;},...extra};for(const {fn} of node.events[type]||[])fn(event);return event;};
   return node;
  };
+ document.documentElement=document.createElement('html');
+ document.addEventListener=(type,fn)=>document.documentElement.addEventListener(type,fn);
+ document.removeEventListener=(type,fn)=>{document.documentElement.events[type]=document.documentElement.events[type].filter(event=>event.fn!==fn);};
  const trigger=document.createElement('button');trigger.rect={left:20,top:20,width:44,height:44,right:64,bottom:64};document.body.append(trigger);trigger.focus();
  const context=vm.createContext({DOMMatrixReadOnly:class{constructor(value){this.m42=value?.startsWith('matrix(')?Number(value.slice(7,-1).split(',')[5]):0;}},document,me:{user_id:'owner'},matchMedia:query=>({matches:query.includes('reduced-motion')?reduced:phone}),getComputedStyle:node=>({opacity:node.style.opacity||node.renderedOpacity||'1',transform:node.style.transform||node.renderedTransform||'none',getPropertyValue:key=>({'--m-base':'200ms','--m-slow':'300ms','--m-fade':'150ms','--ease-in':'cubic-bezier(.2,.8,.2,1)','--ease-out':'cubic-bezier(.8,.2,.8,1)'}[key])})});
  vm.runInContext(readFileSync(new URL('../client-rules.js',import.meta.url),'utf8'),context);vm.runInContext(source,context);
@@ -128,7 +131,7 @@ test('rebinding dismissal uses the current form callbacks and installs one cance
  const f=fixture({phone:true}),dialog=f.document.createElement('dialog');f.document.body.append(dialog);let dismisses=0;f.context.bindWorkspaceDialogDrag(dialog,()=>dismisses++);f.context.showWorkspaceDialog(dialog);const handle=dialog.querySelector('.dialog-drag-handle');handle.fire('pointerdown',{pointerId:1,button:0,clientY:100});handle.fire('pointermove',{pointerId:1,clientY:120});assert.equal(dialog.style.transform,'translateY(20px)');handle.fire('pointerup',{pointerId:1});assert.equal(dismisses,0);assert.equal(f.last().frames[0].transform,'translateY(20px)');await f.complete();assert.equal(dialog.style.transform,undefined);assert.equal(dialog.open,true);
  });
  test('a long phone drag requests guarded dismissal; cancellation, busy and stale actor do not',async()=>{
- for(const mode of ['long','cancel','busy','actor','desktop']){const f=fixture({phone:mode!=='desktop'}),dialog=f.document.createElement('dialog');f.document.body.append(dialog);let dismisses=0,busy=false;f.context.bindWorkspaceDialogDrag(dialog,()=>dismisses++,()=>!busy);f.context.showWorkspaceDialog(dialog);const handle=dialog.querySelector('.dialog-drag-handle');if(mode==='busy')busy=true;handle.fire('pointerdown',{pointerId:1,button:0,clientY:100});handle.fire('pointermove',{pointerId:1,clientY:190});if(mode==='actor')f.context.me={user_id:'owner'};handle.fire(mode==='cancel'?'pointercancel':'pointerup',{pointerId:1});assert.equal(dismisses,mode==='long'?1:0,mode);assert.equal(dialog.style.transform,undefined,mode);}
+ for(const mode of ['long','cancel','busy','actor','desktop']){const f=fixture({phone:mode!=='desktop'}),dialog=f.document.createElement('dialog');f.document.body.append(dialog);let dismisses=0,busy=false;f.context.bindWorkspaceDialogDrag(dialog,()=>dismisses++,()=>!busy);f.context.showWorkspaceDialog(dialog);const handle=dialog.querySelector('.dialog-drag-handle');if(mode==='busy')busy=true;handle.fire('pointerdown',{pointerId:1,button:0,clientY:100});handle.fire('pointermove',{pointerId:1,clientY:210});if(mode==='actor')f.context.me={user_id:'owner'};handle.fire(mode==='cancel'?'pointercancel':'pointerup',{pointerId:1});assert.equal(dismisses,mode==='long'?1:0,mode);assert.equal(dialog.style.transform,undefined,mode);}
  });
  test('reduced-motion drag uses opacity only and lost capture restores the sheet',async()=>{
  const f=fixture({phone:true,reduced:true}),dialog=f.document.createElement('dialog');f.document.body.append(dialog);let dismisses=0;f.context.bindWorkspaceDialogDrag(dialog,()=>dismisses++);f.context.showWorkspaceDialog(dialog);const handle=dialog.querySelector('.dialog-drag-handle');handle.fire('pointerdown',{pointerId:1,button:0,clientY:100});handle.fire('pointermove',{pointerId:1,clientY:160});assert.equal(dialog.style.transform,undefined);assert.equal(dialog.style.opacity,'0.7');handle.fire('lostpointercapture',{pointerId:1});assert.equal(dismisses,0);assert.equal(f.last().options.duration,150);assert.ok(f.last().frames.every(frame=>!('transform'in frame)));await f.complete();
@@ -149,4 +152,105 @@ test('text correction cannot move Save or Cancel during blur; submit still valid
  for(const targetIndex of [0,1]){
   const f=fixture(),answer=f.context.askText({title:'Product name',label:'Name',value:'',validate:value=>value.trim()?'':'Enter a product name.'}),dialog=f.dialogs()[0],input=dialog.querySelector('input'),error=dialog.querySelector('[role="alert"]');input.fire('blur');input.value='Analyzer';input.fire('blur',{relatedTarget:dialog.querySelectorAll('button')[targetIndex]});assert.equal(error.textContent,'Enter a product name.');assert.equal(input.getAttribute('aria-invalid'),'true');f.submit(dialog);await f.complete();assert.equal(await answer,'Analyzer');
  }
+});
+
+function phoneSheetDrag(options={}){
+ const f=fixture({phone:true}),dialog=f.document.createElement('dialog');
+ f.document.body.append(dialog);f.context.bindWorkspaceDialogDismiss(dialog,options);f.context.showWorkspaceDialog(dialog);
+ const handle=dialog.querySelector('.dialog-drag-handle');
+ const pointer=(type,delta,time)=>handle.fire(type,{button:0,pointerId:1,clientY:100+delta,timeStamp:time});
+ return {...f,dialog,pointer};
+}
+
+test('a short downward flick projects to dismissal and carries its released position and velocity into the spring',async()=>{
+ const f=phoneSheetDrag();f.pointer('pointerdown',0,0);f.pointer('pointermove',24,35);f.pointer('pointerup',25,36);
+ assert.equal(f.dialog.inert,true);const {frames,options}=f.last();
+ assert.equal(frames[0].transform,'translateY(25px)');assert.ok(parseFloat(frames[1].transform.slice(11))>25);
+ assert.equal(frames.at(-1).transform,'translateY(200px)');assert.equal(options.easing,'linear');
+ await f.complete();assert.equal(f.dialog.open,false);assert.equal(f.document.activeElement,f.trigger);
+});
+
+test('a tiny flick, paused drag or last-moment reversal settles back to the open endpoint',async()=>{
+ for(const [moves,release] of [
+  [[[6,10]],[6,11]],
+  [[[75,30]],[75,250]],
+  [[[145,130],[110,164]],[109,165]]
+ ]){
+  const f=phoneSheetDrag();f.pointer('pointerdown',0,0);
+  for(const [offset,time] of moves)f.pointer('pointermove',offset,time);
+  f.pointer('pointerup',...release);
+  assert.ok(!f.dialog.inert);assert.equal(f.last().frames.at(-1).transform,'translateY(0px)');
+  if(release[0]===109)assert.ok(parseFloat(f.last().frames[1].transform.slice(11))<109);
+  await f.complete();assert.equal(f.dialog.open,true);
+ }
+});
+
+test('pulling above the upper edge increases resistance and a regrab resumes at the rendered negative offset',()=>{
+ const f=phoneSheetDrag();f.pointer('pointerdown',0,0);f.pointer('pointermove',-50,80);
+ assert.equal(f.dialog.style.transform,'translateY(-25px)');f.pointer('pointermove',-200,160);
+ assert.equal(f.dialog.style.transform,'translateY(-40px)');f.pointer('pointercancel',-200,180);
+ const returning=f.last();f.dialog.renderedTransform='matrix(1,0,0,1,0,-25)';
+ f.pointer('pointerdown',0,200);f.pointer('pointermove',0,208);
+ assert.equal(returning.cancelled,true);assert.equal(f.dialog.style.transform,'translateY(-25px)');
+});
+
+test('an outward flick on a dirty sheet keeps the editor open behind the discard question',async()=>{
+ const f=phoneSheetDrag({isDirty:()=>true});
+ f.pointer('pointerdown',0,0);f.pointer('pointermove',28,27);f.pointer('pointerup',29,28);
+ assert.equal(f.dialog.open,true);assert.ok(!f.dialog.inert);
+ const question=f.dialogs()[1];assert.equal(question.querySelector('h2').textContent,'Discard changes?');
+ assert.equal(f.last().frames.at(-1).transform,'translateY(0px)');
+ question.querySelector('button').onclick();await f.complete();
+ assert.equal(f.dialogs().length,1);assert.equal(f.dialog.open,true);
+});
+
+test('a settling gesture runs to position and velocity tolerance with finite work',()=>{
+ const f=fixture({phone:true}),dialog=f.document.createElement('dialog');
+ const run=offset=>{f.context.workspaceSheetSpring(dialog,{height:600,offset,opacity:1,velocity:0},false);return f.last();};
+ const small=run(12),large=run(480);
+ assert.ok(small.options.duration<large.options.duration);
+ for(const animation of [small,large]){
+  const offsets=animation.frames.map(frame=>parseFloat(frame.transform.slice(11)));
+  assert.ok(animation.options.duration<=1000);assert.ok(offsets.length<=251);
+  assert.ok(Math.abs(offsets.at(-2))<.25);assert.ok(Math.abs(offsets.at(-2)-offsets.at(-3))/4<.006);
+  assert.ok(offsets.every((v,i)=>i===0||v<=offsets[i-1]&&v>=0));
+ }
+});
+
+test('regrabbing a clean gesture exit keeps the complete dialog inert through the return',async()=>{
+ const f=phoneSheetDrag();f.pointer('pointerdown',0,0);f.pointer('pointermove',24,35);f.pointer('pointerup',25,36);
+ const exit=f.last(),root=f.document.documentElement;
+ root.fire('pointerdown',{pointerId:1,button:0,clientX:12,clientY:12,timeStamp:47});
+ assert.ok(!exit.cancelled);
+ f.dialog.renderedTransform='matrix(1,0,0,1,0,45)';
+ root.fire('pointerdown',{pointerId:1,button:0,clientX:300,clientY:150,timeStamp:60});
+ assert.equal(exit.cancelled,true);assert.equal(f.dialog.style.transform,'translateY(45px)');
+ assert.equal(f.dialog.inert,true);f.pointer('pointermove',3,92);f.pointer('pointerup',2,94);
+ assert.equal(f.dialog.inert,true);assert.equal(f.last().frames.at(-1).transform,'translateY(0px)');
+ await f.complete();assert.equal(f.dialog.open,true);assert.equal(f.dialog.inert,false);assert.equal(root.events.pointerdown.length,0);
+});
+
+test('confirmation and explicitly accepted discard exits cannot be intercepted by a handle press',async()=>{
+ const f=fixture({phone:true}),answer=f.context.askConfirm({title:'Confirm adjustment?',tone:'danger'}),dialog=f.dialogs()[0];
+ f.submit(dialog);assert.equal(dialog.inert,true);assert.equal(f.document.documentElement.events.pointerdown?.length||0,0);
+ await f.complete();assert.equal(await answer,true);
+ const dirty=phoneSheetDrag({isDirty:()=>true});dirty.pointer('pointerdown',0,0);dirty.pointer('pointermove',28,26);dirty.pointer('pointerup',30,28);
+ dirty.submit(dirty.dialogs()[1]);await dirty.complete();
+ assert.equal(dirty.dialog.inert,true);assert.equal(dirty.document.documentElement.events.pointerdown?.length||0,0);
+ await dirty.complete();assert.equal(dirty.dialog.open,false);
+});
+
+test('programmatic reopen interrupts a gesture exit and cleans up its temporary listener',async()=>{
+ const f=phoneSheetDrag();f.pointer('pointerdown',0,0);f.pointer('pointermove',24,35);f.pointer('pointerup',25,36);
+ f.dialog.renderedTransform='matrix(1,0,0,1,0,60)';
+ f.context.showWorkspaceDialog(f.dialog);await f.complete();
+ assert.equal(f.dialog.open,true);assert.equal(f.dialog.inert,false);assert.equal(f.document.documentElement.events.pointerdown.length,0);
+ assert.equal(f.last().frames[0].transform,'matrix(1,0,0,1,0,60)');
+});
+
+test('a root-retargeted press cannot intercept a lower pane while another modal is open',async()=>{
+ const f=phoneSheetDrag();f.pointer('pointerdown',0,0);f.pointer('pointermove',24,35);f.pointer('pointerup',25,36);
+ const exit=f.last(),other=f.document.createElement('dialog');f.document.body.append(other);other.showModal();
+ f.document.documentElement.fire('pointerdown',{pointerId:1,button:0,clientX:300,clientY:150,timeStamp:60});
+ assert.ok(!exit.cancelled);await f.complete();assert.equal(f.dialog.open,false);assert.equal(other.open,true);
 });
