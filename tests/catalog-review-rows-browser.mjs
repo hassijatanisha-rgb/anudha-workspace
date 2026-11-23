@@ -31,6 +31,20 @@ test('catalogue rows keep review badges and product actions readable on neutral 
   const table=page.getByRole('table',{name:'Product details and availability'});
   assert.equal(await table.getByRole('row').count(),4);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  if(width<=600){
+   const toolbar=page.locator('.workspace-page-toolbar'),add=toolbar.getByRole('button',{name:'Add product',exact:true}),refresh=toolbar.getByRole('button',{name:'Refresh data',exact:true});
+   const header=await toolbar.boundingBox(),first=await table.locator('tbody tr').first().boundingBox();
+   for(const control of [refresh,add]){
+    const box=await control.boundingBox();
+    assert.ok(box&&box.width>=44&&box.height>=44,`Header action has a touch target at ${width}px / ${scale}%`);
+    assert.ok(box.x>=header.x-1&&box.x+box.width<=header.x+header.width+1&&box.y>=header.y-1&&box.y+box.height<=header.y+header.height+1&&box.y+box.height<=first.y,`Header action fits above the products at ${width}px / ${scale}%`);
+    const center={x:box.x+box.width/2,y:box.y+box.height/2};
+    const id=await control.getAttribute('id');
+    await page.evaluate(()=>{window.tappedHeaderControl=null;document.addEventListener('click',event=>{window.tappedHeaderControl=event.target.closest('button')?.id;},{once:true});});
+    await page.touchscreen.tap(center.x,center.y);
+    assert.equal(await page.evaluate(()=>window.tappedHeaderControl),id,`Initial touch reaches ${id} at ${width}px / ${scale}%`);
+   }
+  }
   const colours=await table.locator('tbody tr').evaluateAll(rows=>rows.map(row=>[row,...row.cells].map(node=>getComputedStyle(node).backgroundColor)));
   assert.deepEqual(colours[1],colours[0],`Yellow row surfaces at ${width}px`);
   assert.deepEqual(colours[2],colours[0],`Red row surfaces at ${width}px`);
@@ -62,10 +76,8 @@ test('catalogue rows keep review badges and product actions readable on neutral 
   if(width<=600){
    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
    const add=page.getByRole('button',{name:'Add product',exact:true});
-   assert.equal(await add.evaluate(node=>getComputedStyle(node).position),'fixed');
-   const addBox=await add.boundingBox(),last=await table.locator('tbody tr').last().boundingBox();
-   assert.ok(addBox.width<width-32,`Compact Add product at ${width}px / ${scale}%`);
-   assert.ok(last.y+last.height<=addBox.y+1,`Last product can scroll clear of Add product at ${width}px / ${scale}%`);
+   const addBox=await add.boundingBox(),first=await table.locator('tbody tr').first().boundingBox();
+   assert.ok(addBox.y+addBox.height<=first.y+1,`Scrolled header action stays above the first product at ${width}px / ${scale}%`);
   }
   const filtersAndList=page.locator('.catalog-filters,.catalog-results-head,#catalogResults,#catalogPaging');
   await page.locator('#catalogDetail').evaluate((node,html)=>{node.innerHTML=html;},detail);

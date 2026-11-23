@@ -113,12 +113,15 @@ function packingQueueHtml(){
  <details><summary>How this page works</summary><p>Take next selects customers waiting in the lobby first, then the oldest delivery. Check every item before pressing Packed. You can then take the next order.</p><p>Orders awaiting Accounts release enter the queue after invoicing and stock reservation.</p></details>
  <p class="warning" role="alert" data-packing-error${packingError?'':' hidden'}>${packingError?`Could not refresh: ${esc(packingError)}`:''}</p>
  <div data-packing-personal>${packingPersonalHtml()}</div>
- <h2 data-packing-waiting-count>Waiting · ${b.waiting.length}</h2>
+ <div class="packing-lanes"><div><section aria-labelledby="packingWaitingTitle">
+ <h2 id="packingWaitingTitle" data-packing-waiting-count>Waiting · ${b.waiting.length}</h2>
  <ol class="packing-waiting-list">${b.waiting.map(packingWaitingRow).join('')}</ol><p class="empty" data-packing-empty${b.waiting.length?' hidden':''}>Nothing waiting.</p>
+ </section>
  ${b.coming?.count?`<section class="notice"><h2>Awaiting Accounts release · ${esc(b.coming.count)}</h2>${(b.coming.items||[]).map(row=>`<p><strong>${esc(row.delivery_number)}</strong> · ${esc(row.organization)} · ${row.status==='tax_invoice_created'?'Invoice reserved; Accounts must send to packing':'Invoice and stock reservation required'} · ${row.owner_name?'Current step owner: '+esc(row.owner_name):'No step owner assigned'} <button type="button" data-packing-open-incoming="${esc(row.id)}">Open delivery</button></p>`).join('')}</section>`:''}
- <h2 data-packing-active-count>Being packed · ${b.packing.length}</h2>
+ </div><section aria-labelledby="packingActiveTitle">
+ <h2 id="packingActiveTitle" data-packing-active-count>Being packed · ${b.packing.length}</h2>
  <div data-packing-others>${others.map(row=>packingCard(row)).join('')}</div><p class="muted" data-packing-others-empty${others.length?' hidden':''}>Nobody else is packing.</p>
- </section>`;
+ </section></div></section>`;
 }
 
 // ---- TV screen ----

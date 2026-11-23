@@ -20,6 +20,42 @@
 .books-print dl{display:grid;grid-template-columns:auto auto;justify-content:end;gap:var(--space-1) var(--space-5);margin:var(--space-4) 0}
 .books-print dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:520px){.books-metrics{grid-template-columns:1fr}}
+@media screen{
+ .books-invoice-register:has(td.actions) .table-wrap{container:invoice-register / inline-size}
+}
+@media screen and (max-width:600px){
+ .books:has(.books-invoice-register)>.workspace-page-header{position:static}
+ #booksBody .books-invoice-register{min-width:0;padding:var(--space-3)}
+ .books-invoice-register .heading{flex-wrap:wrap}
+ .books-invoice-register .table-wrap{container:invoice-register / inline-size}
+}
+@container invoice-register (max-width:80rem){
+ #booksBody .books-invoice-register table{display:block;width:100%;min-width:0}
+ #booksBody .books-invoice-register thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ .books-invoice-register tbody{display:block}
+ .books-invoice-register tbody tr{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));
+  align-items:start;gap:var(--space-3);padding:var(--space-4) var(--space-1);border-top:1px solid var(--line);background:var(--surface);
+ }
+ #booksBody .books-invoice-register td{display:block;min-width:0;padding:0;border:0;text-align:start;white-space:normal;overflow-wrap:anywhere}
+ /* Keep the column headers in the accessibility tree and repeat their labels visually. */
+ .books-invoice-register td[data-label]::before{
+  content:attr(data-label) / "";display:block;color:var(--ink-2);font-size:var(--t-caption);
+  line-height:var(--lh-caption);font-weight:var(--w-caption);letter-spacing:var(--ls-caption);
+ }
+ .books-invoice-register td:first-child{font-weight:var(--w-headline)}
+ .books-invoice-register td small{display:block;font-weight:var(--w-body)}
+ .books-invoice-register td .tag{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+ .books-invoice-register tr:has(td.actions)>td[data-label="Customer"]{grid-column:1/-1}
+ #booksBody .books-invoice-register td.actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--space-2)}
+ #booksBody .books-invoice-register td button{
+  flex:0 1 auto;min-width:0;max-width:100%;min-height:var(--control-phone);padding-inline:var(--space-2);white-space:normal;overflow-wrap:anywhere;
+ }
+}
+@container invoice-register (min-width:38rem) and (max-width:80rem){
+ .books-invoice-register tbody tr{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .books-invoice-register tr:has(td.actions)>td[data-label="Customer"],#booksBody .books-invoice-register td.actions{grid-column:span 2}
+}
 @media print{
  body.books-printing *{visibility:hidden!important}
  body.books-printing .books-print-active,body.books-printing .books-print-active *{visibility:visible!important}

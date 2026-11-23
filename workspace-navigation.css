@@ -22,6 +22,11 @@ body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-width);max-width:non
 .nav-unavailable small{display:block}
 #workspaceShortcuts{display:none}
 #workspaceMenuPanel:has(#nav[hidden]),body:has(#nav[hidden]) #workspaceShortcuts{display:none}
+@media screen and (min-width:800.01px){
+ #nav .nav-group+.nav-group{border-top:1px solid var(--line)}
+ #nav .nav-group button{margin:0;padding-block:var(--space-2)}
+ #nav .nav-group .nav-group-items button[data-view]:hover:not(.active){background:var(--surface)}
+}
 @media(min-width:800.01px) and (max-width:1199.99px){
  #nav:not([hidden]){width:var(--sidebar-compact-width);padding:var(--space-3) var(--space-2)}
  body:has(#nav:not([hidden]))>main{margin-left:var(--sidebar-compact-width)}
